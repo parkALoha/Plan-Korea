@@ -1,42 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchRealTravelTime } from "@/lib/travelProvider";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { TRAVEL_MODES, type TravelMode } from "@/lib/schedule";
 
-// คำนวณเวลาเดินทาง (โหมดขนส่งสาธารณะ) ระหว่าง 2 จุด ผ่าน Distance Matrix API
+// คำนวณเวลาเดินทางจริงระหว่าง 2 จุด ผ่าน Routes API (New)
+// เช็ค travel_time_cache ใน Supabase ก่อนเสมอ (แคชถาวร คู่จุด+โหมดในทริปคงที่) เจอแล้วไม่ยิง Google ซ้ำ
 // ใช้ key ฝั่งเซิร์ฟเวอร์เท่านั้น
 export async function GET(req: NextRequest) {
+  const originPlaceId = req.nextUrl.searchParams.get("originPlaceId");
+  const destPlaceId = req.nextUrl.searchParams.get("destPlaceId");
   const originLat = req.nextUrl.searchParams.get("originLat");
   const originLng = req.nextUrl.searchParams.get("originLng");
   const destLat = req.nextUrl.searchParams.get("destLat");
   const destLng = req.nextUrl.searchParams.get("destLng");
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const mode = req.nextUrl.searchParams.get("mode") as TravelMode | null;
 
-  if (!originLat || !originLng || !destLat || !destLng) {
+  if (!originPlaceId || !destPlaceId || !originLat || !originLng || !destLat || !destLng) {
     return NextResponse.json({ error: "missing coordinates" }, { status: 400 });
   }
-  if (!apiKey) {
-    return NextResponse.json({ durationText: null, error: "GOOGLE_MAPS_API_KEY not set" });
+  if (!mode || !TRAVEL_MODES.includes(mode)) {
+    return NextResponse.json({ error: "missing or invalid mode" }, { status: 400 });
   }
 
-  const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
-  url.searchParams.set("origins", `${originLat},${originLng}`);
-  url.searchParams.set("destinations", `${destLat},${destLng}`);
-  url.searchParams.set("mode", "transit");
-  url.searchParams.set("key", apiKey);
-
-  // แคชผลลัพธ์ไว้ 30 วัน — พิกัดจุดต่างๆ ในทริปคงที่ ไม่ต้องคำนวณใหม่ทุกครั้ง
-  const res = await fetch(url.toString(), { next: { revalidate: 2592000 } });
-  if (!res.ok) {
-    return NextResponse.json({ durationText: null, error: `distance matrix failed: ${res.status}` });
+  if (supabaseConfigured) {
+    const { data: cached } = await supabase
+      .from("travel_time_cache")
+      .select("duration_minutes, distance_meters")
+      .eq("from_place_id", originPlaceId)
+      .eq("to_place_id", destPlaceId)
+      .eq("travel_mode", mode)
+      .maybeSingle();
+    if (cached) {
+      return NextResponse.json({
+        durationMinutes: cached.duration_minutes,
+        distanceMeters: cached.distance_meters,
+        isReal: true,
+      });
+    }
   }
 
-  const data = await res.json();
-  const element = data.rows?.[0]?.elements?.[0];
+  const result = await fetchRealTravelTime(
+    { lat: parseFloat(originLat), lng: parseFloat(originLng) },
+    { lat: parseFloat(destLat), lng: parseFloat(destLng) },
+    mode
+  );
 
-  if (element?.status !== "OK") {
-    return NextResponse.json({ durationText: null });
+  if (!result) {
+    // Google ไม่มีเส้นทางให้โหมดนี้ (พบบ่อยกับเดิน/ขับรถในเกาหลีใต้) — ให้ผู้เรียก fallback เป็นประมาณการ
+    return NextResponse.json({ durationMinutes: null, isReal: false });
+  }
+
+  if (supabaseConfigured) {
+    await supabase.from("travel_time_cache").upsert({
+      from_place_id: originPlaceId,
+      to_place_id: destPlaceId,
+      travel_mode: mode,
+      duration_minutes: result.durationMinutes,
+      distance_meters: result.distanceMeters,
+      fetched_at: new Date().toISOString(),
+    });
   }
 
   return NextResponse.json({
-    durationText: element.duration?.text ?? null,
-    distanceText: element.distance?.text ?? null,
+    durationMinutes: result.durationMinutes,
+    distanceMeters: result.distanceMeters,
+    isReal: true,
   });
 }

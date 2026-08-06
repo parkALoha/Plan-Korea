@@ -21,6 +21,7 @@ import {
   type ScheduledStop,
   type TravelMode,
 } from "@/lib/schedule";
+import { useDayTravelTimes, type TravelTimePair } from "@/hooks/useDayTravelTimes";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 
 const DWELL_STEP_MINUTES = 15;
@@ -31,6 +32,7 @@ function TravelModeRow({
   toPlace,
   mode,
   resolvedMinutes,
+  isReal,
   onSetMode,
 }: {
   fromPlace: Place;
@@ -38,6 +40,8 @@ function TravelModeRow({
   mode: TravelMode | null;
   /** เวลาที่ schedule คำนวณจริงไว้แล้ว (ตรงกับ mode ปัจจุบัน) ใช้โชว์ตอนเลือกโหมดแล้ว */
   resolvedMinutes: number;
+  /** true = เวลาจริงจาก Google Routes API, false = ยังเป็นเส้นตรง haversine ประมาณการ */
+  isReal: boolean;
   onSetMode: (mode: TravelMode) => void;
 }) {
   // key={mode} จากผู้เรียก (ดูด้านล่าง) ทำให้ component นี้ remount ใหม่ทุกครั้งที่ mode เปลี่ยน
@@ -50,8 +54,8 @@ function TravelModeRow({
     return (
       <div className="flex flex-wrap items-center gap-1.5 bg-cream-soft/60 px-4 py-1.5 text-[11px] text-ink-soft">
         <span>
-          {TRAVEL_MODE_EMOJI[mode]} {TRAVEL_MODE_LABEL[mode]} ~{resolvedMinutes} นาทีเดินทาง
-          (ประมาณการ)
+          {TRAVEL_MODE_EMOJI[mode]} {TRAVEL_MODE_LABEL[mode]} {isReal ? "" : "~"}
+          {resolvedMinutes} นาทีเดินทาง {isReal ? "(จริง)" : "(ประมาณการ)"}
         </span>
         <button
           onClick={() => setPicking(true)}
@@ -86,6 +90,7 @@ function SortableStopRow({
   sched,
   prevPlace,
   isFlashing,
+  isTravelReal,
   onSetTravelMode,
   onView,
   onUpdateDwell,
@@ -97,6 +102,7 @@ function SortableStopRow({
   sched: ScheduledStop;
   prevPlace: Place | undefined;
   isFlashing: boolean;
+  isTravelReal: boolean;
   onSetTravelMode: (mode: TravelMode) => void;
   onView: () => void;
   onUpdateDwell: (minutes: number) => void;
@@ -121,6 +127,7 @@ function SortableStopRow({
           toPlace={sched.place}
           mode={(stop.travel_mode as TravelMode | null) ?? null}
           resolvedMinutes={sched.travelMinutesFromPrev}
+          isReal={isTravelReal}
           onSetMode={onSetTravelMode}
         />
       )}
@@ -239,6 +246,30 @@ export function DayStopsSection({
     return map;
   }, [stops, customPlaces]);
 
+  // คู่จุดที่เลือกโหมดเดินทางแล้วเท่านั้นที่ต้องขอเวลาจริง — คู่ที่ยังไม่เลือกโหมดใช้แค่ตัวเลือกในหน้า picker
+  const travelPairs = useMemo(() => {
+    const pairs: TravelTimePair[] = [];
+    for (let i = 1; i < stops.length; i++) {
+      const mode = stops[i].travel_mode as TravelMode | null;
+      if (!mode) continue;
+      const from = placesById.get(stops[i - 1].place_id);
+      const to = placesById.get(stops[i].place_id);
+      if (!from || !to) continue;
+      pairs.push({
+        fromId: from.id,
+        toId: to.id,
+        fromLat: from.lat,
+        fromLng: from.lng,
+        toLat: to.lat,
+        toLng: to.lng,
+        mode,
+      });
+    }
+    return pairs;
+  }, [stops, placesById]);
+
+  const realTravelTimes = useDayTravelTimes(travelPairs);
+
   const schedule = useMemo(() => {
     const inputs: ScheduleStopInput[] = stops.map((s) => ({
       id: s.id,
@@ -249,9 +280,17 @@ export function DayStopsSection({
     return computeSchedule(startTime, inputs, placesById, (fromId, toId, mode) => {
       const from = placesById.get(fromId);
       const to = placesById.get(toId);
-      return from && to ? estimateTravelMinutesBetween(from, to, mode) : null;
+      if (!from || !to) return null;
+      if (mode) {
+        const real = realTravelTimes.get(`${fromId}|${toId}|${mode}`);
+        if (real?.minutes != null) return real.minutes;
+      }
+      return estimateTravelMinutesBetween(from, to, mode);
     });
-  }, [stops, placesById, startTime]);
+  }, [stops, placesById, startTime, realTravelTimes]);
+
+  const isTravelTimeReal = (fromId: string, toId: string, mode: TravelMode | null) =>
+    mode != null && realTravelTimes.get(`${fromId}|${toId}|${mode}`)?.minutes != null;
 
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const viewSched = viewIndex != null ? schedule[viewIndex] : null;
@@ -307,6 +346,11 @@ export function DayStopsSection({
                 sched={sched}
                 prevPlace={prevPlace}
                 isFlashing={stop.id === flashStopId}
+                isTravelReal={
+                  prevPlace != null &&
+                  sched.place != null &&
+                  isTravelTimeReal(prevPlace.id, sched.place.id, (stop.travel_mode as TravelMode | null) ?? null)
+                }
                 onSetTravelMode={(mode) => onUpdateTravelMode(stop.id, mode)}
                 onView={() => setViewIndex(i)}
                 onUpdateDwell={(minutes) => onUpdateDwell(stop.id, minutes)}

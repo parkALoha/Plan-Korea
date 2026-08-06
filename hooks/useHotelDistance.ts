@@ -22,12 +22,16 @@ export function useHotelDistance(hotel: TripHotel | null, to: Place) {
     if (!hotel) return;
     let cancelled = false;
     const key = pairKey(hotel, to);
-    const url = `/api/travel-time?originLat=${hotel.lat}&originLng=${hotel.lng}&destLat=${to.lat}&destLng=${to.lng}`;
+    // ใช้โหมดขนส่งสาธารณะเป็นค่าเริ่มต้นสำหรับ label นี้ — เป็นโหมดเดียวที่ Google รองรับครบในเกาหลีใต้
+    const url =
+      `/api/travel-time?originPlaceId=${encodeURIComponent(hotel.leg_id)}` +
+      `&destPlaceId=${encodeURIComponent(to.id)}` +
+      `&originLat=${hotel.lat}&originLng=${hotel.lng}&destLat=${to.lat}&destLng=${to.lng}&mode=transit`;
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
-        if (!cancelled && data.durationText) {
-          setFetched({ key, label: `🏨 ${data.durationText} จากที่พัก` });
+        if (!cancelled && data.durationMinutes != null) {
+          setFetched({ key, label: `🏨 ${data.durationMinutes} นาที จากที่พัก` });
         }
       })
       .catch(() => {});

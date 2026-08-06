@@ -20,12 +20,16 @@ export function useTravelTime(from: Place | null, to: Place) {
     if (!from) return;
     let cancelled = false;
     const key = pairKey(from, to);
-    const url = `/api/travel-time?originLat=${from.lat}&originLng=${from.lng}&destLat=${to.lat}&destLng=${to.lng}`;
+    // ใช้โหมดขนส่งสาธารณะเป็นค่าเริ่มต้นสำหรับ label นี้ — เป็นโหมดเดียวที่ Google รองรับครบในเกาหลีใต้
+    const url =
+      `/api/travel-time?originPlaceId=${encodeURIComponent(from.id)}` +
+      `&destPlaceId=${encodeURIComponent(to.id)}` +
+      `&originLat=${from.lat}&originLng=${from.lng}&destLat=${to.lat}&destLng=${to.lng}&mode=transit`;
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
-        if (!cancelled && data.durationText) {
-          setFetched({ key, label: `🚇 ${data.durationText} จากจุดก่อนหน้า` });
+        if (!cancelled && data.durationMinutes != null) {
+          setFetched({ key, label: `🚇 ${data.durationMinutes} นาที จากจุดก่อนหน้า` });
         }
       })
       .catch(() => {});
