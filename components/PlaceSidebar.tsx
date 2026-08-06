@@ -11,7 +11,6 @@ import { haversineKm } from "@/lib/geo";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
-import { AddPlaceModal } from "./AddPlaceModal";
 import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
 
 const CATEGORY_ORDER: Category[] = [
@@ -195,7 +194,6 @@ function PlaceSidebarContent({
   }
 
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [nearbyKind, setNearbyKind] = useState<NearbyKind | null>(null);
   const focusedDayDate = itinerary.find((d) => d.id === focusedDayId)?.date;
   // ศูนย์กลางค้นหาร้านอาหารใกล้ๆ: จุดแวะล่าสุดของวันที่โฟกัส > ที่พัก > จุดกึ่งกลางเมือง
@@ -255,10 +253,10 @@ function PlaceSidebarContent({
           </button>
           <div className="flex gap-2">
             <button
-              onClick={() => setAddOpen(true)}
+              onClick={() => setNearbyKind("place")}
               className="flex-1 rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
             >
-              + เพิ่มสถานที่เอง
+              + สถานที่ท่องเที่ยว
             </button>
             <button
               onClick={() => setNearbyKind("restaurant")}
@@ -340,25 +338,18 @@ function PlaceSidebarContent({
         />
       )}
 
-      {addOpen && (
-        <AddPlaceModal
-          city={activeCity}
-          addedBy={who}
-          onClose={() => setAddOpen(false)}
-          onAdded={(placeId, coords) => onAddStopToDay(focusedDayId, placeId, coords)}
-        />
-      )}
-
       {nearbyKind && (
         <NearbyPlacesModal
           kind={nearbyKind}
           city={activeCity}
           // ที่เที่ยวมองทั้งเมือง เลยอิงกลางเมืองเสมอ ไม่ให้ผลลัพธ์เอียงไปตามจุดแวะล่าสุด
-          // ส่วนร้านอาหารอิงจุดแวะล่าสุดของวันนั้นเหมือนเดิม เพราะต้องการร้านที่เดินต่อจากจุดนั้นได้
+          // ส่วนร้านอาหาร/สถานที่แนะนำอิงจุดแวะล่าสุดของวันนั้น เพราะต้องการที่ที่เดินต่อจากจุดนั้นได้
           center={nearbyKind === "attraction" ? cityCenter(activeCity) : nearbyCenter}
           addedBy={who}
           onClose={() => setNearbyKind(null)}
           onAdded={(placeId, coords) => onAddStopToDay(focusedDayId, placeId, coords)}
+          // เพิ่มเข้าคลังเฉยๆ ไม่ลงตาราง — การ์ดโผล่ในคลังเองผ่าน realtime echo ของ customPlaces
+          onAddedToLibrary={() => {}}
         />
       )}
     </div>

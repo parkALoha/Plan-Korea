@@ -36,10 +36,28 @@ const TYPE_TO_CATEGORY: Record<string, Category> = {
   restaurant: "restaurant",
 };
 
+// Google ส่ง primaryType ที่ไม่อยู่ในตารางข้างบนมาบ่อยมาก โดยเฉพาะร้านอาหารที่แยกตามสัญชาติ
+// (korean_restaurant, vietnamese_restaurant, ...) ถ้าไม่ดักไว้จะตกไปเป็น fallback หมด
+// = ร้านอาหารไปโผล่หมวดจุดชมวิว เช็คหลัง exact match เสมอ (food_court ต้องเป็น market ไม่ใช่ shopping)
+const PATTERN_RULES: [RegExp, Category][] = [
+  [/_restaurant$|^restaurant_|_food$/, "restaurant"],
+  [/cafe|coffee|_bakery$/, "cafe"],
+  [/_market$|_grocery_store$|food_court/, "market"],
+  [/_store$|_shop$|shopping/, "shopping"],
+  [/_bar$|_club$|karaoke/, "nightlife"],
+  [/temple|shrine|_church$|mosque|museum|historical/, "culture"],
+  [/park$|garden|forest|mountain|trail/, "nature"],
+];
+
 export function categoryFromGoogleType(
   googleType: string | null | undefined,
   fallback: Category = "viewpoint"
 ): Category {
   if (!googleType) return fallback;
-  return TYPE_TO_CATEGORY[googleType] ?? fallback;
+  const exact = TYPE_TO_CATEGORY[googleType];
+  if (exact) return exact;
+  for (const [pattern, category] of PATTERN_RULES) {
+    if (pattern.test(googleType)) return category;
+  }
+  return fallback;
 }

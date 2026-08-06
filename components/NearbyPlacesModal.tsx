@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import type { Category, Place } from "@/data/places";
-import type { PlaceSuggestion } from "@/lib/googlePlaces";
 import { categoryFromGoogleType } from "@/lib/placeCategory";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 
@@ -23,7 +22,7 @@ type NearbyResult = {
   primaryType: string | null;
 };
 
-export type NearbyKind = "restaurant" | "attraction";
+export type NearbyKind = "restaurant" | "attraction" | "place";
 
 const KIND_CONFIG: Record<
   NearbyKind,
@@ -41,10 +40,20 @@ const KIND_CONFIG: Record<
     emptyText: "ไม่พบที่เที่ยวแถวนี้",
     searchPlaceholder: "หรือค้นหาชื่อที่เที่ยวที่รู้อยู่แล้ว...",
   },
+  place: {
+    title: "📍 สถานที่ท่องเที่ยว",
+    nearbyHeading: "สถานที่แนะนำแถวนี้",
+    emptyText: "ไม่พบสถานที่แถวนี้",
+    searchPlaceholder: "ค้นหาชื่อสถานที่...",
+  },
 };
 
 function categoryFor(kind: NearbyKind, r: NearbyResult): Category {
   return kind === "restaurant" ? "restaurant" : categoryFromGoogleType(r.googleType);
+}
+
+function resultKey(r: NearbyResult): string {
+  return r.id ?? r.name;
 }
 
 function resultToPreviewPlace(
@@ -54,7 +63,7 @@ function resultToPreviewPlace(
 ): Place | null {
   if (r.lat == null || r.lng == null) return null;
   return {
-    id: `preview-${r.id ?? r.name}`,
+    id: `preview-${resultKey(r)}`,
     nameTh: r.name,
     nameEn: r.name,
     city,
@@ -68,8 +77,9 @@ function resultToPreviewPlace(
 }
 
 // ค้นหาสถานที่รอบจุดอ้างอิงของวันนั้น (จุดแวะล่าสุด → ที่พัก → กลางเมือง) ด้วย Nearby Search (New)
-// kind=restaurant → ร้านอาหารรัศมีแคบ เรียงตามใกล้ / kind=attraction → ที่เที่ยวทั้งเมือง เรียงตามความนิยม
-// มีช่องค้นหาด้วยชื่อ (พร้อมเติมคำอัตโนมัติ) เผื่อรู้ชื่อเป๊ะๆ อยู่แล้ว — ทั้งคู่จำกัดผลลัพธ์ไว้ในเมืองนั้น
+// kind=restaurant → ร้านอาหารรัศมีแคบ เรียงตามใกล้ / attraction → ที่เที่ยวทั้งเมือง / place → คละทุกประเภทแถวนั้น
+// พิมพ์ในช่องค้นหา = ยิง Text Search แบบ debounce ซึ่งคืนข้อมูลชุดเดียวกับลิสต์ใกล้ๆ เป๊ะ
+// (รูป/เรทติ้ง/พิกัด/ประเภท) เลยเรนเดอร์ด้วย ResultRow ตัวเดียวกันได้ ทั้งคู่จำกัดผลลัพธ์ไว้ในเมืองนั้น
 // กดที่การ์ดเพื่อดูรายละเอียด (เรทติ้ง/รีวิว/เวลาเปิด-ปิด/รูป) ก่อนตัดสินใจเพิ่มได้
 export function NearbyPlacesModal({
   kind = "restaurant",
@@ -78,6 +88,7 @@ export function NearbyPlacesModal({
   addedBy,
   onClose,
   onAdded,
+  onAddedToLibrary,
 }: {
   kind?: NearbyKind;
   city: Place["city"];
@@ -85,6 +96,8 @@ export function NearbyPlacesModal({
   addedBy?: string;
   onClose: () => void;
   onAdded: (placeId: string, coords: { lat: number; lng: number }) => void;
+  /** ไม่ส่งมา = ซ่อนปุ่ม "ลงคลัง" (เช่น flow แทรกจุดแวะในตาราง ที่ต้องการลงแผนตรงตำแหน่งเท่านั้น) */
+  onAddedToLibrary?: () => void;
 }) {
   const config = KIND_CONFIG[kind];
   useBodyScrollLock();
@@ -94,47 +107,39 @@ export function NearbyPlacesModal({
     key: string;
     results: NearbyResult[];
   } | null>(null);
-  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addingKey, setAddingKey] = useState<string | null>(null);
+  // modal ไม่ปิดตอนกด "ลงคลัง" (ให้เพิ่มหลายที่รวดได้) เลยต้องจำว่าแถวไหนเพิ่มไปแล้ว
+  // sidebar เห็นการ์ดใหม่ผ่าน realtime echo อีกทาง ซึ่งช้ากว่าที่ผู้ใช้จะกดซ้ำ
+  const [libraryKeys, setLibraryKeys] = useState<Set<string>>(new Set());
   const [previewResult, setPreviewResult] = useState<NearbyResult | null>(null);
   const centerKey = `${center.lat},${center.lng}`;
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchStatus, setSearchStatus] = useState<
-    "idle" | "loading" | "error"
-  >("idle");
-  const [searchResults, setSearchResults] = useState<NearbyResult[] | null>(
-    null,
-  );
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [suggestOpen, setSuggestOpen] = useState(false);
-  const skipNextSuggest = useRef(false);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [searchResults, setSearchResults] = useState<NearbyResult[] | null>(null);
 
-  // เติมคำ/คาดเดาชื่อร้านแบบ debounce 300ms เหมือนใน "เพิ่มสถานที่เอง"
-  // bias ไปที่จุดศูนย์กลางที่ใช้หาร้านใกล้ๆ อยู่แล้ว ผลลัพธ์เลยเป็นร้านแถวนั้นก่อน
+  // พิมพ์แล้วค้นเลยแบบ debounce 400ms — ไม่ใช้ Autocomplete API เพราะมันคืนแค่ชื่อ (ไม่มีรูป/เรทติ้ง/พิกัด)
+  // ทำให้ลิสต์หน้าตาไม่เหมือนลิสต์ใกล้ๆ แถมยังแมตช์ชื่อจังหวัด/แม่น้ำปนมาด้วย ส่วน Text Search
+  // คืน shape เดียวกับ /api/place-nearby และมี cache 30 วันอยู่แล้ว
   useEffect(() => {
-    if (skipNextSuggest.current) {
-      skipNextSuggest.current = false;
-      return;
-    }
-    if (!searchQuery.trim()) {
-      setSuggestions([]);
-      setSuggestOpen(false);
-      return;
-    }
+    const q = searchQuery.trim();
+    if (!q) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
+      setSearchStatus("loading");
       try {
+        // ส่งพิกัดไปด้วย = ล็อกผลลัพธ์ให้อยู่ในเมืองนี้เท่านั้น (พิมพ์ไทยแล้วไม่ได้ร้านในไทยขึ้นมา)
         const res = await fetch(
-          `/api/place-autocomplete?input=${encodeURIComponent(searchQuery)}&lat=${center.lat}&lng=${center.lng}`,
+          `/api/place-search?query=${encodeURIComponent(q)}&lat=${center.lat}&lng=${center.lng}`,
           { signal: controller.signal },
         );
         const data = await res.json();
-        setSuggestions(data.suggestions ?? []);
-        setSuggestOpen(true);
+        setSearchResults(data.results ?? []);
+        setSearchStatus(data.results?.length ? "idle" : "error");
       } catch {
         // ยกเลิกจากการพิมพ์ต่อ (AbortError) ไม่ต้องทำอะไร
       }
-    }, 300);
+    }, 400);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -167,38 +172,15 @@ export function NearbyPlacesModal({
         ? "idle"
         : "error";
 
-  async function handleSearch(queryOverride?: string) {
-    const q = (queryOverride ?? searchQuery).trim();
-    if (!q) return;
-    setSuggestOpen(false);
-    setSearchStatus("loading");
-    try {
-      // ส่งพิกัดไปด้วย = ล็อกผลลัพธ์ให้อยู่ในเมืองนี้เท่านั้น (พิมพ์ไทยแล้วไม่ได้ร้านในไทยขึ้นมา)
-      const res = await fetch(
-        `/api/place-search?query=${encodeURIComponent(q)}&lat=${center.lat}&lng=${center.lng}`,
-      );
-      const data = await res.json();
-      setSearchResults(data.results ?? []);
-      setSearchStatus(data.results?.length ? "idle" : "error");
-    } catch {
-      setSearchStatus("error");
-    }
+  function clearSearch() {
+    setSearchQuery("");
+    setSearchResults(null);
+    setSearchStatus("idle");
   }
 
-  // เลือกจากลิสต์คำแนะนำ = ยิง text search ด้วยชื่อเต็มของร้านนั้น จะได้รูป/เรทติ้ง/รีวิวมาครบเหมือนผลค้นหาปกติ
-  function handlePickSuggestion(suggestion: PlaceSuggestion) {
-    skipNextSuggest.current = true;
-    const label = suggestion.secondaryText
-      ? `${suggestion.mainText}, ${suggestion.secondaryText}`
-      : suggestion.mainText;
-    setSearchQuery(label);
-    setSuggestions([]);
-    handleSearch(label);
-  }
-
-  async function handleAdd(result: NearbyResult) {
-    if (result.lat == null || result.lng == null) return;
-    setAddingId(result.id ?? result.name);
+  // บันทึกเข้าคลังก่อนเสมอ (ทั้ง 2 ปุ่มต้องมีสถานที่นี้ในคลัง) แล้วคืน id + พิกัดให้ผู้เรียกตัดสินใจต่อ
+  async function saveToLibrary(result: NearbyResult) {
+    if (result.lat == null || result.lng == null) return null;
     const saved = await addCustomPlace({
       added_by: addedBy ?? null,
       city,
@@ -210,13 +192,33 @@ export function NearbyPlacesModal({
       maps_query: result.name,
       description: result.formattedAddress,
     });
+    return { id: saved.id, coords: { lat: result.lat, lng: result.lng } };
+  }
+
+  async function handleAddToPlan(result: NearbyResult) {
+    setAddingKey(resultKey(result));
+    const saved = await saveToLibrary(result);
+    if (!saved) return;
     // ส่งพิกัดกลับไปด้วยเลย ไม่ให้ผู้เรียกต้อง resolvePlace(saved.id, customPlaces) เอง
     // เพราะ customPlaces state ยังไม่ทันอัปเดตตอนนี้ (รอ realtime echo) จะได้ undefined
-    onAdded(saved.id, { lat: result.lat, lng: result.lng });
+    onAdded(saved.id, saved.coords);
     onClose();
   }
 
+  async function handleAddToLibrary(result: NearbyResult) {
+    const key = resultKey(result);
+    setAddingKey(key);
+    const saved = await saveToLibrary(result);
+    setAddingKey(null);
+    if (!saved) return;
+    setLibraryKeys((prev) => new Set(prev).add(key));
+    onAddedToLibrary?.();
+  }
+
   function ResultRow({ r }: { r: NearbyResult }) {
+    const key = resultKey(r);
+    const inLibrary = libraryKeys.has(key);
+    const busy = addingKey === key;
     return (
       <div className="flex items-center gap-3 rounded-xl border border-cream-soft p-2">
         <button
@@ -251,13 +253,24 @@ export function NearbyPlacesModal({
             )}
           </div>
         </button>
-        <button
-          onClick={() => handleAdd(r)}
-          disabled={addingId != null}
-          className="shrink-0 rounded-lg bg-maple px-3 py-1.5 text-xs font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
-        >
-          + เพิ่ม
-        </button>
+        <div className="flex shrink-0 flex-col gap-1">
+          <button
+            onClick={() => handleAddToPlan(r)}
+            disabled={addingKey != null}
+            className="rounded-lg bg-maple px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+          >
+            + ลงแผน
+          </button>
+          {onAddedToLibrary && (
+            <button
+              onClick={() => handleAddToLibrary(r)}
+              disabled={addingKey != null || inLibrary}
+              className="rounded-lg border border-maple/40 px-2.5 py-1 text-[11px] font-semibold text-maple-dark hover:bg-maple-soft disabled:opacity-40"
+            >
+              {inLibrary ? "✓ เพิ่มแล้ว" : busy ? "..." : "+ ลงคลัง"}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -291,68 +304,37 @@ export function NearbyPlacesModal({
           <div className="flex gap-2">
             <input
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => {
-                if (suggestions.length > 0) setSuggestOpen(true);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSearch();
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (!e.target.value.trim()) {
+                  setSearchResults(null);
+                  setSearchStatus("idle");
                 }
               }}
               placeholder={config.searchPlaceholder}
               className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
             />
-            <button
-              onClick={() => handleSearch()}
-              disabled={!searchQuery.trim() || searchStatus === "loading"}
-              className="shrink-0 rounded-lg bg-pine px-4 py-2 text-sm font-medium text-cream hover:bg-pine-dark disabled:opacity-40"
-            >
-              {searchStatus === "loading" ? "..." : "ค้นหา"}
-            </button>
+            {searchQuery.trim() && (
+              <button
+                onClick={clearSearch}
+                aria-label="ล้างคำค้นหา"
+                className="shrink-0 rounded-lg bg-cream-soft px-3 py-2 text-sm font-medium text-ink-soft hover:bg-maple-soft hover:text-maple-dark"
+              >
+                ✕
+              </button>
+            )}
           </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-          {suggestOpen && suggestions.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <h3 className="text-xs font-semibold text-ink-soft">คำแนะนำ</h3>
-              {suggestions.map((s) => (
-                <button
-                  key={s.placeId}
-                  type="button"
-                  onClick={() => handlePickSuggestion(s)}
-                  className="flex w-full items-center gap-3 rounded-xl border border-cream-soft p-2 text-left hover:border-maple/40"
-                >
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-cream-soft text-ink-soft">
-                    📍
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-ink">{s.mainText}</div>
-                    {s.secondaryText && (
-                      <div className="truncate text-xs text-ink-soft">{s.secondaryText}</div>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {!suggestOpen && searchResults != null && (
+          {searchResults != null && (
             <div className="mt-3">
               <div className="mb-1.5 flex items-center justify-between">
                 <h3 className="text-xs font-semibold text-ink-soft">
                   ผลค้นหา &quot;{searchQuery}&quot;
                 </h3>
                 <button
-                  onClick={() => {
-                    setSearchResults(null);
-                    setSearchQuery("");
-                    skipNextSuggest.current = true;
-                    setSuggestions([]);
-                    setSuggestOpen(false);
-                  }}
+                  onClick={clearSearch}
                   className="text-xs text-ink-soft underline hover:text-ink"
                 >
                   ← กลับไปดูลิสต์แนะนำ
@@ -365,16 +347,16 @@ export function NearbyPlacesModal({
               )}
               <div className="space-y-2">
                 {searchResults.map((r, i) => (
-                  <ResultRow key={`${r.id ?? r.name}-${i}`} r={r} />
+                  <ResultRow key={`${resultKey(r)}-${i}`} r={r} />
                 ))}
               </div>
             </div>
           )}
 
-          {!suggestOpen && searchResults == null && (
+          {searchResults == null && (
             <div className="mt-3">
               <h3 className="mb-1.5 text-xs font-semibold text-ink-soft">
-                {config.nearbyHeading}
+                {searchStatus === "loading" ? "กำลังค้นหา..." : config.nearbyHeading}
               </h3>
               {nearbyStatus === "loading" && (
                 <p className="py-6 text-center text-sm text-ink-soft">
@@ -389,7 +371,7 @@ export function NearbyPlacesModal({
               {nearbyStatus === "idle" && (
                 <div className="space-y-2">
                   {nearbyResults.map((r, i) => (
-                    <ResultRow key={`${r.id ?? r.name}-${i}`} r={r} />
+                    <ResultRow key={`${resultKey(r)}-${i}`} r={r} />
                   ))}
                 </div>
               )}
@@ -406,7 +388,7 @@ export function NearbyPlacesModal({
           hotel={null}
           onClose={() => setPreviewResult(null)}
           onConfirm={() => {
-            if (previewResult) handleAdd(previewResult);
+            if (previewResult) handleAddToPlan(previewResult);
           }}
         />
       )}

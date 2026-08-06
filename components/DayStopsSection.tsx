@@ -24,7 +24,7 @@ import {
 } from "@/lib/schedule";
 import { useDayTravelTimes, type TravelTimePair } from "@/hooks/useDayTravelTimes";
 import { useDayOpeningHours } from "@/hooks/useDayOpeningHours";
-import { isOpenDuring } from "@/lib/openingHours";
+import { isOpenDuring, weekdayHoursLabel } from "@/lib/openingHours";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 
 const DWELL_STEP_MINUTES = 15;
@@ -138,6 +138,7 @@ function SortableStopRow({
   isFlashing,
   isTravelReal,
   closedWarning,
+  closedHoursLabel,
   onSetTravelMode,
   onView,
   onUpdateDwell,
@@ -154,6 +155,8 @@ function SortableStopRow({
   isTravelReal: boolean;
   /** true = เวลาที่คำนวณได้ (ถึง-ออก) ตกนอกเวลาเปิดของสถานที่นี้ ตามข้อมูลจาก Google */
   closedWarning: boolean;
+  /** ข้อความเวลาเปิด-ปิดของวันนั้นจาก Google (เช่น "วันจันทร์: 9:00–18:00") โชว์คู่กับ closedWarning ให้รู้ว่าเปิดกี่โมงจริงๆ */
+  closedHoursLabel: string | null;
   onSetTravelMode: (mode: TravelMode) => void;
   onView: () => void;
   onUpdateDwell: (minutes: number) => void;
@@ -359,7 +362,8 @@ function SortableStopRow({
       </div>
       {closedWarning && (
         <div className="bg-maple-soft/60 px-4 pb-2 text-[11px] text-maple-dark">
-          ⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว (ตามเวลาเปิด-ปิดจาก Google)
+          ⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว
+          {closedHoursLabel ? ` — ${closedHoursLabel}` : " (ตามเวลาเปิด-ปิดจาก Google)"}
         </div>
       )}
     </div>
@@ -626,6 +630,11 @@ export function DayStopsSection({
                     sched.arrival,
                     sched.departure
                   ) === false
+                }
+                closedHoursLabel={
+                  sched.place != null
+                    ? weekdayHoursLabel(openingHoursByQuery.get(sched.place.mapsQuery), day.date)
+                    : null
                 }
                 onSetTravelMode={(mode) => onUpdateTravelMode(stop.id, mode)}
                 onView={() => setViewIndex(i)}

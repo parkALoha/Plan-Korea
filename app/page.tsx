@@ -473,7 +473,7 @@ export default function Home() {
               hotelForDay={hotelForDay}
               onAddStopToDay={(dayId, placeId, coords) => {
                 const prevPlace = lastStopPlaceForDay(dayId);
-                // coords มาจาก AddPlaceModal/NearbyPlacesModal ตอนสร้าง custom place ใหม่ — ใช้แทน resolvePlace
+                // coords มาจาก NearbyPlacesModal ตอนสร้าง custom place ใหม่ — ใช้แทน resolvePlace
                 // เพราะ customPlaces state ยังไม่ทันมีสถานที่นี้ (รอ realtime echo) ส่วนสถานที่จากคลังปกติ resolve ได้เลย
                 const newPlace = coords ?? resolvePlace(placeId, customPlaces);
                 addStop(

@@ -52,7 +52,7 @@ export function PlaceCard({
           {distanceLabel && (
             <div className="mt-0.5 truncate text-[11px] text-pine-dark">📍 {distanceLabel}</div>
           )}
-          {place.category === "restaurant" && details?.rating != null && (
+          {details?.rating != null && (
             <div className="mt-0.5 truncate text-[11px] text-maple-dark">
               ⭐ {details.rating.toFixed(1)}
               {details.userRatingCount != null && ` (${details.userRatingCount})`}

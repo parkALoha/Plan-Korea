@@ -132,9 +132,11 @@ export function HotelEditModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl"
+        className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl bg-white sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* หัว + ปุ่มบันทึก อยู่นิ่งตลอด ไม่ว่าจะเลื่อนเนื้อหาตรงกลางไปแค่ไหน — ไม่ต้องเลื่อนหาปุ่ม */}
+        <div className="shrink-0 px-5 pt-5">
         <div className="mb-3 flex items-start justify-between">
           <h2 className="text-lg font-bold text-ink">
             ที่พัก — {CITY_NAME_TH[leg.city]}
@@ -146,7 +148,9 @@ export function HotelEditModal({
             ✕
           </button>
         </div>
+        </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-3">
         <label className="mb-1 block text-xs font-medium text-ink-soft">
           ชื่อ/ที่อยู่โรงแรม
         </label>
@@ -256,7 +260,9 @@ export function HotelEditModal({
           </div>
         )}
 
-        <div className="mt-5 flex gap-2">
+        </div>
+
+        <div className="shrink-0 flex gap-2 px-5 pb-5 pt-3">
           {existing && (
             <button
               onClick={() => {

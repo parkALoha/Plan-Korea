@@ -35,9 +35,11 @@ export function PlaceDetailModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl"
+        className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl bg-white sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* หัว + ปุ่มยืนยัน อยู่นิ่งตลอด ไม่ว่าจะเลื่อนเนื้อหาตรงกลางไปแค่ไหน — ไม่ต้องเลื่อนหาปุ่ม */}
+        <div className="shrink-0 px-5 pt-5">
         <div className="mb-3 flex items-start justify-between">
           <div>
             <span className="text-xs text-ink-soft">
@@ -53,7 +55,9 @@ export function PlaceDetailModal({
             ✕
           </button>
         </div>
+        </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         <div className="mb-3 flex flex-wrap gap-2">
           <p className="inline-block rounded-full bg-pine-soft px-3 py-1 text-xs text-pine-dark">
             {travelLabel}
@@ -121,14 +125,17 @@ export function PlaceDetailModal({
 
         <h3 className="mb-2 mt-4 text-sm font-semibold text-ink">คลิปวิดีโอ</h3>
         <YouTubeEmbed query={place.youtubeQuery} />
+        </div>
 
         {onConfirm && (
-          <button
-            onClick={onConfirm}
-            className="mt-5 w-full rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark"
-          >
-            ยืนยันเลือกที่นี่
-          </button>
+          <div className="shrink-0 px-5 pb-5 pt-3">
+            <button
+              onClick={onConfirm}
+              className="w-full rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark"
+            >
+              ยืนยันเลือกที่นี่
+            </button>
+          </div>
         )}
       </div>
     </div>
