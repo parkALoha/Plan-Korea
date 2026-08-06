@@ -256,7 +256,7 @@ function PlaceSidebarContent({
               onClick={() => setNearbyKind("place")}
               className="flex-1 rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
             >
-              + สถานที่ท่องเที่ยว
+              สถานที่ท่องเที่ยว
             </button>
             <button
               onClick={() => setNearbyKind("restaurant")}
