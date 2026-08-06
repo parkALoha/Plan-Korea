@@ -50,9 +50,10 @@ export const DEFAULT_DWELL_MINUTES: Record<Category, number> = {
   nightlife: 90,
   viewpoint: 25,
   shopping: 60,
+  restaurant: 75,
 };
 
-function timeToMinutes(time: string): number {
+export function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
 }

@@ -59,6 +59,8 @@ export type TripStop = {
   dwell_minutes: number | null;
   /** โหมดเดินทางมาจุดนี้จากจุดก่อนหน้าในวันเดียวกัน — "walk" | "transit" | "drive" | null (ยังไม่เลือก) */
   travel_mode: string | null;
+  /** โน้ตสั้นๆ ที่จดเอง เช่น "ร้านนี้อร่อย รีบไป" — null/ว่าง = ไม่มีโน้ต */
+  note: string | null;
   added_by: string | null;
   updated_at: string;
 };

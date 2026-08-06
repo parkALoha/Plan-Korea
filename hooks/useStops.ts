@@ -66,7 +66,7 @@ export function useStops(planId: string | null) {
 
   // คืน id ของจุดแวะที่เพิ่งเพิ่ม (ให้ผู้เรียกเอาไปเล่น animation "เพิ่งถูกเพิ่ม" ต่อได้)
   const addStop = useCallback(
-    async (dayId: string, placeId: string, addedBy?: string) => {
+    async (dayId: string, placeId: string, addedBy?: string, travelMode?: string | null) => {
       if (!planId) return undefined;
       const dayStops = stops.filter((s) => s.day_id === dayId);
       const newStop: TripStop = {
@@ -76,7 +76,8 @@ export function useStops(planId: string | null) {
         place_id: placeId,
         order_index: dayStops.length,
         dwell_minutes: null,
-        travel_mode: null,
+        travel_mode: travelMode ?? null,
+        note: null,
         added_by: addedBy ?? null,
         updated_at: new Date().toISOString(),
       };
@@ -85,6 +86,56 @@ export function useStops(planId: string | null) {
         return newStop.id;
       }
       await supabase.from("trip_stops").insert(newStop);
+      return newStop.id;
+    },
+    [planId, stops]
+  );
+
+  /** ใช้ตอน "แทรกร้านตรงนี้" — เพิ่มจุดแวะแทรกกลางวันที่ atIndex แทนที่จะต่อท้ายวันเสมอเหมือน addStop
+   *  ดัน order_index ของจุดแวะที่อยู่ >= atIndex ในวันเดียวกันขึ้นไปทีละ 1 ก่อน แล้วค่อยแทรกจุดใหม่เข้าไป
+   *  อัปเดต state local ก่อนเลย (optimistic) เหมือน reorderStops กัน UI สะดุดระหว่างรอ realtime */
+  const insertStopAt = useCallback(
+    async (
+      dayId: string,
+      placeId: string,
+      atIndex: number,
+      addedBy?: string,
+      travelMode?: string | null
+    ) => {
+      if (!planId) return undefined;
+      const newStop: TripStop = {
+        id: makeStopId(),
+        plan_id: planId,
+        day_id: dayId,
+        place_id: placeId,
+        order_index: atIndex,
+        dwell_minutes: null,
+        travel_mode: travelMode ?? null,
+        note: null,
+        added_by: addedBy ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const toShift = stops.filter((s) => s.day_id === dayId && s.order_index >= atIndex);
+      setStops((prev) =>
+        sortStops([
+          ...prev.map((s) =>
+            s.day_id === dayId && s.order_index >= atIndex
+              ? { ...s, order_index: s.order_index + 1 }
+              : s
+          ),
+          newStop,
+        ])
+      );
+      if (!supabaseConfigured) return newStop.id;
+      await Promise.all([
+        ...toShift.map((s) =>
+          supabase
+            .from("trip_stops")
+            .update({ order_index: s.order_index + 1, updated_at: new Date().toISOString() })
+            .eq("id", s.id)
+        ),
+        supabase.from("trip_stops").insert(newStop),
+      ]);
       return newStop.id;
     },
     [planId, stops]
@@ -124,6 +175,17 @@ export function useStops(planId: string | null) {
     await supabase
       .from("trip_stops")
       .update({ travel_mode: travelMode, updated_at: new Date().toISOString() })
+      .eq("id", stopId);
+  }, []);
+
+  const updateNote = useCallback(async (stopId: string, note: string | null) => {
+    if (!supabaseConfigured) {
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, note } : s)));
+      return;
+    }
+    await supabase
+      .from("trip_stops")
+      .update({ note, updated_at: new Date().toISOString() })
       .eq("id", stopId);
   }, []);
 
@@ -204,9 +266,11 @@ export function useStops(planId: string | null) {
     stops,
     loaded,
     addStop,
+    insertStopAt,
     updateStopPlace,
     updateDwellMinutes,
     updateTravelMode,
+    updateNote,
     updateOrderIndex,
     reorderStops,
     moveStopToDay,

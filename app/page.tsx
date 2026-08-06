@@ -17,11 +17,14 @@ import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { DayStopsSection } from "@/components/DayStopsSection";
 import { HotelLegsPanel } from "@/components/HotelLegsPanel";
 import { PlaceSidebar } from "@/components/PlaceSidebar";
-import { CATEGORY_EMOJI } from "@/data/places";
+import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
+import { CATEGORY_EMOJI, cityCenter, type Place } from "@/data/places";
 import { CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
-import { deriveHotelLegs, dayIdToLegId } from "@/lib/hotelLegs";
+import { applyOvernightOverrides, deriveHotelLegs, dayIdToLegId } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
+import { haversineKm } from "@/lib/geo";
+import type { TravelMode } from "@/lib/schedule";
 import type { TripStop } from "@/lib/supabase";
 import { useHotels } from "@/hooks/useHotels";
 import { useSelections } from "@/hooks/useSelections";
@@ -30,8 +33,23 @@ import { useStops } from "@/hooks/useStops";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { useHiddenPlaces } from "@/hooks/useHiddenPlaces";
+import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 
 const DEFAULT_PLAN_ID = "plan-default";
+
+// ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
+// (ทริปนี้ไม่มีรถส่วนตัว แท็กซี่ต้องเลือกเองเสมอ ไม่ใช่ค่าเริ่มต้น) ใช้ตอนเพิ่ม/แทรกจุดแวะใหม่
+// เพื่อให้มันไปดึงเวลาจริงจาก Google มาโชว์ได้ทันทีโดยไม่ต้องรอผู้ใช้กดเลือกโหมดเอง
+const WALK_THRESHOLD_KM = 1;
+
+function defaultTravelModeFor(
+  fromPlace: { lat: number; lng: number } | null | undefined,
+  toPlace: { lat: number; lng: number } | null | undefined
+): TravelMode | null {
+  if (!fromPlace || !toPlace) return null;
+  const km = haversineKm(fromPlace.lat, fromPlace.lng, toPlace.lat, toPlace.lng);
+  return km < WALK_THRESHOLD_KM ? "walk" : "transit";
+}
 
 export default function Home() {
   // ระบบเดิม (fixed slot) — ยังอ่านไว้เผื่อ bootstrap ครั้งแรกเท่านั้น ไม่ได้ใช้ render แล้ว
@@ -44,10 +62,12 @@ export default function Home() {
     stops,
     loaded: stopsLoaded,
     addStop,
+    insertStopAt,
     reorderStops,
     moveStopToDay,
     updateDwellMinutes,
     updateTravelMode,
+    updateNote,
     removeStop,
     bulkInsert,
   } = useStops(activePlanId);
@@ -60,6 +80,17 @@ export default function Home() {
     hidePlace,
     unhidePlace,
   } = useHiddenPlaces();
+  const {
+    overnightOverrides,
+    loaded: overnightLoaded,
+    setOvernightCity,
+  } = useOvernightOverrides();
+
+  // แผนทริปจริงที่ใช้ทั้งหน้า = ITINERARY + คืนที่เลือกเมืองนอนเองไว้ (เช่น คืน 16 ต.ค. คังนึง/ซกโช)
+  const itinerary = useMemo(
+    () => applyOvernightOverrides(ITINERARY, overnightOverrides),
+    [overnightOverrides]
+  );
 
   const [who, setWho] = useState(() =>
     typeof window !== "undefined" ? window.localStorage.getItem("trip-who") ?? "" : ""
@@ -71,12 +102,14 @@ export default function Home() {
 
   // เมือง/วันที่โฟกัสอยู่ใน sidebar เลือกสถานที่ — คุมจากที่นี่แทนที่จะให้ sidebar เก็บ state เอง
   // เพื่อให้ปุ่ม "+ เพิ่มสถานที่" ในแต่ละวันสั่งโฟกัส sidebar มาที่วันนั้นได้เลย
-  const [activeCity, setActiveCity] = useState<Day["city"]>(ITINERARY[0].city);
-  const [focusedDayId, setFocusedDayId] = useState<string>(ITINERARY[0].id);
+  // เปิดมาให้อยู่ที่วันแรกในเกาหลี ไม่ใช่วันบิน/พักเครื่องที่ฮานอย (ซึ่งเป็นวันแรกตามลำดับเวลา)
+  const firstKoreaDay = ITINERARY.find((d) => d.city !== "hanoi") ?? ITINERARY[0];
+  const [activeCity, setActiveCity] = useState<Day["city"]>(firstKoreaDay.city);
+  const [focusedDayId, setFocusedDayId] = useState<string>(firstKoreaDay.id);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
   function openPickerForDay(dayId: string) {
-    const day = ITINERARY.find((d) => d.id === dayId);
+    const day = itinerary.find((d) => d.id === dayId);
     if (!day) return;
     setActiveCity(day.city);
     setFocusedDayId(dayId);
@@ -110,6 +143,7 @@ export default function Home() {
             order_index: orderIndex++,
             dwell_minutes: null,
             travel_mode: null,
+            note: null,
             added_by: sel.selected_by,
             updated_at: sel.updated_at,
           });
@@ -122,7 +156,7 @@ export default function Home() {
     bootstrap();
   }, [plansLoaded, selectionsLoaded, plans.length, selections, createPlan, bulkInsert]);
 
-  const hotelLegs = useMemo(() => deriveHotelLegs(ITINERARY), []);
+  const hotelLegs = useMemo(() => deriveHotelLegs(itinerary), [itinerary]);
   const legIdByDayId = useMemo(() => dayIdToLegId(hotelLegs), [hotelLegs]);
 
   const hotelForDay = useCallback(
@@ -144,12 +178,12 @@ export default function Home() {
   // place ที่ถูกเพิ่มลงวันไหนก็ได้ของเมืองนั้นแล้ว — กันไม่ให้โชว์ซ้ำใน sidebar ให้เลือกอีก
   const selectedPlaceIdsByCity = useMemo(() => {
     const map: Record<string, Set<string>> = {};
-    for (const day of ITINERARY) {
+    for (const day of itinerary) {
       const set = (map[day.city] ??= new Set());
       for (const stop of stopsByDay[day.id] ?? []) set.add(stop.place_id);
     }
     return map;
-  }, [stopsByDay]);
+  }, [itinerary, stopsByDay]);
   const selectedPlaceIdsForCity = useCallback(
     (city: string) => selectedPlaceIdsByCity[city] ?? new Set<string>(),
     [selectedPlaceIdsByCity]
@@ -175,6 +209,15 @@ export default function Home() {
   const [activeDrag, setActiveDrag] = useState<
     { kind: "place"; placeId: string } | { kind: "stop"; stopId: string } | null
   >(null);
+
+  // บริบทตอนกด "+ แทรกร้านตรงนี้" ระหว่างจุดแวะ 2 จุด — เก็บวัน/ตำแหน่งที่จะแทรก + จุดศูนย์กลางค้นหา
+  // (จุดก่อนหน้าตำแหน่งนั้น) ไว้เปิด modal ค้นร้านอาหารแบบเจาะจงตำแหน่ง แยกจากปุ่ม "ร้านใกล้ๆ" ที่คลังข้างเคียง
+  const [insertContext, setInsertContext] = useState<{
+    dayId: string;
+    atIndex: number;
+    center: { lat: number; lng: number };
+    prevPlace: Place | null;
+  } | null>(null);
 
   // id ของจุดแวะที่เพิ่งถูกเพิ่ม (ลากหรือกด +) — ใช้ไฮไลต์แถวนั้นสั้นๆ ให้รู้สึกว่า "เพิ่มสำเร็จ"
   const [flashStopId, setFlashStopId] = useState<string | null>(null);
@@ -220,7 +263,7 @@ export default function Home() {
     if (activeData.type === "place") {
       // ลากการ์ดจากคลังมาวางในวัน — ถ้าคนละเมืองแค่เตือน (เผื่อวันเดินทางที่แวะได้สองเมือง) ไม่บล็อกเงียบๆ
       if (!targetDayId) return;
-      const targetDay = ITINERARY.find((d) => d.id === targetDayId);
+      const targetDay = itinerary.find((d) => d.id === targetDayId);
       const place = resolvePlace(activeData.placeId, customPlaces);
       if (!targetDay || !place) return;
       if (
@@ -231,7 +274,13 @@ export default function Home() {
       ) {
         return;
       }
-      addStop(targetDayId, activeData.placeId, who || undefined).then(flashNewStop);
+      const prevPlace = lastStopPlaceForDay(targetDayId);
+      addStop(
+        targetDayId,
+        activeData.placeId,
+        who || undefined,
+        defaultTravelModeFor(prevPlace, place)
+      ).then(flashNewStop);
       return;
     }
 
@@ -257,7 +306,7 @@ export default function Home() {
     }
 
     // ย้ายข้ามวัน — คนละเมืองก็แค่เตือนเหมือนกัน (ทริปทางผ่านบางทีก็เที่ยว 2 เมืองในวันเดียวได้จริง)
-    const targetDay = ITINERARY.find((d) => d.id === targetDayId);
+    const targetDay = itinerary.find((d) => d.id === targetDayId);
     const movingStop = stops.find((s) => s.id === stopId);
     const place = movingStop ? resolvePlace(movingStop.place_id, customPlaces) : null;
     if (!targetDay || !place) return;
@@ -306,6 +355,7 @@ export default function Home() {
     plansLoaded &&
     customPlacesLoaded &&
     hiddenPlacesLoaded &&
+    overnightLoaded &&
     (!activePlanId || (stopsLoaded && daySettingsLoaded));
   const activePlan = plans.find((p) => p.id === activePlanId);
 
@@ -320,7 +370,7 @@ export default function Home() {
         <header className="bg-pine px-4 pb-8 pt-10 text-cream">
           <div className="mx-auto max-w-2xl">
             <div className="text-xs font-medium uppercase tracking-widest text-gold">
-              12 – 20 ต.ค. 2026
+              11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20
             </div>
             <h1 className="mt-1 text-3xl font-extrabold">🍁 แพลนเที่ยวเกาหลี</h1>
             <p className="mt-1 text-sm text-pine-soft/80">
@@ -375,7 +425,8 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-5xl px-4 py-6 lg:flex lg:items-start lg:gap-6">
+        {/* pb-28 บนมือถือ: เว้นที่ให้ปุ่มลอย "📍 สถานที่" ไม่ไปทับปุ่ม "+ เพิ่มสถานที่" ของวันสุดท้าย */}
+        <div className="mx-auto max-w-5xl px-4 pb-28 pt-6 lg:flex lg:items-start lg:gap-6 lg:pb-6">
           <div className="mx-auto max-w-2xl flex-1 lg:mx-0">
             {!overallLoaded && (
               <div className="py-10 text-center text-sm text-ink-soft">กำลังโหลด...</div>
@@ -386,7 +437,7 @@ export default function Home() {
             )}
 
             {overallLoaded &&
-              ITINERARY.map((day) => (
+              itinerary.map((day) => (
                 <DayStopsSection
                   key={day.id}
                   day={day}
@@ -395,10 +446,19 @@ export default function Home() {
                   hotel={hotelForDay(day.id)}
                   startTime={daySettings[day.id]?.start_time ?? "07:00"}
                   onStartTimeChange={(value) => setStartTime(day.id, value)}
+                  onOvernightCityChange={
+                    day.overnightOptions
+                      ? (city) => setOvernightCity(day.id, city)
+                      : undefined
+                  }
                   onRemoveStop={removeStop}
                   onUpdateDwell={updateDwellMinutes}
                   onUpdateTravelMode={updateTravelMode}
+                  onUpdateNote={updateNote}
                   onAddPlace={() => openPickerForDay(day.id)}
+                  onInsertPlace={(atIndex, center, prevPlace) =>
+                    setInsertContext({ dayId: day.id, atIndex, center, prevPlace })
+                  }
                   flashStopId={flashStopId}
                 />
               ))}
@@ -406,14 +466,23 @@ export default function Home() {
 
           {overallLoaded && (
             <PlaceSidebar
-              itinerary={ITINERARY}
+              itinerary={itinerary}
               customPlaces={customPlaces}
               who={who || undefined}
               lastStopPlaceForDay={lastStopPlaceForDay}
               hotelForDay={hotelForDay}
-              onAddStopToDay={(dayId, placeId) =>
-                addStop(dayId, placeId, who || undefined).then(flashNewStop)
-              }
+              onAddStopToDay={(dayId, placeId, coords) => {
+                const prevPlace = lastStopPlaceForDay(dayId);
+                // coords มาจาก AddPlaceModal/NearbyPlacesModal ตอนสร้าง custom place ใหม่ — ใช้แทน resolvePlace
+                // เพราะ customPlaces state ยังไม่ทันมีสถานที่นี้ (รอ realtime echo) ส่วนสถานที่จากคลังปกติ resolve ได้เลย
+                const newPlace = coords ?? resolvePlace(placeId, customPlaces);
+                addStop(
+                  dayId,
+                  placeId,
+                  who || undefined,
+                  defaultTravelModeFor(prevPlace, newPlace)
+                ).then(flashNewStop);
+              }}
               selectedPlaceIdsForCity={selectedPlaceIdsForCity}
               hiddenPlaceIds={hiddenPlaceIds}
               onHidePlace={(placeId) => hidePlace(placeId, who || undefined)}
@@ -442,6 +511,26 @@ export default function Home() {
           </div>
         )}
       </DragOverlay>
+
+      {insertContext && (
+        <NearbyPlacesModal
+          kind="restaurant"
+          city={itinerary.find((d) => d.id === insertContext.dayId)?.city ?? activeCity}
+          center={insertContext.center}
+          addedBy={who || undefined}
+          onClose={() => setInsertContext(null)}
+          onAdded={(placeId, coords) => {
+            insertStopAt(
+              insertContext.dayId,
+              placeId,
+              insertContext.atIndex,
+              who || undefined,
+              defaultTravelModeFor(insertContext.prevPlace, coords)
+            ).then(flashNewStop);
+            setInsertContext(null);
+          }}
+        />
+      )}
     </DndContext>
   );
 }

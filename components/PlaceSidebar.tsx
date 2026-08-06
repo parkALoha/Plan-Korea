@@ -3,7 +3,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, Place, placesByCity } from "@/data/places";
+import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, Place, cityCenter, placesByCity } from "@/data/places";
 import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripHotel } from "@/lib/supabase";
@@ -12,8 +12,10 @@ import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { AddPlaceModal } from "./AddPlaceModal";
+import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
 
 const CATEGORY_ORDER: Category[] = [
+  "restaurant",
   "culture",
   "nature",
   "beach",
@@ -30,6 +32,7 @@ function DraggablePlaceCard({
   place,
   isCustom,
   distanceLabel,
+  dayDate,
   onClick,
   onHide,
   onAdd,
@@ -37,6 +40,7 @@ function DraggablePlaceCard({
   place: Place;
   isCustom?: boolean;
   distanceLabel?: string | null;
+  dayDate?: string;
   onClick: () => void;
   onHide?: () => void;
   onAdd?: () => void;
@@ -58,6 +62,7 @@ function DraggablePlaceCard({
         place={place}
         isCustom={isCustom}
         distanceLabel={distanceLabel}
+        dayDate={dayDate}
         onClick={onClick}
         onHide={onHide}
         onAdd={onAdd}
@@ -87,7 +92,9 @@ type SidebarProps = {
   who?: string;
   lastStopPlaceForDay: (dayId: string) => Place | null;
   hotelForDay: (dayId: string) => TripHotel | null;
-  onAddStopToDay: (dayId: string, placeId: string) => void;
+  /** coords ส่งมาเฉพาะตอนเพิ่มสถานที่ที่เพิ่งสร้างใหม่ (custom place) — เอาไว้เดาโหมดเดินทางเริ่มต้นได้ทันที
+   *  โดยไม่ต้อง resolvePlace(placeId, customPlaces) เอง ซึ่ง state ยังไม่ทันอัปเดตตอนนั้น (รอ realtime echo) */
+  onAddStopToDay: (dayId: string, placeId: string, coords?: { lat: number; lng: number }) => void;
   /** id ของสถานที่ที่ถูกเพิ่มลงวันไหนก็ได้ในเมืองนี้แล้ว (ไม่ต้องโชว์ให้เลือกซ้ำ) */
   selectedPlaceIdsForCity: (city: Day["city"]) => Set<string>;
   hiddenPlaceIds: Set<string>;
@@ -189,6 +196,10 @@ function PlaceSidebarContent({
 
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [nearbyKind, setNearbyKind] = useState<NearbyKind | null>(null);
+  const focusedDayDate = itinerary.find((d) => d.id === focusedDayId)?.date;
+  // ศูนย์กลางค้นหาร้านอาหารใกล้ๆ: จุดแวะล่าสุดของวันที่โฟกัส > ที่พัก > จุดกึ่งกลางเมือง
+  const nearbyCenter = referencePlace ?? referenceHotel ?? cityCenter(activeCity);
 
   return (
     <div className="flex h-full flex-col">
@@ -235,12 +246,28 @@ function PlaceSidebarContent({
           isLibraryOver ? "bg-pine-soft/50 ring-2 ring-inset ring-pine" : ""
         }`}
       >
-        <button
-          onClick={() => setAddOpen(true)}
-          className="mb-3 w-full rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
-        >
-          + เพิ่มสถานที่เอง
-        </button>
+        <div className="mb-3 space-y-2">
+          <button
+            onClick={() => setNearbyKind("attraction")}
+            className="w-full rounded-xl border border-dashed border-maple/50 py-2 text-sm font-medium text-maple hover:bg-maple-soft/40"
+          >
+            🎡 ที่เที่ยวยอดนิยมใน{CITY_NAME_TH[activeCity]}
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setAddOpen(true)}
+              className="flex-1 rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
+            >
+              + เพิ่มสถานที่เอง
+            </button>
+            <button
+              onClick={() => setNearbyKind("restaurant")}
+              className="flex-1 rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
+            >
+              🍽️ ร้านใกล้ๆ
+            </button>
+          </div>
+        </div>
 
         {visibleCards.length === 0 && (
           <div className="py-6 text-center text-xs text-ink-soft">
@@ -259,6 +286,7 @@ function PlaceSidebarContent({
                   place={place}
                   isCustom={isCustom}
                   distanceLabel={distanceLabelFor(place)}
+                  dayDate={focusedDayDate}
                   onClick={() => setDetailPlace(place)}
                   onHide={() => onHidePlace(place.id)}
                   onAdd={() => onAddStopToDay(focusedDayId, place.id)}
@@ -317,7 +345,20 @@ function PlaceSidebarContent({
           city={activeCity}
           addedBy={who}
           onClose={() => setAddOpen(false)}
-          onAdded={(placeId) => onAddStopToDay(focusedDayId, placeId)}
+          onAdded={(placeId, coords) => onAddStopToDay(focusedDayId, placeId, coords)}
+        />
+      )}
+
+      {nearbyKind && (
+        <NearbyPlacesModal
+          kind={nearbyKind}
+          city={activeCity}
+          // ที่เที่ยวมองทั้งเมือง เลยอิงกลางเมืองเสมอ ไม่ให้ผลลัพธ์เอียงไปตามจุดแวะล่าสุด
+          // ส่วนร้านอาหารอิงจุดแวะล่าสุดของวันนั้นเหมือนเดิม เพราะต้องการร้านที่เดินต่อจากจุดนั้นได้
+          center={nearbyKind === "attraction" ? cityCenter(activeCity) : nearbyCenter}
+          addedBy={who}
+          onClose={() => setNearbyKind(null)}
+          onAdded={(placeId, coords) => onAddStopToDay(focusedDayId, placeId, coords)}
         />
       )}
     </div>
@@ -352,7 +393,7 @@ export function PlaceSidebar({
 
       <button
         onClick={() => onMobileOpenChange(true)}
-        className="fixed bottom-5 right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20 lg:hidden"
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20 lg:hidden"
       >
         📍 สถานที่
       </button>

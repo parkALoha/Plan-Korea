@@ -6,13 +6,14 @@ export type Category =
   | "cafe"
   | "nightlife"
   | "viewpoint"
-  | "shopping";
+  | "shopping"
+  | "restaurant";
 
 export type Place = {
   id: string;
   nameTh: string;
   nameEn: string;
-  city: "busan" | "sokcho" | "gangneung" | "seoul" | "suwon";
+  city: "hanoi" | "busan" | "sokcho" | "gangneung" | "seoul" | "suwon";
   category: Category;
   descriptionTh: string;
   lat: number;
@@ -32,6 +33,7 @@ export const CATEGORY_EMOJI: Record<Category, string> = {
   nightlife: "🌃",
   viewpoint: "📸",
   shopping: "🛍️",
+  restaurant: "🍽️",
 };
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -43,6 +45,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   nightlife: "ย่านเที่ยวกลางคืน/ช้อปปิ้ง",
   viewpoint: "จุดชมวิว/ถ่ายรูป",
   shopping: "ช้อปปิ้ง",
+  restaurant: "ร้านอาหาร",
 };
 
 // จุดกึ่งกลางของแต่ละเมือง — เฉลี่ยพิกัดสถานที่ทั้งหมดในเมืองนั้นจาก PLACES สดๆ แทนที่จะฝัง
@@ -58,6 +61,95 @@ export function cityCenter(city: Place["city"]): { lat: number; lng: number } {
 }
 
 export const PLACES: Place[] = [
+  // ---------- Hanoi (ช่วงพักเครื่อง 11 ชม. ขาไป 11 ต.ค. — ทุกที่อยู่ในย่านเมืองเก่า เดินถึงกันหมด) ----------
+  {
+    id: "hanoi-hoan-kiem",
+    nameTh: "ทะเลสาบฮว่านเกี๋ยม",
+    nameEn: "Hoan Kiem Lake",
+    city: "hanoi",
+    category: "nature",
+    descriptionTh:
+      "ทะเลสาบใจกลางเมืองเก่า มีสะพานแดงถ่ายรูป เดินรอบได้ ตกเย็นคนเยอะคึกคัก · คืนศุกร์-อาทิตย์ถนนรอบทะเลสาบปิดเป็นถนนคนเดิน (11 ต.ค. = อาทิตย์ ตรงพอดี)",
+    lat: 21.0287,
+    lng: 105.8524,
+    mapsQuery: "Hoan Kiem Lake Hanoi",
+    youtubeQuery: "Hoan Kiem Lake Hanoi walking",
+  },
+  {
+    id: "hanoi-old-quarter",
+    nameTh: "ย่านเมืองเก่า 36 สาย",
+    nameEn: "Hanoi Old Quarter",
+    city: "hanoi",
+    category: "market",
+    descriptionTh: "ตรอกซอกซอยขายของ/ของกินริมทาง หัวใจของฮานอย เดินจากทะเลสาบฮว่านเกี๋ยมได้เลย",
+    lat: 21.0338,
+    lng: 105.8501,
+    mapsQuery: "Hanoi Old Quarter",
+    youtubeQuery: "Hanoi Old Quarter street food walk",
+  },
+  {
+    id: "hanoi-ta-hien",
+    nameTh: "ถนนเบียร์สด ต่าเหี่ยน",
+    nameEn: "Ta Hien Beer Street",
+    city: "hanoi",
+    category: "nightlife",
+    descriptionTh: "ถนนเบียร์สด (Bia Hoi) นั่งเก้าอี้พลาสติกริมถนน คึกคักสุดช่วงหัวค่ำ-ดึก เหมาะกับคืนพักเครื่อง",
+    lat: 21.0345,
+    lng: 105.8531,
+    mapsQuery: "Ta Hien Street Hanoi",
+    youtubeQuery: "Ta Hien beer street Hanoi night",
+  },
+  {
+    id: "hanoi-train-street",
+    nameTh: "ถนนรถไฟฮานอย",
+    nameEn: "Hanoi Train Street",
+    city: "hanoi",
+    category: "viewpoint",
+    descriptionTh:
+      "ตรอกแคบที่รถไฟวิ่งผ่านชิดร้านกาแฟ · ตำรวจปิด-เปิดเป็นช่วงๆ ไม่การันตีว่าเข้าได้ ต้องเช็คหน้างาน/ให้ร้านพาเข้า",
+    lat: 21.0245,
+    lng: 105.8412,
+    mapsQuery: "Hanoi Train Street Phung Hung",
+    youtubeQuery: "Hanoi train street 2025",
+  },
+  {
+    id: "hanoi-giang-cafe",
+    nameTh: "กาแฟไข่ Giang Cafe",
+    nameEn: "Giang Cafe (Egg Coffee)",
+    city: "hanoi",
+    category: "cafe",
+    descriptionTh: "ต้นตำรับกาแฟไข่ฮานอย ร้านเล็กในตรอก เปิดถึงดึก แวะได้ระหว่างเดินเมืองเก่า",
+    lat: 21.0329,
+    lng: 105.8524,
+    mapsQuery: "Giang Cafe Hanoi egg coffee",
+    youtubeQuery: "Giang Cafe Hanoi egg coffee",
+  },
+  {
+    id: "hanoi-dong-xuan-night-market",
+    nameTh: "ตลาดกลางคืนด่งซวน",
+    nameEn: "Dong Xuan Night Market",
+    city: "hanoi",
+    category: "market",
+    descriptionTh:
+      "ถนนคนเดินกลางคืน เปิดเฉพาะศุกร์-เสาร์-อาทิตย์ ~18:00-23:00 (11 ต.ค. เป็นวันอาทิตย์ = เปิด) ของกิน/ของฝากยาวตลอดสาย",
+    lat: 21.0383,
+    lng: 105.8497,
+    mapsQuery: "Dong Xuan Night Market Hanoi",
+    youtubeQuery: "Dong Xuan night market Hanoi weekend",
+  },
+  {
+    id: "hanoi-st-joseph",
+    nameTh: "โบสถ์เซนต์โจเซฟ",
+    nameEn: "St. Joseph's Cathedral",
+    city: "hanoi",
+    category: "culture",
+    descriptionTh: "โบสถ์นีโอโกธิคเก่าแก่กลางเมืองเก่า รอบๆ เป็นร้านกาแฟ/ร้านชานมนั่งชิลถ่ายรูปตอนเย็น",
+    lat: 21.0288,
+    lng: 105.8489,
+    mapsQuery: "St Joseph Cathedral Hanoi",
+    youtubeQuery: "St Joseph Cathedral Hanoi",
+  },
+
   // ---------- Busan ----------
   {
     id: "busan-gamcheon",

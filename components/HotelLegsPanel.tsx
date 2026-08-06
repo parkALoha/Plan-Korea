@@ -40,7 +40,9 @@ export function HotelLegsPanel({
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
         🏨 ที่พักของทริป
       </h2>
-      <div className="flex flex-wrap gap-2">
+      {/* grid ไม่ใช่ flex-wrap — flex item จะกว้างตามเนื้อหาทำให้ชื่อโรงแรมยาวๆ ดันหน้าเว็บล้นจอมือถือ
+          (truncate ข้างในไม่ช่วย เพราะตัวปุ่มเองไม่มีเพดานความกว้าง) */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {legs.map((leg) => {
           const hotel = hotels[leg.id];
           const meta = CITY_META[leg.city];
@@ -48,7 +50,7 @@ export function HotelLegsPanel({
             <button
               key={leg.id}
               onClick={() => setEditingLegId(leg.id)}
-              className="flex items-center gap-2 rounded-xl border border-cream-soft bg-white px-3 py-2 text-left shadow-sm shadow-ink/5 hover:border-maple/40"
+              className="flex min-w-0 items-center gap-2 rounded-xl border border-cream-soft bg-white px-3 py-2 text-left shadow-sm shadow-ink/5 hover:border-maple/40"
             >
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm"

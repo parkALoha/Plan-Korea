@@ -1,4 +1,4 @@
-import type { Day } from "@/data/itinerary";
+import type { City, Day } from "@/data/itinerary";
 
 export type HotelLeg = {
   id: string;
@@ -20,6 +20,8 @@ function addDaysIso(date: string, days: number) {
 export function deriveHotelLegs(itinerary: Day[]): HotelLeg[] {
   const legs: HotelLeg[] = [];
   for (const day of itinerary) {
+    // วันบิน/นอนบนเครื่อง ไม่มีคืนที่ต้องจองโรงแรม — ข้ามไปเลย ไม่งั้นจะโผล่เป็น leg ว่างๆ ให้กรอกที่พัก
+    if (day.noHotel) continue;
     const city = day.overnightCity ?? day.city;
     const current = legs[legs.length - 1];
     if (current && current.city === city) {
@@ -38,6 +40,22 @@ export function deriveHotelLegs(itinerary: Day[]): HotelLeg[] {
     }
   }
   return legs;
+}
+
+/**
+ * ทับ overnightCity ของวันที่ยังเลือกเมืองนอนได้ (day.overnightOptions) ด้วยตัวเลือกที่ 2 คนเลือกไว้จริง
+ * ค่าที่ไม่อยู่ในตัวเลือกจะถูกเมิน — กันข้อมูลเก่า/พิมพ์ผิดใน DB ทำ leg เพี้ยน
+ */
+export function applyOvernightOverrides(
+  itinerary: Day[],
+  overrides: Record<string, City>
+): Day[] {
+  if (Object.keys(overrides).length === 0) return itinerary;
+  return itinerary.map((day) => {
+    const picked = overrides[day.id];
+    if (!picked || !day.overnightOptions?.includes(picked)) return day;
+    return { ...day, overnightCity: picked };
+  });
 }
 
 export function dayIdToLegId(legs: HotelLeg[]): Record<string, string> {

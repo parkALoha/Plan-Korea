@@ -3,11 +3,15 @@
 import { CATEGORY_EMOJI } from "@/data/places";
 import type { Place } from "@/data/places";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
+import { usePlaceDetails } from "@/hooks/usePlaceDetails";
+import { weekdayHoursLabel } from "@/lib/openingHours";
 
 export function PlaceCard({
   place,
   isCustom,
   distanceLabel,
+  /** ใช้หาว่าวันนั้นในทริปตรงกับวันในสัปดาห์ไหน จะได้โชว์เวลาเปิด-ปิดของวันนั้นเป๊ะๆ */
+  dayDate,
   onClick,
   onHide,
   onAdd,
@@ -15,6 +19,7 @@ export function PlaceCard({
   place: Place;
   isCustom?: boolean;
   distanceLabel?: string | null;
+  dayDate?: string;
   onClick: () => void;
   onHide?: () => void;
   /** เพิ่มลงวันที่โฟกัสอยู่ตรงๆ โดยไม่ต้องเปิดโมดัลรายละเอียดก่อน */
@@ -22,6 +27,8 @@ export function PlaceCard({
 }) {
   const photos = usePlacePhotos(place.mapsQuery);
   const photo = photos?.[0];
+  const details = usePlaceDetails(place.mapsQuery);
+  const hoursLabel = dayDate ? weekdayHoursLabel(details?.openingHours, dayDate) : null;
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40">
@@ -44,6 +51,16 @@ export function PlaceCard({
           <div className="truncate text-xs text-ink-soft">{place.nameEn}</div>
           {distanceLabel && (
             <div className="mt-0.5 truncate text-[11px] text-pine-dark">📍 {distanceLabel}</div>
+          )}
+          {place.category === "restaurant" && details?.rating != null && (
+            <div className="mt-0.5 truncate text-[11px] text-maple-dark">
+              ⭐ {details.rating.toFixed(1)}
+              {details.userRatingCount != null && ` (${details.userRatingCount})`}
+              {details.primaryType && ` · ${details.primaryType}`}
+            </div>
+          )}
+          {hoursLabel && (
+            <div className="mt-0.5 truncate text-[11px] text-ink-soft">🕐 {hoursLabel}</div>
           )}
         </div>
       </button>

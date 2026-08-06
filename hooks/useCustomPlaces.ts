@@ -58,10 +58,11 @@ export function useCustomPlaces() {
         id: makeCustomPlaceId(),
         created_at: new Date().toISOString(),
       };
-      if (!supabaseConfigured) {
-        setCustomPlaces((prev) => [...prev, newPlace]);
-        return newPlace;
-      }
+      // อัปเดต state local ก่อนเลย (optimistic) — ตัวที่เรียกฟังก์ชันนี้มักจะเอา id ที่ได้ไปใช้ resolvePlace
+      // ต่อทันที (เช่น เดาโหมดเดินทางจากพิกัด) ถ้ารอ realtime echo อย่างเดียวจะไม่ทันเห็นสถานที่นี้เลย
+      // เช็ค exists กันตอน echo ย้อนกลับมาซ้ำทีหลัง
+      setCustomPlaces((prev) => (prev.some((p) => p.id === newPlace.id) ? prev : [...prev, newPlace]));
+      if (!supabaseConfigured) return newPlace;
       await supabase.from("custom_places").insert(newPlace);
       return newPlace;
     },
