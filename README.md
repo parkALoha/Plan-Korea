@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# แพลนเที่ยวเกาหลี
 
-## Getting Started
+เว็บสำหรับวางแพลนทริปเกาหลี ให้ 2 คนเลือกสถานที่/ร้านอาหาร จัดลำดับแต่ละวัน ดูรูป/คลิปประกอบ
+sync กันแบบเรียลไทม์ผ่าน Supabase แล้วใช้เว็บเดียวกันนี้เปิดดูระหว่างเที่ยวจริงในเกาหลีด้วย
 
-First, run the development server:
+**สถานะและแผนงานฉบับเต็มอยู่ที่ [`PLAN.md`](./PLAN.md) — อ่านไฟล์นั้นก่อนเริ่มงานใหม่ทุกครั้ง**
+(ไฟล์นี้เก็บแค่ข้อมูลตั้งต้นสำหรับรันโปรเจกต์)
+
+## รันโปรเจกต์
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev     # เปิดเว็บที่ localhost:3000
+npm run lint    # ตรวจ ESLint ก่อน commit/ก่อนบอกว่าเสร็จเสมอ
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Next.js 16 (App Router) + TypeScript + Tailwind CSS v4 + Supabase (ฐานข้อมูล + realtime sync, ไม่มีระบบล็อกอิน)
++ Google Places API (New) สำหรับค้นหาสถานที่/รูป/พิกัด + dnd-kit สำหรับลากจัดลำดับ
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## โครงสร้างไฟล์หลัก
 
-## Learn More
+- `app/page.tsx` — หน้าเว็บหลัก (แสดงทุกวันของทริป + คลังสถานที่ + จัดการแผน)
+- `app/api/*` — API routes ฝั่งเซิร์ฟเวอร์ที่คุย Google Places (เก็บ `GOOGLE_MAPS_API_KEY` ไม่ให้หลุดไป browser)
+- `components/` — UI (DayStopsSection, PlaceSidebar, HotelLegsPanel, modal ต่างๆ)
+- `hooks/` — state ที่ sync กับ Supabase (useStops, usePlans, useHotels, useDaySettings ฯลฯ)
+- `lib/` — โค้ดช่วยฝั่งเซิร์ฟเวอร์/ทั้งคู่ (`googlePlaces.ts`, `schedule.ts`, `hotelLegs.ts`, `supabase.ts`)
+- `data/places.ts`, `data/itinerary.ts` — ข้อมูลตั้งต้นของทริป (สถานที่คัดสรร + วัน/เมือง)
+- `supabase/migrations/*.sql` — ต้อง copy-paste รันเองใน Supabase Dashboard → SQL Editor เรียงเลขไฟล์
+  (ต้องยืนยันกับผู้ใช้ทุกครั้งว่ารันแล้วหรือยัง — ห้ามเดาจากชื่อไฟล์ ดูสถานะจริงใน `PLAN.md`)
 
-To learn more about Next.js, take a look at the following resources:
+## ข้อจำกัดสำคัญที่ต้องรู้ก่อนแก้โค้ด
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **ห้ามเรียก Google Maps API ตระกูล legacy** (`maps.googleapis.com/maps/api/*`) — คีย์โปรเจกต์นี้เปิดใช้เฉพาะ
+  ตระกูลใหม่ (`places.googleapis.com`, และ `routes.googleapis.com` เมื่อเปิดใช้) เรียกผ่าน `lib/googlePlaces.ts`
+- Google **ไม่ให้เส้นทางขับรถ/เดินในเกาหลีใต้** (กฎหมายส่งออกข้อมูลแผนที่) ได้แค่ขนส่งสาธารณะ — ดูรายละเอียด
+  และแผนรับมือใน `PLAN.md`
+- Next.js เวอร์ชันนี้มี breaking change จากที่เคยรู้จัก — อ่าน `node_modules/next/dist/docs/` ก่อนใช้ API ที่ไม่แน่ใจ

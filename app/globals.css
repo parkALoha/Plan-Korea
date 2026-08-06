@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-sans: var(--font-thai-sans), ui-sans-serif, system-ui, sans-serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-cream: #fdf6ec;
+  --color-cream-soft: #f7ead6;
+  --color-maple: #d9683a;
+  --color-maple-dark: #b8502a;
+  --color-maple-soft: #fbe2d3;
+  --color-pine: #33564a;
+  --color-pine-dark: #24382f;
+  --color-pine-soft: #e2ede8;
+  --color-gold: #dd9c3f;
+  --color-ink: #2b241f;
+  --color-ink-soft: #6b6058;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+}
+
+/* จุดแวะที่เพิ่งถูกเพิ่ม (ลากมาวาง หรือกด +) — ไฮไลต์สั้นๆ ให้รู้สึกว่า "เพิ่มสำเร็จแล้ว" */
+@keyframes stop-added-pop {
+  0% {
+    background-color: var(--color-maple-soft);
+    transform: scale(1.015);
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+  }
+}
+
+.animate-stop-added {
+  animation: stop-added-pop 1s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-stop-added {
+    animation: none;
+    background-color: var(--color-maple-soft);
+  }
 }

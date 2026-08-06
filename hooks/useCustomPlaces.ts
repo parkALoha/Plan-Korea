@@ -1,0 +1,72 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
+
+function makeCustomPlaceId() {
+  return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
+
+export function useCustomPlaces() {
+  const [customPlaces, setCustomPlaces] = useState<CustomPlace[]>([]);
+  const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+
+  useEffect(() => {
+    if (!supabaseConfigured) return;
+
+    const channelName = `custom_places_changes_${Math.random().toString(36).slice(2)}`;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function init() {
+      const { data } = await supabase.from("custom_places").select("*");
+      if (cancelled) return;
+      if (data) setCustomPlaces(data as CustomPlace[]);
+      setLoaded(true);
+
+      channel = supabase
+        .channel(channelName)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "custom_places" },
+          (payload) => {
+            setCustomPlaces((prev) => {
+              if (payload.eventType === "DELETE") {
+                return prev.filter((p) => p.id !== (payload.old as CustomPlace).id);
+              }
+              const row = payload.new as CustomPlace;
+              const exists = prev.some((p) => p.id === row.id);
+              return exists ? prev.map((p) => (p.id === row.id ? row : p)) : [...prev, row];
+            });
+          }
+        )
+        .subscribe();
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const addCustomPlace = useCallback(
+    async (place: Omit<CustomPlace, "id" | "created_at">) => {
+      const newPlace: CustomPlace = {
+        ...place,
+        id: makeCustomPlaceId(),
+        created_at: new Date().toISOString(),
+      };
+      if (!supabaseConfigured) {
+        setCustomPlaces((prev) => [...prev, newPlace]);
+        return newPlace;
+      }
+      await supabase.from("custom_places").insert(newPlace);
+      return newPlace;
+    },
+    []
+  );
+
+  return { customPlaces, loaded, addCustomPlace, supabaseConfigured };
+}
