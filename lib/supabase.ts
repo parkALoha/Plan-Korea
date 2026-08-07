@@ -65,6 +65,23 @@ export type TripStop = {
   updated_at: string;
 };
 
+export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "other";
+
+export type TripBooking = {
+  id: string;
+  category: BookingCategory;
+  title: string;
+  day_id: string | null;
+  date: string | null;
+  time: string | null;
+  confirmation_number: string | null;
+  link: string | null;
+  note: string | null;
+  added_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TripDaySettings = {
   plan_id: string;
   day_id: string;

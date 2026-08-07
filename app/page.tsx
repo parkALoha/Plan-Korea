@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { DayStopsSection } from "@/components/DayStopsSection";
 import { HotelLegsPanel } from "@/components/HotelLegsPanel";
+import { BookingsPanel } from "@/components/BookingsPanel";
 import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
 import { TripHeader } from "@/components/TripHeader";
@@ -17,6 +18,7 @@ import { haversineKm } from "@/lib/geo";
 import type { TravelMode } from "@/lib/schedule";
 import type { TripStop } from "@/lib/supabase";
 import { useHotels } from "@/hooks/useHotels";
+import { useBookings } from "@/hooks/useBookings";
 import { useSelections } from "@/hooks/useSelections";
 import { usePlans } from "@/hooks/usePlans";
 import { useStops } from "@/hooks/useStops";
@@ -47,6 +49,13 @@ export default function Home() {
   const { selections, loaded: selectionsLoaded } = useSelections();
 
   const { hotels, setHotel, clearHotel } = useHotels();
+  const {
+    bookings,
+    loaded: bookingsLoaded,
+    addBooking,
+    updateBooking,
+    removeBooking,
+  } = useBookings();
   const { plans, activePlanId, loaded: plansLoaded, createPlan, renamePlan, deletePlan, switchActivePlan } =
     usePlans();
   const {
@@ -217,6 +226,7 @@ export default function Home() {
     customPlacesLoaded &&
     hiddenPlacesLoaded &&
     overnightLoaded &&
+    bookingsLoaded &&
     (!activePlanId || (stopsLoaded && daySettingsLoaded));
   const activePlan = plans.find((p) => p.id === activePlanId);
 
@@ -254,6 +264,16 @@ export default function Home() {
 
             {overallLoaded && (
               <HotelLegsPanel legs={hotelLegs} hotels={hotels} onSave={setHotel} onClear={clearHotel} />
+            )}
+
+            {overallLoaded && (
+              <BookingsPanel
+                bookings={bookings}
+                onAdd={addBooking}
+                onUpdate={updateBooking}
+                onRemove={removeBooking}
+                who={who || undefined}
+              />
             )}
 
             {overallLoaded &&
