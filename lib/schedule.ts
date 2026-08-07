@@ -58,7 +58,7 @@ export function timeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
-function minutesToTime(total: number): string {
+export function minutesToTime(total: number): string {
   const wrapped = ((total % 1440) + 1440) % 1440;
   const h = Math.floor(wrapped / 60);
   const m = wrapped % 60;

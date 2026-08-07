@@ -6,7 +6,8 @@ import { CATEGORY_EMOJI } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import { applyOvernightOverrides } from "@/lib/hotelLegs";
-import { weekdayHoursLabel } from "@/lib/openingHours";
+import { isOpenDuring, weekdayHoursLabel } from "@/lib/openingHours";
+import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
 import { googleMapsDirectionsUrl, kakaoMapDirectionsUrl, openNaverMap } from "@/lib/mapLinks";
 import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "@/components/IntercityEditModal";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "@/components/BookingsPanel";
@@ -97,7 +98,7 @@ export default function TodayPage() {
   );
 
   const returnTravelMode = null; // ค่าประมาณการพอสำหรับหน้านี้ (ตั้งค่าจริงในหน้าแผน)
-  const { schedule, startAnchor, endAnchor, daySchedule, openingHoursByQuery, isClosedAt, beforeAnchorEvent, afterAnchorEvent } =
+  const { schedule, startAnchor, endAnchor, daySchedule, openingHoursByQuery, beforeAnchorEvent, afterAnchorEvent } =
     useDaySchedule({
       day,
       stops: dayStops,
@@ -123,6 +124,12 @@ export default function TodayPage() {
   const upcoming = nextIndex >= 0 ? dayStops.slice(nextIndex + 1) : [];
   const upcomingSched = nextIndex >= 0 ? schedule.slice(nextIndex + 1) : [];
   const done = dayStops.filter((s) => s.visited_at);
+
+  // ออกช้ากว่าแผน → เลื่อนเวลาที่ "แสดง" ของจุดที่เหลือให้ดูจริงขึ้น (ไม่แตะเวลาที่วางแผนไว้ใน DB)
+  // ดูเฉพาะวันจริงเท่านั้น — เลื่อนดูวันอื่นไม่ควรมีแนวคิด "ช้ากว่าแผน"
+  const DELAY_THRESHOLD_MINUTES = 10;
+  const rawDelayMinutes = isRealToday ? estimateDelayMinutes(dayStops, schedule, now) : 0;
+  const delayMinutes = Math.abs(rawDelayMinutes) >= DELAY_THRESHOLD_MINUTES ? rawDelayMinutes : 0;
 
   const dateLabel = new Date(day.date).toLocaleDateString("th-TH", {
     day: "numeric",
@@ -214,6 +221,15 @@ export default function TodayPage() {
             </div>
           )}
 
+          {delayMinutes !== 0 && (
+            <div className="mb-3 rounded-xl bg-gold/20 px-3 py-2 text-xs font-medium text-maple-dark">
+              {delayMinutes > 0
+                ? `⏱️ ดูช้ากว่าแผนไปประมาณ ${delayMinutes} นาที`
+                : `⏱️ ดูเร็วกว่าแผนไปประมาณ ${Math.abs(delayMinutes)} นาที`}{" "}
+              — เวลาด้านล่างเลื่อนให้อัตโนมัติแล้ว
+            </div>
+          )}
+
           {dayStops.length === 0 && (
             <div className="rounded-2xl border border-dashed border-cream-soft px-4 py-8 text-center text-sm text-ink-soft">
               วันนี้ยังไม่ได้วางแผนไว้เลย —{" "}
@@ -243,7 +259,7 @@ export default function TodayPage() {
                         {nextStop.intercity_from} → {nextStop.intercity_to}
                       </div>
                       <div className="mt-1 text-sm font-semibold tabular-nums text-ink">
-                        {nextSched.arrival}–{nextSched.departure}
+                        {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
                       </div>
                     </div>
                   </div>
@@ -260,17 +276,17 @@ export default function TodayPage() {
                           {CATEGORY_EMOJI[nextSched.place.category]} {nextSched.place.nameTh}
                         </div>
                         <div className="mt-0.5 text-lg font-semibold tabular-nums text-maple-dark">
-                          {nextSched.arrival}–{nextSched.departure}
+                          {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
                         </div>
                       </div>
                     </div>
 
                     {(() => {
-                      const hoursLabel = weekdayHoursLabel(
-                        openingHoursByQuery.get(nextSched.place.mapsQuery),
-                        day.date
-                      );
-                      const closed = isClosedAt(nextSched.place, nextSched.arrival, nextSched.departure);
+                      const displayArrival = shiftTime(nextSched.arrival, delayMinutes);
+                      const displayDeparture = shiftTime(nextSched.departure, delayMinutes);
+                      const hours = openingHoursByQuery.get(nextSched.place.mapsQuery);
+                      const hoursLabel = weekdayHoursLabel(hours, day.date);
+                      const closed = isOpenDuring(hours, day.date, displayArrival, displayDeparture) === false;
                       if (!hoursLabel && !closed) return null;
                       return (
                         <div
@@ -278,7 +294,8 @@ export default function TodayPage() {
                             closed ? "bg-maple-soft/70 text-maple-dark" : "bg-cream-soft text-ink-soft"
                           }`}
                         >
-                          {closed && "⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว — "}
+                          {closed &&
+                            `⚠️ ${delayMinutes !== 0 ? "ตามเวลาที่เลื่อนแล้ว " : ""}ช่วงเวลานี้สถานที่อาจปิดแล้ว — `}
                           {hoursLabel ?? "ไม่มีข้อมูลเวลาเปิด-ปิด"}
                         </div>
                       );
@@ -314,9 +331,10 @@ export default function TodayPage() {
           {dayStops.length > 0 && nextIndex === -1 && (
             <section className="mb-5 rounded-2xl border border-pine-soft bg-pine-soft/40 px-4 py-6 text-center">
               <div className="text-lg font-bold text-pine-dark">🎉 เที่ยวครบทุกจุดของวันนี้แล้ว</div>
-              {endAnchor && (
+              {endAnchor && daySchedule.arriveBackAt && (
                 <div className="mt-1 text-sm text-pine-dark">
-                  🏨 กลับถึง {endAnchor.label} ประมาณ {daySchedule.arriveBackAt}
+                  🏨 กลับถึง {endAnchor.label} ประมาณ{" "}
+                  {shiftTime(daySchedule.arriveBackAt, delayMinutes)}
                 </div>
               )}
             </section>
@@ -337,12 +355,23 @@ export default function TodayPage() {
                       : sched?.place
                         ? `${CATEGORY_EMOJI[sched.place.category]} ${sched.place.nameTh}`
                         : "ไม่พบข้อมูลสถานที่";
+                  const displayArrival = sched ? shiftTime(sched.arrival, delayMinutes) : null;
+                  const mightMissClosing =
+                    sched?.place != null &&
+                    displayArrival != null &&
+                    isOpenDuring(
+                      openingHoursByQuery.get(sched.place.mapsQuery),
+                      day.date,
+                      displayArrival,
+                      shiftTime(sched.departure, delayMinutes)
+                    ) === false;
                   return (
                     <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
                       <span className="w-12 shrink-0 text-center font-semibold tabular-nums text-ink-soft">
-                        {sched?.arrival ?? "-"}
+                        {displayArrival ?? "-"}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-ink">{label}</span>
+                      {mightMissClosing && <span title="อาจไปไม่ทันเวลาปิด">⚠️</span>}
                     </div>
                   );
                 })}
