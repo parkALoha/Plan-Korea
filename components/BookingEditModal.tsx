@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import type { BookingCategory, TripBooking } from "@/lib/supabase";
+import { BOOKING_FILES_BUCKET, supabase, type BookingCategory, type TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
 
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
+
+function randomSuffix() {
+  return Math.random().toString(36).slice(2);
+}
 
 export function BookingEditModal({
   existing,
@@ -31,6 +35,27 @@ export function BookingEditModal({
   const [confirmationNumber, setConfirmationNumber] = useState(existing?.confirmation_number ?? "");
   const [link, setLink] = useState(existing?.link ?? "");
   const [note, setNote] = useState(existing?.note ?? "");
+  const [fileUrl, setFileUrl] = useState(existing?.file_url ?? "");
+  const [fileName, setFileName] = useState(existing?.file_name ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFileChange(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    const path = `${existing?.id ?? "new"}-${Date.now()}-${randomSuffix()}-${file.name}`;
+    const { error } = await supabase.storage.from(BOOKING_FILES_BUCKET).upload(path, file);
+    if (error) {
+      setUploadError("อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง");
+      setUploading(false);
+      return;
+    }
+    const { data } = supabase.storage.from(BOOKING_FILES_BUCKET).getPublicUrl(path);
+    setFileUrl(data.publicUrl);
+    setFileName(file.name);
+    setUploading(false);
+  }
 
   function handleDayChange(value: string) {
     setDayId(value);
@@ -50,6 +75,8 @@ export function BookingEditModal({
       link: link.trim() || null,
       note: note.trim() || null,
       addedBy: existing?.added_by ?? who ?? null,
+      fileUrl: fileUrl || null,
+      fileName: fileName || null,
     });
   }
 
@@ -169,6 +196,43 @@ export function BookingEditModal({
               className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
             />
           </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-soft">ไฟล์แนบ (รูป/PDF)</label>
+            {fileUrl ? (
+              <div className="flex items-center gap-2 rounded-lg border border-cream-soft px-3 py-2">
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 truncate text-sm text-pine underline"
+                >
+                  📎 {fileName || "เปิดไฟล์"}
+                </a>
+                <button
+                  onClick={() => {
+                    setFileUrl("");
+                    setFileName("");
+                  }}
+                  className="shrink-0 rounded-full p-1 text-ink-soft hover:bg-cream-soft"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cream-soft px-3 py-3 text-xs text-ink-soft hover:bg-cream-soft">
+                {uploading ? "กำลังอัปโหลด..." : "แตะเพื่อเลือกรูป/PDF"}
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            )}
+            {uploadError && <p className="mt-1 text-xs text-red-600">{uploadError}</p>}
+          </div>
         </div>
 
         <div className="shrink-0 flex gap-2 px-5 pb-5 pt-3">
@@ -182,7 +246,7 @@ export function BookingEditModal({
           )}
           <button
             onClick={handleSave}
-            disabled={!title.trim()}
+            disabled={!title.trim() || uploading}
             className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
           >
             บันทึก

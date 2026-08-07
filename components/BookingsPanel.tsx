@@ -80,7 +80,10 @@ export function BookingsPanel({
                   {dateLabel(booking) ? ` · ${dateLabel(booking)}` : ""}
                   {booking.time ? ` ${booking.time}` : ""}
                 </div>
-                <div className="truncate text-sm font-medium text-ink">{booking.title}</div>
+                <div className="truncate text-sm font-medium text-ink">
+                  {booking.title}
+                  {booking.file_url ? " 📎" : ""}
+                </div>
               </div>
             </button>
           ))}

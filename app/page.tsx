@@ -5,6 +5,7 @@ import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { DayStopsSection } from "@/components/DayStopsSection";
 import { HotelLegsPanel } from "@/components/HotelLegsPanel";
 import { BookingsPanel } from "@/components/BookingsPanel";
+import { ChecklistPanel } from "@/components/ChecklistPanel";
 import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
 import { IntercityEditModal } from "@/components/IntercityEditModal";
@@ -20,6 +21,7 @@ import type { TravelMode } from "@/lib/schedule";
 import type { TripStop } from "@/lib/supabase";
 import { useHotels } from "@/hooks/useHotels";
 import { useBookings } from "@/hooks/useBookings";
+import { useChecklist } from "@/hooks/useChecklist";
 import { useSelections } from "@/hooks/useSelections";
 import { usePlans } from "@/hooks/usePlans";
 import { useStops } from "@/hooks/useStops";
@@ -57,6 +59,13 @@ export default function Home() {
     updateBooking,
     removeBooking,
   } = useBookings();
+  const {
+    items: checklistItems,
+    loaded: checklistLoaded,
+    addItem: addChecklistItem,
+    toggleItem: toggleChecklistItem,
+    removeItem: removeChecklistItem,
+  } = useChecklist();
   const { plans, activePlanId, loaded: plansLoaded, createPlan, renamePlan, deletePlan, switchActivePlan } =
     usePlans();
   const {
@@ -237,6 +246,7 @@ export default function Home() {
     hiddenPlacesLoaded &&
     overnightLoaded &&
     bookingsLoaded &&
+    checklistLoaded &&
     (!activePlanId || (stopsLoaded && daySettingsLoaded));
   const activePlan = plans.find((p) => p.id === activePlanId);
 
@@ -283,6 +293,15 @@ export default function Home() {
                 onUpdate={updateBooking}
                 onRemove={removeBooking}
                 who={who || undefined}
+              />
+            )}
+
+            {overallLoaded && (
+              <ChecklistPanel
+                items={checklistItems}
+                onAdd={(text) => addChecklistItem(text, who || undefined)}
+                onToggle={(itemId, checked) => toggleChecklistItem(itemId, checked, who || undefined)}
+                onRemove={removeChecklistItem}
               />
             )}
 

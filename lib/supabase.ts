@@ -75,6 +75,9 @@ export type TripStop = {
 
 export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "other";
 
+/** Supabase Storage bucket สำหรับไฟล์แนบตั๋ว (ตั้งสาธารณะเหมือน RLS ของตารางอื่น) */
+export const BOOKING_FILES_BUCKET = "booking-files";
+
 export type TripBooking = {
   id: string;
   category: BookingCategory;
@@ -85,6 +88,18 @@ export type TripBooking = {
   confirmation_number: string | null;
   link: string | null;
   note: string | null;
+  added_by: string | null;
+  created_at: string;
+  updated_at: string;
+  file_url: string | null;
+  file_name: string | null;
+};
+
+export type ChecklistItem = {
+  id: string;
+  text: string;
+  is_checked: boolean;
+  checked_by: string | null;
   added_by: string | null;
   created_at: string;
   updated_at: string;

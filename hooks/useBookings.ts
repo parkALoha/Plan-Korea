@@ -25,6 +25,8 @@ export type NewBooking = {
   link?: string | null;
   note?: string | null;
   addedBy?: string | null;
+  fileUrl?: string | null;
+  fileName?: string | null;
 };
 
 /** ตั๋ว/booking ทั้งหมดของทริป — trip-wide ไม่แยกตามแผน A/B เหมือน trip_hotels */
@@ -88,6 +90,8 @@ export function useBookings() {
       added_by: input.addedBy ?? null,
       created_at: now,
       updated_at: now,
+      file_url: input.fileUrl ?? null,
+      file_name: input.fileName ?? null,
     };
     if (!supabaseConfigured) {
       setBookings((prev) => sortBookings([...prev, newBooking]));
@@ -108,6 +112,8 @@ export function useBookings() {
       if (patch.confirmationNumber !== undefined) dbPatch.confirmation_number = patch.confirmationNumber;
       if (patch.link !== undefined) dbPatch.link = patch.link;
       if (patch.note !== undefined) dbPatch.note = patch.note;
+      if (patch.fileUrl !== undefined) dbPatch.file_url = patch.fileUrl;
+      if (patch.fileName !== undefined) dbPatch.file_name = patch.fileName;
 
       if (!supabaseConfigured) {
         setBookings((prev) =>
@@ -126,6 +132,8 @@ export function useBookings() {
                       : {}),
                     ...(patch.link !== undefined ? { link: patch.link } : {}),
                     ...(patch.note !== undefined ? { note: patch.note } : {}),
+                    ...(patch.fileUrl !== undefined ? { file_url: patch.fileUrl } : {}),
+                    ...(patch.fileName !== undefined ? { file_name: patch.fileName } : {}),
                   }
                 : b
             )
