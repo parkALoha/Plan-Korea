@@ -36,6 +36,33 @@ export const CATEGORY_EMOJI: Record<Category, string> = {
   restaurant: "🍽️",
 };
 
+// สีหมุดบนแผนที่รายวัน แยกตามหมวด — เดิมหมุดทุกจุดสี maple เหมือนกันหมด ดูไม่ออกว่าจุดไหนเป็นอะไร
+// เลือกให้ยังอยู่ในโทนของธีม (maple/pine/gold) แต่ต่างกันพอให้แยกด้วยตาบนแผนที่สีอ่อนของ Google
+export const CATEGORY_COLOR: Record<Category, string> = {
+  culture: "#8c4a6b",
+  nature: "#33564a",
+  beach: "#2f7d95",
+  market: "#c94f2e",
+  cafe: "#8a5a3b",
+  nightlife: "#4b3f7a",
+  viewpoint: "#c39338",
+  shopping: "#b34f7d",
+  restaurant: "#d9683a",
+};
+
+/** สีเข้มของหมวดเดียวกัน ใช้เป็นขอบหมุดตอนถูกเลือก (ปกติขอบเป็นสีขาว) */
+export const CATEGORY_COLOR_DARK: Record<Category, string> = {
+  culture: "#63314b",
+  nature: "#22392f",
+  beach: "#1e5a6b",
+  market: "#93341a",
+  cafe: "#603c26",
+  nightlife: "#332a55",
+  viewpoint: "#8d6720",
+  shopping: "#82355a",
+  restaurant: "#b8502a",
+};
+
 export const CATEGORY_LABEL: Record<Category, string> = {
   culture: "วัฒนธรรม/ประวัติศาสตร์",
   nature: "ธรรมชาติ",

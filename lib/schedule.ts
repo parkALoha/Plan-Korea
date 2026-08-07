@@ -80,27 +80,56 @@ export type ScheduledStop = ScheduleStopInput & {
   travelMinutesFromPrev: number | null;
 };
 
+/** จุดอ้างอิงบนแผนที่ที่ใช้ถามเวลาเดินทางได้ — จุดแวะใช้ place.id, ที่พักใช้ leg_id (ตรงกับคีย์แคชใน useHotelDistance) */
+export type PointRef = { id: string; lat: number; lng: number };
+
+/** ที่พักหัว/ท้ายวัน — start = ที่พักคืนก่อนหน้าที่ออกมาตอนเช้า, end = ที่พักคืนนี้ที่กลับไปนอน */
+export type ScheduleAnchor = PointRef & { label: string; mode: TravelMode | null };
+
+export type DaySchedule = {
+  stops: ScheduledStop[];
+  /** เวลาออกจากที่พัก = startTime ตรงๆ (null เมื่อไม่มีที่พักต้นทาง) */
+  departFrom: string | null;
+  travelMinutesFromStart: number | null;
+  travelMinutesToEnd: number | null;
+  /** เวลากลับถึงที่พักคืนนี้ (null เมื่อไม่มีที่พักปลายทางหรือไม่มีจุดแวะเลย) */
+  arriveBackAt: string | null;
+};
+
 /**
  * ไล่คำนวณเวลาถึง/ออกของแต่ละจุดแวะในวันนั้น จากเวลาเริ่มต้นวัน + เวลาเดินทางระหว่างจุด + เวลาที่อยู่แต่ละจุด
+ * มีที่พักหัว-ท้ายด้วย (anchors): startTime = เวลาที่ "ออกจากที่พัก" ไม่ใช่เวลาถึงจุดแรก
  * travelMinutesBetween คืนค่า null ได้ (ยังไม่รู้เวลาเดินทาง) — กรณีนั้นถือว่าเดินทาง 0 นาที ไปพลางๆ ก่อนข้อมูลจริงมาถึง
  */
 export function computeSchedule(
   startTime: string,
   stops: ScheduleStopInput[],
   placesById: Map<string, Place>,
-  travelMinutesBetween: (
-    fromPlaceId: string,
-    toPlaceId: string,
-    travelMode: TravelMode | null
-  ) => number | null
-): ScheduledStop[] {
+  travelMinutesBetween: (from: PointRef, to: PointRef, travelMode: TravelMode | null) => number | null,
+  anchors?: { start?: ScheduleAnchor | null; end?: ScheduleAnchor | null }
+): DaySchedule {
   const result: ScheduledStop[] = [];
   let cursor = timeToMinutes(startTime);
 
+  const pointOf = (stop: ScheduleStopInput): PointRef | null => {
+    const place = placesById.get(stop.placeId);
+    return place ? { id: place.id, lat: place.lat, lng: place.lng } : null;
+  };
+
+  const startAnchor = anchors?.start ?? null;
+  const firstPoint = stops.length > 0 ? pointOf(stops[0]) : null;
+  const travelMinutesFromStart =
+    startAnchor && firstPoint
+      ? travelMinutesBetween(startAnchor, firstPoint, startAnchor.mode)
+      : null;
+  if (travelMinutesFromStart != null) cursor += travelMinutesFromStart;
+
   stops.forEach((stop, i) => {
     const place = placesById.get(stop.placeId);
+    const from = i === 0 ? null : pointOf(stops[i - 1]);
+    const to = pointOf(stop);
     const travelMinutesFromPrev =
-      i === 0 ? null : travelMinutesBetween(stops[i - 1].placeId, stop.placeId, stop.travelMode);
+      from && to ? travelMinutesBetween(from, to, stop.travelMode) : null;
     if (travelMinutesFromPrev != null) cursor += travelMinutesFromPrev;
 
     const arrival = minutesToTime(cursor);
@@ -119,5 +148,18 @@ export function computeSchedule(
     });
   });
 
-  return result;
+  const endAnchor = anchors?.end ?? null;
+  const lastPoint = stops.length > 0 ? pointOf(stops[stops.length - 1]) : null;
+  const travelMinutesToEnd =
+    endAnchor && lastPoint ? travelMinutesBetween(lastPoint, endAnchor, endAnchor.mode) : null;
+  const arriveBackAt =
+    endAnchor && lastPoint ? minutesToTime(cursor + (travelMinutesToEnd ?? 0)) : null;
+
+  return {
+    stops: result,
+    departFrom: startAnchor && stops.length > 0 ? startTime : null,
+    travelMinutesFromStart,
+    travelMinutesToEnd,
+    arriveBackAt,
+  };
 }

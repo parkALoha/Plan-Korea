@@ -72,8 +72,12 @@ export default function Home() {
     bulkInsert,
   } = useStops(activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
-  const { settings: daySettings, loaded: daySettingsLoaded, setStartTime } =
-    useDaySettings(activePlanId);
+  const {
+    settings: daySettings,
+    loaded: daySettingsLoaded,
+    setStartTime,
+    setReturnTravelMode,
+  } = useDaySettings(activePlanId);
   const {
     hiddenPlaceIds,
     loaded: hiddenPlacesLoaded,
@@ -165,6 +169,21 @@ export default function Home() {
       return legId ? hotels[legId] ?? null : null;
     },
     [legIdByDayId, hotels]
+  );
+
+  // ที่พักที่ "ออกมาตอนเช้า" ของวันนั้น = ที่พักของคืนก่อนหน้า
+  // วันย้ายเมือง (เช่น เช้าอยู่ปูซาน คืนนอนซกโช) จึงเริ่มวันที่โรงแรมปูซาน แล้วไปจบที่โรงแรมซกโช
+  // วันแรกของทริป / วันที่คืนก่อนหน้าไม่มีที่พัก (นอนบนเครื่อง) คืน null
+  const hotelBeforeDay = useCallback(
+    (dayId: string) => {
+      const index = itinerary.findIndex((d) => d.id === dayId);
+      for (let i = index - 1; i >= 0; i--) {
+        const legId = legIdByDayId[itinerary[i].id];
+        if (legId) return hotels[legId] ?? null;
+      }
+      return null;
+    },
+    [itinerary, legIdByDayId, hotels]
   );
 
   const stopsByDay = useMemo(() => {
@@ -444,8 +463,14 @@ export default function Home() {
                   stops={stopsByDay[day.id] ?? []}
                   customPlaces={customPlaces}
                   hotel={hotelForDay(day.id)}
+                  startHotel={hotelBeforeDay(day.id)}
+                  returnTravelMode={
+                    (daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null
+                  }
+                  onReturnTravelModeChange={(mode) => setReturnTravelMode(day.id, mode)}
                   startTime={daySettings[day.id]?.start_time ?? "07:00"}
                   onStartTimeChange={(value) => setStartTime(day.id, value)}
+                  onReorder={(orderedStopIds) => reorderStops(day.id, orderedStopIds)}
                   onOvernightCityChange={
                     day.overnightOptions
                       ? (city) => setOvernightCity(day.id, city)

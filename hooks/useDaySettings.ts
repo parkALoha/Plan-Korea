@@ -81,5 +81,27 @@ export function useDaySettings(planId: string | null) {
     [planId]
   );
 
-  return { settings, loaded, setStartTime, supabaseConfigured };
+  // โหมดเดินทางขากลับที่พักของวันนั้น — คอลัมน์ return_travel_mode มาจาก migration 0015
+  // ถ้ายังไม่ได้รัน migration การ upsert จะ error เงียบๆ (จับไว้) แล้วหน้าเว็บยังใช้ค่าประมาณต่อได้
+  const setReturnTravelMode = useCallback(
+    async (dayId: string, mode: string) => {
+      if (!planId) return;
+      // upsert ต้องส่ง start_time ไปด้วย (คอลัมน์ not null) — ค่าเดิมของวันนั้นหรือค่า default เดียวกับที่หน้าเว็บใช้
+      const startTime = settings[dayId]?.start_time ?? "07:00";
+      setSettings((prev) => ({
+        ...prev,
+        [dayId]: { plan_id: planId, day_id: dayId, start_time: startTime, return_travel_mode: mode },
+      }));
+      if (!supabaseConfigured) return;
+      await supabase.from("trip_day_settings").upsert({
+        plan_id: planId,
+        day_id: dayId,
+        start_time: startTime,
+        return_travel_mode: mode,
+      });
+    },
+    [planId, settings]
+  );
+
+  return { settings, loaded, setStartTime, setReturnTravelMode, supabaseConfigured };
 }

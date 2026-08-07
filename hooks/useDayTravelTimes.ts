@@ -33,8 +33,6 @@ export function useDayTravelTimes(pairs: TravelTimePair[]) {
   const [, setVersion] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
-
     pairs.forEach((p) => {
       const key = keyOf(p.fromId, p.toId, p.mode);
       if (cache.has(key) || inFlight.has(key)) return;
@@ -56,13 +54,12 @@ export function useDayTravelTimes(pairs: TravelTimePair[]) {
         })
         .finally(() => {
           inFlight.delete(key);
-          if (!cancelled) setVersion((v) => v + 1);
+          // ห้ามข้าม setVersion เวลา effect รอบก่อนถูก cleanup — คู่จุดของวันเปลี่ยนได้ระหว่างทาง
+          // (เช่น โหมดขากลับที่พักเพิ่งโหลดมาจาก trip_day_settings) รอบใหม่จะเจอ key ค้างใน inFlight
+          // แล้วไม่ยิงซ้ำ ถ้ารอบเก่าไม่สั่ง re-render ค่าจริงจะค้างในแคชโดยหน้าจอยังโชว์ค่าประมาณการ
+          setVersion((v) => v + 1);
         });
     });
-
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depsKey]);
 

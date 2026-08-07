@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -18,6 +18,8 @@ import {
   TRAVEL_MODES,
   TRAVEL_MODE_EMOJI,
   TRAVEL_MODE_LABEL,
+  type PointRef,
+  type ScheduleAnchor,
   type ScheduleStopInput,
   type ScheduledStop,
   type TravelMode,
@@ -26,6 +28,10 @@ import { useDayTravelTimes, type TravelTimePair } from "@/hooks/useDayTravelTime
 import { useDayOpeningHours } from "@/hooks/useDayOpeningHours";
 import { isOpenDuring, weekdayHoursLabel } from "@/lib/openingHours";
 import { PlaceDetailModal } from "./PlaceDetailModal";
+import { DayMapPanel } from "./DayMapPanel";
+import { DaySummaryBar } from "./DaySummaryBar";
+import { PlaceThumb } from "./PlaceThumb";
+import { RouteSuggestionModal } from "./RouteSuggestionModal";
 
 const DWELL_STEP_MINUTES = 15;
 const MIN_DWELL_MINUTES = 15;
@@ -36,15 +42,19 @@ function TravelModeRow({
   mode,
   resolvedMinutes,
   isReal,
+  prefix,
   onSetMode,
 }: {
-  fromPlace: Place;
-  toPlace: Place;
+  /** ต้นทาง/ปลายทางของช่วงนี้ — เป็นจุดแวะหรือที่พักก็ได้ ใช้แค่พิกัดคำนวณระยะ */
+  fromPlace: Pick<Place, "lat" | "lng">;
+  toPlace: Pick<Place, "lat" | "lng">;
   mode: TravelMode | null;
   /** เวลาที่ schedule คำนวณจริงไว้แล้ว (ตรงกับ mode ปัจจุบัน) ใช้โชว์ตอนเลือกโหมดแล้ว */
   resolvedMinutes: number;
   /** true = เวลาจริงจาก Google Routes API, false = ยังเป็นเส้นตรง haversine ประมาณการ */
   isReal: boolean;
+  /** ข้อความนำหน้า เช่น "ออกจากที่พัก" / "กลับที่พัก" — ไม่ใส่ = ช่วงระหว่างจุดแวะปกติ */
+  prefix?: string;
   onSetMode: (mode: TravelMode) => void;
 }) {
   // key={mode} จากผู้เรียก (ดูด้านล่าง) ทำให้ component นี้ remount ใหม่ทุกครั้งที่ mode เปลี่ยน
@@ -57,6 +67,7 @@ function TravelModeRow({
     return (
       <div className="flex flex-wrap items-center gap-1.5 bg-cream-soft/60 px-4 py-1.5 text-[11px] text-ink-soft">
         <span>
+          {prefix ? `${prefix} · ` : ""}
           {TRAVEL_MODE_EMOJI[mode]} {TRAVEL_MODE_LABEL[mode]} {isReal ? "" : "~"}
           {resolvedMinutes} นาทีเดินทาง {isReal ? "(จริง)" : "(ประมาณการ)"}
         </span>
@@ -73,7 +84,7 @@ function TravelModeRow({
   return (
     // ปุ่มเลือกโหมดสูงแค่ 23px บนมือถือ กดพลาดง่าย — ดันเป็น 32px ด้วย py-1.5 (จอ sm ขึ้นไปคงความกระชับเดิม)
     <div className="flex flex-wrap items-center gap-1.5 bg-cream-soft/60 px-3 py-2 text-[11px] text-ink-soft sm:px-4 sm:py-1.5">
-      <span>เดินทางแบบไหน:</span>
+      <span>{prefix ? `${prefix} — เดินทางแบบไหน:` : "เดินทางแบบไหน:"}</span>
       {TRAVEL_MODES.map((m) => (
         <button
           key={m}
@@ -136,6 +147,8 @@ function SortableStopRow({
   sched,
   prevPlace,
   isFlashing,
+  isActive,
+  rowRef,
   isTravelReal,
   closedWarning,
   closedHoursLabel,
@@ -152,6 +165,10 @@ function SortableStopRow({
   sched: ScheduledStop;
   prevPlace: Place | undefined;
   isFlashing: boolean;
+  /** true = จุดแวะนี้ถูกเลือกอยู่ (คลิกหมุดบนแผนที่ หรือคลิกชื่อในลิสต์) — ไฮไลต์ค้างไว้ต่างจาก isFlashing ที่เป็น pulse ชั่วคราว */
+  isActive: boolean;
+  /** เก็บ DOM node ของแถวนี้ไว้ scrollIntoView ได้ตอนถูกเลือกจากฝั่งแผนที่ */
+  rowRef?: (el: HTMLDivElement | null) => void;
   isTravelReal: boolean;
   /** true = เวลาที่คำนวณได้ (ถึง-ออก) ตกนอกเวลาเปิดของสถานที่นี้ ตามข้อมูลจาก Google */
   closedWarning: boolean;
@@ -176,6 +193,11 @@ function SortableStopRow({
   };
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState(stop.note ?? "");
+
+  const setRefs = (el: HTMLDivElement | null) => {
+    setNodeRef(el);
+    rowRef?.(el);
+  };
 
   // ปุ่มปรับเวลาที่อยู่ + ปุ่มลบ — ประกาศครั้งเดียวแล้ววางสองที่ เพราะมือถือกับจอใหญ่วางคนละแถวกัน
   // (มือถือยกลงไปแถวล่างเพื่อคืนความกว้างให้ชื่อสถานที่ ดูคอมเมนต์ที่แถวหลัก)
@@ -212,7 +234,15 @@ function SortableStopRow({
   );
 
   return (
-    <div ref={setNodeRef} style={style} className={isFlashing ? "animate-stop-added" : undefined}>
+    <div
+      ref={setRefs}
+      style={style}
+      className={
+        [isFlashing && "animate-stop-added", isActive && "ring-2 ring-inset ring-maple/60"]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+    >
       {index > 0 && prevPlace && sched.place && sched.travelMinutesFromPrev != null && (
         <TravelModeRow
           key={stop.travel_mode ?? "unset"}
@@ -257,26 +287,34 @@ function SortableStopRow({
         <button
           onClick={() => sched.place && onView()}
           disabled={!sched.place}
-          className="min-w-0 flex-1 py-1.5 text-left disabled:cursor-default"
+          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
         >
           {sched.place ? (
             <>
-              <div className="truncate font-semibold text-ink hover:underline">
-                {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
-              </div>
-              {stop.added_by && (
-                <div className="truncate text-xs text-ink-soft">เลือกโดย {stop.added_by}</div>
-              )}
+              <PlaceThumb
+                query={sched.place.mapsQuery}
+                category={sched.place.category}
+                className="h-10 w-10 shrink-0"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold text-ink hover:underline">
+                  {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
+                </span>
+                {stop.added_by && (
+                  <span className="block truncate text-xs text-ink-soft">เลือกโดย {stop.added_by}</span>
+                )}
+              </span>
             </>
           ) : (
-            <div className="text-sm text-maple-dark">ไม่พบข้อมูลสถานที่</div>
+            <span className="text-sm text-maple-dark">ไม่พบข้อมูลสถานที่</span>
           )}
         </button>
 
-        <div className="hidden shrink-0 items-center gap-1 text-xs text-ink-soft sm:flex">
+        {/* ซ่อนช่วง lg ขึ้นไปด้วย เพราะแผนที่ข้างๆ แย่งพื้นที่แถวจนชื่อสถานที่เหลือไม่พอ (บั๊กเดียวกับที่แก้ไว้ฝั่งมือถือ) */}
+        <div className="hidden shrink-0 items-center gap-1 text-xs text-ink-soft sm:flex lg:hidden">
           {dwellControls}
         </div>
-        <div className="hidden sm:block">{removeButton}</div>
+        <div className="hidden sm:block lg:hidden">{removeButton}</div>
       </div>
       <div className="flex items-center gap-2 px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
         <div className="min-w-0 flex-1">
@@ -352,9 +390,9 @@ function SortableStopRow({
           </button>
         )}
         </div>
-        {/* ปุ่มปรับเวลาที่อยู่ + ลบ ของฝั่งมือถือ — ซ่อนตอนกำลังพิมพ์โน้ตเพื่อไม่แย่งที่ช่องพิมพ์ */}
+        {/* ปุ่มปรับเวลาที่อยู่ + ลบ — โชว์แถวนี้ตอนมือถือ และตอน lg ขึ้นไปที่มีแผนที่แย่งพื้นที่ด้วย (ดูคอมเมนต์บนแถวหลัก) — ซ่อนตอนกำลังพิมพ์โน้ตเพื่อไม่แย่งที่ช่องพิมพ์ */}
         {!editingNote && (
-          <div className="flex shrink-0 items-center gap-1 text-xs text-ink-soft sm:hidden">
+          <div className="flex shrink-0 items-center gap-1 text-xs text-ink-soft sm:hidden lg:flex">
             {dwellControls}
             {removeButton}
           </div>
@@ -375,12 +413,16 @@ export function DayStopsSection({
   stops,
   customPlaces,
   hotel,
+  startHotel,
+  returnTravelMode,
+  onReturnTravelModeChange,
   startTime,
   onStartTimeChange,
   onRemoveStop,
   onUpdateDwell,
   onUpdateTravelMode,
   onUpdateNote,
+  onReorder,
   onAddPlace,
   onInsertPlace,
   flashStopId,
@@ -390,9 +432,17 @@ export function DayStopsSection({
   /** stops for this day only, already sorted by order_index */
   stops: TripStop[];
   customPlaces: CustomPlace[];
+  /** ที่พักคืนนี้ = จุดจบของวัน */
   hotel: TripHotel | null;
+  /** ที่พักคืนก่อนหน้า = จุดเริ่มของวัน (วันย้ายเมืองจะคนละที่กับ hotel) */
+  startHotel: TripHotel | null;
+  /** โหมดเดินทางขากลับที่พัก (จุดสุดท้าย → hotel) */
+  returnTravelMode: TravelMode | null;
+  onReturnTravelModeChange: (mode: TravelMode) => void;
+  /** เวลาที่ออกจากที่พัก (ไม่ใช่เวลาถึงจุดแวะแรก) */
   startTime: string;
   onStartTimeChange: (value: string) => void;
+  onReorder: (orderedStopIds: string[]) => void;
   /** มีค่าเฉพาะวันที่ยังเลือกเมืองนอนได้ (day.overnightOptions) */
   onOvernightCityChange?: (city: City) => void;
   onRemoveStop: (stopId: string) => void;
@@ -436,15 +486,33 @@ export function DayStopsSection({
     return map;
   }, [stops, customPlaces]);
 
+  // ที่พักหัว-ท้ายวัน: ออกจากที่พักคืนก่อน (startHotel) ตอนเช้า แล้วกลับไปนอนที่พักคืนนี้ (hotel) ตอนค่ำ
+  // ใช้ leg_id เป็น id ของจุด เพื่อให้แคชเวลาเดินทางคีย์เดียวกับ useHotelDistance
+  const startAnchorMode = (stops[0]?.travel_mode as TravelMode | null) ?? null;
+  const startAnchor: ScheduleAnchor | null = startHotel
+    ? {
+        id: startHotel.leg_id,
+        lat: startHotel.lat,
+        lng: startHotel.lng,
+        label: startHotel.hotel_name,
+        mode: startAnchorMode,
+      }
+    : null;
+  const endAnchor: ScheduleAnchor | null = hotel
+    ? {
+        id: hotel.leg_id,
+        lat: hotel.lat,
+        lng: hotel.lng,
+        label: hotel.hotel_name,
+        mode: returnTravelMode,
+      }
+    : null;
+
   // คู่จุดที่เลือกโหมดเดินทางแล้วเท่านั้นที่ต้องขอเวลาจริง — คู่ที่ยังไม่เลือกโหมดใช้แค่ตัวเลือกในหน้า picker
   const travelPairs = useMemo(() => {
     const pairs: TravelTimePair[] = [];
-    for (let i = 1; i < stops.length; i++) {
-      const mode = stops[i].travel_mode as TravelMode | null;
-      if (!mode) continue;
-      const from = placesById.get(stops[i - 1].place_id);
-      const to = placesById.get(stops[i].place_id);
-      if (!from || !to) continue;
+    const push = (from: PointRef, to: PointRef, mode: TravelMode | null) => {
+      if (!mode) return;
       pairs.push({
         fromId: from.id,
         toId: to.id,
@@ -454,9 +522,33 @@ export function DayStopsSection({
         toLng: to.lng,
         mode,
       });
+    };
+
+    const firstPlace = stops.length > 0 ? placesById.get(stops[0].place_id) : undefined;
+    if (startAnchor && firstPlace) push(startAnchor, firstPlace, startAnchor.mode);
+
+    for (let i = 1; i < stops.length; i++) {
+      const mode = stops[i].travel_mode as TravelMode | null;
+      const from = placesById.get(stops[i - 1].place_id);
+      const to = placesById.get(stops[i].place_id);
+      if (!from || !to) continue;
+      push(from, to, mode);
     }
+
+    const lastPlace =
+      stops.length > 0 ? placesById.get(stops[stops.length - 1].place_id) : undefined;
+    if (endAnchor && lastPlace) push(lastPlace, endAnchor, endAnchor.mode);
+
     return pairs;
-  }, [stops, placesById]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    stops,
+    placesById,
+    startAnchor?.id,
+    startAnchor?.mode,
+    endAnchor?.id,
+    endAnchor?.mode,
+  ]);
 
   const realTravelTimes = useDayTravelTimes(travelPairs);
 
@@ -478,38 +570,115 @@ export function DayStopsSection({
   // เวลา "ออกเดินทาง" ที่ตั้งเองได้ — กันไม่ให้ตารางจุดแวะเริ่มก่อนที่จะถึงจริงๆ
   const effectiveStartTime = beforeAnchorEvent?.time ?? startTime;
 
-  const schedule = useMemo(() => {
-    const inputs: ScheduleStopInput[] = stops.map((s) => ({
-      id: s.id,
-      placeId: s.place_id,
-      dwellMinutes: s.dwell_minutes,
-      travelMode: (s.travel_mode as TravelMode | null) ?? null,
-    }));
-    return computeSchedule(effectiveStartTime, inputs, placesById, (fromId, toId, mode) => {
-      const from = placesById.get(fromId);
-      const to = placesById.get(toId);
-      if (!from || !to) return null;
+  // เวลาเดินทางจริงจาก Google ถ้ามีในแคชแล้ว ไม่งั้นใช้ประมาณการเส้นตรง — ใช้ทั้งจุดแวะและที่พัก
+  const resolveTravelMinutes = useCallback(
+    (from: PointRef, to: PointRef, mode: TravelMode | null) => {
       if (mode) {
-        const real = realTravelTimes.get(`${fromId}|${toId}|${mode}`);
+        const real = realTravelTimes.get(`${from.id}|${to.id}|${mode}`);
         if (real?.minutes != null) return real.minutes;
       }
       return estimateTravelMinutesBetween(from, to, mode);
-    });
-  }, [stops, placesById, effectiveStartTime, realTravelTimes]);
+    },
+    [realTravelTimes]
+  );
+
+  const buildSchedule = useCallback(
+    (orderedStops: TripStop[]) => {
+      const inputs: ScheduleStopInput[] = orderedStops.map((s) => ({
+        id: s.id,
+        placeId: s.place_id,
+        dwellMinutes: s.dwell_minutes,
+        travelMode: (s.travel_mode as TravelMode | null) ?? null,
+      }));
+      return computeSchedule(effectiveStartTime, inputs, placesById, resolveTravelMinutes, {
+        start: startAnchor,
+        end: endAnchor,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      effectiveStartTime,
+      placesById,
+      resolveTravelMinutes,
+      startAnchor?.id,
+      startAnchor?.mode,
+      endAnchor?.id,
+      endAnchor?.mode,
+    ]
+  );
+
+  const daySchedule = useMemo(() => buildSchedule(stops), [buildSchedule, stops]);
+  const schedule = daySchedule.stops;
 
   // จุดแวะวันนี้จบช้ากว่าเดดไลน์ตายตัว (เช่น ต้องออกไปขึ้นเครื่อง) ไปกี่นาที — null ถ้าไม่มีเดดไลน์หรือยังไม่เลย
+  // นับถึงตอนกลับถึงที่พักด้วยถ้ามีที่พักปลายทาง (เดิมนับแค่ถึงเวลาออกจากจุดสุดท้าย)
   const deadlineOverrunMinutes = useMemo(() => {
     if (!afterAnchorEvent || schedule.length === 0) return null;
-    const lastDeparture = schedule[schedule.length - 1].departure;
-    const over = timeToMinutes(lastDeparture) - timeToMinutes(afterAnchorEvent.time);
+    const endOfDay = daySchedule.arriveBackAt ?? schedule[schedule.length - 1].departure;
+    const over = timeToMinutes(endOfDay) - timeToMinutes(afterAnchorEvent.time);
     return over > 0 ? over : null;
-  }, [afterAnchorEvent, schedule]);
+  }, [afterAnchorEvent, schedule, daySchedule.arriveBackAt]);
 
   const isTravelTimeReal = (fromId: string, toId: string, mode: TravelMode | null) =>
     mode != null && realTravelTimes.get(`${fromId}|${toId}|${mode}`)?.minutes != null;
 
   const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [suggestingRoute, setSuggestingRoute] = useState(false);
   const viewSched = viewIndex != null ? schedule[viewIndex] : null;
+
+  const isClosedAt = useCallback(
+    (place: Place, arrival: string, departure: string) =>
+      isOpenDuring(openingHoursByQuery.get(place.mapsQuery), day.date, arrival, departure) === false,
+    [openingHoursByQuery, day.date]
+  );
+
+  // ส่งให้แผนที่ใช้โชว์ในป๊อปอัพ (โน้ต + จุดที่จะไปตอนปิด)
+  const notesByStopId = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    for (const stop of stops) map[stop.id] = stop.note;
+    return map;
+  }, [stops]);
+
+  const closedStopIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of schedule) {
+      if (s.place && isClosedAt(s.place, s.arrival, s.departure)) set.add(s.id);
+    }
+    return set;
+  }, [schedule, isClosedAt]);
+
+  // โหมดที่ใช้บ่อยสุดของวัน ใช้เป็น travelmode ของลิงก์ Google Maps ทั้งวัน
+  const dominantMode = useMemo<TravelMode>(() => {
+    const count: Record<string, number> = {};
+    for (const s of stops) if (s.travel_mode) count[s.travel_mode] = (count[s.travel_mode] ?? 0) + 1;
+    if (returnTravelMode) count[returnTravelMode] = (count[returnTravelMode] ?? 0) + 1;
+    const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+    return (top?.[0] as TravelMode | undefined) ?? "transit";
+  }, [stops, returnTravelMode]);
+
+  const hasEstimatedLeg = schedule.some(
+    (s, i) =>
+      i > 0 &&
+      s.place != null &&
+      schedule[i - 1].place != null &&
+      !isTravelTimeReal(schedule[i - 1].place!.id, s.place.id, s.travelMode)
+  );
+
+  const firstPlace = schedule[0]?.place;
+  const lastPlace = schedule[schedule.length - 1]?.place;
+  const showStartAnchorRow = startAnchor != null && firstPlace != null;
+  const showEndAnchorRow = endAnchor != null && lastPlace != null;
+
+  // ไฮไลต์สองทาง: คลิกหมุดบนแผนที่ ↔ คลิกชื่อสถานที่ในลิสต์ — แยกอิสระต่อวัน คนละหน้าที่กับ flashStopId (pulse ชั่วคราวตอนเพิ่งเพิ่มจุดแวะ)
+  const [activeStopId, setActiveStopId] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "map">("list");
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const hasMapPoints = schedule.some((s) => s.place != null);
+
+  useEffect(() => {
+    if (!activeStopId) return;
+    rowRefs.current.get(activeStopId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [activeStopId]);
 
   return (
     <section className="mb-5 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5">
@@ -583,81 +752,202 @@ export function DayStopsSection({
         <DayEventsPanel events={eventsBeforeStops} />
       )}
 
-      <div
-        ref={setDayDroppableRef}
-        className={`divide-y divide-cream-soft transition-colors ${
-          isOver ? "bg-maple-soft/40 ring-2 ring-inset ring-maple" : ""
-        }`}
-      >
-        {stops.length === 0 && (
-          <div className="px-4 py-5 text-center text-sm text-ink-soft">
-            ยังไม่มีจุดแวะ — ลากสถานที่จากคลังด้านข้างมาวางที่นี่ได้เลย
-          </div>
-        )}
-        {stops.length > 0 && (
-          <div className="bg-cream-soft/30 px-3 sm:px-4">
-            <button
-              onClick={() => onInsertPlace(0, centerBeforeFirstStop, null)}
-              className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
-            >
-              + แทรกร้านอาหารก่อนจุดแรก
-            </button>
-          </div>
-        )}
-        <SortableContext items={stops.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-          {schedule.map((sched, i) => {
-            const stop = stops[i];
-            const prevPlace = i > 0 ? schedule[i - 1].place : undefined;
-            return (
-              <SortableStopRow
-                key={stop.id}
-                stop={stop}
-                dayId={day.id}
-                index={i}
-                sched={sched}
-                prevPlace={prevPlace}
-                isFlashing={stop.id === flashStopId}
-                isTravelReal={
-                  prevPlace != null &&
-                  sched.place != null &&
-                  isTravelTimeReal(prevPlace.id, sched.place.id, (stop.travel_mode as TravelMode | null) ?? null)
-                }
-                closedWarning={
-                  sched.place != null &&
-                  isOpenDuring(
-                    openingHoursByQuery.get(sched.place.mapsQuery),
-                    day.date,
-                    sched.arrival,
-                    sched.departure
-                  ) === false
-                }
-                closedHoursLabel={
-                  sched.place != null
-                    ? weekdayHoursLabel(openingHoursByQuery.get(sched.place.mapsQuery), day.date)
-                    : null
-                }
-                onSetTravelMode={(mode) => onUpdateTravelMode(stop.id, mode)}
-                onView={() => setViewIndex(i)}
-                onUpdateDwell={(minutes) => onUpdateDwell(stop.id, minutes)}
-                onUpdateNote={(note) => onUpdateNote(stop.id, note)}
-                onRemoveStop={() => onRemoveStop(stop.id)}
-                onInsertBefore={
-                  i > 0 && prevPlace
-                    ? () => onInsertPlace(i, { lat: prevPlace.lat, lng: prevPlace.lng }, prevPlace)
-                    : undefined
-                }
-              />
-            );
-          })}
-        </SortableContext>
-
-        <button
-          onClick={onAddPlace}
-          className="flex w-full items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
+      {hasMapPoints && (
+        <div className="flex gap-1 border-b border-cream-soft bg-cream-soft/30 px-3 pt-2 lg:hidden">
+          <button
+            onClick={() => setMobileView("list")}
+            className={`rounded-t-lg px-3 py-1.5 text-xs font-medium ${
+              mobileView === "list" ? "bg-white text-ink" : "text-ink-soft"
+            }`}
+          >
+            📋 รายการ
+          </button>
+          <button
+            onClick={() => setMobileView("map")}
+            className={`rounded-t-lg px-3 py-1.5 text-xs font-medium ${
+              mobileView === "map" ? "bg-white text-ink" : "text-ink-soft"
+            }`}
+          >
+            🗺️ แผนที่
+          </button>
+        </div>
+      )}
+      {/* min-w-0 บนตัว flex item ฝั่งลิสต์สำคัญมาก — ไม่มีแล้วเนื้อหายาวๆ ในลิสต์จะดันแผนที่ทะลุออกนอกการ์ด */}
+      <div className="lg:flex lg:items-start lg:gap-3 lg:px-3 lg:py-3">
+        <div
+          ref={setDayDroppableRef}
+          className={`min-w-0 divide-y divide-cream-soft transition-colors lg:flex-1 ${
+            mobileView === "list" ? "block" : "hidden"
+          } lg:block ${isOver ? "bg-maple-soft/40 ring-2 ring-inset ring-maple" : ""}`}
         >
-          + เพิ่มสถานที่ให้วันนี้
-        </button>
+          {stops.length === 0 && (
+            <div className="px-4 py-5 text-center text-sm text-ink-soft">
+              ยังไม่มีจุดแวะ — ลากสถานที่จากคลังด้านข้างมาวางที่นี่ได้เลย
+            </div>
+          )}
+          {/* จุดเริ่มของวัน = ที่พักคืนก่อนหน้า (วันย้ายเมืองจะเป็นคนละที่กับที่พักคืนนี้) */}
+          {showStartAnchorRow && startAnchor && (
+            <div className="flex items-center gap-2 bg-pine-soft/40 px-3 py-2 text-xs text-pine-dark sm:px-4">
+              <span className="w-12 shrink-0 text-center font-semibold tabular-nums sm:w-14">
+                {startTime}
+              </span>
+              <span className="min-w-0 flex-1 truncate" title={startAnchor.label}>
+                🏨 ออกจาก {startAnchor.label}
+              </span>
+            </div>
+          )}
+          {showStartAnchorRow && startAnchor && firstPlace && (
+            <TravelModeRow
+              key={`start-${startAnchorMode ?? "unset"}`}
+              fromPlace={startAnchor}
+              toPlace={firstPlace}
+              mode={startAnchorMode}
+              resolvedMinutes={daySchedule.travelMinutesFromStart ?? 0}
+              isReal={isTravelTimeReal(startAnchor.id, firstPlace.id, startAnchorMode)}
+              prefix="จากที่พัก"
+              onSetMode={(mode) => onUpdateTravelMode(stops[0].id, mode)}
+            />
+          )}
+          {stops.length > 0 && (
+            <div className="bg-cream-soft/30 px-3 sm:px-4">
+              <button
+                onClick={() => onInsertPlace(0, centerBeforeFirstStop, null)}
+                className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
+              >
+                + แทรกร้านอาหารก่อนจุดแรก
+              </button>
+            </div>
+          )}
+          <SortableContext items={stops.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+            {schedule.map((sched, i) => {
+              const stop = stops[i];
+              const prevPlace = i > 0 ? schedule[i - 1].place : undefined;
+              return (
+                <SortableStopRow
+                  key={stop.id}
+                  stop={stop}
+                  dayId={day.id}
+                  index={i}
+                  sched={sched}
+                  prevPlace={prevPlace}
+                  isFlashing={stop.id === flashStopId}
+                  isActive={stop.id === activeStopId}
+                  rowRef={(el) => {
+                    if (el) rowRefs.current.set(stop.id, el);
+                    else rowRefs.current.delete(stop.id);
+                  }}
+                  isTravelReal={
+                    prevPlace != null &&
+                    sched.place != null &&
+                    isTravelTimeReal(prevPlace.id, sched.place.id, (stop.travel_mode as TravelMode | null) ?? null)
+                  }
+                  closedWarning={
+                    sched.place != null &&
+                    isOpenDuring(
+                      openingHoursByQuery.get(sched.place.mapsQuery),
+                      day.date,
+                      sched.arrival,
+                      sched.departure
+                    ) === false
+                  }
+                  closedHoursLabel={
+                    sched.place != null
+                      ? weekdayHoursLabel(openingHoursByQuery.get(sched.place.mapsQuery), day.date)
+                      : null
+                  }
+                  onSetTravelMode={(mode) => onUpdateTravelMode(stop.id, mode)}
+                  onView={() => {
+                    setViewIndex(i);
+                    setActiveStopId(stop.id);
+                  }}
+                  onUpdateDwell={(minutes) => onUpdateDwell(stop.id, minutes)}
+                  onUpdateNote={(note) => onUpdateNote(stop.id, note)}
+                  onRemoveStop={() => onRemoveStop(stop.id)}
+                  onInsertBefore={
+                    i > 0 && prevPlace
+                      ? () => onInsertPlace(i, { lat: prevPlace.lat, lng: prevPlace.lng }, prevPlace)
+                      : undefined
+                  }
+                />
+              );
+            })}
+          </SortableContext>
+
+          {/* จุดจบของวัน = กลับไปนอนที่พักคืนนี้ */}
+          {showEndAnchorRow && endAnchor && lastPlace && (
+            <TravelModeRow
+              key={`end-${returnTravelMode ?? "unset"}`}
+              fromPlace={lastPlace}
+              toPlace={endAnchor}
+              mode={returnTravelMode}
+              resolvedMinutes={daySchedule.travelMinutesToEnd ?? 0}
+              isReal={isTravelTimeReal(lastPlace.id, endAnchor.id, returnTravelMode)}
+              prefix="กลับที่พัก"
+              onSetMode={onReturnTravelModeChange}
+            />
+          )}
+          {showEndAnchorRow && endAnchor && (
+            <div className="flex items-center gap-2 bg-pine-soft/40 px-3 py-2 text-xs text-pine-dark sm:px-4">
+              <span className="w-12 shrink-0 text-center font-semibold tabular-nums sm:w-14">
+                {daySchedule.arriveBackAt}
+              </span>
+              <span className="min-w-0 flex-1 truncate" title={endAnchor.label}>
+                🏨 กลับถึง {endAnchor.label}
+              </span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center gap-1">
+            <button
+              onClick={onAddPlace}
+              className="flex flex-1 items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
+            >
+              + เพิ่มสถานที่ให้วันนี้
+            </button>
+            {stops.length >= 3 && (
+              <button
+                onClick={() => setSuggestingRoute(true)}
+                className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+              >
+                ✨ ลองจัดเส้นทางใหม่
+              </button>
+            )}
+          </div>
+        </div>
+
+        {hasMapPoints && (
+          <div
+            className={`h-72 px-3 pb-3 pt-3 lg:h-[420px] lg:w-72 lg:shrink-0 lg:px-0 lg:pb-0 lg:pt-0 ${
+              mobileView === "map" ? "block" : "hidden"
+            } lg:block`}
+          >
+            <DayMapPanel
+              schedule={schedule}
+              startHotel={startHotel}
+              endHotel={hotel}
+              notesByStopId={notesByStopId}
+              closedStopIds={closedStopIds}
+              activeStopId={activeStopId}
+              onSelectStop={setActiveStopId}
+              onOpenDetail={(stopId) => {
+                const index = schedule.findIndex((s) => s.id === stopId);
+                if (index >= 0) setViewIndex(index);
+              }}
+              className="h-full"
+            />
+          </div>
+        )}
       </div>
+
+      {hasMapPoints && (
+        <DaySummaryBar
+          schedule={daySchedule}
+          startHotel={startHotel}
+          endHotel={hotel}
+          dominantMode={dominantMode}
+          hasEstimatedLeg={hasEstimatedLeg}
+        />
+      )}
 
       {deadlineOverrunMinutes != null && afterAnchorEvent && (
         <div className="bg-maple-soft/70 px-4 py-2 text-xs text-maple-dark">
@@ -668,6 +958,19 @@ export function DayStopsSection({
 
       {eventsAfterStops.length > 0 && (
         <DayEventsPanel events={eventsAfterStops} heading="✈️ ต่อจากนั้น" />
+      )}
+
+      {suggestingRoute && (
+        <RouteSuggestionModal
+          stops={stops}
+          placesById={placesById}
+          startAt={startAnchor}
+          endAt={endAnchor}
+          buildSchedule={buildSchedule}
+          isClosedAt={isClosedAt}
+          onApply={onReorder}
+          onClose={() => setSuggestingRoute(false)}
+        />
       )}
 
       {viewSched?.place && (

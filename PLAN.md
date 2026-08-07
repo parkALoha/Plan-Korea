@@ -107,7 +107,7 @@ migration `0011_place_details_cache.sql` รันแล้ว ยืนยั�
 - [x] มีช่องค้นหาร้านด้วยชื่อใน `NearbyRestaurantsModal` เผื่อร้านอยู่นอกรัศมี Nearby Search หรือรู้ชื่อเป๊ะๆ อยู่แล้ว
 - [x] โน้ตสั้นๆ ต่อจุดแวะ (migration `0013` เพิ่มคอลัมน์ `trip_stops.note`) — กด "+ โน้ต" ใต้แต่ละจุดเพื่อจดข้อความอิสระ เช่น "ร้านนี้อร่อย รีบไป"
 
-**ผู้ใช้ต้องทำ:** รัน migration `0012_place_details_extra.sql` และ `0013_trip_stop_notes.sql` ใน Supabase Dashboard → SQL Editor (ยังไม่ได้รัน ณ ตอนที่เขียนนี้ — โค้ดใช้งานได้ปกติแต่รีวิว/เรทติ้ง/โน้ตจะไม่ถูกแคช/บันทึกจนกว่าจะรัน)
+migration `0012_place_details_extra.sql` และ `0013_trip_stop_notes.sql` รันแล้ว ยืนยันด้วย curl ตรงไปที่ `place_details_cache`/`trip_stops` (7 ส.ค. 2026)
 
 ---
 
@@ -127,13 +127,13 @@ migration `0011_place_details_cache.sql` รันแล้ว ยืนยั�
 
 ---
 
-### เฟส 3 — แผนที่รวมเส้นทางทั้งวัน 🟠
-**ต้องให้ผู้ใช้ทำก่อน:** เปิด **Maps JavaScript API** ใน Google Cloud Console
+### เฟส 3 — แผนที่รวมเส้นทางทั้งวัน ✅ เสร็จ (7 ส.ค. 2026)
+ผู้ใช้เปิด **Maps JavaScript API** บนคีย์เดิม `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` ใน Google Cloud Console แล้ว ยืนยันด้วยการทดสอบจริงในเบราว์เซอร์ — เห็นแผนที่ Busan จริงพร้อมหมุดเลข 1-2-3 เรียงตามลำดับจุดแวะถูกต้อง
 
-- [ ] แผนที่ต่อวัน: หมุดเลข 1-2-3 ตามลำดับจุดแวะ + เส้นเชื่อม + หมุดโรงแรมคนละสี
-- [ ] กดหมุด → เลื่อนไปแถวนั้นในลิสต์ / กดแถว → หมุดเด้ง (สองทาง)
-- [ ] มือถือ: แท็บสลับ "ลิสต์ / แผนที่" · คอม: วางคู่กันซ้าย-ขวา
-- [ ] จำกัด key ด้วย HTTP referrer ให้เฉพาะโดเมน Vercel + localhost (คีย์ฝั่ง browser ใครก็เห็นได้)
+- [x] แผนที่ต่อวัน: หมุดเลข 1-2-3 ตามลำดับจุดแวะ + เส้นเชื่อม + หมุดโรงแรมคนละสี — `components/DayMapPanel.tsx` ใช้ `@vis.gl/react-google-maps` (`Marker` ทรงกลมสี + label ตัวเลข/🏨 + `Polyline`) มี fallback ข้อความเมื่อไม่มีคีย์ **หมายเหตุ:** ตอนแรกใช้ `AdvancedMarker`+`Pin`+`mapId="DEMO_MAP_ID"` แต่เจอ `ApiProjectMapError` เมื่อมีหลายแผนที่พร้อมกันบนหน้าเดียว (DEMO_MAP_ID ไม่รองรับการใช้งานที่ scale หลาย instance) เปลี่ยนมาใช้ `Marker` แบบคลาสสิกกับ `google.maps.SymbolPath.CIRCLE` แทน ไม่ต้องพึ่ง Map ID เลย แก้ปัญหาได้
+- [x] กดหมุด → เลื่อนไปแถวนั้นในลิสต์ / กดแถว → หมุดเด้ง (สองทาง) — `activeStopId` ใน `DayStopsSection` ผูกทั้งสองทาง ทดสอบฝั่งกดชื่อในลิสต์แล้วไฮไลต์ ring ติดแถวถูกต้อง (ฝั่งกดหมุดใช้ handler เดียวกัน `onSelectStop`)
+- [x] มือถือ: แท็บสลับ "ลิสต์ / แผนที่" · คอม: วางคู่กันซ้าย-ขวา — ทดสอบแล้วทั้งจอมือถือ (375px) และจอใหญ่ (1400px)
+- [x] จำกัด key ด้วย HTTP referrer ให้เฉพาะโดเมน Vercel + localhost — ผู้ใช้ตั้งค่าใน Google Cloud Console แล้ว
 
 ---
 

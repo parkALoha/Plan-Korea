@@ -68,5 +68,11 @@ export type TripStop = {
 export type TripDaySettings = {
   plan_id: string;
   day_id: string;
+  /** เวลาที่ "ออกจากที่พัก" ของวันนั้น (ไม่ใช่เวลาถึงจุดแวะแรก) */
   start_time: string;
+  /**
+   * โหมดเดินทางขากลับจากจุดแวะสุดท้าย → ที่พักคืนนั้น
+   * undefined ได้เมื่อ migration 0015 ยังไม่ถูกรัน — ถือเท่ากับ null (ใช้ค่าประมาณ)
+   */
+  return_travel_mode?: string | null;
 };
