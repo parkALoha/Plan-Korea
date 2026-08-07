@@ -20,6 +20,9 @@ import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
+import { useDaySettings } from "@/hooks/useDaySettings";
+import { BottomNav } from "@/components/BottomNav";
+import type { TravelMode } from "@/lib/schedule";
 
 function todayISODate(): string {
   const d = new Date();
@@ -79,6 +82,7 @@ export default function TodayPage() {
   } = useStops(activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
   const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides();
+  const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(activePlanId);
 
   const itinerary = useMemo(
     () => applyOvernightOverrides(ITINERARY, overnightOverrides),
@@ -97,7 +101,7 @@ export default function TodayPage() {
     [stops, day.id]
   );
 
-  const returnTravelMode = null; // ค่าประมาณการพอสำหรับหน้านี้ (ตั้งค่าจริงในหน้าแผน)
+  // อ่านค่าเดียวกับหน้าแผนเป๊ะๆ (เวลาออกเดินทาง + โหมดขากลับที่พัก) ไม่งั้นเวลาสองหน้าจะไม่ตรงกัน
   const { schedule, startAnchor, endAnchor, daySchedule, openingHoursByQuery, beforeAnchorEvent, afterAnchorEvent } =
     useDaySchedule({
       day,
@@ -105,8 +109,8 @@ export default function TodayPage() {
       customPlaces,
       hotel: hotelForDay(day.id),
       startHotel: hotelBeforeDay(day.id),
-      returnTravelMode,
-      startTime: "07:00",
+      returnTravelMode: (daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null,
+      startTime: daySettings[day.id]?.start_time ?? null,
     });
 
   const [now, setNow] = useState(() => new Date());
@@ -115,7 +119,13 @@ export default function TodayPage() {
     return () => clearInterval(id);
   }, []);
 
-  const overallLoaded = plansLoaded && stopsLoaded && customPlacesLoaded && overnightLoaded && bookingsLoaded;
+  const overallLoaded =
+    plansLoaded &&
+    stopsLoaded &&
+    customPlacesLoaded &&
+    overnightLoaded &&
+    bookingsLoaded &&
+    (!activePlanId || daySettingsLoaded);
 
   const nextIndex = dayStops.findIndex((s) => !s.visited_at);
   const nextStop = nextIndex >= 0 ? dayStops[nextIndex] : null;
@@ -141,12 +151,17 @@ export default function TodayPage() {
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 
   return (
-    <main className="min-h-full pb-10">
+    <main className="min-h-full pb-24 lg:pb-10">
       <header className="bg-pine px-4 pb-5 pt-6 text-cream">
         <div className="flex items-center justify-between">
-          <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
-            ← หน้าแผน
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
+              ← หน้าแผน
+            </Link>
+            <Link href="/summary" className="text-sm text-cream/80 hover:text-cream hover:underline">
+              📋 สรุปแผน
+            </Link>
+          </div>
           <div className="text-xs text-cream/70">
             {now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น.
           </div>
@@ -459,6 +474,7 @@ export default function TodayPage() {
           )}
         </div>
       )}
+      <BottomNav />
     </main>
   );
 }

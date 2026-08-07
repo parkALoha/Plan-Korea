@@ -70,7 +70,7 @@ export function useDaySettings(planId: string | null) {
       if (!supabaseConfigured) {
         setSettings((prev) => ({
           ...prev,
-          [dayId]: { plan_id: planId, day_id: dayId, start_time: startTime },
+          [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime },
         }));
         return;
       }
@@ -90,7 +90,7 @@ export function useDaySettings(planId: string | null) {
       const startTime = settings[dayId]?.start_time ?? "07:00";
       setSettings((prev) => ({
         ...prev,
-        [dayId]: { plan_id: planId, day_id: dayId, start_time: startTime, return_travel_mode: mode },
+        [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime, return_travel_mode: mode },
       }));
       if (!supabaseConfigured) return;
       await supabase.from("trip_day_settings").upsert({
@@ -103,5 +103,28 @@ export function useDaySettings(planId: string | null) {
     [planId, settings]
   );
 
-  return { settings, loaded, setStartTime, setReturnTravelMode, supabaseConfigured };
+  // ล็อก/ปลดล็อกวัน — คอลัมน์ is_locked มาจาก migration 0021
+  // อัปเดต state ในเครื่องก่อนเสมอ (ปุ่มต้องตอบสนองทันที) แล้วค่อยยิงขึ้น DB ให้อีกคนเห็นผ่าน realtime
+  const setDaysLocked = useCallback(
+    async (dayIds: string[], locked: boolean) => {
+      if (!planId || dayIds.length === 0) return;
+      // start_time เป็นคอลัมน์ not null — ต้องส่งไปด้วยทุกครั้งที่ upsert แถวที่อาจยังไม่มี
+      const rows = dayIds.map((dayId) => ({
+        plan_id: planId,
+        day_id: dayId,
+        start_time: settings[dayId]?.start_time ?? "07:00",
+        is_locked: locked,
+      }));
+      setSettings((prev) => {
+        const next = { ...prev };
+        for (const row of rows) next[row.day_id] = { ...prev[row.day_id], ...row };
+        return next;
+      });
+      if (!supabaseConfigured) return;
+      await supabase.from("trip_day_settings").upsert(rows);
+    },
+    [planId, settings]
+  );
+
+  return { settings, loaded, setStartTime, setReturnTravelMode, setDaysLocked, supabaseConfigured };
 }

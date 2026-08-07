@@ -39,7 +39,8 @@ export function useDaySchedule({
   hotel: TripHotel | null;
   startHotel: TripHotel | null;
   returnTravelMode: TravelMode | null;
-  startTime: string;
+  /** เวลาออกเดินทางที่ตั้งเองไว้ — null = ยังไม่เคยตั้ง ให้ใช้ค่า default ของวันนั้น (ดู effectiveStartTime) */
+  startTime: string | null;
 }) {
   const mealCount = useMemo(
     () =>
@@ -136,9 +137,12 @@ export function useDaySchedule({
   const eventsBeforeStops = beforeAnchorIndex >= 0 ? day.events!.slice(0, beforeAnchorIndex + 1) : day.events;
   const eventsAfterStops = beforeAnchorIndex >= 0 ? day.events!.slice(beforeAnchorIndex + 1) : [];
 
-  // วันที่มีเหตุการณ์ตายตัวเป็นจุดเริ่ม (เช่น ถึงย่านเมืองเก่า 15:30) ใช้เวลานั้นนับตารางจุดแวะแทน
-  // เวลา "ออกเดินทาง" ที่ตั้งเองได้ — กันไม่ให้ตารางจุดแวะเริ่มก่อนที่จะถึงจริงๆ
-  const effectiveStartTime = beforeAnchorEvent?.time ?? startTime;
+  // เวลาเริ่มนับตารางจุดแวะของวันนี้ ตามลำดับความสำคัญ:
+  //   1) เวลาที่ตั้งเองไว้ (ตั้งได้ทุกวัน รวมวันบิน — บางทีผ่าน ตม. เร็ว/ช้ากว่าที่เผื่อไว้)
+  //   2) เหตุการณ์ตายตัวที่เป็นจุดเริ่มของช่วงว่าง (เช่น ถึงย่านเมืองเก่า 15:30) = ค่าเริ่มต้นที่แนะนำ
+  //   3) 07:00 (วันเที่ยวปกติ)
+  const defaultStartTime = beforeAnchorEvent?.time ?? "07:00";
+  const effectiveStartTime = startTime ?? defaultStartTime;
 
   // เวลาเดินทางจริงจาก Google ถ้ามีในแคชแล้ว ไม่งั้นใช้ประมาณการเส้นตรง — ใช้ทั้งจุดแวะและที่พัก
   const resolveTravelMinutes = useCallback(
@@ -242,6 +246,7 @@ export function useDaySchedule({
     afterAnchorEvent,
     eventsBeforeStops,
     eventsAfterStops,
+    defaultStartTime,
     effectiveStartTime,
     buildSchedule,
     daySchedule,

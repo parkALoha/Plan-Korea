@@ -32,6 +32,7 @@ import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useLegacyBootstrap } from "@/hooks/useLegacyBootstrap";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
+import { BottomNav } from "@/components/BottomNav";
 
 // ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
 // (ทริปนี้ไม่มีรถส่วนตัว แท็กซี่ต้องเลือกเองเสมอ ไม่ใช่ค่าเริ่มต้น) ใช้ตอนเพิ่ม/แทรกจุดแวะใหม่
@@ -88,6 +89,7 @@ export default function Home() {
     loaded: daySettingsLoaded,
     setStartTime,
     setReturnTravelMode,
+    setDaysLocked,
   } = useDaySettings(activePlanId);
   const {
     hiddenPlaceIds,
@@ -203,6 +205,21 @@ export default function Home() {
     flashTimeoutRef.current = setTimeout(() => setFlashStopId(null), 1100);
   }, []);
 
+  // วันที่ล็อกไว้ = แก้ไม่ได้จนกว่าจะปลดล็อก (คอลัมน์ is_locked จาก migration 0021 — ยังไม่รัน = undefined = ไม่ล็อก)
+  const isDayLocked = useCallback(
+    (dayId: string) => daySettings[dayId]?.is_locked === true,
+    [daySettings]
+  );
+  const lockedDayCount = itinerary.filter((d) => isDayLocked(d.id)).length;
+
+  async function handleToggleLockAll() {
+    const lockAll = lockedDayCount < itinerary.length;
+    await setDaysLocked(
+      itinerary.map((d) => d.id).filter((id) => isDayLocked(id) !== lockAll),
+      lockAll
+    );
+  }
+
   const { sensors, handleDragStart, handleDragEnd, activeDragLabel } = useTripDnd({
     itinerary,
     customPlaces,
@@ -210,6 +227,7 @@ export default function Home() {
     stopsByDay,
     who,
     lastStopPlaceForDay,
+    isDayLocked,
     defaultTravelModeFor,
     addStop,
     removeStop,
@@ -268,6 +286,9 @@ export default function Home() {
           onNewPlan={handleNewPlan}
           onRenamePlan={handleRenamePlan}
           onDeletePlan={handleDeletePlan}
+          lockedDayCount={lockedDayCount}
+          totalDayCount={itinerary.length}
+          onToggleLockAll={handleToggleLockAll}
         />
 
         {/* pb-28 บนมือถือ: เว้นที่ให้ปุ่มลอย "📍 สถานที่" ไม่ไปทับปุ่ม "+ เพิ่มสถานที่" ของวันสุดท้าย
@@ -318,8 +339,10 @@ export default function Home() {
                     (daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null
                   }
                   onReturnTravelModeChange={(mode) => setReturnTravelMode(day.id, mode)}
-                  startTime={daySettings[day.id]?.start_time ?? "07:00"}
+                  startTime={daySettings[day.id]?.start_time ?? null}
                   onStartTimeChange={(value) => setStartTime(day.id, value)}
+                  locked={isDayLocked(day.id)}
+                  onToggleLock={() => setDaysLocked([day.id], !isDayLocked(day.id))}
                   onReorder={(orderedStopIds) => reorderStops(day.id, orderedStopIds)}
                   onOvernightCityChange={
                     day.overnightOptions
@@ -376,11 +399,13 @@ export default function Home() {
         </div>
 
         {overallLoaded && !activePlan && (
-          <div className="fixed inset-x-0 bottom-0 bg-maple-soft px-4 py-2 text-center text-xs text-maple-dark">
+          <div className="fixed inset-x-0 bottom-14 bg-maple-soft px-4 py-2 text-center text-xs text-maple-dark lg:bottom-0">
             กำลังตั้งค่าแผนเริ่มต้น...
           </div>
         )}
       </main>
+
+      <BottomNav />
 
       <DragOverlay>
         {activeDragLabel && (

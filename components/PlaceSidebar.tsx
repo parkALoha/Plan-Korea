@@ -25,17 +25,7 @@ const CATEGORY_ORDER: Category[] = [
   "shopping",
 ];
 
-/** การ์ดในคลัง — ลากออกไปวางในแพลนทริปได้ (data.type "place" ให้ handleDragEnd ที่ app/page.tsx อ่านต่อ)
- *  หรือกดปุ่ม + บนการ์ดตรงๆ ก็เพิ่มเข้าวันที่โฟกัสอยู่ได้เลย ไม่ต้องเปิดโมดัลก่อน */
-function DraggablePlaceCard({
-  place,
-  isCustom,
-  distanceLabel,
-  dayDate,
-  onClick,
-  onHide,
-  onAdd,
-}: {
+type PlaceCardProps = {
   place: Place;
   isCustom?: boolean;
   distanceLabel?: string | null;
@@ -43,7 +33,11 @@ function DraggablePlaceCard({
   onClick: () => void;
   onHide?: () => void;
   onAdd?: () => void;
-}) {
+};
+
+/** การ์ดในคลัง — ลากออกไปวางในแพลนทริปได้ (data.type "place" ให้ handleDragEnd ที่ app/page.tsx อ่านต่อ)
+ *  หรือกดปุ่ม + บนการ์ดตรงๆ ก็เพิ่มเข้าวันที่โฟกัสอยู่ได้เลย ไม่ต้องเปิดโมดัลก่อน */
+function DraggablePlaceCard({ place, ...cardProps }: PlaceCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `lib-${place.id}`,
     data: { type: "place", placeId: place.id },
@@ -57,15 +51,7 @@ function DraggablePlaceCard({
       style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1 }}
       className="touch-none"
     >
-      <PlaceCard
-        place={place}
-        isCustom={isCustom}
-        distanceLabel={distanceLabel}
-        dayDate={dayDate}
-        onClick={onClick}
-        onHide={onHide}
-        onAdd={onAdd}
-      />
+      <PlaceCard place={place} {...cardProps} />
     </div>
   );
 }
@@ -106,7 +92,11 @@ type SidebarProps = {
   onFocusedDayIdChange: (dayId: string) => void;
 };
 
+/** draggable=false = คลังบนมือถือ (bottom sheet) — การ์ดลากไม่ได้ เพราะ dnd-kit ต้องใส่ touch-action:none
+ *  บนการ์ดทุกใบ ทำให้เลื่อนดูคลังด้วยนิ้วไม่ได้เลย (นิ้วโดนตีความเป็น "เริ่มลาก") มือถือมีปุ่ม "+ เพิ่มลงวันนี้"
+ *  บนการ์ดอยู่แล้ว เลยไม่เสียฟีเจอร์อะไร ส่วนจอใหญ่ยังลากได้ตามเดิม */
 function PlaceSidebarContent({
+  draggable,
   itinerary,
   customPlaces,
   who,
@@ -121,7 +111,7 @@ function PlaceSidebarContent({
   onActiveCityChange,
   focusedDayId,
   onFocusedDayIdChange,
-}: SidebarProps) {
+}: SidebarProps & { draggable: boolean }) {
   const cities = useMemo(() => {
     const seen = new Set<Day["city"]>();
     const list: Day["city"][] = [];
@@ -200,8 +190,10 @@ function PlaceSidebarContent({
   const nearbyCenter = referencePlace ?? referenceHotel ?? cityCenter(activeCity);
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-wrap gap-1.5 border-b border-cream-soft p-3">
+    // min-h-0 + flex-1 สำคัญ: ในชีตมือถือความสูงมาจาก flex ไม่ใช่ค่าตายตัว h-full เลยคำนวณไม่ได้
+    // ก้อนนี้จะสูงตามเนื้อหา (3000px+) ทะลุออกนอกชีตแล้วโดน overflow-hidden ตัดทิ้ง = เลื่อนดูไม่ได้
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-cream-soft p-3">
         {cities.map((city) => {
           const meta = CITY_META[city];
           const active = city === activeCity;
@@ -221,7 +213,7 @@ function PlaceSidebarContent({
       </div>
 
       {daysForCity.length > 1 && (
-        <div className="flex flex-wrap gap-1.5 border-b border-cream-soft px-3 py-2">
+        <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-cream-soft px-3 py-2">
           {daysForCity.map((day) => (
             <button
               key={day.id}
@@ -278,18 +270,21 @@ function PlaceSidebarContent({
               {CATEGORY_EMOJI[category]} {CATEGORY_LABEL[category]}
             </h3>
             <div className="grid grid-cols-2 gap-2">
-              {cards.map(({ place, isCustom }) => (
-                <DraggablePlaceCard
-                  key={place.id}
-                  place={place}
-                  isCustom={isCustom}
-                  distanceLabel={distanceLabelFor(place)}
-                  dayDate={focusedDayDate}
-                  onClick={() => setDetailPlace(place)}
-                  onHide={() => onHidePlace(place.id)}
-                  onAdd={() => onAddStopToDay(focusedDayId, place.id)}
-                />
-              ))}
+              {cards.map(({ place, isCustom }) => {
+                const Card = draggable ? DraggablePlaceCard : PlaceCard;
+                return (
+                  <Card
+                    key={place.id}
+                    place={place}
+                    isCustom={isCustom}
+                    distanceLabel={distanceLabelFor(place)}
+                    dayDate={focusedDayDate}
+                    onClick={() => setDetailPlace(place)}
+                    onHide={() => onHidePlace(place.id)}
+                    onAdd={() => onAddStopToDay(focusedDayId, place.id)}
+                  />
+                );
+              })}
             </div>
           </div>
         ))}
@@ -394,7 +389,7 @@ function BottomSheet({
             ✕
           </button>
         </div>
-        <div className="flex-1 overflow-hidden">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </div>
     </div>
   );
@@ -418,18 +413,19 @@ export function PlaceSidebar({
   return (
     <>
       <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-80 shrink-0 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5 lg:block">
-        <PlaceSidebarContent {...props} />
+        <PlaceSidebarContent {...props} draggable />
       </aside>
 
+      {/* ยกให้พ้นแถบเมนูล่าง (BottomNav) ที่สูง ~3.5rem ไม่งั้นทับกัน */}
       <button
         onClick={() => onMobileOpenChange(true)}
-        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20 lg:hidden"
+        className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20 lg:hidden"
       >
         📍 สถานที่
       </button>
       {mobileOpen && (
         <BottomSheet onClose={() => onMobileOpenChange(false)} title={sheetTitle} subtitle={sheetSubtitle}>
-          <PlaceSidebarContent {...props} />
+          <PlaceSidebarContent {...props} draggable={false} />
         </BottomSheet>
       )}
     </>

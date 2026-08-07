@@ -36,6 +36,7 @@ function TravelModeRow({
   resolvedMinutes,
   isReal,
   prefix,
+  locked,
   onSetMode,
 }: {
   /** ต้นทาง/ปลายทางของช่วงนี้ — เป็นจุดแวะหรือที่พักก็ได้ ใช้แค่พิกัดคำนวณระยะ */
@@ -48,6 +49,8 @@ function TravelModeRow({
   isReal: boolean;
   /** ข้อความนำหน้า เช่น "ออกจากที่พัก" / "กลับที่พัก" — ไม่ใส่ = ช่วงระหว่างจุดแวะปกติ */
   prefix?: string;
+  /** true = วันนี้ล็อกอยู่ — โชว์โหมดที่เลือกไว้เฉยๆ เปลี่ยนไม่ได้ */
+  locked?: boolean;
   onSetMode: (mode: TravelMode) => void;
 }) {
   // key={mode} จากผู้เรียก (ดูด้านล่าง) ทำให้ component นี้ remount ใหม่ทุกครั้งที่ mode เปลี่ยน
@@ -55,6 +58,17 @@ function TravelModeRow({
   const [picking, setPicking] = useState(mode == null);
 
   const distanceKm = haversineKm(fromPlace.lat, fromPlace.lng, toPlace.lat, toPlace.lng);
+
+  if (locked) {
+    return (
+      <div className="bg-cream-soft/60 px-4 py-1.5 text-[11px] text-ink-soft">
+        {prefix ? `${prefix} · ` : ""}
+        {mode
+          ? `${TRAVEL_MODE_EMOJI[mode]} ${TRAVEL_MODE_LABEL[mode]} ${isReal ? "" : "~"}${resolvedMinutes} นาทีเดินทาง ${isReal ? "(จริง)" : "(ประมาณการ)"}`
+          : "ยังไม่ได้เลือกวิธีเดินทาง"}
+      </div>
+    );
+  }
 
   if (mode && !picking) {
     return (
@@ -91,7 +105,8 @@ function TravelModeRow({
   );
 }
 
-/** เที่ยวบิน/เดดไลน์ของวันนั้น — เวลาตายตัว จองมาแล้ว แก้ในเว็บไม่ได้ เลยแสดงแยกจากจุดแวะที่ลากจัดลำดับได้ */
+/** เที่ยวบิน/เดดไลน์ของวันนั้น — เวลาตายตัว จองมาแล้ว แก้ในเว็บไม่ได้ เลยแสดงแยกจากจุดแวะที่ลากจัดลำดับได้
+ *  (นี่คือส่วนเดียวของวันที่ตั้งใจให้ล็อกถาวร ที่เหลือของวันบินแก้ได้เหมือนวันปกติทุกอย่าง) */
 function DayEventsPanel({
   events,
   heading = "✈️ ตารางบิน/เวลาตายตัวของวันนี้",
@@ -101,8 +116,9 @@ function DayEventsPanel({
 }) {
   return (
     <div className="border-b border-cream-soft bg-cream-soft/40">
-      <div className="px-4 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
-        {heading}
+      <div className="flex items-baseline justify-between gap-2 px-4 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
+        <span>{heading}</span>
+        <span className="shrink-0 font-normal normal-case text-ink-soft/70">🔒 ตั๋วจองแล้ว แก้ไม่ได้</span>
       </div>
       <div className="space-y-1 px-4 pb-3 pt-1.5">
         {events.map((event, i) => (
@@ -145,6 +161,7 @@ function SortableStopRow({
   isTravelReal,
   closedWarning,
   closedHoursLabel,
+  locked,
   onSetTravelMode,
   onView,
   onUpdateDwell,
@@ -168,6 +185,8 @@ function SortableStopRow({
   closedWarning: boolean;
   /** ข้อความเวลาเปิด-ปิดของวันนั้นจาก Google (เช่น "วันจันทร์: 9:00–18:00") โชว์คู่กับ closedWarning ให้รู้ว่าเปิดกี่โมงจริงๆ */
   closedHoursLabel: string | null;
+  /** true = วันนี้ถูกล็อกไว้ — ซ่อนปุ่มแก้ทั้งหมดและลากจัดลำดับไม่ได้ (ยังกดดูรายละเอียดสถานที่ได้) */
+  locked: boolean;
   onSetTravelMode: (mode: TravelMode) => void;
   onView: () => void;
   onUpdateDwell: (minutes: number) => void;
@@ -181,6 +200,7 @@ function SortableStopRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stop.id,
     data: { type: "stop", dayId },
+    disabled: locked,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -247,11 +267,12 @@ function SortableStopRow({
           mode={(stop.travel_mode as TravelMode | null) ?? null}
           resolvedMinutes={sched.travelMinutesFromPrev}
           isReal={isTravelReal}
+          locked={locked}
           onSetMode={onSetTravelMode}
         />
       )}
       {/* แทรกร้านอาหารกลางวันได้เลย ไม่ต้องเพิ่มท้ายวันแล้วลากขึ้นมาเอง — ศูนย์กลางค้นหาอิงจุดก่อนหน้าตรงนี้ */}
-      {(onInsertBefore || onInsertIntercityBefore) && (
+      {!locked && (onInsertBefore || onInsertIntercityBefore) && (
         <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
           {onInsertBefore && (
             <button
@@ -275,15 +296,24 @@ function SortableStopRow({
           (ของเดิมยัดปุ่มปรับเวลา/ลบไว้ด้วย ชื่อเลยเหลือ ~74px จาก 341px จนอ่านไม่ออก)
           ปุ่มที่ยกออกไปอยู่แถวโน้ตด้านล่างแทน · จอ sm ขึ้นไปยังเป็นแถวเดียวเหมือนเดิม */}
       <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
-        <button
-          {...attributes}
-          {...listeners}
-          aria-label="ลากเพื่อจัดลำดับใหม่"
-          style={{ touchAction: "none" }}
-          className="flex h-10 w-7 shrink-0 cursor-grab items-center justify-center rounded text-ink-soft/60 hover:bg-cream-soft hover:text-ink-soft active:cursor-grabbing sm:h-auto sm:w-auto sm:px-1 sm:py-2"
-        >
-          ⠿
-        </button>
+        {locked ? (
+          <span
+            aria-label="วันนี้ล็อกอยู่ ลากจัดลำดับไม่ได้"
+            className="flex h-10 w-7 shrink-0 items-center justify-center text-xs text-ink-soft/40 sm:h-auto sm:w-auto sm:px-1 sm:py-2"
+          >
+            🔒
+          </span>
+        ) : (
+          <button
+            {...attributes}
+            {...listeners}
+            aria-label="ลากเพื่อจัดลำดับใหม่"
+            style={{ touchAction: "none" }}
+            className="flex h-10 w-7 shrink-0 cursor-grab items-center justify-center rounded text-ink-soft/60 hover:bg-cream-soft hover:text-ink-soft active:cursor-grabbing sm:h-auto sm:w-auto sm:px-1 sm:py-2"
+          >
+            ⠿
+          </button>
+        )}
 
         <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-ink-soft sm:w-14">
           <div className="font-semibold text-ink">{sched.arrival}</div>
@@ -334,16 +364,28 @@ function SortableStopRow({
         )}
 
         {/* ซ่อนช่วง lg ขึ้นไปด้วย เพราะแผนที่ข้างๆ แย่งพื้นที่แถวจนชื่อสถานที่เหลือไม่พอ (บั๊กเดียวกับที่แก้ไว้ฝั่งมือถือ) */}
-        <div className="hidden shrink-0 items-center gap-1 text-xs text-ink-soft sm:flex lg:hidden">
-          {dwellControls}
-        </div>
-        <div className="hidden sm:block lg:hidden">{removeButton}</div>
+        {locked ? (
+          <span className="hidden shrink-0 items-center text-xs tabular-nums text-ink-soft sm:flex lg:hidden">
+            {sched.resolvedDwellMinutes} น.
+          </span>
+        ) : (
+          <>
+            <div className="hidden shrink-0 items-center gap-1 text-xs text-ink-soft sm:flex lg:hidden">
+              {dwellControls}
+            </div>
+            <div className="hidden sm:block lg:hidden">{removeButton}</div>
+          </>
+        )}
       </div>
       <div className="flex items-center gap-2 px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
         <div className="min-w-0 flex-1">
         {/* มือถือ: ช่องพิมพ์โน้ตกินเต็มบรรทัด ปุ่มบันทึก/ยกเลิก/ลบ ตกไปบรรทัดล่าง
             (ของเดิมทุกอย่างอยู่แถวเดียว ช่องพิมพ์เลยแคบจนพิมพ์ไม่ได้จริง) */}
-        {editingNote ? (
+        {locked ? (
+          stop.note ? (
+            <span className="block text-xs italic text-ink-soft">📝 {stop.note}</span>
+          ) : null
+        ) : editingNote ? (
           <div className="flex flex-wrap items-center gap-1.5">
             <input
               autoFocus
@@ -414,11 +456,17 @@ function SortableStopRow({
         )}
         </div>
         {/* ปุ่มปรับเวลาที่อยู่ + ลบ — โชว์แถวนี้ตอนมือถือ และตอน lg ขึ้นไปที่มีแผนที่แย่งพื้นที่ด้วย (ดูคอมเมนต์บนแถวหลัก) — ซ่อนตอนกำลังพิมพ์โน้ตเพื่อไม่แย่งที่ช่องพิมพ์ */}
-        {!editingNote && (
-          <div className="flex shrink-0 items-center gap-1 text-xs text-ink-soft sm:hidden lg:flex">
-            {dwellControls}
-            {removeButton}
-          </div>
+        {locked ? (
+          <span className="flex shrink-0 items-center text-xs tabular-nums text-ink-soft sm:hidden lg:flex">
+            อยู่ {sched.resolvedDwellMinutes} น.
+          </span>
+        ) : (
+          !editingNote && (
+            <div className="flex shrink-0 items-center gap-1 text-xs text-ink-soft sm:hidden lg:flex">
+              {dwellControls}
+              {removeButton}
+            </div>
+          )
         )}
       </div>
       {closedWarning && (
@@ -451,6 +499,8 @@ export function DayStopsSection({
   onInsertIntercity,
   flashStopId,
   onOvernightCityChange,
+  locked,
+  onToggleLock,
 }: {
   day: Day;
   /** stops for this day only, already sorted by order_index */
@@ -463,8 +513,8 @@ export function DayStopsSection({
   /** โหมดเดินทางขากลับที่พัก (จุดสุดท้าย → hotel) */
   returnTravelMode: TravelMode | null;
   onReturnTravelModeChange: (mode: TravelMode) => void;
-  /** เวลาที่ออกจากที่พัก (ไม่ใช่เวลาถึงจุดแวะแรก) */
-  startTime: string;
+  /** เวลาที่ออกจากที่พักที่ตั้งเองไว้ (ไม่ใช่เวลาถึงจุดแวะแรก) — null = ยังไม่เคยตั้ง ใช้ค่าเริ่มต้นของวันนั้น */
+  startTime: string | null;
   onStartTimeChange: (value: string) => void;
   onReorder: (orderedStopIds: string[]) => void;
   /** มีค่าเฉพาะวันที่ยังเลือกเมืองนอนได้ (day.overnightOptions) */
@@ -480,12 +530,16 @@ export function DayStopsSection({
   onInsertIntercity: (atIndex: number, fromDefault: string, toDefault: string) => void;
   /** id ของจุดแวะที่เพิ่งถูกเพิ่ม (ทั้งวันไหนก็ได้) — ใช้ไฮไลต์แถวนั้นสั้นๆ */
   flashStopId: string | null;
+  /** true = วันนี้ลงตัวแล้ว ล็อกไว้กันเผลอลาก/แก้ตอนเลื่อนดู */
+  locked: boolean;
+  onToggleLock: () => void;
 }) {
   // droppable ของทั้งวันนี้ — ใช้ตอนลากการ์ดจากคลัง sidebar มาวาง หรือลากจุดแวะข้ามมาจากวันอื่น
   // (การจัดลำดับ/ย้ายข้ามวันจริงๆ ถูกจัดการที่ DndContext ระดับบนสุดใน app/page.tsx)
   const { setNodeRef: setDayDroppableRef, isOver } = useDroppable({
     id: `day-${day.id}`,
     data: { type: "day", dayId: day.id },
+    disabled: locked,
   });
 
   const dateLabel = new Date(day.date).toLocaleDateString("th-TH", {
@@ -512,6 +566,8 @@ export function DayStopsSection({
     afterAnchorEvent,
     eventsBeforeStops,
     eventsAfterStops,
+    defaultStartTime,
+    effectiveStartTime,
     buildSchedule,
     daySchedule,
     schedule,
@@ -550,18 +606,37 @@ export function DayStopsSection({
   }, [activeStopId]);
 
   return (
-    <section className="mb-5 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5">
+    <section
+      className={`mb-5 overflow-hidden rounded-2xl border bg-white shadow-sm shadow-ink/5 ${
+        locked ? "border-pine/40 ring-1 ring-pine/25" : "border-cream-soft"
+      }`}
+    >
       <div
         className="px-4 py-3 text-cream"
         style={{
           background: `linear-gradient(135deg, ${meta.color}, ${meta.colorDark})`,
         }}
       >
-        <div className="text-xs opacity-80">
-          {dateLabel} · วัน{day.weekdayTh}
-        </div>
-        <div className="text-lg font-bold">
-          {meta.icon} {day.cityTh}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-xs opacity-80">
+              {dateLabel} · วัน{day.weekdayTh}
+            </div>
+            <div className="text-lg font-bold">
+              {meta.icon} {day.cityTh}
+            </div>
+          </div>
+          {/* ล็อกวันที่ลงตัวแล้ว — กันเผลอลากจุดแวะหลุดตอนเลื่อนดูบนมือถือ */}
+          <button
+            onClick={onToggleLock}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+              locked
+                ? "bg-white text-ink"
+                : "border border-white/30 bg-white/10 text-cream hover:bg-white/20"
+            }`}
+          >
+            {locked ? "🔒 ล็อกไว้" : "🔓 ล็อกวันนี้"}
+          </button>
         </div>
         {day.note && <div className="mt-1 text-xs leading-relaxed opacity-90">{day.note}</div>}
         {/* ชื่อโรงแรมจาก Google มักพ่วงที่อยู่เต็มมาด้วย บนมือถือกินไป 2-3 บรรทัดในหัวการ์ด — ตัดให้เหลือบรรทัดเดียว */}
@@ -570,7 +645,7 @@ export function DayStopsSection({
             🏨 พักที่ {hotel.hotel_name}
           </div>
         )}
-        {day.overnightOptions && onOvernightCityChange && (
+        {day.overnightOptions && onOvernightCityChange && !locked && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs opacity-90">
             <span>🛏️ คืนนี้นอนที่</span>
             {day.overnightOptions.map((city) => {
@@ -599,21 +674,37 @@ export function DayStopsSection({
             {mealCount > 0 ? `🍽️ วางมื้อไว้ ${mealCount} มื้อ` : "⚠️ ยังไม่มีมื้ออาหารวันนี้"}
           </div>
         )}
-        {beforeAnchorEvent ? (
-          <div className="mt-2 text-xs opacity-90">
-            🕐 เริ่มนับเวลาจุดแวะอัตโนมัติจาก {beforeAnchorEvent.icon} {beforeAnchorEvent.title} (
-            {beforeAnchorEvent.time}) — เวลาบินแก้ไม่ได้
-          </div>
+        {/* เวลาเริ่มนับตารางของวัน — ตั้งเองได้ทุกวันรวมวันบิน (ตารางบินยังล็อกอยู่ในแผงด้านล่าง)
+            วันที่มีเหตุการณ์ตายตัวเป็นจุดเริ่ม (เช่น ถึงเมืองเก่าฮานอย 15:30) ใช้เวลานั้นเป็นค่าเริ่มต้นให้
+            แต่ถ้าผ่าน ตม./รับกระเป๋าเร็วหรือช้ากว่าที่เผื่อไว้ ก็ปรับเองแล้วกด "กลับไปใช้เวลาแนะนำ" คืนได้ */}
+        {locked ? (
+          <div className="mt-2 text-xs opacity-90">🕐 ออกเดินทาง {effectiveStartTime} · 🔒 ล็อกไว้</div>
         ) : (
-          <label className="mt-2 flex w-fit items-center gap-1.5 text-xs opacity-90">
-            🕐 ออกเดินทาง
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => onStartTimeChange(e.target.value)}
-              className="rounded-lg border border-white/30 bg-white/10 px-2 py-1 text-cream [color-scheme:dark] focus:border-gold focus:outline-none"
-            />
-          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs opacity-90">
+            <label className="flex items-center gap-1.5">
+              🕐 ออกเดินทาง
+              <input
+                type="time"
+                value={effectiveStartTime}
+                onChange={(e) => onStartTimeChange(e.target.value)}
+                className="rounded-lg border border-white/30 bg-white/10 px-2 py-1 text-cream [color-scheme:dark] focus:border-gold focus:outline-none"
+              />
+            </label>
+            {beforeAnchorEvent && (
+              <span>
+                (แนะนำ {beforeAnchorEvent.time} — ต่อจาก {beforeAnchorEvent.icon}{" "}
+                {beforeAnchorEvent.title})
+              </span>
+            )}
+            {startTime != null && startTime !== defaultStartTime && (
+              <button
+                onClick={() => onStartTimeChange(defaultStartTime)}
+                className="underline hover:text-gold"
+              >
+                กลับไปใช้เวลาแนะนำ ({defaultStartTime})
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -651,14 +742,16 @@ export function DayStopsSection({
         >
           {stops.length === 0 && (
             <div className="px-4 py-5 text-center text-sm text-ink-soft">
-              ยังไม่มีจุดแวะ — ลากสถานที่จากคลังด้านข้างมาวางที่นี่ได้เลย
+              {locked
+                ? "วันนี้ล็อกไว้และยังไม่มีจุดแวะ — ปลดล็อกที่หัวการ์ดถ้าจะเพิ่ม"
+                : "ยังไม่มีจุดแวะ — กดปุ่ม “+ เพิ่มสถานที่ให้วันนี้” ด้านล่าง หรือลากจากคลังบนจอใหญ่ก็ได้"}
             </div>
           )}
           {/* จุดเริ่มของวัน = ที่พักคืนก่อนหน้า (วันย้ายเมืองจะเป็นคนละที่กับที่พักคืนนี้) */}
           {showStartAnchorRow && startAnchor && (
             <div className="flex items-center gap-2 bg-pine-soft/40 px-3 py-2 text-xs text-pine-dark sm:px-4">
               <span className="w-12 shrink-0 text-center font-semibold tabular-nums sm:w-14">
-                {startTime}
+                {effectiveStartTime}
               </span>
               <span className="min-w-0 flex-1 truncate" title={startAnchor.label}>
                 🏨 ออกจาก {startAnchor.label}
@@ -674,10 +767,11 @@ export function DayStopsSection({
               resolvedMinutes={daySchedule.travelMinutesFromStart ?? 0}
               isReal={isTravelTimeReal(startAnchor.id, firstPlace.id, startAnchorMode)}
               prefix="จากที่พัก"
+              locked={locked}
               onSetMode={(mode) => onUpdateTravelMode(stops[0].id, mode)}
             />
           )}
-          {stops.length > 0 && (
+          {stops.length > 0 && !locked && (
             <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
               <button
                 onClick={() => onInsertPlace(0, centerBeforeFirstStop, null)}
@@ -730,6 +824,7 @@ export function DayStopsSection({
                       ? weekdayHoursLabel(openingHoursByQuery.get(sched.place.mapsQuery), day.date)
                       : null
                   }
+                  locked={locked}
                   onSetTravelMode={(mode) => onUpdateTravelMode(stop.id, mode)}
                   onView={() => {
                     setViewIndex(i);
@@ -763,6 +858,7 @@ export function DayStopsSection({
               resolvedMinutes={daySchedule.travelMinutesToEnd ?? 0}
               isReal={isTravelTimeReal(lastPlace.id, endAnchor.id, returnTravelMode)}
               prefix="กลับที่พัก"
+              locked={locked}
               onSetMode={onReturnTravelModeChange}
             />
           )}
@@ -777,22 +873,31 @@ export function DayStopsSection({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-center gap-1">
+          {locked ? (
             <button
-              onClick={onAddPlace}
-              className="flex flex-1 items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
+              onClick={onToggleLock}
+              className="flex w-full items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft/60"
             >
-              + เพิ่มสถานที่ให้วันนี้
+              🔒 วันนี้ล็อกไว้ — แตะเพื่อปลดล็อกและแก้ไข
             </button>
-            {stops.length >= 3 && (
+          ) : (
+            <div className="flex flex-wrap items-center justify-center gap-1">
               <button
-                onClick={() => setSuggestingRoute(true)}
-                className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                onClick={onAddPlace}
+                className="flex flex-1 items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
               >
-                ✨ ลองจัดเส้นทางใหม่
+                + เพิ่มสถานที่ให้วันนี้
               </button>
-            )}
-          </div>
+              {stops.length >= 3 && (
+                <button
+                  onClick={() => setSuggestingRoute(true)}
+                  className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                >
+                  ✨ ลองจัดเส้นทางใหม่
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {hasMapPoints && (

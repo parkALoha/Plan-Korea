@@ -118,4 +118,9 @@ export type TripDaySettings = {
    * undefined ได้เมื่อ migration 0015 ยังไม่ถูกรัน — ถือเท่ากับ null (ใช้ค่าประมาณ)
    */
   return_travel_mode?: string | null;
+  /**
+   * true = วันนี้ถูกล็อกไว้ (ลงตัวแล้ว) แก้/ลาก/เพิ่มจุดแวะไม่ได้จนกว่าจะปลดล็อก
+   * undefined ได้เมื่อ migration 0021 ยังไม่ถูกรัน — ถือเท่ากับ false
+   */
+  is_locked?: boolean;
 };

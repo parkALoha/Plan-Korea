@@ -13,6 +13,10 @@ interface TripHeaderProps {
   onNewPlan: () => void;
   onRenamePlan: () => void;
   onDeletePlan: () => void;
+  /** จำนวนวันที่ล็อกไว้แล้ว / ทั้งหมด — ใช้บอกสถานะบนปุ่มล็อกรวม */
+  lockedDayCount: number;
+  totalDayCount: number;
+  onToggleLockAll: () => void;
 }
 
 export function TripHeader({
@@ -25,7 +29,11 @@ export function TripHeader({
   onNewPlan,
   onRenamePlan,
   onDeletePlan,
+  lockedDayCount,
+  totalDayCount,
+  onToggleLockAll,
 }: TripHeaderProps) {
+  const allLocked = totalDayCount > 0 && lockedDayCount === totalDayCount;
   return (
     <header className="bg-pine px-4 pb-8 pt-10 text-cream">
       <div className="mx-auto max-w-2xl lg:max-w-7xl">
@@ -33,12 +41,20 @@ export function TripHeader({
           <div className="text-xs font-medium uppercase tracking-widest text-gold">
             11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20
           </div>
-          <Link
-            href="/today"
-            className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
-          >
-            📍 วันนี้
-          </Link>
+          <div className="flex shrink-0 gap-1.5">
+            <Link
+              href="/today"
+              className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
+            >
+              📍 วันนี้
+            </Link>
+            <Link
+              href="/summary"
+              className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
+            >
+              📋 สรุปแผน
+            </Link>
+          </div>
         </div>
         <h1 className="mt-1 text-3xl font-extrabold">🍁 แพลนเที่ยวเกาหลี</h1>
         <p className="mt-1 text-sm text-pine-soft/80">
@@ -53,6 +69,14 @@ export function TripHeader({
             className="w-40 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-cream placeholder:text-cream/50 focus:border-gold focus:outline-none"
           />
           <span className="text-sm text-cream/90">🗺️ {stopsCount} จุดในแผนนี้</span>
+          {/* ล็อกรวมทั้งทริป — ใช้ตอนแผนนิ่งแล้วก่อนออกเดินทาง จะได้เปิดดูบนมือถือได้โดยไม่กลัวเผลอลาก */}
+          <button
+            onClick={onToggleLockAll}
+            className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
+          >
+            {allLocked ? "🔓 ปลดล็อกทุกวัน" : "🔒 ล็อกทุกวัน"}
+            {lockedDayCount > 0 && !allLocked ? ` (ล็อกแล้ว ${lockedDayCount}/${totalDayCount})` : ""}
+          </button>
         </div>
 
         {plans.length > 0 && (

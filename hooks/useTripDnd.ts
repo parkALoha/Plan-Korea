@@ -23,6 +23,9 @@ interface UseTripDndArgs {
   stopsByDay: Record<string, TripStop[]>;
   who: string;
   lastStopPlaceForDay: (dayId: string) => Place | null;
+  /** วันที่ถูกล็อกไว้ — ห้ามวางจุดแวะลง และห้ามลากจุดแวะออกไปที่อื่น
+   *  (droppable/sortable ฝั่ง UI ปิดไว้แล้ว ตรงนี้เป็นด่านสุดท้ายกันหลุด เช่นลากด้วยคีย์บอร์ด) */
+  isDayLocked: (dayId: string) => boolean;
   defaultTravelModeFor: (
     fromPlace: { lat: number; lng: number } | null | undefined,
     toPlace: { lat: number; lng: number } | null | undefined
@@ -48,6 +51,7 @@ export function useTripDnd({
   stopsByDay,
   who,
   lastStopPlaceForDay,
+  isDayLocked,
   defaultTravelModeFor,
   addStop,
   removeStop,
@@ -95,6 +99,10 @@ export function useTripDnd({
     if (!activeData) return;
 
     const targetDayId = overData?.type === "day" || overData?.type === "stop" ? overData.dayId : null;
+
+    // วันปลายทางล็อกอยู่ = ไม่รับอะไรทั้งนั้น / วันต้นทางล็อกอยู่ = ลากจุดแวะออกไม่ได้
+    if (targetDayId && isDayLocked(targetDayId)) return;
+    if (activeData.type === "stop" && isDayLocked(activeData.dayId)) return;
 
     if (activeData.type === "place") {
       // ลากการ์ดจากคลังมาวางในวัน — ถ้าคนละเมืองแค่เตือน (เผื่อวันเดินทางที่แวะได้สองเมือง) ไม่บล็อกเงียบๆ
