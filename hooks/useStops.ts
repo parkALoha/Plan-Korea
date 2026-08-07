@@ -91,9 +91,38 @@ export function useStops(planId: string | null) {
     [planId, stops]
   );
 
-  /** ใช้ตอน "แทรกร้านตรงนี้" — เพิ่มจุดแวะแทรกกลางวันที่ atIndex แทนที่จะต่อท้ายวันเสมอเหมือน addStop
-   *  ดัน order_index ของจุดแวะที่อยู่ >= atIndex ในวันเดียวกันขึ้นไปทีละ 1 ก่อน แล้วค่อยแทรกจุดใหม่เข้าไป
-   *  อัปเดต state local ก่อนเลย (optimistic) เหมือน reorderStops กัน UI สะดุดระหว่างรอ realtime */
+  /** ดัน order_index ของจุดแวะที่อยู่ >= atIndex ในวันเดียวกันขึ้นไปทีละ 1 (ให้ที่ว่างสำหรับแทรกจุดใหม่ตรง atIndex)
+   *  อัปเดต state local ก่อนเลย (optimistic) กัน UI สะดุดระหว่างรอ realtime — คืนแถวที่ต้อง shift ไว้ให้เขียนลง DB ต่อ */
+  const shiftForInsert = useCallback(
+    (dayId: string, atIndex: number) => {
+      const toShift = stops.filter((s) => s.day_id === dayId && s.order_index >= atIndex);
+      setStops((prev) =>
+        prev.map((s) =>
+          s.day_id === dayId && s.order_index >= atIndex
+            ? { ...s, order_index: s.order_index + 1 }
+            : s
+        )
+      );
+      return toShift;
+    },
+    [stops]
+  );
+
+  const writeInsert = useCallback(async (toShift: TripStop[], newStop: TripStop) => {
+    if (!supabaseConfigured) return newStop.id;
+    await Promise.all([
+      ...toShift.map((s) =>
+        supabase
+          .from("trip_stops")
+          .update({ order_index: s.order_index + 1, updated_at: new Date().toISOString() })
+          .eq("id", s.id)
+      ),
+      supabase.from("trip_stops").insert(newStop),
+    ]);
+    return newStop.id;
+  }, []);
+
+  /** ใช้ตอน "แทรกร้านตรงนี้" — เพิ่มจุดแวะแทรกกลางวันที่ atIndex แทนที่จะต่อท้ายวันเสมอเหมือน addStop */
   const insertStopAt = useCallback(
     async (
       dayId: string,
@@ -115,30 +144,44 @@ export function useStops(planId: string | null) {
         added_by: addedBy ?? null,
         updated_at: new Date().toISOString(),
       };
-      const toShift = stops.filter((s) => s.day_id === dayId && s.order_index >= atIndex);
-      setStops((prev) =>
-        sortStops([
-          ...prev.map((s) =>
-            s.day_id === dayId && s.order_index >= atIndex
-              ? { ...s, order_index: s.order_index + 1 }
-              : s
-          ),
-          newStop,
-        ])
-      );
-      if (!supabaseConfigured) return newStop.id;
-      await Promise.all([
-        ...toShift.map((s) =>
-          supabase
-            .from("trip_stops")
-            .update({ order_index: s.order_index + 1, updated_at: new Date().toISOString() })
-            .eq("id", s.id)
-        ),
-        supabase.from("trip_stops").insert(newStop),
-      ]);
-      return newStop.id;
+      const toShift = shiftForInsert(dayId, atIndex);
+      setStops((prev) => sortStops([...prev, newStop]));
+      return writeInsert(toShift, newStop);
     },
-    [planId, stops]
+    [planId, shiftForInsert, writeInsert]
+  );
+
+  /** ใช้ตอน "แทรกเดินทางข้ามเมืองตรงนี้" — เหมือน insertStopAt แต่เป็นแถว kind="intercity" ไม่ใช่สถานที่
+   *  place_id ว่างเปล่าโดยตั้งใจ (ไม่ใช่สถานที่จริง) dwell_minutes เก็บระยะเวลาเดินทางที่กินเวลาใน timeline จริง */
+  const insertIntercityAt = useCallback(
+    async (
+      dayId: string,
+      atIndex: number,
+      input: { from: string; to: string; mode: "bus" | "ktx" | "other"; minutes: number },
+      addedBy?: string
+    ) => {
+      if (!planId) return undefined;
+      const newStop: TripStop = {
+        id: makeStopId(),
+        plan_id: planId,
+        day_id: dayId,
+        place_id: "",
+        order_index: atIndex,
+        dwell_minutes: input.minutes,
+        travel_mode: null,
+        note: null,
+        kind: "intercity",
+        intercity_from: input.from,
+        intercity_to: input.to,
+        intercity_mode: input.mode,
+        added_by: addedBy ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const toShift = shiftForInsert(dayId, atIndex);
+      setStops((prev) => sortStops([...prev, newStop]));
+      return writeInsert(toShift, newStop);
+    },
+    [planId, shiftForInsert, writeInsert]
   );
 
   const updateStopPlace = useCallback(async (stopId: string, placeId: string) => {
@@ -267,6 +310,7 @@ export function useStops(planId: string | null) {
     loaded,
     addStop,
     insertStopAt,
+    insertIntercityAt,
     updateStopPlace,
     updateDwellMinutes,
     updateTravelMode,

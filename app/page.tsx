@@ -7,6 +7,7 @@ import { HotelLegsPanel } from "@/components/HotelLegsPanel";
 import { BookingsPanel } from "@/components/BookingsPanel";
 import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
+import { IntercityEditModal } from "@/components/IntercityEditModal";
 import { TripHeader } from "@/components/TripHeader";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import type { Place } from "@/data/places";
@@ -63,6 +64,7 @@ export default function Home() {
     loaded: stopsLoaded,
     addStop,
     insertStopAt,
+    insertIntercityAt,
     reorderStops,
     moveStopToDay,
     updateDwellMinutes,
@@ -172,6 +174,14 @@ export default function Home() {
     atIndex: number;
     center: { lat: number; lng: number };
     prevPlace: Place | null;
+  } | null>(null);
+
+  // บริบทตอนกด "+ แทรกเดินทางข้ามเมืองตรงนี้" — เก็บวัน/ตำแหน่งที่จะแทรก + ค่า default จาก/ไปเมือง
+  const [intercityContext, setIntercityContext] = useState<{
+    dayId: string;
+    atIndex: number;
+    fromDefault: string;
+    toDefault: string;
   } | null>(null);
 
   // id ของจุดแวะที่เพิ่งถูกเพิ่ม (ลากหรือกด +) — ใช้ไฮไลต์แถวนั้นสั้นๆ ให้รู้สึกว่า "เพิ่มสำเร็จ"
@@ -305,6 +315,9 @@ export default function Home() {
                   onInsertPlace={(atIndex, center, prevPlace) =>
                     setInsertContext({ dayId: day.id, atIndex, center, prevPlace })
                   }
+                  onInsertIntercity={(atIndex, fromDefault, toDefault) =>
+                    setIntercityContext({ dayId: day.id, atIndex, fromDefault, toDefault })
+                  }
                   flashStopId={flashStopId}
                 />
               ))}
@@ -374,6 +387,23 @@ export default function Home() {
               defaultTravelModeFor(insertContext.prevPlace, coords)
             ).then(flashNewStop);
             setInsertContext(null);
+          }}
+        />
+      )}
+
+      {intercityContext && (
+        <IntercityEditModal
+          fromDefault={intercityContext.fromDefault}
+          toDefault={intercityContext.toDefault}
+          onClose={() => setIntercityContext(null)}
+          onSave={(input) => {
+            insertIntercityAt(
+              intercityContext.dayId,
+              intercityContext.atIndex,
+              input,
+              who || undefined
+            ).then(flashNewStop);
+            setIntercityContext(null);
           }}
         />
       )}

@@ -63,6 +63,14 @@ export type TripStop = {
   note: string | null;
   added_by: string | null;
   updated_at: string;
+  /** "place" (ปกติ) | "intercity" (แถวเดินทางข้ามเมือง กินเวลาใน timeline แต่ไม่ใช่สถานที่)
+   *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ — ให้ถือเป็น "place" */
+  kind?: "place" | "intercity";
+  /** ใช้เมื่อ kind === "intercity" — เมืองต้นทาง/ปลายทางของช่วงเดินทางนี้ (ข้อความอิสระ) */
+  intercity_from?: string | null;
+  intercity_to?: string | null;
+  /** ใช้เมื่อ kind === "intercity" — "bus" | "ktx" | "other" */
+  intercity_mode?: string | null;
 };
 
 export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "other";

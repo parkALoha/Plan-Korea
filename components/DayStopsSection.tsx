@@ -32,6 +32,7 @@ import { DayMapPanel } from "./DayMapPanel";
 import { DaySummaryBar } from "./DaySummaryBar";
 import { PlaceThumb } from "./PlaceThumb";
 import { RouteSuggestionModal } from "./RouteSuggestionModal";
+import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "./IntercityEditModal";
 
 const DWELL_STEP_MINUTES = 15;
 const MIN_DWELL_MINUTES = 15;
@@ -158,6 +159,7 @@ function SortableStopRow({
   onUpdateNote,
   onRemoveStop,
   onInsertBefore,
+  onInsertIntercityBefore,
 }: {
   stop: TripStop;
   dayId: string;
@@ -181,6 +183,8 @@ function SortableStopRow({
   onRemoveStop: () => void;
   /** เปิด modal หาร้านอาหารแทรกก่อนจุดแวะนี้ — undefined เมื่อเป็นจุดแวะแรกของวัน (ยังไม่มี "ก่อนหน้า" ให้อ้างอิง) */
   onInsertBefore: (() => void) | undefined;
+  /** เปิด modal แทรกเดินทางข้ามเมืองก่อนจุดแวะนี้ */
+  onInsertIntercityBefore: (() => void) | undefined;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stop.id,
@@ -255,14 +259,24 @@ function SortableStopRow({
         />
       )}
       {/* แทรกร้านอาหารกลางวันได้เลย ไม่ต้องเพิ่มท้ายวันแล้วลากขึ้นมาเอง — ศูนย์กลางค้นหาอิงจุดก่อนหน้าตรงนี้ */}
-      {onInsertBefore && (
-        <div className="bg-cream-soft/30 px-3 sm:px-4">
-          <button
-            onClick={onInsertBefore}
-            className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
-          >
-            + แทรกร้านอาหารตรงนี้
-          </button>
+      {(onInsertBefore || onInsertIntercityBefore) && (
+        <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
+          {onInsertBefore && (
+            <button
+              onClick={onInsertBefore}
+              className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
+            >
+              + แทรกร้านอาหารตรงนี้
+            </button>
+          )}
+          {onInsertIntercityBefore && (
+            <button
+              onClick={onInsertIntercityBefore}
+              className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
+            >
+              + แทรกเดินทางข้ามเมืองตรงนี้
+            </button>
+          )}
         </div>
       )}
       {/* มือถือ: แถวนี้เหลือแค่ ที่จับลาก + เวลา + ชื่อ เพื่อให้ชื่อสถานที่ได้ความกว้างเต็ม
@@ -284,31 +298,48 @@ function SortableStopRow({
           <div>{sched.departure}</div>
         </div>
 
-        <button
-          onClick={() => sched.place && onView()}
-          disabled={!sched.place}
-          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
-        >
-          {sched.place ? (
-            <>
-              <PlaceThumb
-                query={sched.place.mapsQuery}
-                category={sched.place.category}
-                className="h-10 w-10 shrink-0"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold text-ink hover:underline">
-                  {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
-                </span>
-                {stop.added_by && (
-                  <span className="block truncate text-xs text-ink-soft">เลือกโดย {stop.added_by}</span>
-                )}
+        {stop.kind === "intercity" ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+              {INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold text-ink">
+                {INTERCITY_MODE_LABEL[(stop.intercity_mode as IntercityMode) ?? "other"]} ·{" "}
+                {stop.intercity_from} → {stop.intercity_to}
               </span>
-            </>
-          ) : (
-            <span className="text-sm text-maple-dark">ไม่พบข้อมูลสถานที่</span>
-          )}
-        </button>
+              <span className="block truncate text-xs text-ink-soft">
+                ใช้เวลาเดินทาง {sched.resolvedDwellMinutes} นาที
+              </span>
+            </span>
+          </div>
+        ) : (
+          <button
+            onClick={() => sched.place && onView()}
+            disabled={!sched.place}
+            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
+          >
+            {sched.place ? (
+              <>
+                <PlaceThumb
+                  query={sched.place.mapsQuery}
+                  category={sched.place.category}
+                  className="h-10 w-10 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold text-ink hover:underline">
+                    {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
+                  </span>
+                  {stop.added_by && (
+                    <span className="block truncate text-xs text-ink-soft">เลือกโดย {stop.added_by}</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <span className="text-sm text-maple-dark">ไม่พบข้อมูลสถานที่</span>
+            )}
+          </button>
+        )}
 
         {/* ซ่อนช่วง lg ขึ้นไปด้วย เพราะแผนที่ข้างๆ แย่งพื้นที่แถวจนชื่อสถานที่เหลือไม่พอ (บั๊กเดียวกับที่แก้ไว้ฝั่งมือถือ) */}
         <div className="hidden shrink-0 items-center gap-1 text-xs text-ink-soft sm:flex lg:hidden">
@@ -425,6 +456,7 @@ export function DayStopsSection({
   onReorder,
   onAddPlace,
   onInsertPlace,
+  onInsertIntercity,
   flashStopId,
   onOvernightCityChange,
 }: {
@@ -452,6 +484,8 @@ export function DayStopsSection({
   onAddPlace: () => void;
   /** เปิด modal หาร้านอาหารแทรกที่ตำแหน่ง atIndex ของวันนี้ ศูนย์กลางค้นหา = จุดก่อนหน้าตำแหน่งนั้น (หรือที่พัก/กลางเมืองถ้าแทรกก่อนจุดแรก) */
   onInsertPlace: (atIndex: number, center: { lat: number; lng: number }, prevPlace: Place | null) => void;
+  /** เปิด modal แทรกเดินทางข้ามเมืองที่ตำแหน่ง atIndex ของวันนี้ พร้อมค่า default จาก/ไปเมือง */
+  onInsertIntercity: (atIndex: number, fromDefault: string, toDefault: string) => void;
   /** id ของจุดแวะที่เพิ่งถูกเพิ่ม (ทั้งวันไหนก็ได้) — ใช้ไฮไลต์แถวนั้นสั้นๆ */
   flashStopId: string | null;
 }) {
@@ -470,6 +504,10 @@ export function DayStopsSection({
 
   // ศูนย์กลางค้นหาตอนแทรกร้านก่อนจุดแรกของวัน (ยังไม่มี "จุดก่อนหน้า" ให้อิง) — ที่พักคืนนั้นก่อน ไม่งั้นใช้กลางเมือง
   const centerBeforeFirstStop = hotel ? { lat: hotel.lat, lng: hotel.lng } : cityCenter(day.city);
+
+  // ค่า default จาก/ไปของแถวเดินทางข้ามเมือง — เดาจาก city ของวันนี้ ไปเมืองที่นอนคืนนี้ (ถ้าต่างจากเมืองที่เที่ยว)
+  const intercityFromDefault = CITY_NAME_TH[day.city];
+  const intercityToDefault = CITY_NAME_TH[day.overnightCity ?? day.city];
 
   const mealCount = useMemo(
     () =>
@@ -809,12 +847,18 @@ export function DayStopsSection({
             />
           )}
           {stops.length > 0 && (
-            <div className="bg-cream-soft/30 px-3 sm:px-4">
+            <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
               <button
                 onClick={() => onInsertPlace(0, centerBeforeFirstStop, null)}
                 className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
               >
                 + แทรกร้านอาหารก่อนจุดแรก
+              </button>
+              <button
+                onClick={() => onInsertIntercity(0, intercityFromDefault, intercityToDefault)}
+                className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
+              >
+                + แทรกเดินทางข้ามเมืองก่อนจุดแรก
               </button>
             </div>
           )}
@@ -866,6 +910,11 @@ export function DayStopsSection({
                   onInsertBefore={
                     i > 0 && prevPlace
                       ? () => onInsertPlace(i, { lat: prevPlace.lat, lng: prevPlace.lng }, prevPlace)
+                      : undefined
+                  }
+                  onInsertIntercityBefore={
+                    i > 0
+                      ? () => onInsertIntercity(i, intercityFromDefault, intercityToDefault)
                       : undefined
                   }
                 />

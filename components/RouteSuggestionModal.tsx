@@ -71,13 +71,14 @@ export function RouteSuggestionModal({
       if (queue) queue.push(stop);
       else queueByPlaceId.set(place.id, [stop]);
     });
-    const orderedStops = ordered.map((p) => queueByPlaceId.get(p.id)!.shift()!);
-    // จุดที่ resolve place ไม่ได้ (ข้อมูลหาย) ต่อท้ายไว้ตามเดิม ไม่ให้หลุดหายไปจากวัน
-    const unresolved = stops.filter((s) => !placesById.has(s.place_id));
+    const resolvedQueue = ordered.map((p) => queueByPlaceId.get(p.id)!.shift()!);
+    // จุดที่ resolve place ไม่ได้ (แถวเดินทางข้ามเมือง kind="intercity" หรือข้อมูลหาย) คงตำแหน่งเดิมไว้เป๊ะๆ
+    // ไม่ให้ suggestOrder ย้ายไปไหน เพราะมันเป็นตัวแบ่ง "ก่อน/หลังข้ามเมือง" ของ timeline ไม่ใช่จุดให้จัดลำดับใหม่
+    const orderedStops = stops.map((s) => (placesById.has(s.place_id) ? resolvedQueue.shift()! : s));
     return {
       points,
       ordered,
-      orderedStops: [...orderedStops, ...unresolved],
+      orderedStops,
       distanceBeforeKm: routeDistanceKm(points, startAt, endAt),
       distanceAfterKm: routeDistanceKm(ordered, startAt, endAt),
     };
