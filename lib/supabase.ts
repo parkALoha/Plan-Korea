@@ -71,6 +71,9 @@ export type TripStop = {
   intercity_to?: string | null;
   /** ใช้เมื่อ kind === "intercity" — "bus" | "ktx" | "other" */
   intercity_mode?: string | null;
+  /** เวลาจริงที่มาถึงจุดนี้ ติ๊กจากหน้า "วันนี้" (เฟส 6) — null = ยังไม่มาถึง
+   *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ */
+  visited_at?: string | null;
 };
 
 export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "other";

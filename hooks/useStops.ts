@@ -288,6 +288,25 @@ export function useStops(planId: string | null) {
     [stops]
   );
 
+  /** ติ๊ก/ยกเลิกติ๊ก "มาถึงแล้ว" จากหน้า "วันนี้" — visitedAt = null ล้างค่า (ยกเลิกติ๊ก) */
+  const setVisitedAt = useCallback(async (stopId: string, visitedAt: string | null) => {
+    if (!supabaseConfigured) {
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, visited_at: visitedAt } : s)));
+      return;
+    }
+    await supabase
+      .from("trip_stops")
+      .update({ visited_at: visitedAt, updated_at: new Date().toISOString() })
+      .eq("id", stopId);
+  }, []);
+
+  const markVisited = useCallback(
+    (stopId: string) => setVisitedAt(stopId, new Date().toISOString()),
+    [setVisitedAt]
+  );
+
+  const unmarkVisited = useCallback((stopId: string) => setVisitedAt(stopId, null), [setVisitedAt]);
+
   const removeStop = useCallback(async (stopId: string) => {
     if (!supabaseConfigured) {
       setStops((prev) => prev.filter((s) => s.id !== stopId));
@@ -318,6 +337,8 @@ export function useStops(planId: string | null) {
     updateOrderIndex,
     reorderStops,
     moveStopToDay,
+    markVisited,
+    unmarkVisited,
     removeStop,
     bulkInsert,
     supabaseConfigured,

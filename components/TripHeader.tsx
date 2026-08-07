@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { TripPlan } from "@/lib/supabase";
 
 interface TripHeaderProps {
@@ -28,8 +29,16 @@ export function TripHeader({
   return (
     <header className="bg-pine px-4 pb-8 pt-10 text-cream">
       <div className="mx-auto max-w-2xl lg:max-w-7xl">
-        <div className="text-xs font-medium uppercase tracking-widest text-gold">
-          11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium uppercase tracking-widest text-gold">
+            11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20
+          </div>
+          <Link
+            href="/today"
+            className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
+          >
+            📍 วันนี้
+          </Link>
         </div>
         <h1 className="mt-1 text-3xl font-extrabold">🍁 แพลนเที่ยวเกาหลี</h1>
         <p className="mt-1 text-sm text-pine-soft/80">
