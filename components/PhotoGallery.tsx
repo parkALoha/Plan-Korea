@@ -6,7 +6,13 @@ export function PhotoGallery({ query }: { query: string }) {
   const photos = usePlacePhotos(query);
 
   if (photos === null) {
-    return <div className="text-sm text-ink-soft">กำลังโหลดรูป...</div>;
+    return (
+      <div className="grid animate-pulse grid-cols-3 gap-2" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-24 w-full rounded-md bg-cream-soft" />
+        ))}
+      </div>
+    );
   }
   if (photos.length === 0) {
     return (

@@ -22,6 +22,16 @@ body {
   color: var(--color-ink);
 }
 
+/* ปุ่มกดแล้วมีการตอบสนอง (ทั้งเว็บ ไม่ต้องไล่แก้ทีละปุ่ม) — ใช้ opacity ไม่ใช่ scale
+   เพราะปุ่มบางอันเป็นที่จับลาก (dnd-kit) การเปลี่ยนขนาดจะไปกวน bounding box ตอนเริ่มลาก */
+button:not(:disabled) {
+  transition: opacity 0.1s ease-out;
+}
+
+button:not(:disabled):active {
+  opacity: 0.7;
+}
+
 /* จุดแวะที่เพิ่งถูกเพิ่ม (ลากมาวาง หรือกด +) — ไฮไลต์สั้นๆ ให้รู้สึกว่า "เพิ่มสำเร็จแล้ว" */
 @keyframes stop-added-pop {
   0% {
@@ -42,5 +52,39 @@ body {
   .animate-stop-added {
     animation: none;
     background-color: var(--color-maple-soft);
+  }
+}
+
+/* คลังสถานที่บนมือถือ — เลื่อนขึ้นจากขอบล่างจอ (bottom sheet) */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-sheet-up {
+  animation: sheet-up 0.25s ease-out;
+}
+
+@keyframes sheet-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-sheet-backdrop {
+  animation: sheet-backdrop-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-up,
+  .animate-sheet-backdrop {
+    animation: none;
   }
 }

@@ -356,17 +356,46 @@ function PlaceSidebarContent({
   );
 }
 
-function MobileOverlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+/** คลังสถานที่บนมือถือ — bottom sheet เลื่อนขึ้นจากขอบล่าง (ไม่คลุมทั้งจอเหมือน overlay เดิม)
+ *  หัวชีตโชว์เมือง+วันที่กำลังโฟกัสอยู่ตลอด กันหลงว่ากำลังเพิ่มสถานที่ให้วันไหน
+ *  แตะฉากหลัง (backdrop) เพื่อปิดได้ */
+function BottomSheet({
+  children,
+  onClose,
+  title,
+  subtitle,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+}) {
   useBodyScrollLock();
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-white lg:hidden">
-      <div className="flex items-center justify-between border-b border-cream-soft p-3">
-        <h2 className="text-sm font-bold text-ink">สถานที่ในโซนนี้</h2>
-        <button onClick={onClose} className="rounded-full p-2 text-ink-soft hover:bg-cream-soft">
-          ✕
-        </button>
+    <div className="fixed inset-0 z-40 lg:hidden">
+      <div
+        className="animate-sheet-backdrop absolute inset-0 bg-ink/40"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div className="animate-sheet-up absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-2xl shadow-ink/30">
+        <div className="flex justify-center pt-2">
+          <div className="h-1.5 w-10 rounded-full bg-cream-soft" />
+        </div>
+        <div className="flex items-center justify-between border-b border-cream-soft px-4 pb-3 pt-2">
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-bold text-ink">{title}</h2>
+            {subtitle && <p className="truncate text-xs text-ink-soft">{subtitle}</p>}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-full p-2 text-ink-soft hover:bg-cream-soft"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden">{children}</div>
       </div>
-      <div className="flex-1 overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -376,6 +405,16 @@ export function PlaceSidebar({
   onMobileOpenChange,
   ...props
 }: SidebarProps & { mobileOpen: boolean; onMobileOpenChange: (open: boolean) => void }) {
+  const focusedDay = props.itinerary.find((d) => d.id === props.focusedDayId);
+  const cityMeta = CITY_META[props.activeCity];
+  const sheetTitle = `${cityMeta.icon} ${CITY_NAME_TH[props.activeCity]}`;
+  const sheetSubtitle = focusedDay
+    ? `กำลังเพิ่มให้วันที่ ${new Date(focusedDay.date).toLocaleDateString("th-TH", {
+        day: "numeric",
+        month: "short",
+      })}`
+    : undefined;
+
   return (
     <>
       <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-80 shrink-0 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5 lg:block">
@@ -389,9 +428,9 @@ export function PlaceSidebar({
         📍 สถานที่
       </button>
       {mobileOpen && (
-        <MobileOverlay onClose={() => onMobileOpenChange(false)}>
+        <BottomSheet onClose={() => onMobileOpenChange(false)} title={sheetTitle} subtitle={sheetSubtitle}>
           <PlaceSidebarContent {...props} />
-        </MobileOverlay>
+        </BottomSheet>
       )}
     </>
   );

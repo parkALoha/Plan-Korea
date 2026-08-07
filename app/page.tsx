@@ -1,27 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { DayStopsSection } from "@/components/DayStopsSection";
 import { HotelLegsPanel } from "@/components/HotelLegsPanel";
 import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
-import { CATEGORY_EMOJI, cityCenter, type Place } from "@/data/places";
-import { CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
+import { TripHeader } from "@/components/TripHeader";
+import { DayCardSkeleton } from "@/components/DayCardSkeleton";
+import type { Place } from "@/data/places";
+import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
-import { applyOvernightOverrides, deriveHotelLegs, dayIdToLegId } from "@/lib/hotelLegs";
+import { applyOvernightOverrides } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
 import { haversineKm } from "@/lib/geo";
 import type { TravelMode } from "@/lib/schedule";
@@ -34,8 +24,9 @@ import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { useHiddenPlaces } from "@/hooks/useHiddenPlaces";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
-
-const DEFAULT_PLAN_ID = "plan-default";
+import { useLegacyBootstrap } from "@/hooks/useLegacyBootstrap";
+import { useHotelSchedule } from "@/hooks/useHotelSchedule";
+import { useTripDnd } from "@/hooks/useTripDnd";
 
 // ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
 // (ทริปนี้ไม่มีรถส่วนตัว แท็กซี่ต้องเลือกเองเสมอ ไม่ใช่ค่าเริ่มต้น) ใช้ตอนเพิ่ม/แทรกจุดแวะใหม่
@@ -123,68 +114,16 @@ export default function Home() {
     }
   }
 
-  // bootstrap: ครั้งแรกที่ยังไม่มีแผนเลย ให้สร้าง "แผนหลัก" แล้วย้ายตัวเลือกเดิมจากระบบ slot คงที่
-  // มาเป็น stops (ใช้ id คงที่ กันกรณี 2 คนเปิดพร้อมกันแล้ว bootstrap ซ้ำ — insert ซ้ำจะแค่ error เฉยๆ)
-  const bootstrapped = useRef(false);
-  useEffect(() => {
-    if (bootstrapped.current) return;
-    if (!plansLoaded || !selectionsLoaded) return;
-    if (plans.length > 0) return;
-    bootstrapped.current = true;
+  useLegacyBootstrap({
+    plansLoaded,
+    selectionsLoaded,
+    plans,
+    selections,
+    createPlan,
+    bulkInsert,
+  });
 
-    async function bootstrap() {
-      const rows: TripStop[] = [];
-      for (const day of ITINERARY) {
-        let orderIndex = 0;
-        for (const slot of day.slots) {
-          const sel = selections[slot.id];
-          if (!sel) continue;
-          rows.push({
-            id: `stop-boot-${slot.id}`,
-            plan_id: DEFAULT_PLAN_ID,
-            day_id: day.id,
-            place_id: sel.place_id,
-            order_index: orderIndex++,
-            dwell_minutes: null,
-            travel_mode: null,
-            note: null,
-            added_by: sel.selected_by,
-            updated_at: sel.updated_at,
-          });
-        }
-      }
-      await createPlan("แผนหลัก", { id: DEFAULT_PLAN_ID, activate: true });
-      if (rows.length > 0) await bulkInsert(rows);
-    }
-
-    bootstrap();
-  }, [plansLoaded, selectionsLoaded, plans.length, selections, createPlan, bulkInsert]);
-
-  const hotelLegs = useMemo(() => deriveHotelLegs(itinerary), [itinerary]);
-  const legIdByDayId = useMemo(() => dayIdToLegId(hotelLegs), [hotelLegs]);
-
-  const hotelForDay = useCallback(
-    (dayId: string) => {
-      const legId = legIdByDayId[dayId];
-      return legId ? hotels[legId] ?? null : null;
-    },
-    [legIdByDayId, hotels]
-  );
-
-  // ที่พักที่ "ออกมาตอนเช้า" ของวันนั้น = ที่พักของคืนก่อนหน้า
-  // วันย้ายเมือง (เช่น เช้าอยู่ปูซาน คืนนอนซกโช) จึงเริ่มวันที่โรงแรมปูซาน แล้วไปจบที่โรงแรมซกโช
-  // วันแรกของทริป / วันที่คืนก่อนหน้าไม่มีที่พัก (นอนบนเครื่อง) คืน null
-  const hotelBeforeDay = useCallback(
-    (dayId: string) => {
-      const index = itinerary.findIndex((d) => d.id === dayId);
-      for (let i = index - 1; i >= 0; i--) {
-        const legId = legIdByDayId[itinerary[i].id];
-        if (legId) return hotels[legId] ?? null;
-      }
-      return null;
-    },
-    [itinerary, legIdByDayId, hotels]
-  );
+  const { hotelLegs, hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
 
   const stopsByDay = useMemo(() => {
     const map: Record<string, TripStop[]> = {};
@@ -217,18 +156,6 @@ export default function Home() {
     [stopsByDay, customPlaces]
   );
 
-  // DnD ระดับหน้าเดียว — คลุมทั้งคลัง sidebar และจุดแวะทุกวัน เพื่อให้ลากข้ามระหว่างสองฝั่งนี้ได้
-  // (ลากจัดลำดับภายในวันเดียวกันก็ยังผ่าน context เดียวกันนี้)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  const [activeDrag, setActiveDrag] = useState<
-    { kind: "place"; placeId: string } | { kind: "stop"; stopId: string } | null
-  >(null);
-
   // บริบทตอนกด "+ แทรกร้านตรงนี้" ระหว่างจุดแวะ 2 จุด — เก็บวัน/ตำแหน่งที่จะแทรก + จุดศูนย์กลางค้นหา
   // (จุดก่อนหน้าตำแหน่งนั้น) ไว้เปิด modal ค้นร้านอาหารแบบเจาะจงตำแหน่ง แยกจากปุ่ม "ร้านใกล้ๆ" ที่คลังข้างเคียง
   const [insertContext, setInsertContext] = useState<{
@@ -248,105 +175,20 @@ export default function Home() {
     flashTimeoutRef.current = setTimeout(() => setFlashStopId(null), 1100);
   }, []);
 
-  function handleDragStart(event: DragStartEvent) {
-    const data = event.active.data.current as
-      | { type: "place"; placeId: string }
-      | { type: "stop"; dayId: string }
-      | undefined;
-    if (!data) return;
-    setActiveDrag(
-      data.type === "place"
-        ? { kind: "place", placeId: data.placeId }
-        : { kind: "stop", stopId: event.active.id as string }
-    );
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    setActiveDrag(null);
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeData = active.data.current as
-      | { type: "place"; placeId: string }
-      | { type: "stop"; dayId: string }
-      | undefined;
-    const overData = over.data.current as
-      | { type: "day"; dayId: string }
-      | { type: "stop"; dayId: string }
-      | { type: "library" }
-      | undefined;
-    if (!activeData) return;
-
-    const targetDayId = overData?.type === "day" || overData?.type === "stop" ? overData.dayId : null;
-
-    if (activeData.type === "place") {
-      // ลากการ์ดจากคลังมาวางในวัน — ถ้าคนละเมืองแค่เตือน (เผื่อวันเดินทางที่แวะได้สองเมือง) ไม่บล็อกเงียบๆ
-      if (!targetDayId) return;
-      const targetDay = itinerary.find((d) => d.id === targetDayId);
-      const place = resolvePlace(activeData.placeId, customPlaces);
-      if (!targetDay || !place) return;
-      if (
-        place.city !== targetDay.city &&
-        !window.confirm(
-          `"${place.nameTh}" อยู่ที่${CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]} ต้องการเพิ่มเข้าวันนี้เลยไหม?`
-        )
-      ) {
-        return;
-      }
-      const prevPlace = lastStopPlaceForDay(targetDayId);
-      addStop(
-        targetDayId,
-        activeData.placeId,
-        who || undefined,
-        defaultTravelModeFor(prevPlace, place)
-      ).then(flashNewStop);
-      return;
-    }
-
-    // activeData.type === "stop"
-    const stopId = active.id as string;
-    if (overData?.type === "library") {
-      removeStop(stopId);
-      return;
-    }
-    if (!targetDayId) return;
-
-    if (targetDayId === activeData.dayId) {
-      if (overData?.type !== "stop" || over.id === active.id) return;
-      const dayStops = stopsByDay[targetDayId] ?? [];
-      const oldIndex = dayStops.findIndex((s) => s.id === active.id);
-      const newIndex = dayStops.findIndex((s) => s.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-      reorderStops(
-        targetDayId,
-        arrayMove(dayStops, oldIndex, newIndex).map((s) => s.id)
-      );
-      return;
-    }
-
-    // ย้ายข้ามวัน — คนละเมืองก็แค่เตือนเหมือนกัน (ทริปทางผ่านบางทีก็เที่ยว 2 เมืองในวันเดียวได้จริง)
-    const targetDay = itinerary.find((d) => d.id === targetDayId);
-    const movingStop = stops.find((s) => s.id === stopId);
-    const place = movingStop ? resolvePlace(movingStop.place_id, customPlaces) : null;
-    if (!targetDay || !place) return;
-    if (
-      place.city !== targetDay.city &&
-      !window.confirm(
-        `"${place.nameTh}" อยู่ที่${CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]} ต้องการย้ายมาวันนี้เลยไหม?`
-      )
-    ) {
-      return;
-    }
-    moveStopToDay(stopId, targetDayId);
-  }
-
-  const activeDragLabel = useMemo(() => {
-    if (!activeDrag) return null;
-    const placeId = activeDrag.kind === "place" ? activeDrag.placeId : stops.find((s) => s.id === activeDrag.stopId)?.place_id;
-    if (!placeId) return null;
-    const place = resolvePlace(placeId, customPlaces);
-    return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : null;
-  }, [activeDrag, customPlaces, stops]);
+  const { sensors, handleDragStart, handleDragEnd, activeDragLabel } = useTripDnd({
+    itinerary,
+    customPlaces,
+    stops,
+    stopsByDay,
+    who,
+    lastStopPlaceForDay,
+    defaultTravelModeFor,
+    addStop,
+    removeStop,
+    reorderStops,
+    moveStopToDay,
+    flashNewStop,
+  });
 
   async function handleNewPlan() {
     const name = window.prompt("ชื่อแผนใหม่ (เช่น แผน B)");
@@ -386,69 +228,28 @@ export default function Home() {
       onDragEnd={handleDragEnd}
     >
       <main className="min-h-full">
-        <header className="bg-pine px-4 pb-8 pt-10 text-cream">
-          <div className="mx-auto max-w-2xl">
-            <div className="text-xs font-medium uppercase tracking-widest text-gold">
-              11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20
-            </div>
-            <h1 className="mt-1 text-3xl font-extrabold">🍁 แพลนเที่ยวเกาหลี</h1>
-            <p className="mt-1 text-sm text-pine-soft/80">
-              เลือกสถานที่ในแต่ละวัน — เลือกแล้วอีกคนเห็นทันที
-            </p>
+        <TripHeader
+          who={who}
+          onWhoChange={setWho}
+          stopsCount={stops.length}
+          plans={plans}
+          activePlanId={activePlanId}
+          onSwitchPlan={switchActivePlan}
+          onNewPlan={handleNewPlan}
+          onRenamePlan={handleRenamePlan}
+          onDeletePlan={handleDeletePlan}
+        />
 
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <input
-                value={who}
-                onChange={(e) => setWho(e.target.value)}
-                placeholder="ชื่อคุณ (เช่น เอ / บี)"
-                className="w-40 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-cream placeholder:text-cream/50 focus:border-gold focus:outline-none"
-              />
-              <span className="text-sm text-cream/90">🗺️ {stops.length} จุดในแผนนี้</span>
-            </div>
-
-            {plans.length > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <select
-                  value={activePlanId ?? ""}
-                  onChange={(e) => switchActivePlan(e.target.value)}
-                  className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-cream focus:border-gold focus:outline-none [&>option]:text-ink"
-                >
-                  {plans.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleNewPlan}
-                  className="rounded-lg bg-white/10 px-2.5 py-1.5 font-medium hover:bg-white/20"
-                >
-                  + แผนใหม่
-                </button>
-                <button
-                  onClick={handleRenamePlan}
-                  className="rounded-lg bg-white/10 px-2.5 py-1.5 font-medium hover:bg-white/20"
-                >
-                  เปลี่ยนชื่อ
-                </button>
-                {plans.length > 1 && (
-                  <button
-                    onClick={handleDeletePlan}
-                    className="rounded-lg bg-white/10 px-2.5 py-1.5 font-medium text-maple-soft hover:bg-white/20"
-                  >
-                    ลบแผนนี้
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </header>
-
-        {/* pb-28 บนมือถือ: เว้นที่ให้ปุ่มลอย "📍 สถานที่" ไม่ไปทับปุ่ม "+ เพิ่มสถานที่" ของวันสุดท้าย */}
-        <div className="mx-auto max-w-5xl px-4 pb-28 pt-6 lg:flex lg:items-start lg:gap-6 lg:pb-6">
-          <div className="mx-auto max-w-2xl flex-1 lg:mx-0">
+        {/* pb-28 บนมือถือ: เว้นที่ให้ปุ่มลอย "📍 สถานที่" ไม่ไปทับปุ่ม "+ เพิ่มสถานที่" ของวันสุดท้าย
+            lg:max-w-7xl: จอกว้างให้คอลัมน์จุดแวะ (ที่มีแผนที่ต่อวันแปะข้างในอยู่แล้ว) มีที่หายใจ ไม่ใช่ 672px แคบๆ เหมือนเดิม */}
+        <div className="mx-auto max-w-5xl px-4 pb-28 pt-6 lg:flex lg:max-w-7xl lg:items-start lg:gap-6 lg:pb-6">
+          <div className="mx-auto max-w-2xl flex-1 lg:mx-0 lg:max-w-none">
             {!overallLoaded && (
-              <div className="py-10 text-center text-sm text-ink-soft">กำลังโหลด...</div>
+              <>
+                <DayCardSkeleton />
+                <DayCardSkeleton />
+                <DayCardSkeleton />
+              </>
             )}
 
             {overallLoaded && (
