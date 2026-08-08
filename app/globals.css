@@ -88,3 +88,14 @@ button:not(:disabled):active {
     animation: none;
   }
 }
+
+/* หน้า /summary พิมพ์ได้จริง — พกกระดาษสำรองไว้เผื่อแบตหมด/มือถือหาย (เฟส 10) */
+@media print {
+  body {
+    background-color: white;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}

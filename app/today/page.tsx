@@ -23,6 +23,7 @@ import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { BottomNav } from "@/components/BottomNav";
 import type { TravelMode } from "@/lib/schedule";
+import { safeHttpUrl } from "@/lib/url";
 
 function isoDateOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -474,9 +475,9 @@ export default function TodayPage() {
                       </div>
                       <div className="truncate text-sm font-medium text-ink">{b.title}</div>
                     </div>
-                    {b.link && (
+                    {safeHttpUrl(b.link) && (
                       <a
-                        href={b.link}
+                        href={safeHttpUrl(b.link)!}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="shrink-0 rounded-lg bg-cream-soft px-2.5 py-1.5 text-xs font-medium text-pine-dark"

@@ -228,12 +228,11 @@ migration `0012_place_details_extra.sql` และ `0013_trip_stop_notes.sql` �
 
 ---
 
-### เฟส 6.9 — งานจิ๋วทำก่อนเลย (< 15 นาที) ⏳ เหลือ 1 ข้อ (7 ส.ค. 2026)
+### เฟส 6.9 — งานจิ๋วทำก่อนเลย (< 15 นาที) ✅ เสร็จ (8 ส.ค. 2026)
 
-- [ ] **ล้าง test data ค้างใน DB จริง** — `Mun Dining` (วัน `d0`, stop id `stop-v2twml5x4msimwzds`) มี `visited_at`
-      ติดอยู่จากการทดสอบเฟส 6 ทำให้ `/today` คิดว่า "มาถึงแล้ว" ⚠️ **ยังไม่ได้ลบ — auto-mode classifier บล็อก
-      คำสั่ง PATCH ที่ยิงตรงไป Supabase (ถูกต้องแล้ว เป็นการเขียนทับ production DB)** ต้องให้ผู้ใช้ลบเอง
-      หรือสั่งอนุมัติชัดเจนอีกครั้งในแชทให้ยิง curl PATCH `trip_stops` set `visited_at = null` ที่ id ข้างต้น
+- [x] **ล้าง test data ค้างใน DB จริง** — `Mun Dining` (วัน `d0`, stop id `stop-v2twml5x4msimwzds`) มี `visited_at`
+      ติดอยู่จากการทดสอบเฟส 6 ทำให้ `/today` คิดว่า "มาถึงแล้ว" ผู้ใช้รัน SQL เองใน Supabase Dashboard
+      (`UPDATE trip_stops SET visited_at = NULL WHERE id = 'stop-v2twml5x4msimwzds'`) ยืนยันด้วย SELECT แล้วว่าเป็น NULL
 - [x] **ลบคอมเมนต์ล้าสมัย** `lib/schedule.ts:21` (7 ส.ค. 2026) — "(ดู `app/api/travel-time/route.ts` ที่ยัง broken อยู่)"
       route นั้นเขียนใหม่ตั้งแต่เฟส 1 แล้ว แก้เป็นข้อความที่ตรงกับความจริงปัจจุบัน
 
@@ -332,21 +331,25 @@ migration `0012_place_details_extra.sql` และ `0013_trip_stop_notes.sql` �
 
 ---
 
-### เฟส 10 — กันข้อมูลหาย + พกไปเที่ยวได้ (ให้จบก่อนกลางเดือน ก.ย.)
+### เฟส 10 — กันข้อมูลหาย + พกไปเที่ยวได้ ✅ เสร็จ (8 ส.ค. 2026)
 RLS เปิดสาธารณะทุกตาราง + anon key อยู่ใน bundle = ใครเจอ URL Vercel ก็ลบข้อมูลทริปได้หมด
 **เรื่องนี้ตั้งใจไว้แต่แรกและไม่แก้** (กติกาข้อ "ไม่ทำระบบล็อกอิน") — แต่ตอนนี้ **ไม่มี backup เลยสักชั้น** ซึ่งคนละเรื่องกัน
 
-- [ ] **ปุ่ม Export แผนเป็น JSON** — ดาวน์โหลดทุกตาราง (stops/hotels/bookings/checklist/day settings) ในไฟล์เดียว
-      ทำฝั่ง client ล้วน ไม่ต้องมี API ใหม่ · เก็บไว้ใน Google Drive ก่อนบินก็พอ
-- [ ] **`/summary` พิมพ์ได้จริง** (`@media print`) — ซ่อน BottomNav/ปุ่ม, บังคับสีพื้นหลังการ์ดวัน, `break-inside: avoid` ต่อวัน
-      → พิมพ์กระดาษพกไป 1 ชุด สำรองตอนแบตหมด/มือถือหาย (คุ้มกว่าทำ PWA offline มาก และไม่ขัดกับที่ตัดสินใจไว้)
-- [ ] **`/api/place-autocomplete` เป็นเส้นเดียวที่ไม่แคชเลย** ยิงตรง Google ทุกตัวอักษร (Google คิดเงินต่อ request)
-      เปิดสาธารณะ ไม่มี rate limit → เส้นที่โดนถล่มแล้วเสียเงินง่ายสุด
-      แก้แบบง่ายสุด: จำกัดจำนวน request ต่อ IP ต่อนาทีใน route (in-memory ก็พอสำหรับ 2 คน)
-- [ ] **ไฟล์แนบ booking รั่ว** — กด ✕ ลบไฟล์แค่ล้าง state (ไฟล์ยังอยู่ใน bucket) · อัปโหลดแล้วปิด modal ไม่บันทึกก็ค้าง
-      · ไม่จำกัดขนาดไฟล์ → เพิ่มลบไฟล์จริงตอนกด ✕ + จำกัดขนาด (เช่น 10MB)
-- [ ] **ช่อง "ลิงก์" ของ booking เอาไปเป็น `href` ตรงๆ** ไม่กรอง protocol — `javascript:` รันได้
-      (ประกอบกับ RLS สาธารณะ = ใครก็เขียนลงได้) → อนุญาตเฉพาะ `http:`/`https:`
+- [x] **ปุ่ม Export แผนเป็น JSON** — ปุ่ม "⬇️ Export JSON" บนหัว `/summary` ดาวน์โหลด plans/stops/hotels/bookings/
+      checklist/day settings/overnight overrides/custom places รวมไฟล์เดียว (client ล้วน ไม่มี API ใหม่)
+- [x] **`/summary` พิมพ์ได้จริง** (`@media print`) — ซ่อนลิงก์นำทาง/BottomNav ด้วย `print:hidden`, บังคับสีพื้นหลัง
+      หัวการ์ดวันด้วย `print-color-adjust: exact`, `print:break-inside-avoid` ต่อวัน, ตั้ง `@page { margin: 12mm }`
+      เพิ่มปุ่ม "🖨️ พิมพ์" เรียก `window.print()` ให้ด้วย
+- [x] **`/api/place-autocomplete` เพิ่ม rate limit ต่อ IP** — `lib/rateLimit.ts` in-memory sliding window (60 req/นาที/IP)
+      คืน 429 เมื่อเกิน พอสำหรับ 2 คนใช้งานจริง ไม่ต้องพึ่ง Redis/Upstash
+- [x] **ไฟล์แนบ booking ไม่รั่วอีกแล้ว** — `BookingEditModal.tsx`: กด ✕ ลบไฟล์จริงใน bucket (`storagePathFromPublicUrl`
+      แกะ path จาก public URL), ปิด modal โดยไม่กดบันทึกก็ลบไฟล์ที่เพิ่งอัปโหลดทิ้งอัตโนมัติ (`pendingUploadPathRef`),
+      จำกัดขนาดไฟล์ 10MB
+- [x] **ช่อง "ลิงก์" ของ booking กรอง protocol แล้ว** — `lib/url.ts` (`safeHttpUrl`) อนุญาตเฉพาะ `http:`/`https:`
+      บังคับใช้ทั้งตอนบันทึก (โชว์ error ในฟอร์ม) และตอนเรนเดอร์เป็น `href` ใน `/today`
+
+**ยืนยันปิดเฟส:** `npm test` (50/50) · `npm run lint` + `tsc --noEmit` สะอาด · ทดสอบจริงในเบราว์เซอร์ (`/summary`
+โหลดได้ กด Export JSON ดาวน์โหลดไฟล์สำเร็จ ไม่มี console/server error)
 
 ---
 
@@ -381,7 +384,7 @@ RLS เปิดสาธารณะทุกตาราง + anon key อย�
 | เฟส 3 | เปิด **Maps JavaScript API** ใน Google Cloud Console |
 | ทุกเฟส | รันไฟล์ SQL migration ใหม่ใน Supabase Dashboard → SQL Editor (ผมรัน SQL ตรงๆ ไม่ได้) |
 | เฟส 5 | สร้าง Storage bucket ใน Supabase (หรือรัน SQL ที่ผมเตรียมให้) |
-| เฟส 6.9 | **ยืนยันว่าลบ `visited_at` ของ `Mun Dining` (วัน `d0`) ได้** — เป็นข้อมูลทดสอบค้าง ไม่ใช่ของจริง |
+| เฟส 6.9 | ✅ ลบ `visited_at` ของ `Mun Dining` (วัน `d0`) แล้ว (8 ส.ค. 2026 — รันเอง) |
 | เฟส 7 | อนุมัติเพิ่ม devDependency `vitest` + `vite-tsconfig-paths` (เฉพาะตอน dev ไม่ขึ้น production bundle) |
 | เฟส 7-12 | **ไม่มี migration ใหม่เลยทั้ง 6 เฟส** — ตั้งใจออกแบบทางแก้ให้เลี่ยง SQL ทั้งหมด (ดูเหตุผลที่เฟส 9.1) |
 

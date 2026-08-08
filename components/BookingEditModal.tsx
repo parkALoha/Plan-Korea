@@ -1,16 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BOOKING_FILES_BUCKET, supabase, type BookingCategory, type TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
+import { safeHttpUrl } from "@/lib/url";
 
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
 
 function randomSuffix() {
   return Math.random().toString(36).slice(2);
+}
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+// public URL รูปแบบ `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}` — ต้องแกะ path กลับมา
+// เพื่อสั่งลบไฟล์จริงใน bucket (แค่ล้าง state ไม่พอ ไฟล์ยังค้างอยู่)
+function storagePathFromPublicUrl(url: string): string | null {
+  const marker = `/storage/v1/object/public/${BOOKING_FILES_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  return idx === -1 ? null : url.slice(idx + marker.length);
 }
 
 export function BookingEditModal({
@@ -39,9 +50,16 @@ export function BookingEditModal({
   const [fileName, setFileName] = useState(existing?.file_name ?? "");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  // path ของไฟล์ที่อัปโหลดในเซสชันนี้แต่ยังไม่ได้กดบันทึก — ถ้าปิด modal เฉยๆ ต้องลบทิ้งกันไฟล์ค้าง
+  const pendingUploadPathRef = useRef<string | null>(null);
 
   async function handleFileChange(file: File | null) {
     if (!file) return;
+    if (file.size > MAX_FILE_BYTES) {
+      setUploadError("ไฟล์ใหญ่เกิน 10MB กรุณาเลือกไฟล์อื่น");
+      return;
+    }
     setUploading(true);
     setUploadError(null);
     const path = `${existing?.id ?? "new"}-${Date.now()}-${randomSuffix()}-${file.name}`;
@@ -51,10 +69,34 @@ export function BookingEditModal({
       setUploading(false);
       return;
     }
+    // แทนที่ไฟล์เดิมที่เพิ่งอัปโหลดในเซสชันนี้ (ยังไม่บันทึก) ก็ลบตัวเก่าทิ้งไปเลย ไม่งั้นค้างซ้ำ
+    if (pendingUploadPathRef.current) {
+      await supabase.storage.from(BOOKING_FILES_BUCKET).remove([pendingUploadPathRef.current]);
+    }
+    pendingUploadPathRef.current = path;
     const { data } = supabase.storage.from(BOOKING_FILES_BUCKET).getPublicUrl(path);
     setFileUrl(data.publicUrl);
     setFileName(file.name);
     setUploading(false);
+  }
+
+  async function handleRemoveFile() {
+    const path = pendingUploadPathRef.current ?? storagePathFromPublicUrl(fileUrl);
+    if (path) {
+      await supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
+    }
+    pendingUploadPathRef.current = null;
+    setFileUrl("");
+    setFileName("");
+  }
+
+  function handleCloseAttempt() {
+    if (pendingUploadPathRef.current) {
+      const path = pendingUploadPathRef.current;
+      pendingUploadPathRef.current = null;
+      void supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
+    }
+    onClose();
   }
 
   function handleDayChange(value: string) {
@@ -65,6 +107,12 @@ export function BookingEditModal({
 
   function handleSave() {
     if (!title.trim()) return;
+    const trimmedLink = link.trim();
+    if (trimmedLink && !safeHttpUrl(trimmedLink)) {
+      setLinkError("ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https:// เท่านั้น");
+      return;
+    }
+    pendingUploadPathRef.current = null;
     onSave({
       category,
       title: title.trim(),
@@ -72,7 +120,7 @@ export function BookingEditModal({
       date: date || null,
       time: time || null,
       confirmationNumber: confirmationNumber.trim() || null,
-      link: link.trim() || null,
+      link: trimmedLink || null,
       note: note.trim() || null,
       addedBy: existing?.added_by ?? who ?? null,
       fileUrl: fileUrl || null,
@@ -83,7 +131,7 @@ export function BookingEditModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
-      onClick={onClose}
+      onClick={handleCloseAttempt}
     >
       <div
         className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl bg-white sm:rounded-2xl"
@@ -94,7 +142,7 @@ export function BookingEditModal({
             <h2 className="text-lg font-bold text-ink">
               {existing ? "แก้ไขตั๋ว/booking" : "เพิ่มตั๋ว/booking"}
             </h2>
-            <button onClick={onClose} className="rounded-full p-2 text-ink-soft hover:bg-cream-soft">
+            <button onClick={handleCloseAttempt} className="rounded-full p-2 text-ink-soft hover:bg-cream-soft">
               ✕
             </button>
           </div>
@@ -181,10 +229,14 @@ export function BookingEditModal({
             <label className="mb-1 block text-xs font-medium text-ink-soft">ลิงก์ (ไม่บังคับ)</label>
             <input
               value={link}
-              onChange={(e) => setLink(e.target.value)}
+              onChange={(e) => {
+                setLink(e.target.value);
+                setLinkError(null);
+              }}
               placeholder="https://..."
               className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
             />
+            {linkError && <p className="mt-1 text-xs text-red-600">{linkError}</p>}
           </div>
 
           <div>
@@ -210,10 +262,7 @@ export function BookingEditModal({
                   📎 {fileName || "เปิดไฟล์"}
                 </a>
                 <button
-                  onClick={() => {
-                    setFileUrl("");
-                    setFileName("");
-                  }}
+                  onClick={handleRemoveFile}
                   className="shrink-0 rounded-full p-1 text-ink-soft hover:bg-cream-soft"
                 >
                   ✕
@@ -221,7 +270,7 @@ export function BookingEditModal({
               </div>
             ) : (
               <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cream-soft px-3 py-3 text-xs text-ink-soft hover:bg-cream-soft">
-                {uploading ? "กำลังอัปโหลด..." : "แตะเพื่อเลือกรูป/PDF"}
+                {uploading ? "กำลังอัปโหลด..." : "แตะเพื่อเลือกรูป/PDF (สูงสุด 10MB)"}
                 <input
                   type="file"
                   accept="image/*,application/pdf"

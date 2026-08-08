@@ -89,9 +89,9 @@ function SummaryDayCard({
   const allEvents = [...(eventsBeforeStops ?? []), ...eventsAfterStops];
 
   return (
-    <section className="mb-4 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5">
+    <section className="mb-4 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5 print:break-inside-avoid print:shadow-none">
       <div
-        className="px-4 py-3 text-cream"
+        className="px-4 py-3 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]"
         style={{ background: `linear-gradient(135deg, ${meta.color}, ${meta.colorDark})` }}
       >
         <div className="flex items-start justify-between gap-2">
@@ -265,17 +265,48 @@ export default function SummaryPage() {
   const lockedCount = itinerary.filter((d) => daySettings[d.id]?.is_locked === true).length;
   const daysWithoutStops = itinerary.filter((d) => (stopsByDay[d.id] ?? []).length === 0);
 
+  function handleExportJson() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      plans,
+      activePlanId,
+      stops,
+      hotels,
+      bookings,
+      checklistItems,
+      daySettings,
+      overnightOverrides,
+      customPlaces,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `plan-korea-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <main className="min-h-full pb-24 lg:pb-10">
-      <header className="bg-pine px-4 pb-6 pt-6 text-cream">
+      <header className="bg-pine px-4 pb-6 pt-6 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
         <div className="mx-auto max-w-2xl">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 print:hidden">
             <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
               ← หน้าแผน
             </Link>
             <Link href="/today" className="text-sm text-cream/80 hover:text-cream hover:underline">
               📍 วันนี้
             </Link>
+            <button
+              onClick={handleExportJson}
+              className="ml-auto rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+            >
+              ⬇️ Export JSON
+            </button>
+            <button onClick={() => window.print()} className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25">
+              🖨️ พิมพ์
+            </button>
           </div>
           <h1 className="mt-3 text-2xl font-extrabold">📋 สรุปแผนเที่ยวเกาหลี</h1>
           <p className="mt-1 text-sm text-pine-soft/80">
@@ -393,7 +424,9 @@ export default function SummaryPage() {
         </div>
       )}
 
-      <BottomNav />
+      <div className="print:hidden">
+        <BottomNav />
+      </div>
     </main>
   );
 }
