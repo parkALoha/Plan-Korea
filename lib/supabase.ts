@@ -61,6 +61,9 @@ export type TripStop = {
   travel_mode: string | null;
   /** โน้ตสั้นๆ ที่จดเอง เช่น "ร้านนี้อร่อย รีบไป" — null/ว่าง = ไม่มีโน้ต */
   note: string | null;
+  /** รูปหน้างานที่ถ่ายเอง เก็บใน bucket booking-files เดียวกับไฟล์แนบ booking — null = ไม่มีรูป
+   *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ */
+  photo_url?: string | null;
   added_by: string | null;
   updated_at: string;
   /** "place" (ปกติ) | "intercity" (แถวเดินทางข้ามเมือง กินเวลาใน timeline แต่ไม่ใช่สถานที่)
@@ -98,6 +101,8 @@ export type TripBooking = {
   file_name: string | null;
 };
 
+export type ChecklistCategory = "packing" | "before_hotel_checkout" | "before_flight";
+
 export type ChecklistItem = {
   id: string;
   text: string;
@@ -106,6 +111,7 @@ export type ChecklistItem = {
   added_by: string | null;
   created_at: string;
   updated_at: string;
+  category: ChecklistCategory;
 };
 
 export type TripDaySettings = {

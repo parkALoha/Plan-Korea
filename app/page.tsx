@@ -80,6 +80,7 @@ export default function Home() {
     updateDwellMinutes,
     updateTravelMode,
     updateNote,
+    updatePhoto,
     removeStop,
     bulkInsert,
   } = useStops(activePlanId);
@@ -320,7 +321,7 @@ export default function Home() {
             {overallLoaded && (
               <ChecklistPanel
                 items={checklistItems}
-                onAdd={(text) => addChecklistItem(text, who || undefined)}
+                onAdd={(text, category) => addChecklistItem(text, category, who || undefined)}
                 onToggle={(itemId, checked) => toggleChecklistItem(itemId, checked, who || undefined)}
                 onRemove={removeChecklistItem}
               />
@@ -353,6 +354,7 @@ export default function Home() {
                   onUpdateDwell={updateDwellMinutes}
                   onUpdateTravelMode={updateTravelMode}
                   onUpdateNote={updateNote}
+                  onUpdatePhoto={updatePhoto}
                   onAddPlace={() => openPickerForDay(day.id)}
                   onInsertPlace={(atIndex, center, prevPlace) =>
                     setInsertContext({ dayId: day.id, atIndex, center, prevPlace })

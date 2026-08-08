@@ -6,7 +6,8 @@ import { CATEGORY_EMOJI } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import { applyOvernightOverrides } from "@/lib/hotelLegs";
-import { isOpenDuring, weekdayHoursLabel } from "@/lib/openingHours";
+import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
+import type { GoogleOpeningHours } from "@/lib/googlePlaces";
 import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
 import { googleMapsDirectionsUrl, kakaoMapDirectionsUrl, openNaverMap } from "@/lib/mapLinks";
 import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "@/components/IntercityEditModal";
@@ -144,6 +145,33 @@ export default function TodayPage() {
   const nextStop = nextIndex >= 0 ? dayStops[nextIndex] : null;
   const nextSched = nextIndex >= 0 ? schedule[nextIndex] : null;
 
+  // เวลาเปิด-ปิดจริง 7 วันข้างหน้า (รวมวันหยุดพิเศษ) ของจุดถัดไป — ยิงสดทุกครั้ง ไม่พึ่งแคชถาวร
+  // (เฟส 11.5) เพราะข้อมูลนี้มีความหมายแค่ตอนใกล้ถึงวันจริงเท่านั้น เลยเช็คเฉพาะ isRealToday
+  const nextPlaceQuery = nextSched?.place?.mapsQuery ?? null;
+  // เก็บ query คู่กับผลลัพธ์ไว้ในสเตทเดียวกัน แล้วเช็คตรงกันตอน render แทนการ setState(null) ตรงๆ ในตัว effect
+  // (ต้นเหตุเดียวกับบั๊ก useDayOpeningHours cancelled เดิม — เฟส 7.6/9.2) กันโชว์ค่าของจุดแวะก่อนหน้าค้าง
+  const [currentOpeningHoursState, setCurrentOpeningHoursState] = useState<{
+    query: string;
+    hours: GoogleOpeningHours | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!isRealToday || !nextPlaceQuery) return;
+    let cancelled = false;
+    fetch(`/api/place-details?query=${encodeURIComponent(nextPlaceQuery)}&live=1`)
+      .then((res) => res.json())
+      .then((data: { currentOpeningHours?: GoogleOpeningHours | null }) => {
+        if (!cancelled) {
+          setCurrentOpeningHoursState({ query: nextPlaceQuery, hours: data.currentOpeningHours ?? null });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isRealToday, nextPlaceQuery]);
+  const currentOpeningHours =
+    isRealToday && currentOpeningHoursState?.query === nextPlaceQuery ? currentOpeningHoursState.hours : null;
+
   // กรอง !visited_at ซ้ำอีกชั้น ไม่พึ่ง slice(nextIndex+1) เฉยๆ — ติ๊กข้ามลำดับ (หรือยกเลิกติ๊กจุดก่อนหน้า)
   // ทำให้จุดที่ visited แล้วอยู่หลัง nextIndex ได้ เดิมจะโผล่ซ้ำทั้ง "ถัดจากนี้" และ "ผ่านมาแล้ว" — บั๊ก 8.3
   const upcomingPairs =
@@ -162,6 +190,10 @@ export default function TodayPage() {
   const DELAY_THRESHOLD_MINUTES = 10;
   const rawDelayMinutes = isRealToday ? estimateDelayMinutes(dayStops, schedule, now) : 0;
   const delayMinutes = Math.abs(rawDelayMinutes) >= DELAY_THRESHOLD_MINUTES ? rawDelayMinutes : 0;
+
+  // นาทีตามนาฬิกาเครื่องจริง นับจาก 00:00 ของวันนี้จริง — มีความหมายเฉพาะตอน isRealToday เท่านั้น
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const CLOSING_SOON_THRESHOLD_MINUTES = 60;
 
   const dateLabel = new Date(day.date).toLocaleDateString("th-TH", {
     day: "numeric",
@@ -330,6 +362,15 @@ export default function TodayPage() {
                           nextSched.arrivalMinutes + delayMinutes,
                           nextSched.departureMinutes + delayMinutes
                         ) === false;
+                      // เตือนล่วงหน้าว่า "จะปิดในอีก X นาที" โดยเทียบเวลานาฬิกาจริงตอนนี้ (ต่างจาก closed
+                      // ด้านบนที่เทียบเวลาตามแผน/เลื่อนแล้ว และเตือนเฉพาะตอนสายเกินไปแล้วเท่านั้น)
+                      // เฉพาะวันนี้จริงเท่านั้น เพราะ nowMinutes ผูกกับนาฬิกาเครื่อง เลื่อนดูวันอื่นไม่มีความหมาย
+                      const closingSoonMinutes =
+                        isRealToday && !closed ? minutesUntilClose(hours, day.date, nowMinutes) : null;
+                      const closingSoon =
+                        closingSoonMinutes != null &&
+                        closingSoonMinutes > 0 &&
+                        closingSoonMinutes <= CLOSING_SOON_THRESHOLD_MINUTES;
                       if (!hoursLabel && !closed) return null;
                       return (
                         <div
@@ -339,13 +380,36 @@ export default function TodayPage() {
                         >
                           {closed &&
                             `⚠️ ${delayMinutes !== 0 ? "ตามเวลาที่เลื่อนแล้ว " : ""}ช่วงเวลานี้สถานที่อาจปิดแล้ว — `}
+                          {closingSoon && `⏳ ปิดในอีก ${closingSoonMinutes} นาที — `}
                           {hoursLabel ?? "ไม่มีข้อมูลเวลาเปิด-ปิด"}
+                        </div>
+                      );
+                    })()}
+
+                    {(() => {
+                      // เตือนถ้าเวลาเปิด-ปิดจริงของ 7 วันข้างหน้า (รวมวันหยุดพิเศษ) ต่างจากตารางปกติที่โชว์ด้านบน
+                      const hours = openingHoursByQuery.get(nextSched.place.mapsQuery);
+                      const regularLabel = weekdayHoursLabel(hours, day.date);
+                      const currentLabel = weekdayHoursLabel(currentOpeningHours, day.date);
+                      if (!currentLabel || currentLabel === regularLabel) return null;
+                      return (
+                        <div className="mt-2 rounded-lg bg-gold/20 px-3 py-2 text-xs font-medium text-maple-dark">
+                          🎌 วันนี้เวลาเปิด-ปิดอาจต่างจากปกติ (วันหยุดพิเศษ) — {currentLabel}
                         </div>
                       );
                     })()}
 
                     {nextStop.note && (
                       <div className="mt-2 text-sm italic text-ink-soft">📝 {nextStop.note}</div>
+                    )}
+
+                    {nextStop.photo_url && (
+                      // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
+                      <img
+                        src={nextStop.photo_url}
+                        alt="รูปหน้างานของจุดแวะนี้"
+                        className="mt-2 h-24 w-24 rounded-lg object-cover"
+                      />
                     )}
 
                     <div className="mt-4">
@@ -378,6 +442,14 @@ export default function TodayPage() {
                 <div className="mt-1 text-sm text-pine-dark">
                   🏨 กลับถึง {endAnchor.label} ประมาณ{" "}
                   {shiftTime(daySchedule.arriveBackAt, delayMinutes)}
+                </div>
+              )}
+              {endAnchor && (
+                <div className="mt-4 text-left">
+                  <div className="mb-2 text-center text-xs font-medium text-pine-dark">
+                    🧭 นำทางกลับ {endAnchor.label}
+                  </div>
+                  <NavButtons lat={endAnchor.lat} lng={endAnchor.lng} name={endAnchor.label} />
                 </div>
               )}
             </section>

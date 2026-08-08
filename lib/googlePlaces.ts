@@ -21,6 +21,9 @@ export type GooglePlaceResult = {
   location?: { latitude: number; longitude: number };
   photos?: Array<{ name: string }>;
   regularOpeningHours?: GoogleOpeningHours;
+  /** เวลาเปิด-ปิดจริงของ 7 วันข้างหน้านับจากตอนเรียก API รวมวันหยุดพิเศษที่ต่างจากตารางปกติ (เฟส 11.5)
+   *  ต่างจาก regularOpeningHours ที่เป็นตารางประจำสัปดาห์เฉยๆ ไม่รู้เรื่องวันหยุด — ห้ามแคชถาวรเพราะข้อมูลหมดอายุไว */
+  currentOpeningHours?: GoogleOpeningHours;
   rating?: number;
   userRatingCount?: number;
   primaryType?: string;
@@ -63,7 +66,9 @@ export async function searchPlacesText(
   query: string,
   fieldMask: string,
   restrictTo: { lat: number; lng: number } | null = null,
-  radiusMeters = CITY_SEARCH_RADIUS_METERS
+  radiusMeters = CITY_SEARCH_RADIUS_METERS,
+  /** true = ข้าม cache 30 วันของ Next.js — ใช้ตอนต้องการ currentOpeningHours สดๆ (เฟส 11.5) ที่ห้ามค้างนาน */
+  noCache = false
 ): Promise<{ places: GooglePlaceResult[]; error: string | null }> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
@@ -83,8 +88,8 @@ export async function searchPlacesText(
       "X-Goog-FieldMask": fieldMask,
     },
     body: JSON.stringify(body),
-    // แคชผลลัพธ์ไว้ 30 วัน เหมือน route อื่นๆ ในโปรเจกต์นี้
-    next: { revalidate: 2592000 },
+    // แคชผลลัพธ์ไว้ 30 วัน เหมือน route อื่นๆ ในโปรเจกต์นี้ (ยกเว้น noCache)
+    ...(noCache ? { cache: "no-store" as const } : { next: { revalidate: 2592000 } }),
   });
 
   if (!res.ok) {

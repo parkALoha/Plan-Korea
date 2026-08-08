@@ -7,7 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_EMOJI, cityCenter, Place } from "@/data/places";
 import type { City, Day, DayEvent } from "@/data/itinerary";
 import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
-import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
+import { BOOKING_FILES_BUCKET, supabase, type CustomPlace, type TripHotel, type TripStop } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
 import {
   estimateTravelMinutes,
@@ -28,6 +28,13 @@ import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from ".
 
 const DWELL_STEP_MINUTES = 15;
 const MIN_DWELL_MINUTES = 15;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+function storagePathFromPublicUrl(url: string): string | null {
+  const marker = `/storage/v1/object/public/${BOOKING_FILES_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  return idx === -1 ? null : url.slice(idx + marker.length);
+}
 
 function TravelModeRow({
   fromPlace,
@@ -166,6 +173,7 @@ function SortableStopRow({
   onView,
   onUpdateDwell,
   onUpdateNote,
+  onUpdatePhoto,
   onRemoveStop,
   onInsertBefore,
   onInsertIntercityBefore,
@@ -191,6 +199,7 @@ function SortableStopRow({
   onView: () => void;
   onUpdateDwell: (minutes: number) => void;
   onUpdateNote: (note: string | null) => void;
+  onUpdatePhoto: (photoUrl: string | null) => void;
   onRemoveStop: () => void;
   /** เปิด modal หาร้านอาหารแทรกก่อนจุดแวะนี้ — undefined เมื่อเป็นจุดแวะแรกของวัน (ยังไม่มี "ก่อนหน้า" ให้อ้างอิง) */
   onInsertBefore: (() => void) | undefined;
@@ -209,6 +218,37 @@ function SortableStopRow({
   };
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState(stop.note ?? "");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  async function handlePhotoChange(file: File | null) {
+    if (!file) return;
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoError("ไฟล์ใหญ่เกิน 10MB กรุณาเลือกไฟล์อื่น");
+      return;
+    }
+    setUploadingPhoto(true);
+    setPhotoError(null);
+    const path = `stop-photo-${stop.id}-${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+    const { error } = await supabase.storage.from(BOOKING_FILES_BUCKET).upload(path, file);
+    if (error) {
+      setPhotoError("อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง");
+      setUploadingPhoto(false);
+      return;
+    }
+    // มีรูปเก่าอยู่แล้ว ลบทิ้งก่อนแทนที่ด้วยรูปใหม่ ไม่งั้นไฟล์ค้างใน bucket
+    const oldPath = stop.photo_url ? storagePathFromPublicUrl(stop.photo_url) : null;
+    if (oldPath) await supabase.storage.from(BOOKING_FILES_BUCKET).remove([oldPath]);
+    const { data } = supabase.storage.from(BOOKING_FILES_BUCKET).getPublicUrl(path);
+    onUpdatePhoto(data.publicUrl);
+    setUploadingPhoto(false);
+  }
+
+  async function handleRemovePhoto() {
+    const path = stop.photo_url ? storagePathFromPublicUrl(stop.photo_url) : null;
+    if (path) await supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
+    onUpdatePhoto(null);
+  }
 
   const setRefs = (el: HTMLDivElement | null) => {
     setNodeRef(el);
@@ -469,6 +509,43 @@ function SortableStopRow({
           )
         )}
       </div>
+      {(stop.photo_url || (!locked && stop.kind !== "intercity")) && (
+        <div className="px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
+          {stop.photo_url ? (
+            <div className="flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+              <img
+                src={stop.photo_url}
+                alt="รูปหน้างานของจุดแวะนี้"
+                className="h-14 w-14 shrink-0 rounded-lg object-cover"
+              />
+              {!locked && (
+                <button
+                  onClick={handleRemovePhoto}
+                  className="shrink-0 rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
+                >
+                  ลบรูป
+                </button>
+              )}
+            </div>
+          ) : (
+            !locked &&
+            stop.kind !== "intercity" && (
+              <label className="inline-flex cursor-pointer items-center gap-1 py-1.5 text-xs text-ink-soft/60 hover:text-ink-soft">
+                {uploadingPhoto ? "กำลังอัปโหลด..." : "📷 + รูป"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  onChange={(e) => handlePhotoChange(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            )
+          )}
+          {photoError && <p className="text-[11px] text-red-600">{photoError}</p>}
+        </div>
+      )}
       {closedWarning && (
         <div className="bg-maple-soft/60 px-4 pb-2 text-[11px] text-maple-dark">
           ⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว
@@ -493,6 +570,7 @@ export function DayStopsSection({
   onUpdateDwell,
   onUpdateTravelMode,
   onUpdateNote,
+  onUpdatePhoto,
   onReorder,
   onAddPlace,
   onInsertPlace,
@@ -523,6 +601,7 @@ export function DayStopsSection({
   onUpdateDwell: (stopId: string, minutes: number) => void;
   onUpdateTravelMode: (stopId: string, mode: TravelMode) => void;
   onUpdateNote: (stopId: string, note: string | null) => void;
+  onUpdatePhoto: (stopId: string, photoUrl: string | null) => void;
   onAddPlace: () => void;
   /** เปิด modal หาร้านอาหารแทรกที่ตำแหน่ง atIndex ของวันนี้ ศูนย์กลางค้นหา = จุดก่อนหน้าตำแหน่งนั้น (หรือที่พัก/กลางเมืองถ้าแทรกก่อนจุดแรก) */
   onInsertPlace: (atIndex: number, center: { lat: number; lng: number }, prevPlace: Place | null) => void;
@@ -828,6 +907,7 @@ export function DayStopsSection({
                   }}
                   onUpdateDwell={(minutes) => onUpdateDwell(stop.id, minutes)}
                   onUpdateNote={(note) => onUpdateNote(stop.id, note)}
+                  onUpdatePhoto={(photoUrl) => onUpdatePhoto(stop.id, photoUrl)}
                   onRemoveStop={() => onRemoveStop(stop.id)}
                   onInsertBefore={
                     i > 0 && prevPlace

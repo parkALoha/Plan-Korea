@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { supabase, supabaseConfigured, ChecklistItem } from "@/lib/supabase";
+import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
 
 function makeChecklistId() {
   return `cl-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -60,24 +60,28 @@ export function useChecklist() {
     };
   }, []);
 
-  const addItem = useCallback(async (text: string, addedBy?: string | null) => {
-    const now = new Date().toISOString();
-    const newItem: ChecklistItem = {
-      id: makeChecklistId(),
-      text,
-      is_checked: false,
-      checked_by: null,
-      added_by: addedBy ?? null,
-      created_at: now,
-      updated_at: now,
-    };
-    if (!supabaseConfigured) {
-      setItems((prev) => sortItems([...prev, newItem]));
+  const addItem = useCallback(
+    async (text: string, category: ChecklistCategory = "packing", addedBy?: string | null) => {
+      const now = new Date().toISOString();
+      const newItem: ChecklistItem = {
+        id: makeChecklistId(),
+        text,
+        is_checked: false,
+        checked_by: null,
+        added_by: addedBy ?? null,
+        created_at: now,
+        updated_at: now,
+        category,
+      };
+      if (!supabaseConfigured) {
+        setItems((prev) => sortItems([...prev, newItem]));
+        return newItem.id;
+      }
+      await supabase.from("checklist_items").insert(newItem);
       return newItem.id;
-    }
-    await supabase.from("checklist_items").insert(newItem);
-    return newItem.id;
-  }, []);
+    },
+    []
+  );
 
   const toggleItem = useCallback(async (itemId: string, checked: boolean, checkedBy?: string | null) => {
     const patch = {

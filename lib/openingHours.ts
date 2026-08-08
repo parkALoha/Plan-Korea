@@ -22,6 +22,31 @@ function toMinutes(hour: number, minute: number): number {
 }
 
 /**
+ * สร้างช่วงเปิด-ปิดทั้งหมดที่เกี่ยวข้องกับ dateISO (เทียบกับเมื่อวาน/วันนี้/พรุ่งนี้ทั้ง 3 วัน)
+ * เป็นนาทีสะสมแบบไม่ wrap นับจาก 00:00 ของ dateISO — ใช้ร่วมกันทั้ง isOpenDuring และ minutesUntilClose
+ */
+function buildOpenWindows(
+  periods: NonNullable<GoogleOpeningHours["periods"]>,
+  dateISO: string
+): Array<{ start: number; end: number }> {
+  const weekday = isoDateToWeekday(dateISO);
+  const windows: Array<{ start: number; end: number }> = [];
+  for (const dayOffset of [-1, 0, 1]) {
+    const targetWeekday = (weekday + dayOffset + 7) % 7;
+    for (const period of periods) {
+      if (!period.close) continue; // เปิด 24 ชม. เฉพาะวันนั้น
+      if (period.open.day !== targetWeekday) continue;
+      const openMin = toMinutes(period.open.hour, period.open.minute) + dayOffset * 1440;
+      const spansMidnight = period.close.day !== period.open.day;
+      const closeMin =
+        toMinutes(period.close.hour, period.close.minute) + dayOffset * 1440 + (spansMidnight ? 1440 : 0);
+      windows.push({ start: openMin, end: closeMin });
+    }
+  }
+  return windows;
+}
+
+/**
  * เช็กว่าช่วง [arrivalMinutes, departureMinutes) ของวันที่ dateISO อยู่ในเวลาเปิดของสถานที่ไหม
  * arrivalMinutes/departureMinutes เป็นนาทีสะสมแบบไม่ wrap นับจาก 00:00 ของ dateISO
  * (มาจาก ScheduledStop.arrivalMinutes/departureMinutes ใน lib/schedule.ts) — อาจเกิน 1440 ได้เมื่อจุดแวะ
@@ -40,25 +65,28 @@ export function isOpenDuring(
   // เปิด 24 ชม. ทุกวัน (ไม่มี period ไหนมี close เลย)
   if (hours.periods.every((p) => !p.close)) return true;
 
-  const weekday = isoDateToWeekday(dateISO);
-
-  // สร้างช่วงเปิดเทียบกับ "เมื่อวาน/วันนี้/พรุ่งนี้" ของ dateISO ทั้งหมด (แทนที่จะดูแค่เมื่อวาน/วันนี้แบบเดิม)
-  // เผื่อจุดแวะยาวข้ามเที่ยงคืนไปถึงวันถัดไปจริงๆ (arrivalMinutes/departureMinutes เกิน 1440)
-  const windows: Array<{ start: number; end: number }> = [];
-  for (const dayOffset of [-1, 0, 1]) {
-    const targetWeekday = (weekday + dayOffset + 7) % 7;
-    for (const period of hours.periods) {
-      if (!period.close) continue; // เปิด 24 ชม. เฉพาะวันนั้น ไม่ต้องเช็ก (ครอบด้วยเงื่อนไข every ด้านบนแล้วถ้าทุก period เป็นแบบนี้)
-      if (period.open.day !== targetWeekday) continue;
-      const openMin = toMinutes(period.open.hour, period.open.minute) + dayOffset * 1440;
-      const spansMidnight = period.close.day !== period.open.day;
-      const closeMin =
-        toMinutes(period.close.hour, period.close.minute) + dayOffset * 1440 + (spansMidnight ? 1440 : 0);
-      windows.push({ start: openMin, end: closeMin });
-    }
-  }
-
+  const windows = buildOpenWindows(hours.periods, dateISO);
   if (windows.length === 0) return false; // มีข้อมูล period แต่ไม่มีช่วงเปิดที่เกี่ยวข้องเลย = ปิด
 
   return windows.some((w) => arrivalMinutes >= w.start && departureMinutes <= w.end);
+}
+
+/**
+ * ถ้า nowMinutes (นาทีสะสมนับจาก 00:00 ของ dateISO ไม่ wrap) อยู่ในช่วงเปิดของสถานที่พอดี
+ * คืนจำนวนนาทีที่เหลือก่อนปิด — ใช้เตือน "จะปิดในอีก X นาที" ล่วงหน้า ต่างจาก isOpenDuring ที่บอกแค่
+ * เปิด/ปิดตอนนั้น คืน null เมื่อไม่มีข้อมูล, เปิด 24 ชม., หรือตอนนี้ปิดอยู่แล้ว (ไม่ใช่กรณีที่ต้องเตือน)
+ */
+export function minutesUntilClose(
+  hours: GoogleOpeningHours | null | undefined,
+  dateISO: string,
+  nowMinutes: number
+): number | null {
+  if (!hours?.periods?.length) return null;
+  if (hours.periods.every((p) => !p.close)) return null; // เปิด 24 ชม. ไม่มีวันปิดให้เตือน
+
+  const windows = buildOpenWindows(hours.periods, dateISO);
+  const openNow = windows.filter((w) => nowMinutes >= w.start && nowMinutes < w.end);
+  if (openNow.length === 0) return null;
+
+  return Math.min(...openNow.map((w) => w.end)) - nowMinutes;
 }

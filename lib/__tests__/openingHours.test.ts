@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOpenDuring, weekdayHoursLabel } from "@/lib/openingHours";
+import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
 
 // dateISO ตัวอย่าง: "2026-10-12" คือวันจันทร์ (weekday = 1)
@@ -61,6 +61,44 @@ describe("isOpenDuring", () => {
     };
     // เข้าไปตอน 23:30 จันทร์ (1410) ออกตี 1 อังคาร (1500 = 25:00 นาทีดิบ)
     expect(isOpenDuring(hours, MONDAY, 1410, 1500)).toBe(true);
+  });
+});
+
+describe("minutesUntilClose", () => {
+  it("ไม่มีข้อมูล period คืน null", () => {
+    expect(minutesUntilClose(null, MONDAY, 600)).toBeNull();
+    expect(minutesUntilClose({ periods: [] }, MONDAY, 600)).toBeNull();
+  });
+
+  it("เปิด 24 ชม. ทุกวัน ไม่มีวันปิดให้เตือน คืน null", () => {
+    const hours: GoogleOpeningHours = {
+      periods: [{ open: { day: 1, hour: 0, minute: 0 } }],
+    };
+    expect(minutesUntilClose(hours, MONDAY, 600)).toBeNull();
+  });
+
+  it("ตอนนี้ปิดอยู่แล้ว (นอกช่วงเปิด) คืน null ไม่ใช่ค่าติดลบ", () => {
+    const hours: GoogleOpeningHours = {
+      periods: [{ open: { day: 1, hour: 9, minute: 0 }, close: { day: 1, hour: 18, minute: 0 } }],
+    };
+    expect(minutesUntilClose(hours, MONDAY, 19 * 60)).toBeNull();
+  });
+
+  it("กำลังเปิดอยู่ คืนนาทีที่เหลือก่อนปิดถูกต้อง", () => {
+    const hours: GoogleOpeningHours = {
+      periods: [{ open: { day: 1, hour: 9, minute: 0 }, close: { day: 1, hour: 18, minute: 0 } }],
+    };
+    // 17:30 จันทร์ ปิด 18:00 → เหลือ 30 นาที
+    expect(minutesUntilClose(hours, MONDAY, 17 * 60 + 30)).toBe(30);
+  });
+
+  it("ร้านเปิดคร่อมเที่ยงคืน (เสาร์ 20:00 - อาทิตย์ 02:00) เช็กฝั่งอาทิตย์เช้าได้ถูกต้อง", () => {
+    const SUNDAY = "2026-10-11";
+    const hours: GoogleOpeningHours = {
+      periods: [{ open: { day: 6, hour: 20, minute: 0 }, close: { day: 0, hour: 2, minute: 0 } }],
+    };
+    // ตี 1:30 อาทิตย์ (90 นาที) ปิดตี 2 (120 นาที) → เหลือ 30 นาที
+    expect(minutesUntilClose(hours, SUNDAY, 90)).toBe(30);
   });
 });
 

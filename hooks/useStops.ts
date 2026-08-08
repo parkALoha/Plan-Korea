@@ -237,6 +237,17 @@ export function useStops(planId: string | null) {
       .eq("id", stopId);
   }, []);
 
+  const updatePhoto = useCallback(async (stopId: string, photoUrl: string | null) => {
+    if (!supabaseConfigured) {
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, photo_url: photoUrl } : s)));
+      return;
+    }
+    await supabase
+      .from("trip_stops")
+      .update({ photo_url: photoUrl, updated_at: new Date().toISOString() })
+      .eq("id", stopId);
+  }, []);
+
   const updateOrderIndex = useCallback(async (stopId: string, orderIndex: number) => {
     if (!supabaseConfigured) {
       setStops((prev) =>
@@ -364,6 +375,7 @@ export function useStops(planId: string | null) {
     updateDwellMinutes,
     updateTravelMode,
     updateNote,
+    updatePhoto,
     updateOrderIndex,
     reorderStops,
     moveStopToDay,
