@@ -1,4 +1,16 @@
 import type { City, Day } from "@/data/itinerary";
+import type { TripHotel } from "@/lib/supabase";
+
+/**
+ * id ของ anchor ที่พักสำหรับคำนวณ/แคชเวลาเดินทาง — อิงพิกัดแทน leg_id ตรงๆ (บั๊ก 9.1)
+ * เดิมใช้ leg_id เป็น key ทั้งแคชในแท็บ (L1) และตาราง travel_time_cache (L2) พอเปลี่ยนโรงแรมของ leg เดิม
+ * (leg_id ไม่เปลี่ยน แค่พิกัด/ชื่อโรงแรมเปลี่ยน) เวลาเดินทางที่เคยแคชไว้ของโรงแรมเก่าก็ยังถูกใช้ต่อตลอดไป
+ * เปลี่ยนเป็นอิงพิกัดแล้วเปลี่ยนโรงแรม = ได้ key ใหม่เองทันที ไม่ต้องเพิ่ม migration/policy update ให้
+ * travel_time_cache เลย (migration 0010 มีแค่ policy select/insert ไม่มี update/delete)
+ */
+export function hotelAnchorId(hotel: Pick<TripHotel, "lat" | "lng">): string {
+  return `hotel@${hotel.lat.toFixed(5)},${hotel.lng.toFixed(5)}`;
+}
 
 export type HotelLeg = {
   id: string;

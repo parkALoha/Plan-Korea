@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { haversineKm } from "@/lib/geo";
 import type { Place } from "@/data/places";
 import type { TripHotel } from "@/lib/supabase";
+import { hotelAnchorId } from "@/lib/hotelLegs";
 
 function pairKey(hotel: TripHotel, to: Place) {
-  return `${hotel.leg_id}->${to.id}`;
+  return `${hotelAnchorId(hotel)}->${to.id}`;
 }
 
 /** ระยะทาง/เวลาเดินทางจากโรงแรมที่พักคืนนั้นไปสถานที่ที่กำลังดู — null ถ้ายังไม่ได้ตั้งโรงแรมของ leg นี้ */
@@ -24,7 +25,7 @@ export function useHotelDistance(hotel: TripHotel | null, to: Place) {
     const key = pairKey(hotel, to);
     // ใช้โหมดขนส่งสาธารณะเป็นค่าเริ่มต้นสำหรับ label นี้ — เป็นโหมดเดียวที่ Google รองรับครบในเกาหลีใต้
     const url =
-      `/api/travel-time?originPlaceId=${encodeURIComponent(hotel.leg_id)}` +
+      `/api/travel-time?originPlaceId=${encodeURIComponent(hotelAnchorId(hotel))}` +
       `&destPlaceId=${encodeURIComponent(to.id)}` +
       `&originLat=${hotel.lat}&originLng=${hotel.lng}&destLat=${to.lat}&destLng=${to.lng}&mode=transit`;
     fetch(url)

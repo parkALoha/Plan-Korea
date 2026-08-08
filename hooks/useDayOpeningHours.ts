@@ -2,49 +2,33 @@
 
 import { useEffect, useState } from "react";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
-
-// แคชข้ามคอมโพเนนต์/reload หน้าเดียวกัน เหมือน useDayTravelTimes — L2 ถาวรอยู่ที่ place_details_cache
-const cache = new Map<string, GoogleOpeningHours | null>();
-const inFlight = new Set<string>();
+import { fetchPlaceDetails, placeDetailsCache } from "@/hooks/usePlaceDetails";
 
 /**
  * ยิงขอเวลาเปิด-ปิดของทุกจุดแวะในวันนั้นพร้อมกัน คืน map query -> hours ให้ผู้เรียกใช้เช็ก timeline
- * คู่ไหนยังไม่มีในแคช/inFlight จะยิงพร้อมกันทั้งหมด ไม่บล็อกกัน
+ * ใช้แคช/inFlight เดียวกับ usePlaceDetails (บั๊ก 9.2 — เดิมมี Map แยกต่างหากทั้งที่ยิง endpoint
+ * /api/place-details เส้นเดียวกัน ทำให้สถานที่เดียวกันถูกยิงซ้ำจากทั้งสองจุด)
  */
 export function useDayOpeningHours(mapsQueries: string[]) {
   const depsKey = mapsQueries.join("|");
   const [, setVersion] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
-
     mapsQueries.forEach((query) => {
-      if (cache.has(query) || inFlight.has(query)) return;
-      inFlight.add(query);
-
-      fetch(`/api/place-details?query=${encodeURIComponent(query)}`)
-        .then((r) => r.json())
-        .then((d) => {
-          cache.set(query, d.openingHours ?? null);
-        })
-        .catch(() => {
-          cache.set(query, null);
-        })
-        .finally(() => {
-          inFlight.delete(query);
-          if (!cancelled) setVersion((v) => v + 1);
-        });
+      if (placeDetailsCache.has(query)) return;
+      fetchPlaceDetails(query).then(() => {
+        // ห้ามเช็ก cancelled ตรงนี้ (บั๊ก 7.6 เดิม) — ผลที่มาถึงหลัง effect ถูก cleanup ไปแล้วต้อง re-render ได้
+        // เพราะค่าถูกเขียนลง cache ไปแล้ว รอบใหม่จะเจอ cache แล้วไม่ยิงซ้ำ = ข้อมูลหายเงียบๆ ถ้าข้าม setVersion
+        setVersion((v) => v + 1);
+      });
     });
-
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depsKey]);
 
   const result = new Map<string, GoogleOpeningHours | null>();
   mapsQueries.forEach((query) => {
-    if (cache.has(query)) result.set(query, cache.get(query)!);
+    const details = placeDetailsCache.get(query);
+    if (details) result.set(query, details.openingHours);
   });
   return result;
 }

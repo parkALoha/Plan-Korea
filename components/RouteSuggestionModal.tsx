@@ -35,8 +35,8 @@ export function RouteSuggestionModal({
   endAt: RoutePoint | null;
   /** คำนวณตารางเวลาของลำดับที่ให้มา ด้วย logic เดียวกับที่หน้าวันใช้อยู่ (เวลาจริงจาก Google ถ้ามี) */
   buildSchedule: (ordered: TripStop[]) => DaySchedule;
-  /** true = ช่วงเวลานี้สถานที่ปิดตามข้อมูล Google */
-  isClosedAt: (place: Place, arrival: string, departure: string) => boolean;
+  /** true = ช่วงเวลานี้สถานที่ปิดตามข้อมูล Google — รับนาทีดิบ (ScheduledStop.arrivalMinutes/departureMinutes) */
+  isClosedAt: (place: Place, arrivalMinutes: number, departureMinutes: number) => boolean;
   onApply: (orderedStopIds: string[]) => void;
   onClose: () => void;
 }) {
@@ -98,13 +98,14 @@ export function RouteSuggestionModal({
   const newlyClosed = after.stops.filter((s) => {
     if (!s.place) return false;
     const wasClosed = before.stops.find((b) => b.id === s.id);
-    const nowClosed = isClosedAt(s.place, s.arrival, s.departure);
+    const nowClosed = isClosedAt(s.place, s.arrivalMinutes, s.departureMinutes);
     const previouslyClosed =
-      wasClosed?.place != null && isClosedAt(wasClosed.place, wasClosed.arrival, wasClosed.departure);
+      wasClosed?.place != null &&
+      isClosedAt(wasClosed.place, wasClosed.arrivalMinutes, wasClosed.departureMinutes);
     return nowClosed && !previouslyClosed;
   });
   const stillClosed = after.stops.filter(
-    (s) => s.place != null && isClosedAt(s.place, s.arrival, s.departure)
+    (s) => s.place != null && isClosedAt(s.place, s.arrivalMinutes, s.departureMinutes)
   );
 
   return (
@@ -175,7 +176,8 @@ export function RouteSuggestionModal({
                   </div>
                   <ol className="space-y-1.5">
                     {after.stops.map((s, i) => {
-                      const closed = s.place != null && isClosedAt(s.place, s.arrival, s.departure);
+                      const closed =
+                        s.place != null && isClosedAt(s.place, s.arrivalMinutes, s.departureMinutes);
                       return (
                         <li
                           key={s.id}

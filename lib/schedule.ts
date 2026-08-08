@@ -17,8 +17,8 @@ export const TRAVEL_MODE_EMOJI: Record<TravelMode, string> = {
   drive: "🚕",
 };
 
-// ความเร็วเฉลี่ยคร่าวๆ ต่อโหมด (กม./ชม.) ใช้ประมาณเวลาเดินทางตอนยังไม่มีข้อมูลจริงจาก Google
-// (ดู app/api/travel-time/route.ts ที่ยัง broken อยู่) — เป็นแค่ตัวเลขคร่าวๆ ใน timeline ไม่ใช่ของจริง
+// ความเร็วเฉลี่ยคร่าวๆ ต่อโหมด (กม./ชม.) ใช้ประมาณเวลาเดินทางตอนยังไม่มีเวลาจริงจาก Google ในแคช
+// (ดู app/api/travel-time/route.ts) — เป็นแค่ตัวเลขคร่าวๆ ใน timeline ไม่ใช่ของจริง
 const TRAVEL_MODE_KMH: Record<TravelMode, number> = {
   walk: 4.5,
   transit: 20,
@@ -53,8 +53,13 @@ export const DEFAULT_DWELL_MINUTES: Record<Category, number> = {
   restaurant: 75,
 };
 
-export function timeToMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
+/** คืน null เมื่อ parse ไม่ได้ (เช่น ค่าว่างจากการล้างช่อง <input type="time">) — ผู้เรียกต้อง fallback เอง */
+export function timeToMinutes(time: string): number | null {
+  const parts = time.split(":");
+  if (parts.length !== 2) return null;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   return h * 60 + m;
 }
 
@@ -77,10 +82,15 @@ export type ScheduledStop = ScheduleStopInput & {
   resolvedDwellMinutes: number;
   arrival: string;
   departure: string;
+  /** นาทีสะสมแบบไม่ wrap นับจาก startTime ของวัน (อาจเกิน 1440 เมื่อจุดแวะข้ามเที่ยงคืน)
+   *  ใช้เทียบเดดไลน์/เวลาเปิด-ปิดข้ามเที่ยงคืนได้ตรง ต่างจาก arrival/departure ที่ห่อรอบ 24 ชม.แล้วสำหรับแสดงผล */
+  arrivalMinutes: number;
+  departureMinutes: number;
   travelMinutesFromPrev: number | null;
 };
 
-/** จุดอ้างอิงบนแผนที่ที่ใช้ถามเวลาเดินทางได้ — จุดแวะใช้ place.id, ที่พักใช้ leg_id (ตรงกับคีย์แคชใน useHotelDistance) */
+/** จุดอ้างอิงบนแผนที่ที่ใช้ถามเวลาเดินทางได้ — จุดแวะใช้ place.id, ที่พักใช้ hotelAnchorId (lib/hotelLegs.ts,
+ *  อิงพิกัดแทน leg_id ตรงๆ กันเวลาแคชค้างของโรงแรมเก่าตอนเปลี่ยนโรงแรม — ตรงกับคีย์แคชใน useHotelDistance) */
 export type PointRef = { id: string; lat: number; lng: number };
 
 /** ที่พักหัว/ท้ายวัน — start = ที่พักคืนก่อนหน้าที่ออกมาตอนเช้า, end = ที่พักคืนนี้ที่กลับไปนอน */
@@ -94,6 +104,9 @@ export type DaySchedule = {
   travelMinutesToEnd: number | null;
   /** เวลากลับถึงที่พักคืนนี้ (null เมื่อไม่มีที่พักปลายทางหรือไม่มีจุดแวะเลย) */
   arriveBackAt: string | null;
+  /** นาทีสะสมแบบไม่ wrap ของจุดสิ้นสุดวัน (กลับถึงที่พัก หรือจุดแวะสุดท้ายถ้าไม่มีที่พักปลายทาง)
+   *  ใช้เทียบเดดไลน์ตายตัวที่อาจอยู่ข้ามเที่ยงคืนไปวันถัดไป (เช่น ต้องออกไปขึ้นเครื่องตี 1) */
+  endOfDayMinutes: number;
 };
 
 /**
@@ -109,7 +122,9 @@ export function computeSchedule(
   anchors?: { start?: ScheduleAnchor | null; end?: ScheduleAnchor | null }
 ): DaySchedule {
   const result: ScheduledStop[] = [];
-  let cursor = timeToMinutes(startTime);
+  // startTime มาจาก DB เสมอเป็นตัวเดินหลัก ถ้า parse ไม่ได้ (แถวเก่าที่เคยเขียน "" ก่อนเฟส 7.3 แก้บั๊ก)
+  // fallback เป็น 0 (เที่ยงคืน) แทนที่จะทำให้ cursor เป็น NaN แล้วพังทั้งตาราง
+  let cursor = timeToMinutes(startTime) ?? 0;
 
   const pointOf = (stop: ScheduleStopInput): PointRef | null => {
     const place = placesById.get(stop.placeId);
@@ -132,10 +147,12 @@ export function computeSchedule(
       from && to ? travelMinutesBetween(from, to, stop.travelMode) : null;
     if (travelMinutesFromPrev != null) cursor += travelMinutesFromPrev;
 
+    const arrivalMinutes = cursor;
     const arrival = minutesToTime(cursor);
     const resolvedDwellMinutes =
       stop.dwellMinutes ?? (place ? DEFAULT_DWELL_MINUTES[place.category] : 60);
     cursor += resolvedDwellMinutes;
+    const departureMinutes = cursor;
     const departure = minutesToTime(cursor);
 
     result.push({
@@ -144,6 +161,8 @@ export function computeSchedule(
       resolvedDwellMinutes,
       arrival,
       departure,
+      arrivalMinutes,
+      departureMinutes,
       travelMinutesFromPrev,
     });
   });
@@ -152,8 +171,8 @@ export function computeSchedule(
   const lastPoint = stops.length > 0 ? pointOf(stops[stops.length - 1]) : null;
   const travelMinutesToEnd =
     endAnchor && lastPoint ? travelMinutesBetween(lastPoint, endAnchor, endAnchor.mode) : null;
-  const arriveBackAt =
-    endAnchor && lastPoint ? minutesToTime(cursor + (travelMinutesToEnd ?? 0)) : null;
+  const endOfDayMinutes = cursor + (travelMinutesToEnd ?? 0);
+  const arriveBackAt = endAnchor && lastPoint ? minutesToTime(endOfDayMinutes) : null;
 
   return {
     stops: result,
@@ -161,5 +180,6 @@ export function computeSchedule(
     travelMinutesFromStart,
     travelMinutesToEnd,
     arriveBackAt,
+    endOfDayMinutes,
   };
 }

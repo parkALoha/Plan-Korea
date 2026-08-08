@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripStop } from "@/lib/supabase";
+import { nextOrderIndex, orderIndexAtPosition } from "@/lib/stopOrdering";
 
 function makeStopId() {
   return `stop-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -74,7 +75,7 @@ export function useStops(planId: string | null) {
         plan_id: planId,
         day_id: dayId,
         place_id: placeId,
-        order_index: dayStops.length,
+        order_index: nextOrderIndex(dayStops),
         dwell_minutes: null,
         travel_mode: travelMode ?? null,
         note: null,
@@ -132,23 +133,25 @@ export function useStops(planId: string | null) {
       travelMode?: string | null
     ) => {
       if (!planId) return undefined;
+      const dayStops = stops.filter((s) => s.day_id === dayId);
+      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
       const newStop: TripStop = {
         id: makeStopId(),
         plan_id: planId,
         day_id: dayId,
         place_id: placeId,
-        order_index: atIndex,
+        order_index: targetOrderIndex,
         dwell_minutes: null,
         travel_mode: travelMode ?? null,
         note: null,
         added_by: addedBy ?? null,
         updated_at: new Date().toISOString(),
       };
-      const toShift = shiftForInsert(dayId, atIndex);
+      const toShift = shiftForInsert(dayId, targetOrderIndex);
       setStops((prev) => sortStops([...prev, newStop]));
       return writeInsert(toShift, newStop);
     },
-    [planId, shiftForInsert, writeInsert]
+    [planId, stops, shiftForInsert, writeInsert]
   );
 
   /** ใช้ตอน "แทรกเดินทางข้ามเมืองตรงนี้" — เหมือน insertStopAt แต่เป็นแถว kind="intercity" ไม่ใช่สถานที่
@@ -161,12 +164,14 @@ export function useStops(planId: string | null) {
       addedBy?: string
     ) => {
       if (!planId) return undefined;
+      const dayStops = stops.filter((s) => s.day_id === dayId);
+      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
       const newStop: TripStop = {
         id: makeStopId(),
         plan_id: planId,
         day_id: dayId,
         place_id: "",
-        order_index: atIndex,
+        order_index: targetOrderIndex,
         dwell_minutes: input.minutes,
         travel_mode: null,
         note: null,
@@ -177,11 +182,11 @@ export function useStops(planId: string | null) {
         added_by: addedBy ?? null,
         updated_at: new Date().toISOString(),
       };
-      const toShift = shiftForInsert(dayId, atIndex);
+      const toShift = shiftForInsert(dayId, targetOrderIndex);
       setStops((prev) => sortStops([...prev, newStop]));
       return writeInsert(toShift, newStop);
     },
-    [planId, shiftForInsert, writeInsert]
+    [planId, stops, shiftForInsert, writeInsert]
   );
 
   const updateStopPlace = useCallback(async (stopId: string, placeId: string) => {
@@ -268,22 +273,47 @@ export function useStops(planId: string | null) {
   }, []);
 
   /** ใช้ตอนลากจุดแวะข้ามไปอีกวันหนึ่ง (คนละ day_id) — ต่อท้ายวันปลายทางเสมอ
-   *  ไม่ต้องจัด order_index วันต้นทางใหม่ เพราะ sortStops ก็อ้างอิงแค่ day_id + order_index ของตัวเอง ไม่สนช่องว่าง */
+   *  จัด order_index ของวันต้นทางที่เหลือให้ต่อเนื่อง 0..n-1 ทันทีหลังย้ายออก (บั๊ก 8.1 — เดิมปล่อยเป็นช่องว่างไว้เฉยๆ
+   *  เช่นเหลือ 0,2,3 แล้ว addStop ครั้งถัดไปที่วันต้นทางใช้ dayStops.length เป็น order_index ใหม่ ชนกับแถวเดิม
+   *  ทำให้ sortStops ตัดสินลำดับไม่ได้ = 2 เครื่องเห็นลำดับไม่ตรงกัน) */
   const moveStopToDay = useCallback(
     async (stopId: string, targetDayId: string) => {
-      const newOrderIndex = stops.filter((s) => s.day_id === targetDayId).length;
+      const movingStop = stops.find((s) => s.id === stopId);
+      if (!movingStop) return;
+      const sourceDayId = movingStop.day_id;
+      const targetDayStops = stops.filter((s) => s.day_id === targetDayId);
+      const newOrderIndex = nextOrderIndex(targetDayStops);
+
+      const remainingSourceStops = stops
+        .filter((s) => s.day_id === sourceDayId && s.id !== stopId)
+        .sort((a, b) => a.order_index - b.order_index);
+      const renumbered = remainingSourceStops
+        .map((s, i) => ({ id: s.id, order_index: i }))
+        .filter((r, i) => remainingSourceStops[i].order_index !== r.order_index);
+      const renumberedById = new Map(renumbered.map((r) => [r.id, r.order_index]));
+
       setStops((prev) =>
         sortStops(
-          prev.map((s) =>
-            s.id === stopId ? { ...s, day_id: targetDayId, order_index: newOrderIndex } : s
-          )
+          prev.map((s) => {
+            if (s.id === stopId) return { ...s, day_id: targetDayId, order_index: newOrderIndex };
+            const newIndex = renumberedById.get(s.id);
+            return newIndex != null ? { ...s, order_index: newIndex } : s;
+          })
         )
       );
       if (!supabaseConfigured) return;
-      await supabase
-        .from("trip_stops")
-        .update({ day_id: targetDayId, order_index: newOrderIndex, updated_at: new Date().toISOString() })
-        .eq("id", stopId);
+      await Promise.all([
+        supabase
+          .from("trip_stops")
+          .update({ day_id: targetDayId, order_index: newOrderIndex, updated_at: new Date().toISOString() })
+          .eq("id", stopId),
+        ...renumbered.map((r) =>
+          supabase
+            .from("trip_stops")
+            .update({ order_index: r.order_index, updated_at: new Date().toISOString() })
+            .eq("id", r.id)
+        ),
+      ]);
     },
     [stops]
   );

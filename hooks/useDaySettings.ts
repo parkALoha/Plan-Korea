@@ -67,13 +67,14 @@ export function useDaySettings(planId: string | null) {
   const setStartTime = useCallback(
     async (dayId: string, startTime: string) => {
       if (!planId) return;
-      if (!supabaseConfigured) {
-        setSettings((prev) => ({
-          ...prev,
-          [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime },
-        }));
-        return;
-      }
+      // ด่านสุดท้ายกัน "" หลุดลง DB (ฝั่ง UI กันไว้แล้วที่ DayStopsSection แต่ start_time เป็นคอลัมน์ text
+      // ไม่มีด่านจาก DB เอง — บั๊ก 7.3) เขียน "" ทับได้จริงแล้วพัง timeToMinutes ทั้งวันของทุกคนที่ sync มาเห็น
+      if (!startTime.trim()) return;
+      setSettings((prev) => ({
+        ...prev,
+        [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime },
+      }));
+      if (!supabaseConfigured) return;
       await supabase
         .from("trip_day_settings")
         .upsert({ plan_id: planId, day_id: dayId, start_time: startTime });

@@ -18,7 +18,7 @@ import {
   type TravelMode,
 } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
-import { isOpenDuring, weekdayHoursLabel } from "@/lib/openingHours";
+import { weekdayHoursLabel } from "@/lib/openingHours";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { DayMapPanel } from "./DayMapPanel";
 import { DaySummaryBar } from "./DaySummaryBar";
@@ -686,7 +686,11 @@ export function DayStopsSection({
               <input
                 type="time"
                 value={effectiveStartTime}
-                onChange={(e) => onStartTimeChange(e.target.value)}
+                // กดปุ่ม ✕ ล้างช่องนี้ส่ง "" มา (browser native) — เดิมเขียนลง DB ตรงๆ แล้วพัง timeToMinutes
+                // ทั้งวัน (บั๊ก 7.3) เพราะ start_time เป็นคอลัมน์ text ไม่ใช่ time เลยไม่มีด่านกันจากฝั่ง DB
+                onChange={(e) => {
+                  if (e.target.value) onStartTimeChange(e.target.value);
+                }}
                 className="rounded-lg border border-white/30 bg-white/10 px-2 py-1 text-cream [color-scheme:dark] focus:border-gold focus:outline-none"
               />
             </label>
@@ -810,15 +814,7 @@ export function DayStopsSection({
                     sched.place != null &&
                     isTravelTimeReal(prevPlace.id, sched.place.id, (stop.travel_mode as TravelMode | null) ?? null)
                   }
-                  closedWarning={
-                    sched.place != null &&
-                    isOpenDuring(
-                      openingHoursByQuery.get(sched.place.mapsQuery),
-                      day.date,
-                      sched.arrival,
-                      sched.departure
-                    ) === false
-                  }
+                  closedWarning={closedStopIds.has(stop.id)}
                   closedHoursLabel={
                     sched.place != null
                       ? weekdayHoursLabel(openingHoursByQuery.get(sched.place.mapsQuery), day.date)

@@ -9,6 +9,7 @@ import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
@@ -410,23 +411,35 @@ export function PlaceSidebar({
       })}`
     : undefined;
 
+  // เดิม <aside> ฝั่งคอมซ่อนด้วย CSS (hidden lg:block) เฉยๆ ไม่เคย unmount — ทำให้ PlaceSidebarContent
+  // (การ์ดทุกใบในคลัง + useDroppable({id:"library"})) ทำงานซ้ำสองชุดตลอดเวลาแม้อยู่บนมือถือที่มองไม่เห็น
+  // ฝั่งคอมเลย (บั๊ก 9.3) — เปลี่ยนมาเรนเดอร์ชุดเดียวจริงๆ ตามขนาดจอผ่าน useMediaQuery (useSyncExternalStore)
+  // แทน ค่าเริ่มต้นฝั่ง server/ก่อน hydrate เป็น false (มือถือ) เสมอ — React sync ให้ตรงกับจอจริงทันทีหลัง mount
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+
   return (
     <>
-      <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-80 shrink-0 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5 lg:block">
-        <PlaceSidebarContent {...props} draggable />
-      </aside>
+      {isDesktop && (
+        <aside className="sticky top-4 h-[calc(100vh-2rem)] w-80 shrink-0 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5">
+          <PlaceSidebarContent {...props} draggable />
+        </aside>
+      )}
 
-      {/* ยกให้พ้นแถบเมนูล่าง (BottomNav) ที่สูง ~3.5rem ไม่งั้นทับกัน */}
-      <button
-        onClick={() => onMobileOpenChange(true)}
-        className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20 lg:hidden"
-      >
-        📍 สถานที่
-      </button>
-      {mobileOpen && (
-        <BottomSheet onClose={() => onMobileOpenChange(false)} title={sheetTitle} subtitle={sheetSubtitle}>
-          <PlaceSidebarContent {...props} draggable={false} />
-        </BottomSheet>
+      {!isDesktop && (
+        <>
+          {/* ยกให้พ้นแถบเมนูล่าง (BottomNav) ที่สูง ~3.5rem ไม่งั้นทับกัน */}
+          <button
+            onClick={() => onMobileOpenChange(true)}
+            className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20"
+          >
+            📍 สถานที่
+          </button>
+          {mobileOpen && (
+            <BottomSheet onClose={() => onMobileOpenChange(false)} title={sheetTitle} subtitle={sheetSubtitle}>
+              <PlaceSidebarContent {...props} draggable={false} />
+            </BottomSheet>
+          )}
+        </>
       )}
     </>
   );

@@ -19,6 +19,7 @@ import {
 import { useDayTravelTimes, type TravelTimePair } from "@/hooks/useDayTravelTimes";
 import { useDayOpeningHours } from "@/hooks/useDayOpeningHours";
 import { isOpenDuring } from "@/lib/openingHours";
+import { hotelAnchorId } from "@/lib/hotelLegs";
 
 /**
  * ตรรกะคำนวณตารางเวลาทั้งวัน — ดึงออกมาจาก DayStopsSection (เดิมฝังอยู่ในนั้นล้วนๆ)
@@ -58,11 +59,12 @@ export function useDaySchedule({
   }, [stops, customPlaces]);
 
   // ที่พักหัว-ท้ายวัน: ออกจากที่พักคืนก่อน (startHotel) ตอนเช้า แล้วกลับไปนอนที่พักคืนนี้ (hotel) ตอนค่ำ
-  // ใช้ leg_id เป็น id ของจุด เพื่อให้แคชเวลาเดินทางคีย์เดียวกับ useHotelDistance
+  // ใช้ hotelAnchorId (อิงพิกัด) เป็น id ของจุด เพื่อให้แคชเวลาเดินทางคีย์เดียวกับ useHotelDistance
+  // และเปลี่ยนโรงแรมของ leg เดิมแล้วได้ key ใหม่เองทันที ไม่ค้างเวลาของโรงแรมเก่า (บั๊ก 9.1)
   const startAnchorMode = (stops[0]?.travel_mode as TravelMode | null) ?? null;
   const startAnchor: ScheduleAnchor | null = startHotel
     ? {
-        id: startHotel.leg_id,
+        id: hotelAnchorId(startHotel),
         lat: startHotel.lat,
         lng: startHotel.lng,
         label: startHotel.hotel_name,
@@ -71,7 +73,7 @@ export function useDaySchedule({
     : null;
   const endAnchor: ScheduleAnchor | null = hotel
     ? {
-        id: hotel.leg_id,
+        id: hotelAnchorId(hotel),
         lat: hotel.lat,
         lng: hotel.lng,
         label: hotel.hotel_name,
@@ -142,7 +144,9 @@ export function useDaySchedule({
   //   2) เหตุการณ์ตายตัวที่เป็นจุดเริ่มของช่วงว่าง (เช่น ถึงย่านเมืองเก่า 15:30) = ค่าเริ่มต้นที่แนะนำ
   //   3) 07:00 (วันเที่ยวปกติ)
   const defaultStartTime = beforeAnchorEvent?.time ?? "07:00";
-  const effectiveStartTime = startTime ?? defaultStartTime;
+  // startTime ?? defaultStartTime ไม่พอ — "" (จากล้างช่อง <input type="time">) เป็น falsy แต่ไม่ใช่ null/undefined
+  // ก่อนเฟส 7.3 ค่านี้เคยหลุดไปเป็น effectiveStartTime ตรงๆ แล้วพัง timeToMinutes ทั้งวัน
+  const effectiveStartTime = startTime && startTime.trim() !== "" ? startTime : defaultStartTime;
 
   // เวลาเดินทางจริงจาก Google ถ้ามีในแคชแล้ว ไม่งั้นใช้ประมาณการเส้นตรง — ใช้ทั้งจุดแวะและที่พัก
   const resolveTravelMinutes = useCallback(
@@ -186,12 +190,14 @@ export function useDaySchedule({
 
   // จุดแวะวันนี้จบช้ากว่าเดดไลน์ตายตัว (เช่น ต้องออกไปขึ้นเครื่อง) ไปกี่นาที — null ถ้าไม่มีเดดไลน์หรือยังไม่เลย
   // นับถึงตอนกลับถึงที่พักด้วยถ้ามีที่พักปลายทาง (เดิมนับแค่ถึงเวลาออกจากจุดสุดท้าย)
+  // ใช้ endOfDayMinutes (นาทีสะสมไม่ wrap) แทนการ parse สตริง HH:MM ที่ห่อรอบมาแล้ว — เดิมจบ 00:30 เทียบเดดไลน์
+  // 22:00 ได้ค่าติดลบผิดๆ (บั๊ก 7.4) เพราะ timeToMinutes("00:30") ไม่รู้ว่าเป็นของ "วันถัดไป"
   const deadlineOverrunMinutes = useMemo(() => {
     if (!afterAnchorEvent || schedule.length === 0) return null;
-    const endOfDay = daySchedule.arriveBackAt ?? schedule[schedule.length - 1].departure;
-    const over = timeToMinutes(endOfDay) - timeToMinutes(afterAnchorEvent.time);
+    const deadlineMinutes = timeToMinutes(afterAnchorEvent.time) ?? 0;
+    const over = daySchedule.endOfDayMinutes - deadlineMinutes;
     return over > 0 ? over : null;
-  }, [afterAnchorEvent, schedule, daySchedule.arriveBackAt]);
+  }, [afterAnchorEvent, schedule.length, daySchedule.endOfDayMinutes]);
 
   const isTravelTimeReal = useCallback(
     (fromId: string, toId: string, mode: TravelMode | null) =>
@@ -200,15 +206,15 @@ export function useDaySchedule({
   );
 
   const isClosedAt = useCallback(
-    (place: Place, arrival: string, departure: string) =>
-      isOpenDuring(openingHoursByQuery.get(place.mapsQuery), day.date, arrival, departure) === false,
+    (place: Place, arrivalMinutes: number, departureMinutes: number) =>
+      isOpenDuring(openingHoursByQuery.get(place.mapsQuery), day.date, arrivalMinutes, departureMinutes) === false,
     [openingHoursByQuery, day.date]
   );
 
   const closedStopIds = useMemo(() => {
     const set = new Set<string>();
     for (const s of schedule) {
-      if (s.place && isClosedAt(s.place, s.arrival, s.departure)) set.add(s.id);
+      if (s.place && isClosedAt(s.place, s.arrivalMinutes, s.departureMinutes)) set.add(s.id);
     }
     return set;
   }, [schedule, isClosedAt]);

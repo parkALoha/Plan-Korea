@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CATEGORY_EMOJI } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
@@ -24,17 +24,15 @@ import { useDaySettings } from "@/hooks/useDaySettings";
 import { BottomNav } from "@/components/BottomNav";
 import type { TravelMode } from "@/lib/schedule";
 
-function todayISODate(): string {
-  const d = new Date();
+function isoDateOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** วันในทริปที่ตรงกับวันนี้จริงตามนาฬิกาเครื่อง — ก่อนทริปคืนวันแรก, หลังทริปคืนวันสุดท้าย */
-function findTodayIndex(itinerary: Day[]): number {
-  const iso = todayISODate();
-  const exact = itinerary.findIndex((d) => d.date === iso);
+/** วันในทริปที่ตรงกับวันที่ todayIso ตามนาฬิกาเครื่อง — ก่อนทริปคืนวันแรก, หลังทริปคืนวันสุดท้าย */
+function findTodayIndex(itinerary: Day[], todayIso: string): number {
+  const exact = itinerary.findIndex((d) => d.date === todayIso);
   if (exact >= 0) return exact;
-  if (iso < itinerary[0].date) return 0;
+  if (todayIso < itinerary[0].date) return 0;
   return itinerary.length - 1;
 }
 
@@ -90,11 +88,31 @@ export default function TodayPage() {
   );
   const { hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
 
-  // เริ่มที่วันจริงตามนาฬิกาเครื่องครั้งเดียว — หลังจากนั้นผู้ใช้เลื่อนดูวันอื่นได้อิสระด้วย ‹ ›
-  const [todayIndex] = useState(() => findTodayIndex(ITINERARY));
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const todayIso = isoDateOf(now);
+  // คำนวณใหม่ทุกครั้งที่ now เดิน (ทุก 30 วิ) แทนที่จะ freeze ด้วย useState ครั้งเดียว
+  // (เดิมเปิดค้างข้ามคืนแล้วยังโชว์วันเก่า — บั๊ก 7.5 เพราะมือถือมักอยู่ในกระเป๋าตอนเที่ยวจริง)
+  const todayIndex = useMemo(() => findTodayIndex(ITINERARY, todayIso), [todayIso]);
+
   const [dayIndex, setDayIndex] = useState(todayIndex);
+  // ตามวันจริงอัตโนมัติเฉพาะตอนที่ผู้ใช้กำลังดู "วันนี้" อยู่พอดี (ยังไม่ได้กด ‹ › เลือกดูวันอื่นเอง)
+  // ไม่งั้นวันจะกระโดดทับตอนผู้ใช้ตั้งใจเลื่อนดูแผนวันถัดไปอยู่
+  const prevTodayIndexRef = useRef(todayIndex);
+  useEffect(() => {
+    if (todayIndex !== prevTodayIndexRef.current) {
+      setDayIndex((current) => (current === prevTodayIndexRef.current ? todayIndex : current));
+      prevTodayIndexRef.current = todayIndex;
+    }
+  }, [todayIndex]);
+
   const day = itinerary[dayIndex];
-  const isRealToday = dayIndex === todayIndex;
+  // เทียบวันที่ตรงๆ ไม่ใช่ index — เดิม dayIndex === todayIndex เป็น true เสมอตอนยังไม่ถึงทริป
+  // (findTodayIndex clamp เป็น index 0) ทำให้ /today ขึ้นแถบ "ช้ากว่าแผน" ผิดๆ ทั้งที่ยังอีกหลายเดือน — บั๊ก 7.2
+  const isRealToday = day.date === todayIso;
 
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === day.id).sort((a, b) => a.order_index - b.order_index),
@@ -113,12 +131,6 @@ export default function TodayPage() {
       startTime: daySettings[day.id]?.start_time ?? null,
     });
 
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
   const overallLoaded =
     plansLoaded &&
     stopsLoaded &&
@@ -131,8 +143,17 @@ export default function TodayPage() {
   const nextStop = nextIndex >= 0 ? dayStops[nextIndex] : null;
   const nextSched = nextIndex >= 0 ? schedule[nextIndex] : null;
 
-  const upcoming = nextIndex >= 0 ? dayStops.slice(nextIndex + 1) : [];
-  const upcomingSched = nextIndex >= 0 ? schedule.slice(nextIndex + 1) : [];
+  // กรอง !visited_at ซ้ำอีกชั้น ไม่พึ่ง slice(nextIndex+1) เฉยๆ — ติ๊กข้ามลำดับ (หรือยกเลิกติ๊กจุดก่อนหน้า)
+  // ทำให้จุดที่ visited แล้วอยู่หลัง nextIndex ได้ เดิมจะโผล่ซ้ำทั้ง "ถัดจากนี้" และ "ผ่านมาแล้ว" — บั๊ก 8.3
+  const upcomingPairs =
+    nextIndex >= 0
+      ? dayStops
+          .map((s, i) => ({ stop: s, sched: schedule[i] }))
+          .slice(nextIndex + 1)
+          .filter(({ stop }) => !stop.visited_at)
+      : [];
+  const upcoming = upcomingPairs.map((p) => p.stop);
+  const upcomingSched = upcomingPairs.map((p) => p.sched);
   const done = dayStops.filter((s) => s.visited_at);
 
   // ออกช้ากว่าแผน → เลื่อนเวลาที่ "แสดง" ของจุดที่เหลือให้ดูจริงขึ้น (ไม่แตะเวลาที่วางแผนไว้ใน DB)
@@ -297,11 +318,17 @@ export default function TodayPage() {
                     </div>
 
                     {(() => {
-                      const displayArrival = shiftTime(nextSched.arrival, delayMinutes);
-                      const displayDeparture = shiftTime(nextSched.departure, delayMinutes);
+                      // ใช้นาทีดิบ + delayMinutes ตรงๆ แทนการ shift สตริง HH:MM แล้ว parse กลับ — เดิมจุดแวะที่
+                      // ข้ามเที่ยงคืนไปวันถัดไปจะเช็กเวลาเปิด-ปิดผิด (บั๊ก 7.4 เดียวกับ deadlineOverrunMinutes)
                       const hours = openingHoursByQuery.get(nextSched.place.mapsQuery);
                       const hoursLabel = weekdayHoursLabel(hours, day.date);
-                      const closed = isOpenDuring(hours, day.date, displayArrival, displayDeparture) === false;
+                      const closed =
+                        isOpenDuring(
+                          hours,
+                          day.date,
+                          nextSched.arrivalMinutes + delayMinutes,
+                          nextSched.departureMinutes + delayMinutes
+                        ) === false;
                       if (!hoursLabel && !closed) return null;
                       return (
                         <div
@@ -371,14 +398,14 @@ export default function TodayPage() {
                         ? `${CATEGORY_EMOJI[sched.place.category]} ${sched.place.nameTh}`
                         : "ไม่พบข้อมูลสถานที่";
                   const displayArrival = sched ? shiftTime(sched.arrival, delayMinutes) : null;
+                  // นาทีดิบ + delayMinutes ตรงๆ เหมือนการ์ด "จุดถัดไป" ด้านบน — กันเช็กพลาดตอนจุดแวะข้ามเที่ยงคืน
                   const mightMissClosing =
                     sched?.place != null &&
-                    displayArrival != null &&
                     isOpenDuring(
                       openingHoursByQuery.get(sched.place.mapsQuery),
                       day.date,
-                      displayArrival,
-                      shiftTime(sched.departure, delayMinutes)
+                      sched.arrivalMinutes + delayMinutes,
+                      sched.departureMinutes + delayMinutes
                     ) === false;
                   return (
                     <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">

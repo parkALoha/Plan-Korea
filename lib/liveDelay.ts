@@ -25,16 +25,22 @@ export function estimateDelayMinutes(
     if (!sched || !visitedAt) return 0;
     const actual = new Date(visitedAt);
     const actualMinutes = actual.getHours() * 60 + actual.getMinutes();
-    return actualMinutes - timeToMinutes(sched.arrival);
+    // ใช้ arrivalMinutes (นาทีดิบ) mod 1440 แทน parse สตริง arrival ที่ห่อรอบมาแล้ว — actualMinutes มาจาก
+    // Date.getHours()/getMinutes() ซึ่งอยู่ในช่วง [0,1440) เสมอ ต้อง wrap ฝั่งแผนให้อยู่กรอบเดียวกันก่อนเทียบ
+    const schedArrivalWrapped = ((sched.arrivalMinutes % 1440) + 1440) % 1440;
+    return actualMinutes - schedArrivalWrapped;
   }
 
   if (schedule.length === 0) return 0;
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  return Math.max(0, nowMinutes - timeToMinutes(schedule[0].arrival));
+  const firstArrivalWrapped = ((schedule[0].arrivalMinutes % 1440) + 1440) % 1440;
+  return Math.max(0, nowMinutes - firstArrivalWrapped);
 }
 
 /** เลื่อนเวลา HH:MM ไปตามจำนวนนาทีที่ช้า/เร็วกว่าแผน — ใช้แสดงผลเท่านั้น */
 export function shiftTime(time: string, deltaMinutes: number): string {
   if (!deltaMinutes) return time;
-  return minutesToTime(timeToMinutes(time) + deltaMinutes);
+  const base = timeToMinutes(time);
+  if (base == null) return time;
+  return minutesToTime(base + deltaMinutes);
 }
