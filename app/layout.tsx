@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import { MapsApiProvider } from "@/components/MapsApiProvider";
+import { TripDataProvider } from "@/components/TripDataProvider";
 import "./globals.css";
 
 const thaiSans = Noto_Sans_Thai({
@@ -18,7 +19,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="th" className={`${thaiSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-cream">
-        <MapsApiProvider>{children}</MapsApiProvider>
+        <MapsApiProvider>
+          <TripDataProvider>{children}</TripDataProvider>
+        </MapsApiProvider>
       </body>
     </html>
   );

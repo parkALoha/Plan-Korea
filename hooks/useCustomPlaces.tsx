@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
 
 function makeCustomPlaceId() {
   return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
-export function useCustomPlaces() {
+/** ตัวจริงที่ fetch + เปิด realtime channel — เรียกครั้งเดียวที่ CustomPlacesProvider
+ *  (เดิม NearbyPlacesModal เรียก hook นี้เองอีกชุด = ดึงตารางซ้ำ + channel ที่สองทุกครั้งที่เปิด modal) */
+function useCustomPlacesStore() {
   const [customPlaces, setCustomPlaces] = useState<CustomPlace[]>([]);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
@@ -69,5 +71,21 @@ export function useCustomPlaces() {
     []
   );
 
-  return { customPlaces, loaded, addCustomPlace, supabaseConfigured };
+  return useMemo(
+    () => ({ customPlaces, loaded, addCustomPlace, supabaseConfigured }),
+    [customPlaces, loaded, addCustomPlace]
+  );
+}
+
+const CustomPlacesContext = createContext<ReturnType<typeof useCustomPlacesStore> | null>(null);
+
+export function CustomPlacesProvider({ children }: { children: ReactNode }) {
+  const value = useCustomPlacesStore();
+  return <CustomPlacesContext.Provider value={value}>{children}</CustomPlacesContext.Provider>;
+}
+
+export function useCustomPlaces() {
+  const ctx = useContext(CustomPlacesContext);
+  if (!ctx) throw new Error("useCustomPlaces ต้องถูกเรียกใต้ <TripDataProvider> เท่านั้น");
+  return ctx;
 }

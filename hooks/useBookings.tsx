@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory } from "@/lib/supabase";
 
 function makeBookingId() {
@@ -29,8 +29,9 @@ export type NewBooking = {
   fileName?: string | null;
 };
 
-/** ตั๋ว/booking ทั้งหมดของทริป — trip-wide ไม่แยกตามแผน A/B เหมือน trip_hotels */
-export function useBookings() {
+/** ตั๋ว/booking ทั้งหมดของทริป — trip-wide ไม่แยกตามแผน A/B เหมือน trip_hotels
+ *  ตัวจริงที่ fetch + เปิด realtime channel เรียกครั้งเดียวที่ BookingsProvider ที่เหลืออ่านผ่าน useBookings() */
+function useBookingsStore() {
   const [bookings, setBookings] = useState<TripBooking[]>([]);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
@@ -154,5 +155,21 @@ export function useBookings() {
     await supabase.from("bookings").delete().eq("id", bookingId);
   }, []);
 
-  return { bookings, loaded, addBooking, updateBooking, removeBooking, supabaseConfigured };
+  return useMemo(
+    () => ({ bookings, loaded, addBooking, updateBooking, removeBooking, supabaseConfigured }),
+    [bookings, loaded, addBooking, updateBooking, removeBooking]
+  );
+}
+
+const BookingsContext = createContext<ReturnType<typeof useBookingsStore> | null>(null);
+
+export function BookingsProvider({ children }: { children: ReactNode }) {
+  const value = useBookingsStore();
+  return <BookingsContext.Provider value={value}>{children}</BookingsContext.Provider>;
+}
+
+export function useBookings() {
+  const ctx = useContext(BookingsContext);
+  if (!ctx) throw new Error("useBookings ต้องถูกเรียกใต้ <TripDataProvider> เท่านั้น");
+  return ctx;
 }

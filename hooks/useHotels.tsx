@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, TripHotel } from "@/lib/supabase";
 
 function makeHotel(
@@ -22,7 +22,9 @@ function makeHotel(
   };
 }
 
-export function useHotels() {
+/** ตัวจริงที่ fetch + เปิด realtime channel — เรียกได้ครั้งเดียวทั้งแอปที่ HotelsProvider
+ *  (เรียกซ้ำหลายที่ = ดึงทั้งตารางซ้ำ + เปิด channel ใหม่ทุกครั้ง) ที่เหลือใช้ useHotels() อ่านจาก context */
+function useHotelsStore() {
   const [hotels, setHotels] = useState<Record<string, TripHotel>>({});
   // ยังไม่ได้ตั้งค่า Supabase — ใช้ state ในเครื่องไปก่อน (ไม่ sync ระหว่างเครื่อง) ถือว่าโหลดเสร็จตั้งแต่แรก
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
@@ -117,5 +119,21 @@ export function useHotels() {
     await supabase.from("trip_hotels").delete().eq("leg_id", legId);
   }, []);
 
-  return { hotels, loaded, setHotel, clearHotel, supabaseConfigured };
+  return useMemo(
+    () => ({ hotels, loaded, setHotel, clearHotel, supabaseConfigured }),
+    [hotels, loaded, setHotel, clearHotel]
+  );
+}
+
+const HotelsContext = createContext<ReturnType<typeof useHotelsStore> | null>(null);
+
+export function HotelsProvider({ children }: { children: ReactNode }) {
+  const value = useHotelsStore();
+  return <HotelsContext.Provider value={value}>{children}</HotelsContext.Provider>;
+}
+
+export function useHotels() {
+  const ctx = useContext(HotelsContext);
+  if (!ctx) throw new Error("useHotels ต้องถูกเรียกใต้ <TripDataProvider> เท่านั้น");
+  return ctx;
 }

@@ -214,6 +214,9 @@ migration `0012_place_details_extra.sql` และ `0013_trip_stop_notes.sql` �
 ตรวจโค้ดทั้งหมด (~9,200 บรรทัด) + ทดสอบจริงในเบราว์เซอร์ทั้ง 3 หน้า พบบั๊ก 14 ตัว + ปัญหา performance
 `npm run lint` และ `tsc --noEmit` สะอาดทั้งคู่ — บั๊กทั้งหมดเป็นชนิดที่ tooling จับไม่ได้ ต้องอ่าน/ทดสอบเอง
 
+**สถานะล่าสุด (11 ส.ค. 2026): เฟส 7-12 ปิดครบทุกเฟสแล้ว** — แผนทั้งไฟล์นี้ไม่เหลือข้อค้าง
+(ยังเหลือ ~8 สัปดาห์ก่อนบิน · งานหลังจากนี้เป็นของใหม่ที่ยังไม่ได้วางแผน ค่อยคุยกันเพิ่มเป็นเรื่องๆ)
+
 **สถานะ (7 ส.ค. 2026 กลางคืน): เฟส 7-9 เสร็จหมดแล้วภายในวันเดียว** (เร็วกว่าเป้า "จบภายใน ส.ค." มาก)
 เหลือ เฟส 6.9 ข้อเดียว (ลบ test data ใน DB — รอผู้ใช้อนุมัติ/ทำเอง) + เฟส 10-12 ที่ยังไม่เริ่ม
 ไม่มี migration ใหม่เลยทั้ง 3 เฟสที่ทำไปตามที่ตั้งใจไว้ · โค้ดที่แก้ทั้งหมดผ่าน `npm test` + `lint` + `tsc --noEmit`
@@ -388,13 +391,26 @@ Dashboard → SQL Editor (สองไฟล์นี้เท่านั้น
 
 ---
 
-### เฟส 12 — ความสะอาดโค้ด (ไม่มีอะไรเปลี่ยนในสายตาผู้ใช้ ทำหลังสุดได้)
+### เฟส 12 — ความสะอาดโค้ด (ไม่มีอะไรเปลี่ยนในสายตาผู้ใช้ ทำหลังสุดได้) ✅ เสร็จ (11 ส.ค. 2026)
 
-- [ ] **แตก `components/DayStopsSection.tsx`** (973 บรรทัด) — `SortableStopRow` กินไป 330 บรรทัด แยกเป็นไฟล์ของตัวเอง
-      (แบบเดียวกับที่แตก `app/page.tsx` ในเฟส 4 — ย้ายโค้ดตรงๆ ไม่เปลี่ยนพฤติกรรม)
-- [ ] **ยก hook ที่เป็น global state ขึ้นเป็น Context** — `useHotels`/`useBookings`/`useCustomPlaces` ถูกเรียกซ้ำหลายจุด
-      แต่ละครั้ง = fetch เต็มตาราง + เปิด realtime channel ใหม่ (`NearbyPlacesModal` เรียก `useCustomPlaces` เองอีกชุด)
-- [ ] `DayStopsSection` คำนวณ `isOpenDuring` ซ้ำในแถว ทั้งที่ `useDaySchedule` คืน `closedStopIds` มาให้แล้ว
+- [x] **แตก `components/DayStopsSection.tsx`** (1,049 บรรทัด ตอนลงมือจริง — โตขึ้นจาก 973 หลังเฟส 11)
+      แยกออกเป็น 3 ไฟล์ ย้ายโค้ดตรงๆ ไม่แตะพฤติกรรมเลย: `SortableStopRow.tsx` (422 บรรทัด),
+      `TravelModeRow.tsx` (90) — ต้องแยกด้วยเพราะทั้ง `SortableStopRow` และ `DayStopsSection` ใช้ร่วมกัน,
+      `DayEventsPanel.tsx` (45) · เหลือ `DayStopsSection.tsx` **511 บรรทัด** (ลด 51%)
+- [x] **ยก hook ที่เป็น global state ขึ้นเป็น Context** — `useHotels`/`useBookings`/`useCustomPlaces` เปลี่ยนเป็น
+      `.tsx` ไฟล์ละ 3 ส่วน: `useXStore()` (ตัวจริงที่ fetch + เปิด realtime channel, private), `XProvider`,
+      และ `useX()` ที่อ่านจาก context (throw ถ้าถูกเรียกนอก provider) · รวมไว้ที่ `components/TripDataProvider.tsx`
+      mount ครั้งเดียวใน `app/layout.tsx` — **ผู้เรียกทุกจุด import เหมือนเดิมทุกบรรทัด** ไม่ต้องแก้
+      ผลที่ได้: `custom_places` เลิกโหลดซ้ำ/เปิด channel ที่สองตอนเปิด `NearbyPlacesModal` และทั้ง 3 ตาราง
+      ไม่ต้องโหลดใหม่ตอนสลับหน้าแรก ↔ `/today` ↔ `/summary` (client-side nav ใช้ state เดิมต่อ)
+- [x] `DayStopsSection` คำนวณ `isOpenDuring` ซ้ำในแถว — **เก็บไปแล้วตั้งแต่เฟส 7.4** ตอนเปลี่ยน `isOpenDuring`
+      ให้รับนาทีดิบ (ยืนยันซ้ำรอบนี้: ไฟล์ไม่ import `isOpenDuring` เลย ใช้ `closedStopIds` จาก hook อย่างเดียว)
+
+**ยืนยันปิดเฟส:** `npm test` (55/55 ผ่าน) · `npm run lint` + `tsc --noEmit` สะอาด · ทดสอบจริงในเบราว์เซอร์
+ครบทั้ง 3 หน้า ไม่มี console error — หน้าแผนขึ้นครบ 19 จุด (12 จุดวันที่ปลดล็อกมีที่จับลาก/ปุ่มปรับเวลา/+โน้ต/+รูป
+ครบ · 7 จุดวันที่ล็อกขึ้นไอคอน 🔒 ถูกต้อง), เปิด `NearbyPlacesModal` แล้วโหลดร้านใกล้ๆ ได้ปกติ (จุดที่เคยเรียก
+`useCustomPlaces` ซ้ำ), กด "เปลี่ยน" ในแถวเดินทางแล้ว `TravelModeRow` ที่แยกไฟล์ออกมาสลับเป็นโหมดเลือกได้
+ไม่มีการแก้ข้อมูลจริงใน DB ระหว่างทดสอบ (กติกาข้อ 5)
 
 ---
 
