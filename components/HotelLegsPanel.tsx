@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel } from "@/lib/supabase";
+import type { HotelInput } from "@/hooks/useHotels";
 import { HotelEditModal } from "./HotelEditModal";
 
 function dateRangeLabel(leg: HotelLeg) {
@@ -22,14 +23,7 @@ export function HotelLegsPanel({
 }: {
   legs: HotelLeg[];
   hotels: Record<string, TripHotel>;
-  onSave: (
-    legId: string,
-    city: string,
-    hotelName: string,
-    lat: number,
-    lng: number,
-    formattedAddress: string | null
-  ) => void;
+  onSave: (input: HotelInput) => void;
   onClear: (legId: string) => void;
 }) {
   const [editingLegId, setEditingLegId] = useState<string | null>(null);
@@ -76,8 +70,8 @@ export function HotelLegsPanel({
           leg={editingLeg}
           existing={hotels[editingLeg.id] ?? null}
           onClose={() => setEditingLegId(null)}
-          onSave={(hotelName, lat, lng, formattedAddress) =>
-            onSave(editingLeg.id, editingLeg.city, hotelName, lat, lng, formattedAddress)
+          onSave={(input) =>
+            onSave({ ...input, legId: editingLeg.id, city: editingLeg.city })
           }
           onClear={() => onClear(editingLeg.id)}
         />

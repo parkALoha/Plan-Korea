@@ -3,7 +3,14 @@ import { applyOvernightOverrides, deriveHotelLegs, dayIdToLegId } from "@/lib/ho
 import type { Day } from "@/data/itinerary";
 
 function day(partial: Partial<Day> & Pick<Day, "id" | "date" | "city">): Day {
-  return { weekdayTh: "จันทร์", cityTh: partial.city, slots: [], ...partial };
+  return {
+    weekdayTh: "จันทร์",
+    weekdayEn: "Monday",
+    cityTh: partial.city,
+    cityEn: partial.city,
+    slots: [],
+    ...partial,
+  };
 }
 
 describe("deriveHotelLegs", () => {

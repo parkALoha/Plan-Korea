@@ -12,6 +12,7 @@ import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
 import {
   googleMapsDirectionsUrl,
   kakaoMapDirectionsUrl,
+  hotelNavigationName,
   navigationName,
   openNaverMap,
 } from "@/lib/mapLinks";
@@ -128,13 +129,16 @@ export default function TodayPage() {
     [stops, day.id]
   );
 
+  // ที่พักคืนนี้ — ดึงแยกไว้เพราะปุ่มนำทางกลับที่พักต้องใช้ชื่อภาษาเกาหลีจากแถวนี้ ไม่ใช่ label ไทยของ anchor
+  const endHotel = hotelForDay(day.id);
+
   // อ่านค่าเดียวกับหน้าแผนเป๊ะๆ (เวลาออกเดินทาง + โหมดขากลับที่พัก) ไม่งั้นเวลาสองหน้าจะไม่ตรงกัน
   const { schedule, startAnchor, endAnchor, daySchedule, openingHoursByQuery, beforeAnchorEvent, afterAnchorEvent } =
     useDaySchedule({
       day,
       stops: dayStops,
       customPlaces,
-      hotel: hotelForDay(day.id),
+      hotel: endHotel,
       startHotel: hotelBeforeDay(day.id),
       returnTravelMode: (daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null,
       startTime: daySettings[day.id]?.start_time ?? null,
@@ -466,7 +470,13 @@ export default function TodayPage() {
                   <div className="mb-2 text-center text-xs font-medium text-pine-dark">
                     🧭 นำทางกลับ {endAnchor.label}
                   </div>
-                  <NavButtons lat={endAnchor.lat} lng={endAnchor.lng} name={endAnchor.label} />
+                  {/* ชื่อที่ส่งเข้า Naver/Kakao ต้องเป็นภาษาเกาหลี ไม่งั้นค้นไม่เจอ (บั๊กเดียวกับที่เฟส 14
+                      แก้ให้จุดแวะไปแล้ว แต่ที่พักเพิ่งมี name_local ตอนเฟส 16 / migration 0026) */}
+                  <NavButtons
+                    lat={endAnchor.lat}
+                    lng={endAnchor.lng}
+                    name={endHotel ? hotelNavigationName(endHotel) : endAnchor.label}
+                  />
                 </div>
               )}
             </section>

@@ -1,17 +1,35 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI } from "@/data/places";
-import { CITY_META, CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
+import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides } from "@/lib/hotelLegs";
-import { TRAVEL_MODE_EMOJI, TRAVEL_MODE_LABEL, type TravelMode } from "@/lib/schedule";
+import {
+  TRAVEL_MODE_EMOJI,
+  TRAVEL_MODE_LABEL,
+  TRAVEL_MODE_LABEL_EN,
+  type TravelMode,
+} from "@/lib/schedule";
 import { haversineKm } from "@/lib/geo";
-import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "@/components/IntercityEditModal";
-import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "@/components/BookingsPanel";
+import { useLang, type Lang, type TKey } from "@/lib/i18n";
+import {
+  INTERCITY_MODE_ICON,
+  INTERCITY_MODE_LABEL,
+  INTERCITY_MODE_LABEL_EN,
+  type IntercityMode,
+} from "@/components/IntercityEditModal";
+import {
+  BOOKING_CATEGORY_ICON,
+  BOOKING_CATEGORY_LABEL,
+  BOOKING_CATEGORY_LABEL_EN,
+} from "@/components/BookingsPanel";
 import { BottomNav } from "@/components/BottomNav";
+import { ImmigrationSheet, formatDateEn } from "@/components/ImmigrationSheet";
+import { LayoverBadges } from "@/components/LayoverBadges";
 import { useHotels } from "@/hooks/useHotels";
 import { useBookings } from "@/hooks/useBookings";
 import { useChecklist } from "@/hooks/useChecklist";
@@ -23,13 +41,15 @@ import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 
-function dateLabelOf(iso: string) {
+function dateLabelOf(iso: string, lang: Lang = "th") {
+  if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
   return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 }
 
-function formatMinutes(total: number) {
+function formatMinutes(total: number, lang: Lang = "th") {
   const h = Math.floor(total / 60);
   const m = total % 60;
+  if (lang === "en") return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} m`;
   if (h === 0) return `${m} นาที`;
   return m === 0 ? `${h} ชม.` : `${h} ชม. ${m} น.`;
 }
@@ -48,6 +68,8 @@ function SummaryDayCard({
   startTime,
   locked,
   bookings,
+  lang,
+  t,
 }: {
   day: Day;
   stops: TripStop[];
@@ -58,7 +80,10 @@ function SummaryDayCard({
   startTime: string | null;
   locked: boolean;
   bookings: TripBooking[];
+  lang: Lang;
+  t: (key: TKey) => string;
 }) {
+  const en = lang === "en";
   const meta = CITY_META[day.city];
   const {
     schedule,
@@ -97,24 +122,33 @@ function SummaryDayCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="text-xs opacity-80">
-              {dateLabelOf(day.date)} · วัน{day.weekdayTh}
+              {dateLabelOf(day.date, lang)} · {en ? day.weekdayEn : `วัน${day.weekdayTh}`}
             </div>
             <div className="text-lg font-bold">
-              {meta.icon} {day.cityTh}
+              {meta.icon} {en ? day.cityEn : day.cityTh}
             </div>
           </div>
-          {locked && <span className="shrink-0 text-xs opacity-90">🔒 ล็อกแล้ว</span>}
+          {locked && <span className="shrink-0 text-xs opacity-90">{t("lockedShort")}</span>}
         </div>
-        {day.note && <div className="mt-1 text-xs leading-relaxed opacity-90">{day.note}</div>}
-        <div className="mt-1 text-xs opacity-90">🕐 ออกเดินทาง {effectiveStartTime}</div>
-        {hotel && <div className="mt-1 truncate text-xs opacity-90">🏨 พักที่ {hotel.hotel_name}</div>}
-        {day.noHotel && <div className="mt-1 text-xs opacity-90">🛫 วันเดินทาง — ไม่มีคืนที่ต้องจอง</div>}
+        {/* โน้ตรายวันเป็นข้อความวางแผนของเราเอง ไม่มีคู่ภาษาอังกฤษ — โหมด en ซ่อนไว้แทนที่จะโชว์ไทยปนกลางหน้าอังกฤษ */}
+        {day.note && !en && (
+          <div className="mt-1 text-xs leading-relaxed opacity-90">{day.note}</div>
+        )}
+        <div className="mt-1 text-xs opacity-90">
+          {t("departAt")} {effectiveStartTime}
+        </div>
+        {hotel && (
+          <div className="mt-1 truncate text-xs opacity-90">
+            {t("stayAt")} {(en && hotel.name_en) || hotel.hotel_name}
+          </div>
+        )}
+        {day.noHotel && <div className="mt-1 text-xs opacity-90">{t("travelDayNoHotel")}</div>}
       </div>
 
       {allEvents.length > 0 && (
         <div className="border-b border-cream-soft bg-cream-soft/40 px-4 py-2.5">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
-            ✈️ เวลาตายตัวของวันนี้
+            {t("fixedTimes")}
           </div>
           <div className="mt-1 space-y-1">
             {allEvents.map((event, i) => (
@@ -130,11 +164,12 @@ function SummaryDayCard({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">
-                    {event.icon} {event.title}
+                    {event.icon} {(en && event.titleEn) || event.title}
                   </div>
-                  {event.detail && (
+                  {event.detail && !en && (
                     <div className="mt-0.5 leading-relaxed text-ink-soft">{event.detail}</div>
                   )}
+                  {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
                 </div>
               </div>
             ))}
@@ -148,12 +183,14 @@ function SummaryDayCard({
             <span className="w-12 shrink-0 text-center font-semibold tabular-nums">
               {effectiveStartTime}
             </span>
-            <span className="min-w-0 flex-1 truncate">🏨 ออกจาก {startAnchor.label}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {t("leaveFrom")} {startAnchor.label}
+            </span>
           </div>
         )}
 
         {schedule.length === 0 && (
-          <div className="px-4 py-5 text-center text-sm text-ink-soft">ยังไม่มีจุดแวะในวันนี้</div>
+          <div className="px-4 py-5 text-center text-sm text-ink-soft">{t("noStopsToday")}</div>
         )}
 
         {schedule.map((sched, i) => {
@@ -163,7 +200,9 @@ function SummaryDayCard({
             <div key={stop.id} className="px-3 py-2.5 sm:px-4">
               {i > 0 && mode && sched.travelMinutesFromPrev != null && (
                 <div className="mb-1.5 pl-14 text-[11px] text-ink-soft">
-                  {TRAVEL_MODE_EMOJI[mode]} {TRAVEL_MODE_LABEL[mode]} ~{sched.travelMinutesFromPrev} นาที
+                  {TRAVEL_MODE_EMOJI[mode]}{" "}
+                  {en ? TRAVEL_MODE_LABEL_EN[mode] : TRAVEL_MODE_LABEL[mode]} ~
+                  {sched.travelMinutesFromPrev} {t("minutes")}
                 </div>
               )}
               <div className="flex items-start gap-2">
@@ -175,17 +214,23 @@ function SummaryDayCard({
                   <div className="font-semibold text-ink">
                     {stop.kind === "intercity"
                       ? `${INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]} ${
-                          INTERCITY_MODE_LABEL[(stop.intercity_mode as IntercityMode) ?? "other"]
+                          (en ? INTERCITY_MODE_LABEL_EN : INTERCITY_MODE_LABEL)[
+                            (stop.intercity_mode as IntercityMode) ?? "other"
+                          ]
                         } · ${stop.intercity_from} → ${stop.intercity_to}`
                       : sched.place
-                        ? `${CATEGORY_EMOJI[sched.place.category]} ${sched.place.nameTh}`
-                        : "ไม่พบข้อมูลสถานที่"}
+                        ? `${CATEGORY_EMOJI[sched.place.category]} ${
+                            en ? sched.place.nameEn : sched.place.nameTh
+                          }`
+                        : t("noPlaceData")}
                   </div>
                   <div className="text-xs text-ink-soft">
-                    อยู่ {sched.resolvedDwellMinutes} นาที
-                    {stop.added_by ? ` · เลือกโดย ${stop.added_by}` : ""}
+                    {t("stayFor")} {sched.resolvedDwellMinutes} {t("minutes")}
+                    {stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""}
                   </div>
-                  {stop.note && <div className="mt-0.5 text-xs italic text-ink-soft">📝 {stop.note}</div>}
+                  {stop.note && !en && (
+                    <div className="mt-0.5 text-xs italic text-ink-soft">📝 {stop.note}</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -197,7 +242,9 @@ function SummaryDayCard({
             <span className="w-12 shrink-0 text-center font-semibold tabular-nums">
               {daySchedule.arriveBackAt}
             </span>
-            <span className="min-w-0 flex-1 truncate">🏨 กลับถึง {endAnchor.label}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {t("backTo")} {endAnchor.label}
+            </span>
           </div>
         )}
       </div>
@@ -205,12 +252,13 @@ function SummaryDayCard({
       {bookings.length > 0 && (
         <div className="border-t border-cream-soft px-4 py-2.5">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
-            🎫 ตั๋ว/booking ของวันนี้
+            {t("todaysBookings")}
           </div>
           <ul className="mt-1 space-y-0.5 text-xs text-ink">
             {bookings.map((b) => (
               <li key={b.id}>
-                {BOOKING_CATEGORY_ICON[b.category]} {BOOKING_CATEGORY_LABEL[b.category]}
+                {BOOKING_CATEGORY_ICON[b.category]}{" "}
+                {(en ? BOOKING_CATEGORY_LABEL_EN : BOOKING_CATEGORY_LABEL)[b.category]}
                 {b.time ? ` ${b.time}` : ""} · {b.title}
               </li>
             ))}
@@ -220,18 +268,47 @@ function SummaryDayCard({
 
       {schedule.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-cream-soft bg-cream-soft/40 px-4 py-2.5 text-[11px] text-ink-soft">
-          <span>📍 {schedule.filter((s) => s.place).length} จุด</span>
-          <span>🍽️ {mealCount} มื้อ</span>
-          <span>⏱️ เดินทางรวม ~{formatMinutes(travelMinutes)}</span>
-          <span>📏 ~{distanceKm.toFixed(1)} กม.</span>
+          <span>
+            📍 {schedule.filter((s) => s.place).length} {t("stops")}
+          </span>
+          <span>
+            🍽️ {mealCount} {t("meals")}
+          </span>
+          <span>
+            ⏱️ {t("travelTotal")}
+            {formatMinutes(travelMinutes, lang)}
+          </span>
+          <span>
+            📏 ~{distanceKm.toFixed(1)} {t("km")}
+          </span>
         </div>
       )}
     </section>
   );
 }
 
-/** หน้าสรุปแผนทั้งทริป — ดูอย่างเดียว แก้อะไรไม่ได้ ไว้เปิดอ่านรวดเดียวหรือส่งให้คนอื่นดู */
+/**
+ * `useLang` ใช้ `useSearchParams` ซึ่งบังคับให้ subtree ถึงขอบ Suspense ที่ใกล้ที่สุดเรนเดอร์ฝั่ง client
+ * (ดู `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-search-params.md`)
+ * — ต้องมี Suspense ครอบ ไม่งั้น build เตือน/พังตอน prerender
+ */
 export default function SummaryPage() {
+  return (
+    <Suspense
+      fallback={<div className="px-4 py-10 text-center text-sm text-ink-soft">กำลังโหลด...</div>}
+    >
+      <SummaryContent />
+    </Suspense>
+  );
+}
+
+/** หน้าสรุปแผนทั้งทริป — ดูอย่างเดียว แก้อะไรไม่ได้ ไว้เปิดอ่านรวดเดียวหรือส่งให้คนอื่นดู */
+function SummaryContent() {
+  const { lang, setLang, t } = useLang();
+  const searchParams = useSearchParams();
+  // `?for=immigration` = เลย์เอาต์เอกสารสำหรับ ตม./K-ETA (บังคับอังกฤษเสมอ ไม่ว่าปุ่มภาษาจะเลือกอะไร)
+  const immigrationView = searchParams.get("for") === "immigration";
+  const en = lang === "en";
   const { hotels, loaded: hotelsLoaded } = useHotels();
   const { bookings, loaded: bookingsLoaded } = useBookings();
   const { items: checklistItems, loaded: checklistLoaded } = useChecklist();
@@ -289,56 +366,110 @@ export default function SummaryPage() {
 
   return (
     <main className="min-h-full pb-24 lg:pb-10">
-      <header className="bg-pine px-4 pb-6 pt-6 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
+      {/* โหมด ตม.: ซ่อนหัวเว็บสีเขียวตอนพิมพ์ทั้งก้อน — กระดาษแผ่นแรกต้องเริ่มที่ "Travel Itinerary"
+          ไม่ใช่แถบแบรนด์ที่กินพื้นที่ A4 ไปฟรีๆ (บนจอยังโชว์ปกติเพื่อให้กดสลับกลับได้) */}
+      <header
+        className={`bg-pine px-4 pb-6 pt-6 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact] ${
+          immigrationView ? "print:hidden" : ""
+        }`}
+      >
         <div className="mx-auto max-w-2xl">
-          <div className="flex items-center gap-3 print:hidden">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 print:hidden">
             <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
-              ← หน้าแผน
+              {t("backToPlan")}
             </Link>
             <Link href="/today" className="text-sm text-cream/80 hover:text-cream hover:underline">
-              📍 วันนี้
+              {t("today")}
             </Link>
-            <button
-              onClick={handleExportJson}
-              className="ml-auto rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
-            >
-              ⬇️ Export JSON
-            </button>
-            <button onClick={() => window.print()} className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25">
-              🖨️ พิมพ์
-            </button>
+            <div className="ml-auto flex items-center gap-1.5">
+              {/* ปุ่มสลับภาษาอยู่ตำแหน่งเดียวกับปุ่มพิมพ์ตามที่วางไว้ในเฟส 16 */}
+              <div className="flex overflow-hidden rounded-lg bg-cream/15">
+                {(["th", "en"] as const).map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setLang(l)}
+                    className={`px-2.5 py-1 text-xs font-medium ${
+                      lang === l ? "bg-cream text-pine" : "hover:bg-cream/25"
+                    }`}
+                  >
+                    {l === "th" ? "🇹🇭 ไทย" : "🇬🇧 EN"}
+                  </button>
+                ))}
+              </div>
+              <Link
+                href={
+                  immigrationView
+                    ? `/summary?lang=${lang}`
+                    : `/summary?lang=en&for=immigration`
+                }
+                className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+              >
+                {immigrationView ? t("fullSummary") : t("immigrationView")}
+              </Link>
+              <button
+                onClick={handleExportJson}
+                className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+              >
+                {t("exportJson")}
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+              >
+                {t("print")}
+              </button>
+            </div>
           </div>
-          <h1 className="mt-3 text-2xl font-extrabold">📋 สรุปแผนเที่ยวเกาหลี</h1>
+          <h1 className="mt-3 text-2xl font-extrabold">{t("summaryTitle")}</h1>
           <p className="mt-1 text-sm text-pine-soft/80">
-            11 – 21 ต.ค. 2026 · หน้านี้ดูอย่างเดียว แก้ไขไม่ได้ (แก้ที่หน้าแผน)
+            {t("tripDates")} · {t("readOnlyNote")}
           </p>
-          {overallLoaded && (
+          {overallLoaded && !immigrationView && (
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-cream/90">
-              <span>🗺️ {stops.length} จุดทั้งทริป</span>
-              <span>📅 {itinerary.length} วัน</span>
-              <span>🔒 ล็อกแล้ว {lockedCount}/{itinerary.length} วัน</span>
-              {plans.length > 0 && <span>แผน: {plans.find((p) => p.id === activePlanId)?.name}</span>}
+              <span>
+                🗺️ {stops.length} {t("stopsInTrip")}
+              </span>
+              <span>
+                📅 {itinerary.length} {t("days")}
+              </span>
+              <span>
+                🔒 {t("locked")} {lockedCount}/{itinerary.length}
+              </span>
+              {plans.length > 0 && (
+                <span>
+                  {t("plan")}: {plans.find((p) => p.id === activePlanId)?.name}
+                </span>
+              )}
             </div>
           )}
         </div>
       </header>
 
       {!overallLoaded && (
-        <div className="px-4 py-10 text-center text-sm text-ink-soft">กำลังโหลด...</div>
+        <div className="px-4 py-10 text-center text-sm text-ink-soft">{t("loading")}</div>
       )}
 
-      {overallLoaded && (
+      {overallLoaded && immigrationView && (
+        <ImmigrationSheet
+          hotelLegs={hotelLegs}
+          hotels={hotels}
+          stopsByDay={stopsByDay}
+          customPlaces={customPlaces}
+        />
+      )}
+
+      {overallLoaded && !immigrationView && (
         <div className="mx-auto max-w-2xl px-4 pt-5">
           {daysWithoutStops.length > 0 && (
             <div className="mb-4 rounded-xl bg-maple-soft/60 px-3 py-2 text-xs text-maple-dark">
-              ⚠️ ยังไม่มีจุดแวะ {daysWithoutStops.length} วัน:{" "}
-              {daysWithoutStops.map((d) => dateLabelOf(d.date)).join(", ")}
+              ⚠️ {daysWithoutStops.length} {t("daysWithoutStops")}:{" "}
+              {daysWithoutStops.map((d) => dateLabelOf(d.date, lang)).join(", ")}
             </div>
           )}
 
           <section className="mb-5">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-              🏨 ที่พักทั้งทริป
+              {t("hotelsAll")}
             </h2>
             <div className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
               {hotelLegs.map((leg) => {
@@ -346,12 +477,18 @@ export default function SummaryPage() {
                 return (
                   <div key={leg.id} className="px-3 py-2.5 text-sm">
                     <div className="text-xs text-ink-soft">
-                      {CITY_META[leg.city].icon} {CITY_NAME_TH[leg.city]} · {dateLabelOf(leg.startDate)}–
-                      {dateLabelOf(leg.endDate)} ({leg.nights.length} คืน)
+                      {CITY_META[leg.city].icon} {en ? CITY_NAME_EN[leg.city] : CITY_NAME_TH[leg.city]} ·{" "}
+                      {dateLabelOf(leg.startDate, lang)}–{dateLabelOf(leg.endDate, lang)} (
+                      {leg.nights.length} {t("nights")})
                     </div>
                     <div className={hotel ? "font-medium text-ink" : "text-maple-dark"}>
-                      {hotel ? hotel.hotel_name : "⚠️ ยังไม่ได้เลือกที่พัก"}
+                      {hotel ? (en && hotel.name_en) || hotel.hotel_name : t("noHotelChosen")}
                     </div>
+                    {/* ชื่อ/ที่อยู่ภาษาท้องถิ่นของที่พัก (migration 0026) — ยื่นให้คนขับแท็กซี่ดูได้ตรงนี้เลย */}
+                    {hotel?.address_local && (
+                      <div className="text-xs text-ink-soft">🗣️ {hotel.address_local}</div>
+                    )}
+                    {hotel?.phone && <div className="text-xs text-ink-soft">☎️ {hotel.phone}</div>}
                   </div>
                 );
               })}
@@ -361,19 +498,22 @@ export default function SummaryPage() {
           {bookings.length > 0 && (
             <section className="mb-5">
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-                🎫 ตั๋ว/booking ทั้งหมด ({bookings.length})
+                {t("bookingsAll")} ({bookings.length})
               </h2>
               <div className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
                 {bookings.map((b) => (
                   <div key={b.id} className="px-3 py-2.5 text-sm">
                     <div className="text-xs text-ink-soft">
-                      {BOOKING_CATEGORY_ICON[b.category]} {BOOKING_CATEGORY_LABEL[b.category]}
-                      {b.date ? ` · ${dateLabelOf(b.date)}` : ""}
+                      {BOOKING_CATEGORY_ICON[b.category]}{" "}
+                      {(en ? BOOKING_CATEGORY_LABEL_EN : BOOKING_CATEGORY_LABEL)[b.category]}
+                      {b.date ? ` · ${dateLabelOf(b.date, lang)}` : ""}
                       {b.time ? ` ${b.time}` : ""}
                     </div>
                     <div className="font-medium text-ink">{b.title}</div>
                     {b.confirmation_number && (
-                      <div className="text-xs text-ink-soft">เลขที่จอง {b.confirmation_number}</div>
+                      <div className="text-xs text-ink-soft">
+                        {t("confirmationNumber")} {b.confirmation_number}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -384,7 +524,7 @@ export default function SummaryPage() {
           {checklistItems.length > 0 && (
             <section className="mb-5">
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-                ✅ ของที่ต้องเตรียม ({checklistItems.filter((i) => i.is_checked).length}/
+                {t("checklistTitle")} ({checklistItems.filter((i) => i.is_checked).length}/
                 {checklistItems.length})
               </h2>
               <ul className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
@@ -403,7 +543,7 @@ export default function SummaryPage() {
           )}
 
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-            📅 แผนรายวัน
+            {t("dailyPlan")}
           </h2>
           {itinerary.map((day) => (
             <SummaryDayCard
@@ -419,6 +559,8 @@ export default function SummaryPage() {
               bookings={bookings.filter(
                 (b) => b.day_id === day.id || (!b.day_id && b.date === day.date)
               )}
+              lang={lang}
+              t={t}
             />
           ))}
         </div>

@@ -3,11 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import { CITY_NAME_TH } from "@/data/itinerary";
-import { cityCenter } from "@/data/places";
-import type { TripHotel } from "@/lib/supabase";
+import { CITY_LOCALE, cityCenter, type Place } from "@/data/places";
+import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
+
+function localizedFrom(data: Record<string, unknown>): HotelLocalized {
+  return {
+    nameLocal: (data.nameLocal as string | null) ?? null,
+    addressLocal: (data.addressLocal as string | null) ?? null,
+    nameEn: (data.nameEn as string | null) ?? null,
+    addressEn: (data.addressEn as string | null) ?? null,
+    phone: (data.phone as string | null) ?? null,
+  };
+}
 
 export function HotelEditModal({
   leg,
@@ -19,7 +29,13 @@ export function HotelEditModal({
   leg: HotelLeg;
   existing: TripHotel | null;
   onClose: () => void;
-  onSave: (hotelName: string, lat: number, lng: number, formattedAddress: string | null) => void;
+  onSave: (input: {
+    hotelName: string;
+    lat: number;
+    lng: number;
+    formattedAddress: string | null;
+    localized: HotelLocalized | null;
+  }) => void;
   onClear: () => void;
 }) {
   useBodyScrollLock();
@@ -31,9 +47,21 @@ export function HotelEditModal({
     lat: number;
     lng: number;
     formattedAddress: string | null;
+    localized: HotelLocalized | null;
   } | null>(
     existing
-      ? { lat: existing.lat, lng: existing.lng, formattedAddress: existing.formatted_address }
+      ? {
+          lat: existing.lat,
+          lng: existing.lng,
+          formattedAddress: existing.formatted_address,
+          localized: {
+            nameLocal: existing.name_local ?? null,
+            addressLocal: existing.address_local ?? null,
+            nameEn: existing.name_en ?? null,
+            addressEn: existing.address_en ?? null,
+            phone: existing.phone ?? null,
+          },
+        }
       : null
   );
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -41,6 +69,8 @@ export function HotelEditModal({
   const [suggestOpen, setSuggestOpen] = useState(false);
   const skipNextSuggest = useRef(false);
   const bias = cityCenter(leg.city);
+  // ภาษาท้องถิ่นของเมืองที่พักอยู่ — ขอชื่อ/ที่อยู่ภาษานั้น + อังกฤษ + เบอร์โทรมาพร้อมพิกัดในคำขอเดียว
+  const locale = CITY_LOCALE[leg.city as Place["city"]];
 
   // แนะนำสถานที่ตามที่พิมพ์แบบ debounce 300ms bias ผลลัพธ์ให้ใกล้เมืองของ leg นี้
   useEffect(() => {
@@ -78,14 +108,21 @@ export function HotelEditModal({
     setSuggestOpen(false);
     setStatus("loading");
     try {
-      const res = await fetch(`/api/geocode?placeId=${encodeURIComponent(placeId)}`);
+      const res = await fetch(
+        `/api/geocode?placeId=${encodeURIComponent(placeId)}&locale=${locale}`
+      );
       const data = await res.json();
       if (data.lat == null || data.lng == null) {
         setStatus("error");
         setManualOpen(true);
         return;
       }
-      setResolved({ lat: data.lat, lng: data.lng, formattedAddress: data.formattedAddress });
+      setResolved({
+        lat: data.lat,
+        lng: data.lng,
+        formattedAddress: data.formattedAddress,
+        localized: localizedFrom(data),
+      });
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -98,14 +135,21 @@ export function HotelEditModal({
     setSuggestOpen(false);
     setStatus("loading");
     try {
-      const res = await fetch(`/api/geocode?query=${encodeURIComponent(address)}`);
+      const res = await fetch(
+        `/api/geocode?query=${encodeURIComponent(address)}&locale=${locale}`
+      );
       const data = await res.json();
       if (data.lat == null || data.lng == null) {
         setStatus("error");
         setManualOpen(true);
         return;
       }
-      setResolved({ lat: data.lat, lng: data.lng, formattedAddress: data.formattedAddress });
+      setResolved({
+        lat: data.lat,
+        lng: data.lng,
+        formattedAddress: data.formattedAddress,
+        localized: localizedFrom(data),
+      });
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -117,12 +161,19 @@ export function HotelEditModal({
     const lat = parseFloat(manualLat);
     const lng = parseFloat(manualLng);
     if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-    setResolved({ lat, lng, formattedAddress: null });
+    // กรอกพิกัดเอง = ไม่ได้ผ่าน Google เลย จึงไม่มีชื่อหลายภาษาให้เก็บ
+    setResolved({ lat, lng, formattedAddress: null, localized: null });
   }
 
   function handleConfirm() {
     if (!address.trim() || !resolved) return;
-    onSave(address.trim(), resolved.lat, resolved.lng, resolved.formattedAddress);
+    onSave({
+      hotelName: address.trim(),
+      lat: resolved.lat,
+      lng: resolved.lng,
+      formattedAddress: resolved.formattedAddress,
+      localized: resolved.localized,
+    });
     onClose();
   }
 
@@ -226,6 +277,19 @@ export function HotelEditModal({
             <p className="mb-2 text-xs text-pine">
               📍 {resolved.formattedAddress ?? `${resolved.lat}, ${resolved.lng}`}
             </p>
+            {/* ชื่อ/ที่อยู่ภาษาท้องถิ่น = สิ่งที่ปุ่มนำทาง Naver/Kakao จะส่งจริง โชว์ให้เห็นก่อนบันทึก
+                (เฟส 14 ทำให้จุดแวะไปแล้ว ที่พักเพิ่งได้ในเฟส 16) · เบอร์โทรไว้กรอกเอกสาร ตม. */}
+            {(resolved.localized?.nameLocal || resolved.localized?.phone) && (
+              <div className="mb-2 rounded-lg bg-cream-soft/60 px-2.5 py-1.5 text-xs text-ink-soft">
+                {resolved.localized.nameLocal && (
+                  <div>
+                    🗣️ <span className="font-medium text-ink">{resolved.localized.nameLocal}</span>
+                    {resolved.localized.addressLocal ? ` · ${resolved.localized.addressLocal}` : ""}
+                  </div>
+                )}
+                {resolved.localized.phone && <div>☎️ {resolved.localized.phone}</div>}
+              </div>
+            )}
             <GoogleMapEmbed query={`${resolved.lat},${resolved.lng}`} />
           </div>
         )}

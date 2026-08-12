@@ -11,6 +11,13 @@ export const TRAVEL_MODE_LABEL: Record<TravelMode, string> = {
   drive: "แท็กซี่/รถ",
 };
 
+/** คู่ภาษาอังกฤษของ TRAVEL_MODE_LABEL — ใช้บนหน้า /summary?lang=en (เฟส 16) */
+export const TRAVEL_MODE_LABEL_EN: Record<TravelMode, string> = {
+  walk: "Walk",
+  transit: "Public transit",
+  drive: "Taxi/car",
+};
+
 export const TRAVEL_MODE_EMOJI: Record<TravelMode, string> = {
   walk: "🚶",
   transit: "🚌",

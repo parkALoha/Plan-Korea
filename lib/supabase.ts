@@ -28,6 +28,24 @@ export type TripHotel = {
   lat: number;
   lng: number;
   updated_at: string;
+  /** ชื่อ/ที่อยู่ภาษาท้องถิ่นของที่พัก (migration 0026) — ส่งเข้า Naver/Kakao และให้คนขับแท็กซี่ดู
+   *  ปิดงานค้างของเฟส 14 ที่ทำให้จุดแวะไปแล้วแต่ที่พักยังส่งชื่อไทยอยู่
+   *  optional เพราะแถวที่บันทึกไว้ก่อน migration จะไม่มีค่าเหล่านี้ (ต้องกดบันทึกที่พักใหม่ถึงจะเติมให้) */
+  name_local?: string | null;
+  address_local?: string | null;
+  /** ชื่อ/ที่อยู่ภาษาอังกฤษ + เบอร์โทร — ช่อง "ที่พักในเกาหลี" ของ ตม./K-ETA ต้องกรอกเป็นอังกฤษ (เฟส 16) */
+  name_en?: string | null;
+  address_en?: string | null;
+  phone?: string | null;
+};
+
+/** ข้อมูลหลายภาษาของที่พักที่ /api/geocode?locale=... ดึงมาให้ตอนบันทึก — null ได้ทุกช่อง */
+export type HotelLocalized = {
+  nameLocal: string | null;
+  addressLocal: string | null;
+  nameEn: string | null;
+  addressEn: string | null;
+  phone: string | null;
 };
 
 export type TripPlan = {

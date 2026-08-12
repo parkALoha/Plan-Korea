@@ -14,6 +14,16 @@ export const BOOKING_CATEGORY_LABEL: Record<BookingCategory, string> = {
   other: "อื่นๆ",
 };
 
+/** คู่ภาษาอังกฤษของ BOOKING_CATEGORY_LABEL — ใช้บนหน้า /summary?lang=en (เฟส 16) */
+export const BOOKING_CATEGORY_LABEL_EN: Record<BookingCategory, string> = {
+  flight: "Flight",
+  hotel: "Hotel",
+  ktx: "KTX",
+  bus: "Bus",
+  ticket: "Ticket",
+  other: "Other",
+};
+
 export const BOOKING_CATEGORY_ICON: Record<BookingCategory, string> = {
   flight: "✈️",
   hotel: "🏨",

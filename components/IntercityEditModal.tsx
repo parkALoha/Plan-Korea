@@ -17,6 +17,13 @@ export const INTERCITY_MODE_LABEL: Record<IntercityMode, string> = {
   other: "อื่นๆ",
 };
 
+/** คู่ภาษาอังกฤษของ INTERCITY_MODE_LABEL — ใช้บนหน้า /summary?lang=en (เฟส 16) */
+export const INTERCITY_MODE_LABEL_EN: Record<IntercityMode, string> = {
+  bus: "Bus",
+  ktx: "KTX",
+  other: "Other",
+};
+
 const MODES: IntercityMode[] = ["bus", "ktx", "other"];
 const DURATION_PRESETS_MIN = [60, 120, 180, 240, 300, 360];
 

@@ -1,23 +1,33 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { supabase, supabaseConfigured, TripHotel } from "@/lib/supabase";
+import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
 
-function makeHotel(
-  legId: string,
-  city: string,
-  hotelName: string,
-  lat: number,
-  lng: number,
-  formattedAddress?: string | null
-): TripHotel {
+/** ทุกอย่างที่ต้องรู้ตอนบันทึกที่พักหนึ่งที่ — รวมเป็นอ็อบเจกต์เดียวตั้งแต่เฟส 16
+ *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
+export type HotelInput = {
+  legId: string;
+  city: string;
+  hotelName: string;
+  lat: number;
+  lng: number;
+  formattedAddress?: string | null;
+  localized?: HotelLocalized | null;
+};
+
+function toRow(input: HotelInput): TripHotel {
   return {
-    leg_id: legId,
-    city,
-    hotel_name: hotelName,
-    formatted_address: formattedAddress ?? null,
-    lat,
-    lng,
+    leg_id: input.legId,
+    city: input.city,
+    hotel_name: input.hotelName,
+    formatted_address: input.formattedAddress ?? null,
+    lat: input.lat,
+    lng: input.lng,
+    name_local: input.localized?.nameLocal ?? null,
+    address_local: input.localized?.addressLocal ?? null,
+    name_en: input.localized?.nameEn ?? null,
+    address_en: input.localized?.addressEn ?? null,
+    phone: input.localized?.phone ?? null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -78,34 +88,14 @@ function useHotelsStore() {
     };
   }, []);
 
-  const setHotel = useCallback(
-    async (
-      legId: string,
-      city: string,
-      hotelName: string,
-      lat: number,
-      lng: number,
-      formattedAddress?: string | null
-    ) => {
-      if (!supabaseConfigured) {
-        setHotels((prev) => ({
-          ...prev,
-          [legId]: makeHotel(legId, city, hotelName, lat, lng, formattedAddress),
-        }));
-        return;
-      }
-      await supabase.from("trip_hotels").upsert({
-        leg_id: legId,
-        city,
-        hotel_name: hotelName,
-        formatted_address: formattedAddress ?? null,
-        lat,
-        lng,
-        updated_at: new Date().toISOString(),
-      });
-    },
-    []
-  );
+  const setHotel = useCallback(async (input: HotelInput) => {
+    const row = toRow(input);
+    if (!supabaseConfigured) {
+      setHotels((prev) => ({ ...prev, [input.legId]: row }));
+      return;
+    }
+    await supabase.from("trip_hotels").upsert(row);
+  }, []);
 
   const clearHotel = useCallback(async (legId: string) => {
     if (!supabaseConfigured) {

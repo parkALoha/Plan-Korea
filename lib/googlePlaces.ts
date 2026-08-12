@@ -29,6 +29,8 @@ export type GooglePlaceResult = {
   primaryType?: string;
   primaryTypeDisplayName?: { text: string };
   reviews?: GoogleReview[];
+  /** เบอร์โทรรูปแบบสากล เช่น "+82 2-1234-5678" — ใช้กรอกช่อง "ที่พักในเกาหลี" ของ ตม./K-ETA */
+  internationalPhoneNumber?: string;
 };
 
 export type PlaceSuggestion = {
@@ -221,14 +223,18 @@ export async function searchNearby(
  */
 export async function getPlaceDetails(
   placeId: string,
-  fieldMask: string
+  fieldMask: string,
+  /** ภาษาที่อยากให้ Google คืนชื่อ/ที่อยู่มา — เฟส 16 เรียกซ้ำด้วย "ko"/"vi"/"en" เพื่อเก็บชื่อที่พัก
+   *  หลายภาษาไว้ในคราวเดียว (ชื่อท้องถิ่นไว้ให้แท็กซี่ · ชื่ออังกฤษไว้กรอกเอกสาร ตม.) */
+  languageCode?: string
 ): Promise<{ place: GooglePlaceResult | null; error: string | null }> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     return { place: null, error: "GOOGLE_MAPS_API_KEY not set" };
   }
 
-  const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+  const query = languageCode ? `?languageCode=${encodeURIComponent(languageCode)}` : "";
+  const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}${query}`, {
     headers: {
       "X-Goog-Api-Key": apiKey,
       "X-Goog-FieldMask": fieldMask,
