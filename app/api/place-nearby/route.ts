@@ -30,6 +30,8 @@ const KIND_TYPES: Record<string, string[]> = {
   attraction: ATTRACTION_TYPES,
   // คละทุกประเภทรอบจุดแวะล่าสุด — ใช้กับปุ่ม "เพิ่มสถานที่เอง" ที่ไม่ได้เจาะจงว่าจะหาอะไร
   place: [...ATTRACTION_TYPES, "restaurant", "cafe", "bar", "bakery", "zoo", "garden", "monument", "department_store"],
+  // การ์ดฉุกเฉิน (เฟส 17) — โรงพยาบาลใกล้ที่พักคืนนั้น · ไม่รวมคลินิก/ร้านยาเพราะกลางดึกปิด
+  hospital: ["hospital"],
 };
 
 // รัศมี/การเรียงลำดับต่อ kind — ที่เที่ยวมองทั้งเมืองเลยกว้างสุด ร้านอาหารต้องเดินต่อจากจุดก่อนหน้าได้เลยแคบสุด
@@ -37,12 +39,17 @@ const KIND_OPTIONS: Record<string, { radius: number; rank: "POPULARITY" | "DISTA
   restaurant: { radius: 1200, rank: "DISTANCE" },
   attraction: { radius: 15000, rank: "POPULARITY" },
   place: { radius: 3000, rank: "POPULARITY" },
+  // เรียงตามความนิยม ไม่ใช่ระยะใกล้ — Google ติดป้าย "hospital" ให้คลินิกศัลยกรรม/ผิวหนังในเกาหลีเยอะมาก
+  // เรียงตามระยะแล้วได้คลินิกเสริมความงามขึ้นก่อนโรงพยาบาลจริง (ยืนยันจากผลจริงรอบซอมยอน ปูซาน)
+  // โรงพยาบาลใหญ่มีรีวิวมากกว่าคลินิกเล็กหลายเท่า POPULARITY จึงดันตัวที่ไปแล้วรักษาได้จริงขึ้นมาแทน
+  hospital: { radius: 8000, rank: "POPULARITY" },
 };
 
 // หาสถานที่รอบพิกัดที่ให้มา
 // kind=restaurant → ร้านอาหารรอบจุดแวะล่าสุด เรียงตามระยะใกล้ (เฟส 2)
 // kind=attraction → ที่เที่ยวของเมืองนั้น เรียงตามความนิยม รัศมีกว้างกว่าเพราะที่เที่ยวกระจายทั้งเมือง
 // kind=place → คละทุกประเภทแถวนั้น เรียงตามความนิยม ใช้เป็นลิสต์แนะนำของ "เพิ่มสถานที่เอง"
+// kind=hospital → โรงพยาบาลใกล้ที่พัก เรียงตามระยะใกล้ ใช้ในการ์ดฉุกเฉิน (เฟส 17)
 export async function GET(req: NextRequest) {
   const limited = rateLimitGuard(req, "place-nearby", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;

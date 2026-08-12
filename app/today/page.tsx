@@ -28,9 +28,13 @@ import { useStops } from "@/hooks/useStops";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
+import { useTripWeather } from "@/hooks/useTripWeather";
+import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { BottomNav } from "@/components/BottomNav";
+import { WeatherBadge } from "@/components/WeatherBadge";
+import { EmergencyCard } from "@/components/EmergencyCard";
 import type { TravelMode } from "@/lib/schedule";
 import { safeHttpUrl } from "@/lib/url";
 
@@ -97,6 +101,9 @@ export default function TodayPage() {
     [overnightOverrides]
   );
   const { hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
+  const { byDay: weatherByDay } = useTripWeather(itinerary);
+  // ธีมมืดของหน้านี้โดยเฉพาะ — เปิดตอน 05:45 วันกลับและทุกคืนระหว่างทริป (เฟส 17)
+  const { isDark, toggle: toggleTheme } = useDarkTheme();
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -220,7 +227,7 @@ export default function TodayPage() {
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 
   return (
-    <main className="min-h-full pb-24 lg:pb-10">
+    <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
       <header className="bg-pine px-4 pb-5 pt-6 text-cream">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -231,8 +238,17 @@ export default function TodayPage() {
               📋 สรุปแผน
             </Link>
           </div>
-          <div className="text-xs text-cream/70">
-            {now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น.
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              aria-label={isDark ? "เปลี่ยนเป็นธีมสว่าง" : "เปลี่ยนเป็นธีมมืด"}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-base hover:bg-white/20"
+            >
+              {isDark ? "☀️" : "🌙"}
+            </button>
+            <div className="text-xs text-cream/70">
+              {now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น.
+            </div>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between gap-2">
@@ -260,6 +276,11 @@ export default function TodayPage() {
             ›
           </button>
         </div>
+        {weatherByDay[day.id] && (
+          <div className="mt-2 text-center">
+            <WeatherBadge weather={weatherByDay[day.id]} />
+          </div>
+        )}
         {!isRealToday && (
           <button
             onClick={() => setDayIndex(todayIndex)}
@@ -271,11 +292,11 @@ export default function TodayPage() {
       </header>
 
       {!overallLoaded && (
-        <div className="px-4 py-10 text-center text-sm text-ink-soft">กำลังโหลด...</div>
+        <div className="px-4 py-10 text-center text-sm text-content-soft">กำลังโหลด...</div>
       )}
 
       {overallLoaded && !activePlanId && (
-        <div className="px-4 py-10 text-center text-sm text-ink-soft">
+        <div className="px-4 py-10 text-center text-sm text-content-soft">
           ยังไม่มีแผนที่ใช้งานอยู่ — เปิดหน้าแผนก่อน
         </div>
       )}
@@ -283,30 +304,30 @@ export default function TodayPage() {
       {overallLoaded && activePlanId && (
         <div className="mx-auto max-w-2xl px-4 pt-4">
           {plans.length > 0 && (
-            <div className="mb-3 text-center text-xs text-ink-soft">
+            <div className="mb-3 text-center text-xs text-content-soft">
               แผน: {plans.find((p) => p.id === activePlanId)?.name}
             </div>
           )}
 
           {startAnchor && (
-            <div className="mb-3 rounded-xl bg-pine-soft/50 px-3 py-2 text-xs text-pine-dark">
+            <div className="mb-3 rounded-xl bg-panel-pine/50 px-3 py-2 text-xs text-panel-pine-ink">
               🏨 ออกจาก {startAnchor.label}
             </div>
           )}
 
           {beforeAnchorEvent && (
-            <div className="mb-3 rounded-xl bg-cream-soft px-3 py-2 text-xs text-ink">
+            <div className="mb-3 rounded-xl bg-surface-soft px-3 py-2 text-xs text-content">
               {beforeAnchorEvent.icon} {beforeAnchorEvent.title} ({beforeAnchorEvent.time})
             </div>
           )}
           {afterAnchorEvent && (
-            <div className="mb-3 rounded-xl bg-maple-soft/70 px-3 py-2 text-xs font-medium text-maple-dark">
+            <div className="mb-3 rounded-xl bg-panel-maple/70 px-3 py-2 text-xs font-medium text-panel-maple-ink">
               {afterAnchorEvent.icon} {afterAnchorEvent.title} ({afterAnchorEvent.time})
             </div>
           )}
 
           {delayMinutes !== 0 && (
-            <div className="mb-3 rounded-xl bg-gold/20 px-3 py-2 text-xs font-medium text-maple-dark">
+            <div className="mb-3 rounded-xl bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink">
               {delayMinutes > 0
                 ? `⏱️ ดูช้ากว่าแผนไปประมาณ ${delayMinutes} นาที`
                 : `⏱️ ดูเร็วกว่าแผนไปประมาณ ${Math.abs(delayMinutes)} นาที`}{" "}
@@ -315,9 +336,9 @@ export default function TodayPage() {
           )}
 
           {dayStops.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-cream-soft px-4 py-8 text-center text-sm text-ink-soft">
+            <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-sm text-content-soft">
               วันนี้ยังไม่ได้วางแผนไว้เลย —{" "}
-              <Link href="/" className="text-pine-dark underline">
+              <Link href="/" className="text-panel-pine-ink underline">
                 ไปเพิ่มจุดแวะที่หน้าแผน
               </Link>
             </div>
@@ -325,24 +346,24 @@ export default function TodayPage() {
 
           {/* จุดถัดไป — การ์ดเด่นสุดของหน้า */}
           {nextStop && nextSched && (
-            <section className="mb-5 overflow-hidden rounded-2xl border-2 border-maple bg-white shadow-md shadow-maple/20">
+            <section className="mb-5 overflow-hidden rounded-2xl border-2 border-maple bg-surface-raised shadow-md shadow-maple/20">
               <div className="bg-maple px-4 py-2 text-xs font-semibold uppercase tracking-wide text-cream">
                 📍 จุดถัดไป
               </div>
               <div className="p-4">
                 {nextStop.kind === "intercity" ? (
                   <div className="flex items-center gap-3">
-                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-pine-soft/50 text-3xl">
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-panel-pine/50 text-3xl">
                       {INTERCITY_MODE_ICON[(nextStop.intercity_mode as IntercityMode) ?? "other"]}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-lg font-bold text-ink">
+                      <div className="text-lg font-bold text-content">
                         {INTERCITY_MODE_LABEL[(nextStop.intercity_mode as IntercityMode) ?? "other"]}
                       </div>
-                      <div className="text-sm text-ink-soft">
+                      <div className="text-sm text-content-soft">
                         {nextStop.intercity_from} → {nextStop.intercity_to}
                       </div>
-                      <div className="mt-1 text-sm font-semibold tabular-nums text-ink">
+                      <div className="mt-1 text-sm font-semibold tabular-nums text-content">
                         {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
                       </div>
                     </div>
@@ -356,10 +377,10 @@ export default function TodayPage() {
                         className="h-16 w-16 shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="text-xl font-bold leading-tight text-ink">
+                        <div className="text-xl font-bold leading-tight text-content">
                           {CATEGORY_EMOJI[nextSched.place.category]} {nextSched.place.nameTh}
                         </div>
-                        <div className="mt-0.5 text-lg font-semibold tabular-nums text-maple-dark">
+                        <div className="mt-0.5 text-lg font-semibold tabular-nums text-panel-maple-ink">
                           {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
                         </div>
                       </div>
@@ -390,7 +411,7 @@ export default function TodayPage() {
                       return (
                         <div
                           className={`mt-2 rounded-lg px-3 py-2 text-xs ${
-                            closed ? "bg-maple-soft/70 text-maple-dark" : "bg-cream-soft text-ink-soft"
+                            closed ? "bg-panel-maple/70 text-panel-maple-ink" : "bg-surface-soft text-content-soft"
                           }`}
                         >
                           {closed &&
@@ -408,14 +429,14 @@ export default function TodayPage() {
                       const currentLabel = weekdayHoursLabel(currentOpeningHours, day.date);
                       if (!currentLabel || currentLabel === regularLabel) return null;
                       return (
-                        <div className="mt-2 rounded-lg bg-gold/20 px-3 py-2 text-xs font-medium text-maple-dark">
+                        <div className="mt-2 rounded-lg bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink">
                           🎌 วันนี้เวลาเปิด-ปิดอาจต่างจากปกติ (วันหยุดพิเศษ) — {currentLabel}
                         </div>
                       );
                     })()}
 
                     {nextStop.note && (
-                      <div className="mt-2 text-sm italic text-ink-soft">📝 {nextStop.note}</div>
+                      <div className="mt-2 text-sm italic text-content-soft">📝 {nextStop.note}</div>
                     )}
 
                     {nextStop.photo_url && (
@@ -442,7 +463,7 @@ export default function TodayPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="text-sm text-maple-dark">ไม่พบข้อมูลสถานที่</div>
+                  <div className="text-sm text-panel-maple-ink">ไม่พบข้อมูลสถานที่</div>
                 )}
 
                 <button
@@ -457,17 +478,17 @@ export default function TodayPage() {
 
           {/* วันนี้เที่ยวครบทุกจุดแล้ว */}
           {dayStops.length > 0 && nextIndex === -1 && (
-            <section className="mb-5 rounded-2xl border border-pine-soft bg-pine-soft/40 px-4 py-6 text-center">
-              <div className="text-lg font-bold text-pine-dark">🎉 เที่ยวครบทุกจุดของวันนี้แล้ว</div>
+            <section className="mb-5 rounded-2xl border border-panel-pine bg-panel-pine/40 px-4 py-6 text-center">
+              <div className="text-lg font-bold text-panel-pine-ink">🎉 เที่ยวครบทุกจุดของวันนี้แล้ว</div>
               {endAnchor && daySchedule.arriveBackAt && (
-                <div className="mt-1 text-sm text-pine-dark">
+                <div className="mt-1 text-sm text-panel-pine-ink">
                   🏨 กลับถึง {endAnchor.label} ประมาณ{" "}
                   {shiftTime(daySchedule.arriveBackAt, delayMinutes)}
                 </div>
               )}
               {endAnchor && (
                 <div className="mt-4 text-left">
-                  <div className="mb-2 text-center text-xs font-medium text-pine-dark">
+                  <div className="mb-2 text-center text-xs font-medium text-panel-pine-ink">
                     🧭 นำทางกลับ {endAnchor.label}
                   </div>
                   {/* ชื่อที่ส่งเข้า Naver/Kakao ต้องเป็นภาษาเกาหลี ไม่งั้นค้นไม่เจอ (บั๊กเดียวกับที่เฟส 14
@@ -485,10 +506,10 @@ export default function TodayPage() {
           {/* ถัดจากนี้ */}
           {upcoming.length > 0 && (
             <section className="mb-5">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 ถัดจากนี้
               </h2>
-              <div className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
+              <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
                 {upcoming.map((s, i) => {
                   const sched = upcomingSched[i];
                   const label =
@@ -509,10 +530,10 @@ export default function TodayPage() {
                     ) === false;
                   return (
                     <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
-                      <span className="w-12 shrink-0 text-center font-semibold tabular-nums text-ink-soft">
+                      <span className="w-12 shrink-0 text-center font-semibold tabular-nums text-content-soft">
                         {displayArrival ?? "-"}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-ink">{label}</span>
+                      <span className="min-w-0 flex-1 truncate text-content">{label}</span>
                       {mightMissClosing && <span title="อาจไปไม่ทันเวลาปิด">⚠️</span>}
                     </div>
                   );
@@ -524,10 +545,10 @@ export default function TodayPage() {
           {/* ผ่านมาแล้ว */}
           {done.length > 0 && (
             <section className="mb-5">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 ผ่านมาแล้ว ({done.length})
               </h2>
-              <div className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
+              <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
                 {done.map((s) => {
                   const sched = schedule.find((sc) => sc.id === s.id);
                   const label =
@@ -540,11 +561,11 @@ export default function TodayPage() {
                     <button
                       key={s.id}
                       onClick={() => unmarkVisited(s.id)}
-                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-cream-soft/60"
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60"
                     >
                       <span className="shrink-0 text-pine">✓</span>
-                      <span className="min-w-0 flex-1 truncate text-ink-soft line-through">{label}</span>
-                      <span className="shrink-0 text-[11px] text-ink-soft/60">แตะเพื่อยกเลิก</span>
+                      <span className="min-w-0 flex-1 truncate text-content-soft line-through">{label}</span>
+                      <span className="shrink-0 text-[11px] text-content-soft/60">แตะเพื่อยกเลิก</span>
                     </button>
                   );
                 })}
@@ -555,31 +576,31 @@ export default function TodayPage() {
           {/* ตั๋ว/booking ของวันนี้ */}
           {dayBookings.length > 0 && (
             <section className="mb-5">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 🎫 ตั๋ว/booking วันนี้
               </h2>
               <div className="space-y-2">
                 {dayBookings.map((b) => (
                   <div
                     key={b.id}
-                    className="flex items-center gap-2.5 rounded-xl border border-cream-soft bg-white px-3 py-2.5"
+                    className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-raised px-3 py-2.5"
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cream-soft text-base">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-base">
                       {BOOKING_CATEGORY_ICON[b.category]}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs text-ink-soft">
+                      <div className="text-xs text-content-soft">
                         {BOOKING_CATEGORY_LABEL[b.category]}
                         {b.time ? ` · ${b.time}` : ""}
                       </div>
-                      <div className="truncate text-sm font-medium text-ink">{b.title}</div>
+                      <div className="truncate text-sm font-medium text-content">{b.title}</div>
                     </div>
                     {safeHttpUrl(b.link) && (
                       <a
                         href={safeHttpUrl(b.link)!}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="shrink-0 rounded-lg bg-cream-soft px-2.5 py-1.5 text-xs font-medium text-pine-dark"
+                        className="shrink-0 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs font-medium text-panel-pine-ink"
                       >
                         เปิดลิงก์
                       </a>
@@ -589,7 +610,7 @@ export default function TodayPage() {
                         href={b.file_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="shrink-0 rounded-lg bg-cream-soft px-2.5 py-1.5 text-xs font-medium text-pine-dark"
+                        className="shrink-0 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs font-medium text-panel-pine-ink"
                       >
                         📎 ไฟล์
                       </a>
@@ -599,6 +620,10 @@ export default function TodayPage() {
               </div>
             </section>
           )}
+
+          {/* การ์ดฉุกเฉิน — ท้ายสุดเพราะปกติไม่ได้ใช้ แต่ต้องอยู่ในหน้าที่เปิดอยู่แล้วตอนมีเรื่อง
+              เบอร์เปลี่ยนตามประเทศที่อยู่วันนั้น (ฮานอย = เวียดนาม, ที่เหลือ = เกาหลี) */}
+          <EmergencyCard city={day.city} hotel={endHotel} bookings={bookings} />
         </div>
       )}
       <BottomNav />

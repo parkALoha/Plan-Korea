@@ -14,12 +14,70 @@
   --color-gold: #dd9c3f;
   --color-ink: #2b241f;
   --color-ink-soft: #6b6058;
+
+  /* โทเคนเชิงความหมายสำหรับหน้าที่รองรับธีมมืด (เฟส 17 — ตอนนี้คือ /today หน้าเดียว)
+     ทำไมไม่พลิกค่า --color-cream / --color-ink ตรงๆ: `cream` ถูกใช้เป็น "ตัวหนังสือสว่างบนพื้นสีเน้น"
+     ด้วย (text-cream บน bg-pine/bg-maple) ถ้าพลิกให้เป็นสีเข้ม ตัวหนังสือพวกนั้นจะหายไปกับพื้น
+     จึงแยกเป็นโทเคนพื้น/ตัวอักษรชุดใหม่ที่มีหน้าที่เดียวชัดเจน แล้วสลับเฉพาะชุดนี้ */
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-soft: var(--surface-soft);
+  --color-content: var(--content);
+  --color-content-soft: var(--content-soft);
+  --color-line: var(--line);
+  --color-panel-pine: var(--panel-pine);
+  --color-panel-pine-ink: var(--panel-pine-ink);
+  --color-panel-maple: var(--panel-maple);
+  --color-panel-maple-ink: var(--panel-maple-ink);
+  --color-panel-gold: var(--panel-gold);
+  --color-panel-gold-ink: var(--panel-gold-ink);
+}
+
+/* ค่าจริงของโทเคนข้างบนอยู่นอก @theme โดยตั้งใจ — `@theme inline` ฝัง *ค่า* ลงคลาสยูทิลิตี้
+   ถ้าประกาศสีตรงๆ ใน @theme แล้วมาทับทีหลังจะไม่มีผลเลย (คลาสกลายเป็นเลขสีตายตัวไปแล้ว)
+   ต้องให้ยูทิลิตี้ชี้ไป var(--surface) ฯลฯ เพื่อให้สลับธีมตอนรันไทม์ได้จริง */
+:root {
+  --surface: #fdf6ec; /* = cream */
+  --surface-raised: #ffffff;
+  --surface-soft: #f7ead6; /* = cream-soft */
+  --content: #2b241f; /* = ink */
+  --content-soft: #6b6058; /* = ink-soft */
+  --line: #f7ead6;
+  --panel-pine: #e2ede8; /* = pine-soft */
+  --panel-pine-ink: #24382f; /* = pine-dark */
+  --panel-maple: #fbe2d3; /* = maple-soft */
+  --panel-maple-ink: #b8502a; /* = maple-dark */
+  --panel-gold: #f6e6c8;
+  --panel-gold-ink: #7a5312;
+}
+
+/* ธีมมืด — ตั้งที่ <html data-theme="dark"> โดยหน้าที่ขอใช้เท่านั้น (ดู hooks/useDarkTheme.ts)
+   สีเน้นทึบ (bg-pine / bg-maple / bg-gold คู่กับ text-cream) คงเดิม ยังคอนทราสต์พอบนพื้นเข้ม
+   ส่วนคู่ "พื้นจาง + ตัวอักษรเข้ม" สลับขั้วกัน ไม่งั้นจะเป็นแผ่นสว่างจ้ากลางจอมืด */
+:root[data-theme="dark"] {
+  --surface: #16130f;
+  --surface-raised: #221d18;
+  --surface-soft: #2c251e;
+  --content: #f3ece2;
+  --content-soft: #b3a89c;
+  --line: #38302a;
+  --panel-pine: #1d2f27;
+  --panel-pine-ink: #93cbb2;
+  --panel-maple: #3a2318;
+  --panel-maple-ink: #f0a583;
+  --panel-gold: #33280f;
+  --panel-gold-ink: #e6bd6a;
 }
 
 body {
   font-family: var(--font-sans);
   background-color: var(--color-cream);
   color: var(--color-ink);
+}
+
+:root[data-theme="dark"] body {
+  background-color: var(--surface);
+  color: var(--content);
 }
 
 /* ปุ่มกดแล้วมีการตอบสนอง (ทั้งเว็บ ไม่ต้องไล่แก้ทีละปุ่ม) — ใช้ opacity ไม่ใช่ scale

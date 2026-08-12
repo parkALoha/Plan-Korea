@@ -33,7 +33,9 @@ import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useLegacyBootstrap } from "@/hooks/useLegacyBootstrap";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
+import { useTripWeather } from "@/hooks/useTripWeather";
 import { BottomNav } from "@/components/BottomNav";
+import { DayJumpBar } from "@/components/DayJumpBar";
 
 // ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
 // (ทริปนี้ไม่มีรถส่วนตัว แท็กซี่ต้องเลือกเองเสมอ ไม่ใช่ค่าเริ่มต้น) ใช้ตอนเพิ่ม/แทรกจุดแวะใหม่
@@ -149,6 +151,9 @@ export default function Home() {
   });
 
   const { hotelLegs, hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
+  // Open-Meteo มองไปข้างหน้าได้ ~16 วัน — ก่อนหน้านั้นทุกวันจะว่างเปล่า ซึ่งดูเหมือนฟีเจอร์พัง
+  // บอกไปตรงๆ ครั้งเดียวเหนือลิสต์วัน ดีกว่าปล่อยให้เดาเอง
+  const { byDay: weatherByDay, daysUntilFirstDay } = useTripWeather(itinerary);
 
   const stopsByDay = useMemo(() => {
     const map: Record<string, TripStop[]> = {};
@@ -335,6 +340,16 @@ export default function Home() {
               />
             )}
 
+            {/* แถบวัน sticky — กระโดดข้ามวันได้โดยไม่ต้องสกรอลล์ผ่านทั้ง 11 วัน (เฟส 17) */}
+            {overallLoaded && <DayJumpBar itinerary={itinerary} />}
+
+            {overallLoaded && daysUntilFirstDay != null && daysUntilFirstDay > 16 && (
+              <div className="mb-4 rounded-xl bg-cream-soft/70 px-3 py-2 text-xs text-ink-soft">
+                🌤️ พยากรณ์อากาศรายวันจะขึ้นบนหัวการ์ดเมื่อเหลืออีก ~16 วันก่อนถึงวันนั้น (ตอนนี้อีก{" "}
+                {daysUntilFirstDay} วัน)
+              </div>
+            )}
+
             {overallLoaded &&
               itinerary.map((day) => (
                 <DayStopsSection
@@ -371,6 +386,7 @@ export default function Home() {
                     setIntercityContext({ dayId: day.id, atIndex, fromDefault, toDefault })
                   }
                   onInsertTransfer={(atIndex) => setTransferContext({ dayId: day.id, atIndex })}
+                  weather={weatherByDay[day.id] ?? null}
                   flashStopId={flashStopId}
                 />
               ))}

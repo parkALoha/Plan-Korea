@@ -11,11 +11,14 @@ import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { weekdayHoursLabel } from "@/lib/openingHours";
+import type { DayWeather } from "@/lib/weather";
+import { WeatherBadge } from "./WeatherBadge";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { DayEventsPanel } from "./DayEventsPanel";
 import { DayMapPanel } from "./DayMapPanel";
 import { DaySummaryBar } from "./DaySummaryBar";
 import { RouteSuggestionModal } from "./RouteSuggestionModal";
+import { dayCardElementId } from "./DayJumpBar";
 import { SortableStopRow } from "./SortableStopRow";
 import { TravelModeRow } from "./TravelModeRow";
 
@@ -39,6 +42,7 @@ export function DayStopsSection({
   onInsertPlace,
   onInsertIntercity,
   onInsertTransfer,
+  weather,
   flashStopId,
   onOvernightCityChange,
   locked,
@@ -73,6 +77,8 @@ export function DayStopsSection({
   onInsertIntercity: (atIndex: number, fromDefault: string, toDefault: string) => void;
   /** เปิด modal แทรกแถว "ไปสนามบิน" ที่ตำแหน่ง atIndex ของวันนี้ */
   onInsertTransfer: (atIndex: number) => void;
+  /** พยากรณ์อากาศของวันนี้ — null/undefined เมื่อยังอยู่นอกช่วงพยากรณ์ ~16 วัน (ปกติตอนวางแผนล่วงหน้า) */
+  weather?: DayWeather | null;
   /** id ของจุดแวะที่เพิ่งถูกเพิ่ม (ทั้งวันไหนก็ได้) — ใช้ไฮไลต์แถวนั้นสั้นๆ */
   flashStopId: string | null;
   /** true = วันนี้ลงตัวแล้ว ล็อกไว้กันเผลอลาก/แก้ตอนเลื่อนดู */
@@ -128,6 +134,12 @@ export function DayStopsSection({
     showEndAnchorRow,
   } = useDaySchedule({ day, stops, customPlaces, hotel, startHotel, returnTravelMode, startTime });
 
+  // วันที่ล็อกแล้ว = ลงตัวแล้ว ไม่ต้องกางให้เกะกะตอนไล่ดูทั้ง 11 วันบนมือถือ (เฟส 17)
+  // ยุบอยู่ = ไม่ mount ทั้งลิสต์และแผนที่ของวันนั้น ได้ performance มาฟรีๆ ด้วย
+  // ไม่ใช้ effect sync กับ locked — พอปลดล็อกแล้ว locked เป็น false การ์ดกางเองทันทีจากสูตรนี้
+  const [manuallyExpanded, setManuallyExpanded] = useState(false);
+  const collapsed = locked && !manuallyExpanded;
+
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [suggestingRoute, setSuggestingRoute] = useState(false);
   const viewSched = viewIndex != null ? schedule[viewIndex] : null;
@@ -154,9 +166,10 @@ export function DayStopsSection({
 
   return (
     <section
+      id={dayCardElementId(day.id)}
       className={`mb-5 overflow-hidden rounded-2xl border bg-white shadow-sm shadow-ink/5 ${
         locked ? "border-pine/40 ring-1 ring-pine/25" : "border-cream-soft"
-      }`}
+      } scroll-mt-16`}
     >
       <div
         className="px-4 py-3 text-cream"
@@ -185,6 +198,7 @@ export function DayStopsSection({
             {locked ? "🔒 ล็อกไว้" : "🔓 ล็อกวันนี้"}
           </button>
         </div>
+        {weather && <WeatherBadge weather={weather} className="mt-1.5" />}
         {day.note && <div className="mt-1 text-xs leading-relaxed opacity-90">{day.note}</div>}
         {/* ชื่อโรงแรมจาก Google มักพ่วงที่อยู่เต็มมาด้วย บนมือถือกินไป 2-3 บรรทัดในหัวการ์ด — ตัดให้เหลือบรรทัดเดียว */}
         {hotel && (
@@ -259,11 +273,24 @@ export function DayStopsSection({
         )}
       </div>
 
-      {eventsBeforeStops && eventsBeforeStops.length > 0 && (
+      {collapsed && (
+        <button
+          onClick={() => setManuallyExpanded(true)}
+          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm text-ink-soft hover:bg-cream-soft/60"
+        >
+          <span>
+            📍 {stops.length} จุด · {effectiveStartTime}
+            {daySchedule.arriveBackAt ? ` – ${daySchedule.arriveBackAt}` : ""}
+          </span>
+          <span className="shrink-0 text-xs">▸ กางดู</span>
+        </button>
+      )}
+
+      {!collapsed && eventsBeforeStops && eventsBeforeStops.length > 0 && (
         <DayEventsPanel events={eventsBeforeStops} />
       )}
 
-      {hasMapPoints && (
+      {!collapsed && hasMapPoints && (
         <div className="flex gap-1 border-b border-cream-soft bg-cream-soft/30 px-3 pt-2 lg:hidden">
           <button
             onClick={() => setMobileView("list")}
@@ -284,6 +311,7 @@ export function DayStopsSection({
         </div>
       )}
       {/* min-w-0 บนตัว flex item ฝั่งลิสต์สำคัญมาก — ไม่มีแล้วเนื้อหายาวๆ ในลิสต์จะดันแผนที่ทะลุออกนอกการ์ด */}
+      {!collapsed && (
       <div className="lg:flex lg:items-start lg:gap-3 lg:px-3 lg:py-3">
         <div
           ref={setDayDroppableRef}
@@ -458,7 +486,7 @@ export function DayStopsSection({
         {/* บนมือถือต้อง unmount จริง ไม่ใช่ซ่อนด้วย `hidden` — เดิมแผนที่ทุกวัน mount และโหลด tile ครบทุกตัว
             ทั้งที่ผู้ใช้ยังไม่ได้กดแท็บ 🗺️ เลย (วัดที่ 375px: mount 4 ตัว เห็น 0 ตัว, ยิง maps.googleapis.com 43 ครั้ง)
             isDesktop มาจาก useMediaQuery ที่ SSR คืน false เสมอ — จอใหญ่จึง mount หลัง hydrate หนึ่งเฟรม ซึ่งรับได้ */}
-        {hasMapPoints && (mobileView === "map" || isDesktop) && (
+        {hasMapPoints && !collapsed && (mobileView === "map" || isDesktop) && (
           <div className="h-72 px-3 pb-3 pt-3 lg:h-[420px] lg:w-72 lg:shrink-0 lg:px-0 lg:pb-0 lg:pt-0">
             <DayMapPanel
               schedule={schedule}
@@ -477,8 +505,9 @@ export function DayStopsSection({
           </div>
         )}
       </div>
+      )}
 
-      {hasMapPoints && (
+      {!collapsed && hasMapPoints && (
         <DaySummaryBar
           schedule={daySchedule}
           startHotel={startHotel}
@@ -488,14 +517,14 @@ export function DayStopsSection({
         />
       )}
 
-      {deadlineOverrunMinutes != null && afterAnchorEvent && (
+      {!collapsed && deadlineOverrunMinutes != null && afterAnchorEvent && (
         <div className="bg-maple-soft/70 px-4 py-2 text-xs text-maple-dark">
           ⚠️ ตารางที่วางไว้จบช้ากว่ากำหนด &quot;{afterAnchorEvent.title}&quot; ({afterAnchorEvent.time}) ไป{" "}
           {deadlineOverrunMinutes} นาที ลองลดเวลาที่อยู่บางจุดหรือตัดบางจุดออก
         </div>
       )}
 
-      {eventsAfterStops.length > 0 && (
+      {!collapsed && eventsAfterStops.length > 0 && (
         <DayEventsPanel events={eventsAfterStops} heading="✈️ ต่อจากนั้น" />
       )}
 
