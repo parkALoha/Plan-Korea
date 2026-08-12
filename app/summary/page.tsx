@@ -34,8 +34,10 @@ import {
 import { BottomNav } from "@/components/BottomNav";
 import { ImmigrationSheet, formatDateEn } from "@/components/ImmigrationSheet";
 import { LayoverBadges } from "@/components/LayoverBadges";
+import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { PlaceDetailModal } from "@/components/PlaceDetailModal";
 import { PlaceThumb } from "@/components/PlaceThumb";
+import { isImageAttachment } from "@/lib/url";
 import { useHotels } from "@/hooks/useHotels";
 import { useBookings } from "@/hooks/useBookings";
 import { useChecklist } from "@/hooks/useChecklist";
@@ -406,6 +408,7 @@ export default function SummaryPage() {
 /** หน้าสรุปแผนทั้งทริป — ดูอย่างเดียว แก้อะไรไม่ได้ ไว้เปิดอ่านรวดเดียวหรือส่งให้คนอื่นดู */
 function SummaryContent() {
   const { lang, setLang, t } = useLang();
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const searchParams = useSearchParams();
   // `?for=immigration` = เลย์เอาต์เอกสารสำหรับ ตม./K-ETA (บังคับอังกฤษเสมอ ไม่ว่าปุ่มภาษาจะเลือกอะไร)
   const immigrationView = searchParams.get("for") === "immigration";
@@ -655,22 +658,46 @@ function SummaryContent() {
                 {t("bookingsAll")} ({bookings.length})
               </h2>
               <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
-                {bookings.map((b) => (
-                  <div key={b.id} className="px-3 py-2.5 text-sm">
-                    <div className="text-xs text-content-soft">
-                      {BOOKING_CATEGORY_ICON[b.category]}{" "}
-                      {(en ? BOOKING_CATEGORY_LABEL_EN : BOOKING_CATEGORY_LABEL)[b.category]}
-                      {b.date ? ` · ${dateLabelOf(b.date, lang)}` : ""}
-                      {b.time ? ` ${b.time}` : ""}
-                    </div>
-                    <div className="font-medium text-content">{b.title}</div>
-                    {b.confirmation_number && (
+                {bookings.map((b) => {
+                  const thumb = isImageAttachment(b.file_name, b.file_url) ? b.file_url : null;
+                  return (
+                  <div key={b.id} className="flex items-start gap-2.5 px-3 py-2.5 text-sm">
+                    <div className="min-w-0 flex-1">
                       <div className="text-xs text-content-soft">
-                        {t("confirmationNumber")} {b.confirmation_number}
+                        {BOOKING_CATEGORY_ICON[b.category]}{" "}
+                        {(en ? BOOKING_CATEGORY_LABEL_EN : BOOKING_CATEGORY_LABEL)[b.category]}
+                        {b.date ? ` · ${dateLabelOf(b.date, lang)}` : ""}
+                        {b.time ? ` ${b.time}` : ""}
                       </div>
+                      <div className="font-medium text-content">
+                        {b.title}
+                        {b.file_url && !thumb ? " 📎" : ""}
+                      </div>
+                      {b.confirmation_number && (
+                        <div className="text-xs text-content-soft">
+                          {t("confirmationNumber")} {b.confirmation_number}
+                        </div>
+                      )}
+                    </div>
+                    {thumb && (
+                      <button
+                        type="button"
+                        onClick={() => setZoomed({ src: thumb, alt: b.title })}
+                        aria-label={`${b.title} — ${en ? "view ticket photo" : "ดูรูปตั๋วขนาดเต็ม"}`}
+                        className="shrink-0"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                        <img
+                          src={thumb}
+                          alt=""
+                          loading="lazy"
+                          className="h-10 w-10 rounded-lg object-cover"
+                        />
+                      </button>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
@@ -719,6 +746,10 @@ function SummaryContent() {
             />
           ))}
         </div>
+      )}
+
+      {zoomed && (
+        <PhotoLightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(null)} />
       )}
 
       <div className="print:hidden">

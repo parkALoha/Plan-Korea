@@ -342,7 +342,7 @@ export const ITINERARY: Day[] = [
     city: "gangneung",
     cityTh: "คังนึง → โซล",
     cityEn: "Gangneung → Seoul",
-    note: "เช้าตามรอย BTS/Goblin ที่จูมุนจิน + กาแฟหาดอันมก (ฝากกระเป๋าตู้ล็อกเกอร์สถานีคังนึง) → KTX 13:30 เข้าโซล → เช็คอินเมียงดง เย็นช้อปปิ้ง + คัลกุกซู แล้วขึ้นนัมซานทาวเวอร์ดูวิวกลางคืน",
+    note: "เช้าตามรอย BTS/Goblin ที่จูมุนจิน + กาแฟหาดอันมก (ฝากกระเป๋าตู้ล็อกเกอร์สถานีคังนึง) → KTX 13:30 เข้าโซล → เช็คอินเมียงดง → หมูย่าง JD BBQ ที่อิแทวอนรอบร้านเปิด แล้วกลับมาเดินเมียงดงตอนค่ำ",
     overnightCity: "seoul",
     slots: [
       {
@@ -356,6 +356,15 @@ export const ITINERARY: Day[] = [
           "gangneung-ojukheon",
         ],
       },
+      {
+        id: "d6-s2",
+        label: "เย็น (โซล)",
+        candidateIds: [
+          "seoul-jd-bbq-itaewon",
+          "seoul-myeongdong",
+          "seoul-myeongdong-kyoja",
+        ],
+      },
     ],
   },
   {
@@ -366,17 +375,22 @@ export const ITINERARY: Day[] = [
     city: "seoul",
     cityTh: "โซล",
     cityEn: "Seoul",
-    note: "วันช้อปย่านวัยรุ่น: ฮงแด-ยอนนัมดงตอนสาย → ห้าง The Hyundai ยออีโด → นั่งชิลกินรามยอนริมแม่น้ำฮันดูพระอาทิตย์ตก → ปิดท้ายซองซูดงตอนค่ำ",
+    note: "วันช้อปย่านวัยรุ่น เรียงตามสาย 2 (สีเขียว): ยอนนัมดงเช้า → ฮงแดสาย → ซองซูดงบ่ายยาวๆ → ห้าง The Hyundai ยออีโดเย็น → ปิดท้ายกินรามยอนริมแม่น้ำฮันยามค่ำ · ย้ายซองซูดงมาช่วงบ่ายเพราะป๊อปอัปสโตร์/แฟล็กชิปทยอยปิด 20:00",
     slots: [
       {
         id: "d7-s1",
-        label: "เช้า-บ่าย",
-        candidateIds: ["seoul-hongdae", "seoul-yeonnamdong", "seoul-the-hyundai"],
+        label: "เช้า-สาย",
+        candidateIds: ["seoul-yeonnamdong", "seoul-hongdae", "seoul-saemaul-hongdae"],
       },
       {
         id: "d7-s2",
-        label: "เย็น",
-        candidateIds: ["seoul-yeouido-hangang", "seoul-seongsudong"],
+        label: "บ่าย",
+        candidateIds: ["seoul-seongsudong"],
+      },
+      {
+        id: "d7-s3",
+        label: "เย็น-ค่ำ",
+        candidateIds: ["seoul-the-hyundai", "seoul-yeouido-hangang"],
       },
     ],
   },
@@ -406,6 +420,7 @@ export const ITINERARY: Day[] = [
         candidateIds: [
           "seoul-insadong",
           "seoul-ikseondong",
+          "seoul-yoojung-sikdang",
           "seoul-olive-young-myeongdong",
         ],
       },
@@ -419,23 +434,23 @@ export const ITINERARY: Day[] = [
     city: "suwon",
     cityTh: "ซูวอน → โซล",
     cityEn: "Suwon → Seoul",
-    note: "วันเที่ยวเต็มวันสุดท้าย ไปเช้ากลับเย็น: กำแพงฮวาซ็อง → ตรอกไก่ทอด → แฮงลีดันกิล+วังแฮงกุง → Starfield แล้วขึ้นสาย 1 กลับจากสถานีฮวาซอ · คืนนี้เก็บของให้เรียบร้อย พรุ่งนี้ออกจากโรงแรมตั้งแต่เช้ามืด",
+    note: "วันเที่ยวเต็มวันสุดท้าย ซูวอนฉบับฮิปสเตอร์ (ช้อปปิ้ง-คาเฟ่-สตรีทฟู้ด): ลงสถานีฮวาซอเข้า Starfield ตอนสาย → แฮงกุงดงยาวๆ ช่วงบ่าย → ไก่ทอดซอสคัลบีมื้อเย็นที่ตรอกไก่ทอด → เดินชมไฟกำแพงฮวาซ็อง แล้วขึ้นสาย 1 จากสถานีซูวอนกลับโซล · คืนนี้เก็บของให้เรียบร้อย พรุ่งนี้ออกจากโรงแรมตั้งแต่เช้ามืด",
     overnightCity: "seoul",
     slots: [
       {
         id: "d9-s1",
-        label: "เช้า-บ่าย (ซูวอน)",
-        candidateIds: [
-          "suwon-changnyongmun",
-          "suwon-hwahongmun",
-          "suwon-hwaseong",
-          "suwon-tongdak-street",
-        ],
+        label: "สาย-เที่ยง (ช้อปปิ้ง)",
+        candidateIds: ["suwon-starfield-library"],
       },
       {
         id: "d9-s2",
-        label: "บ่าย-เย็น",
-        candidateIds: ["suwon-haenglidan", "suwon-haenggung", "suwon-starfield-library"],
+        label: "บ่าย (คาเฟ่)",
+        candidateIds: ["suwon-haenglidan", "suwon-haenggung"],
+      },
+      {
+        id: "d9-s3",
+        label: "เย็น-ค่ำ",
+        candidateIds: ["suwon-tongdak-street", "suwon-hwaseong", "suwon-hwahongmun"],
       },
     ],
   },
@@ -512,6 +527,15 @@ export const ITINERARY: Day[] = [
           leavesAirport: false,
           terminalChange: false,
         },
+      },
+      {
+        time: "14:00",
+        endTime: "16:00",
+        icon: "🛋️",
+        title: "พักที่ Rose Business Lounge (SGN, Terminal 2)",
+        titleEn: "Rest at Rose Business Lounge (SGN, Terminal 2)",
+        detail:
+          "อยู่ฝั่ง international airside ใกล้ Gate 8-9 · ใช้สิทธิ์ LoungeKey ฟรีด้วยบัตร JCB Platinum/Ultimate + Boarding Pass (โควตาเดียวกับที่ใช้ตอนขาไปที่ฮานอย) · บุฟเฟต์อาหารเวียดนาม/นานาชาติ + เก้าอี้นวด · ออกไปเกตราว 16:00-16:10 เผื่อเดินไกล",
       },
       {
         time: "16:50",

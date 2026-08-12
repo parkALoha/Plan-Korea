@@ -6,7 +6,8 @@ import type { NewBooking } from "@/hooks/useBookings";
 import { BookingEditModal } from "./BookingEditModal";
 import { ConfirmModal } from "./Modal";
 import { bookByDate, daysUntil } from "@/lib/bookingDeadline";
-import { safeHttpUrl } from "@/lib/url";
+import { isImageAttachment, safeHttpUrl } from "@/lib/url";
+import { PhotoLightbox } from "./PhotoLightbox";
 
 export const BOOKING_CATEGORY_LABEL: Record<BookingCategory, string> = {
   flight: "เที่ยวบิน",
@@ -71,6 +72,7 @@ export function BookingsPanel({
   // ตั๋วที่กำลังจะลบ — ยืนยันก่อนเสมอ ต่างจากการลบอย่างอื่นในเว็บที่ใช้ toast + เลิกทำ
   // เพราะไฟล์ที่อัปโหลดแนบไว้เอากลับมาจากในเว็บไม่ได้ (เฟส 20.2)
   const [deleting, setDeleting] = useState<TripBooking | null>(null);
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const pendingCount = bookings.filter((b) => b.status === "pending").length;
 
   return (
@@ -101,11 +103,18 @@ export function BookingsPanel({
           {bookings.map((booking) => {
             const badge = deadlineBadge(booking);
             const link = safeHttpUrl(booking.link);
+            // รูปตั๋วโชว์เป็นรูปย่อบนการ์ดเลย ไม่ใช่ไอคอน 📎 — เห็นปุ๊บรู้ว่าใบไหนคือใบไหน (เฟส 23)
+            // PDF ยังเป็น 📎 ต่อท้ายชื่อเหมือนเดิม เพราะ render เป็นรูปไม่ได้
+            const thumb = isImageAttachment(booking.file_name, booking.file_url)
+              ? booking.file_url
+              : null;
             return (
+              // ปุ่มการ์ดกับปุ่มรูปเป็นพี่น้องกัน ไม่ใช่ปุ่มซ้อนปุ่ม (HTML ห้าม และกดแล้วยิงสองเด้ง)
               <div
                 key={booking.id}
-                className="rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40"
+                className="flex items-stretch rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40"
               >
+                <div className="min-w-0 flex-1">
                 <button
                   onClick={() => setEditing(booking)}
                   className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left"
@@ -121,7 +130,7 @@ export function BookingsPanel({
                     </div>
                     <div className="truncate text-sm font-medium text-ink">
                       {booking.title}
-                      {booking.file_url ? " 📎" : ""}
+                      {booking.file_url && !thumb ? " 📎" : ""}
                     </div>
                     {booking.note && (
                       <div className="line-clamp-2 text-xs text-ink-soft">{booking.note}</div>
@@ -145,6 +154,22 @@ export function BookingsPanel({
                   >
                     🔗 เปิดลิงก์จอง
                   </a>
+                )}
+                </div>
+                {thumb && (
+                  <button
+                    onClick={() => setZoomed({ src: thumb, alt: `รูปตั๋วที่แนบไว้กับ “${booking.title}”` })}
+                    aria-label={`ดูรูปตั๋วของ ${booking.title} ขนาดเต็ม`}
+                    className="shrink-0 self-center p-2"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                    <img
+                      src={thumb}
+                      alt=""
+                      loading="lazy"
+                      className="h-10 w-10 rounded-lg object-cover"
+                    />
+                  </button>
                 )}
               </div>
             );
@@ -189,6 +214,10 @@ export function BookingsPanel({
               : "⚠️ กดเลิกทำไม่ได้"}
           </p>
         </ConfirmModal>
+      )}
+
+      {zoomed && (
+        <PhotoLightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(null)} />
       )}
     </section>
   );

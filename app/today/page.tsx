@@ -40,7 +40,8 @@ import { BottomNav } from "@/components/BottomNav";
 import { WeatherBadge } from "@/components/WeatherBadge";
 import { EmergencyCard } from "@/components/EmergencyCard";
 import type { TravelMode } from "@/lib/schedule";
-import { safeHttpUrl } from "@/lib/url";
+import { isImageAttachment, safeHttpUrl } from "@/lib/url";
+import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { showUndoToast } from "@/lib/toast";
 
 function isoDateOf(d: Date): string {
@@ -306,6 +307,7 @@ export default function TodayPage() {
   // ดูรายละเอียดสถานที่แบบเดียวกับหน้าแผน — เก็บแค่ id แล้วหา place/index สดจาก dayStops/schedule
   // ทุกครั้งที่ render กันข้อมูลค้างเวลาสลับวันหรือ schedule คำนวณใหม่ (delay เลื่อนเวลา ฯลฯ)
   const [detailStopId, setDetailStopId] = useState<string | null>(null);
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const detailIndex = detailStopId ? dayStops.findIndex((s) => s.id === detailStopId) : -1;
 
   // คัดลอกชื่อที่พักให้คนขับดูตอนเที่ยวครบแล้วจะกลับ — เหมือน LocalNameCard แต่ endHotel เป็น TripHotel ไม่ใช่ Place
@@ -577,12 +579,24 @@ export default function TodayPage() {
                     )}
 
                     {nextStop.photo_url && (
-                      // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
-                      <img
-                        src={nextStop.photo_url}
-                        alt="รูปหน้างานของจุดแวะนี้"
-                        className="mt-2 h-24 w-24 rounded-lg object-cover"
-                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setZoomed({
+                            src: nextStop.photo_url!,
+                            alt: "รูปหน้างานของจุดแวะนี้ ขนาดเต็ม",
+                          })
+                        }
+                        aria-label="ดูรูปหน้างานขนาดเต็ม"
+                        className="mt-2 block"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                        <img
+                          src={nextStop.photo_url}
+                          alt="รูปหน้างานของจุดแวะนี้"
+                          className="h-24 w-24 rounded-lg object-cover"
+                        />
+                      </button>
                     )}
 
                     <div className="mt-4">
@@ -773,16 +787,39 @@ export default function TodayPage() {
                         เปิดลิงก์
                       </a>
                     )}
-                    {b.file_url && (
-                      <a
-                        href={b.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs font-medium text-panel-pine-ink"
-                      >
-                        📎 ไฟล์
-                      </a>
-                    )}
+                    {b.file_url &&
+                      (isImageAttachment(b.file_name, b.file_url) ? (
+                        // รูปตั๋วเปิดดูในแอปเลย — หน้านี้คือหน้าที่เปิดค้างไว้ตอนอยู่หน้างานจริง
+                        // เด้งออกแท็บใหม่ = เสียที่ที่กำลังดูอยู่
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setZoomed({
+                              src: b.file_url!,
+                              alt: `รูปตั๋วที่แนบไว้กับ “${b.title}”`,
+                            })
+                          }
+                          aria-label={`ดูรูปตั๋วของ ${b.title} ขนาดเต็ม`}
+                          className="shrink-0"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                          <img
+                            src={b.file_url}
+                            alt=""
+                            loading="lazy"
+                            className="h-10 w-10 rounded-lg object-cover"
+                          />
+                        </button>
+                      ) : (
+                        <a
+                          href={b.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs font-medium text-panel-pine-ink"
+                        >
+                          📎 ไฟล์
+                        </a>
+                      ))}
                   </div>
                 ))}
               </div>
@@ -807,6 +844,9 @@ export default function TodayPage() {
           warningMessage={detailWarningMessage}
           onClose={() => setDetailStopId(null)}
         />
+      )}
+      {zoomed && (
+        <PhotoLightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(null)} />
       )}
       <BottomNav />
     </main>

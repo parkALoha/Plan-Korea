@@ -19,6 +19,7 @@ import { WeatherBadge } from "./WeatherBadge";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { DayEventsPanel } from "./DayEventsPanel";
 import { DayMapPanel } from "./DayMapPanel";
+import type { IntercityMode } from "./IntercityEditModal";
 import { DaySummaryBar } from "./DaySummaryBar";
 import { RouteSuggestionModal } from "./RouteSuggestionModal";
 import { dayCardElementId } from "./DayJumpBar";
@@ -166,6 +167,24 @@ export function DayStopsSection({
   const notesByStopId = useMemo(() => {
     const map: Record<string, string | null> = {};
     for (const stop of stops) map[stop.id] = stop.note;
+    return map;
+  }, [stops]);
+
+  // ไอคอนพาหนะข้ามเมือง (🚌/🚄/🚗) ให้แผนที่เอาไปคั่นชิปเมือง — แถว kind="intercity" มี place_id ว่าง
+  // จึงถูกกรองทิ้งก่อนถึงแผนที่ และ ScheduledStop ก็ไม่มีฟิลด์ kind/intercity_* ให้ดูเอง
+  const intercityModeBeforeStopId = useMemo(() => {
+    const map: Record<string, IntercityMode> = {};
+    let pending: IntercityMode | null = null;
+    for (const stop of stops) {
+      if (stop.kind === "intercity") {
+        pending = (stop.intercity_mode as IntercityMode | null) ?? "other";
+        continue;
+      }
+      if (pending) {
+        map[stop.id] = pending;
+        pending = null;
+      }
+    }
     return map;
   }, [stops]);
 
@@ -565,6 +584,7 @@ export function DayStopsSection({
               startHotel={startHotel}
               endHotel={hotel}
               notesByStopId={notesByStopId}
+              intercityModeBeforeStopId={intercityModeBeforeStopId}
               closedStopIds={closedStopIds}
               activeStopId={activeStopId}
               onSelectStop={setActiveStopId}

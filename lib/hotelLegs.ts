@@ -12,6 +12,12 @@ export function hotelAnchorId(hotel: Pick<TripHotel, "lat" | "lng">): string {
   return `hotel@${hotel.lat.toFixed(5)},${hotel.lng.toFixed(5)}`;
 }
 
+/** id นี้เป็น anchor ที่พัก (แถว kind="hotel") หรือเปล่า — คู่กับ `hotelAnchorId` ที่เป็นเจ้าของรูปแบบ
+ *  มีไว้ให้ที่อื่นไม่ต้องเขียน `.startsWith("hotel@")` เอง เวลารูปแบบเปลี่ยนจะได้แก้ที่เดียว */
+export function isHotelAnchorId(placeId: string): boolean {
+  return placeId.startsWith("hotel@");
+}
+
 export type HotelLeg = {
   id: string;
   city: Day["city"];

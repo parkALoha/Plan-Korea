@@ -1,0 +1,210 @@
+import { describe, expect, it } from "vitest";
+import { buildCitySegments, buildDayCitySegments, stopCountIn } from "@/lib/citySegments";
+import type { City } from "@/data/itinerary";
+import type { Place } from "@/data/places";
+
+/** พิกัดจริงจาก data/transferPoints.ts และ data/places.ts — เกณฑ์ระยะจะได้ถูกทดสอบด้วยของจริง */
+const AT = {
+  busanNopo: { lat: 35.2847494, lng: 129.0953841 },
+  sokchoExpress: { lat: 38.1905088, lng: 128.5987419 },
+  sokchoIntercity: { lat: 38.2109611, lng: 128.591111 },
+  gangneungBus: { lat: 37.754515, lng: 128.879615 },
+  gangneungStation: { lat: 37.7644776, lng: 128.8995536 },
+  seoulStation: { lat: 37.555946, lng: 126.9723117 },
+  suwonStation: { lat: 37.26644, lng: 126.999408 },
+  icn: { lat: 37.4491, lng: 126.4506 },
+};
+
+function stop(
+  id: string,
+  at: { lat: number; lng: number },
+  city: Place["city"],
+  placeId = id
+): { id: string; place: Pick<Place, "id" | "lat" | "lng" | "city"> } {
+  return { id, place: { id: placeId, lat: at.lat, lng: at.lng, city } };
+}
+
+function hotel(at: { lat: number; lng: number }, city: string) {
+  return { lat: at.lat, lng: at.lng, city };
+}
+
+/** ขยับพิกัดไปไม่กี่ร้อยเมตร — ใช้แทน "จุดแวะอีกที่ในเมืองเดียวกัน" */
+function near(at: { lat: number; lng: number }, delta = 0.01) {
+  return { lat: at.lat + delta, lng: at.lng + delta };
+}
+
+describe("buildCitySegments", () => {
+  it("input ว่างได้ลิสต์ว่าง", () => {
+    expect(buildCitySegments([])).toEqual([]);
+  });
+
+  it("เมืองเดียวทั้งวันได้ช่วงเดียว", () => {
+    const segments = buildCitySegments([
+      { ...AT.seoulStation, city: "seoul" as City },
+      { ...near(AT.seoulStation), city: "seoul" as City },
+      { ...near(AT.seoulStation, 0.02), city: "seoul" as City },
+    ]);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].city).toBe("seoul");
+    expect(segments[0].items).toHaveLength(3);
+  });
+
+  it("ปูซาน→ซกโช (326 กม.) ตัดเป็น 2 ช่วง", () => {
+    const segments = buildCitySegments([
+      { ...AT.busanNopo, city: "busan" as City },
+      { ...AT.sokchoExpress, city: "sokcho" as City },
+    ]);
+    expect(segments.map((s) => s.city)).toEqual(["busan", "sokcho"]);
+  });
+
+  it("ซกโช→คังนึง (56.7 กม.) ตัด — เกิน 40 กม. และเมืองเปลี่ยน", () => {
+    const segments = buildCitySegments([
+      { ...AT.sokchoIntercity, city: "sokcho" as City },
+      { ...AT.gangneungBus, city: "gangneung" as City },
+    ]);
+    expect(segments.map((s) => s.city)).toEqual(["sokcho", "gangneung"]);
+  });
+
+  it("โซล→ซูวอน (32.3 กม.) ไม่ตัด แม้เมืองจะเปลี่ยน — ใกล้เกินกว่าจะเป็นการข้ามเมืองจริง", () => {
+    const segments = buildCitySegments([
+      { ...AT.seoulStation, city: "seoul" as City },
+      { ...AT.suwonStation, city: "suwon" as City },
+    ]);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].city).toBe("seoul");
+  });
+
+  it("โซล→ICN (47.5 กม.) ไม่ตัด เพราะเมืองเดียวกัน — กันวัน d10 แตกเป็นชิป 'โซล' สองอันซ้ำ", () => {
+    const segments = buildCitySegments([
+      { ...AT.seoulStation, city: "seoul" as City },
+      { ...AT.icn, city: "seoul" as City },
+    ]);
+    expect(segments).toHaveLength(1);
+  });
+
+  it("171 กม. ตัดด้วยด่านแข็ง แม้ city tag จะผิดเหมือนกันทั้งสองฝั่ง", () => {
+    // เคสจริง: ผู้ใช้ไม่ได้ใส่แถวสถานี KTX และจุดแรกในโซลเป็นสถานที่เพิ่มเองที่ tag เป็น "gangneung"
+    const segments = buildCitySegments([
+      { ...AT.gangneungStation, city: "gangneung" as City },
+      { ...AT.seoulStation, city: "gangneung" as City },
+    ]);
+    expect(segments).toHaveLength(2);
+  });
+
+  it("จุดที่ tag เพี้ยนแต่อยู่ใกล้เพื่อนบ้าน ไม่ทำให้ตัดช่วง และไม่แย่ง label ของช่วง", () => {
+    // ร้านแถวเมียงดงที่เพิ่มในวัน d6 ถูกเก็บเป็น city "gangneung" ทั้งที่อยู่โซล
+    const segments = buildCitySegments([
+      { ...AT.seoulStation, city: "seoul" as City },
+      { ...near(AT.seoulStation), city: "gangneung" as City },
+      { ...near(AT.seoulStation, 0.02), city: "seoul" as City },
+    ]);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].city).toBe("seoul");
+  });
+
+  it("วัน A→B→A ได้ 3 ช่วงเรียงตามเวลา ไม่ใช่ยุบเหลือ 2", () => {
+    const segments = buildCitySegments([
+      { ...AT.seoulStation, city: "seoul" as City },
+      { ...AT.gangneungStation, city: "gangneung" as City },
+      { ...AT.seoulStation, city: "seoul" as City },
+    ]);
+    expect(segments.map((s) => s.city)).toEqual(["seoul", "gangneung", "seoul"]);
+  });
+});
+
+describe("buildDayCitySegments", () => {
+  it("d5 (16 ต.ค.) — จุดแวะซกโชล้วน + โรงแรมคังนึง ต้องได้ 2 ช่วง", () => {
+    // เคสสำคัญที่สุด: ถ้าที่พักไม่ถูกนับเป็นจุด จะได้ช่วงเดียวและบั๊กไม่ถูกแก้เลย
+    const segments = buildDayCitySegments({
+      stops: [
+        stop("s1", AT.sokchoExpress, "sokcho"),
+        stop("s2", near(AT.sokchoExpress), "sokcho"),
+        stop("s3", AT.sokchoIntercity, "sokcho"),
+      ],
+      startHotel: hotel(near(AT.sokchoExpress, 0.005), "sokcho"),
+      endHotel: hotel(AT.gangneungBus, "gangneung"),
+    });
+    expect(segments.map((s) => s.city)).toEqual(["sokcho", "gangneung"]);
+    expect(stopCountIn(segments[0])).toBe(3);
+    expect(stopCountIn(segments[1])).toBe(0);
+    expect(segments[1].items[0]).toMatchObject({ kind: "hotel", role: "end" });
+  });
+
+  it("แถว 'แวะที่พัก' ที่ resolvePlace ตั้ง city เป็น seoul ไว้ ต้องไม่เปิดช่วงโซลผีกลางวัน", () => {
+    const segments = buildDayCitySegments({
+      stops: [
+        stop("s1", AT.busanNopo, "busan"),
+        // แถว kind="hotel" ที่ซกโช — resolvePlace คืน city "seoul" เสมอ
+        stop("s2", AT.sokchoExpress, "seoul", "hotel@38.19051,128.59874"),
+        stop("s3", near(AT.sokchoExpress), "sokcho"),
+      ],
+      startHotel: null,
+      endHotel: null,
+    });
+    expect(segments.map((s) => s.city)).toEqual(["busan", "sokcho"]);
+    expect(stopCountIn(segments[1])).toBe(2);
+  });
+
+  it("d5 ของจริง — รอยต่อข้ามเมืองตกบนแถว 'แวะที่พัก' พอดี ต้องยังตัดช่วงได้", () => {
+    // เคสถดถอยจริงที่เจอตอนเอาข้อมูลทริปจริงมารัน: ลำดับแถวคือ
+    // ท่ารถซกโช → [แถวข้ามเมือง ไม่มีพิกัด] → แวะที่พักคังนึง → ตลาดคังนึง
+    // ถ้าให้ city ของแถว hotel@ เป็น null ทั้งวันจะยุบเหลือช่วงเดียว เพราะ hop 56.7 กม.
+    // ไม่ถูกนับว่า "เมืองเปลี่ยน" และยังไม่ถึงด่านแข็ง 100 กม. ส่วน hop ถัดไปก็แค่ ~1 กม.
+    const segments = buildDayCitySegments({
+      stops: [
+        stop("s1", { lat: 38.1730998, lng: 128.4890543 }, "sokcho"), // ซอรัคซาน
+        stop("s2", { lat: 38.18993, lng: 128.60091 }, "seoul", "hotel@38.18993,128.60091"),
+        stop("s3", { lat: 38.1905823, lng: 128.603541 }, "sokcho"), // หาดซกโช
+        stop("s4", AT.sokchoIntercity, "sokcho"),
+        stop("s5", { lat: 37.76183, lng: 128.90269 }, "seoul", "hotel@37.76183,128.90269"),
+        stop("s6", { lat: 37.7539833, lng: 128.8985663 }, "gangneung"), // ตลาดจุงอัง
+      ],
+      startHotel: hotel({ lat: 38.18993, lng: 128.60091 }, "sokcho"),
+      endHotel: hotel({ lat: 37.76183, lng: 128.90269 }, "gangneung"),
+    });
+    expect(segments.map((s) => s.city)).toEqual(["sokcho", "gangneung"]);
+    expect(stopCountIn(segments[0])).toBe(4);
+    expect(stopCountIn(segments[1])).toBe(2);
+  });
+
+  it("ที่พักหัว-ท้ายที่เดียวกันนับหมุดเดียว ไม่งอกช่วงที่สาม", () => {
+    const sameHotel = hotel(AT.seoulStation, "seoul");
+    const segments = buildDayCitySegments({
+      stops: [stop("s1", AT.suwonStation, "suwon")],
+      startHotel: sameHotel,
+      endHotel: { ...sameHotel },
+    });
+    expect(segments).toHaveLength(1);
+    expect(segments[0].items).toHaveLength(2);
+  });
+
+  it("d9 (20 ต.ค.) — จุดแวะซูวอน + โรงแรมโซล ยังเป็นช่วงเดียว (30-32 กม. ไม่ถึงเกณฑ์)", () => {
+    const seoulHotel = hotel(AT.seoulStation, "seoul");
+    const segments = buildDayCitySegments({
+      stops: [stop("s1", AT.suwonStation, "suwon"), stop("s2", near(AT.suwonStation), "suwon")],
+      startHotel: seoulHotel,
+      endHotel: { ...seoulHotel },
+    });
+    expect(segments).toHaveLength(1);
+  });
+
+  it("วันที่ไม่มีที่พัก (d0 พักเครื่องฮานอย) ใช้แค่จุดแวะ", () => {
+    const segments = buildDayCitySegments({
+      stops: [stop("s1", { lat: 21.0288, lng: 105.8542 }, "hanoi")],
+      startHotel: null,
+      endHotel: null,
+    });
+    expect(segments).toHaveLength(1);
+    expect(segments[0].city).toBe("hanoi");
+  });
+
+  it("city ของ TripHotel ที่ไม่ใช่ City id ที่รู้จัก ถูกมองเป็น null ไม่พังและไม่ตัดช่วงมั่ว", () => {
+    const segments = buildDayCitySegments({
+      stops: [stop("s1", AT.seoulStation, "seoul")],
+      startHotel: hotel(near(AT.seoulStation), "เมืองที่ไม่มีในระบบ"),
+      endHotel: null,
+    });
+    expect(segments).toHaveLength(1);
+    expect(segments[0].city).toBe("seoul");
+  });
+});

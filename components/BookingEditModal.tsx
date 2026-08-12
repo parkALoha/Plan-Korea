@@ -12,8 +12,9 @@ import type { NewBooking } from "@/hooks/useBookings";
 import { Modal } from "./Modal";
 import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
-import { safeHttpUrl } from "@/lib/url";
+import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { bookByDate } from "@/lib/bookingDeadline";
+import { PhotoLightbox } from "./PhotoLightbox";
 
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
 
@@ -49,6 +50,7 @@ export function BookingEditModal({
   onSave: (input: NewBooking) => void;
   onDelete?: () => void;
 }) {
+  const [zoomed, setZoomed] = useState(false);
   const [category, setCategory] = useState<BookingCategory>(existing?.category ?? "flight");
   const [status, setStatus] = useState<BookingStatus>(existing?.status ?? "booked");
   const [bookByDaysBefore, setBookByDaysBefore] = useState(
@@ -313,21 +315,36 @@ export function BookingEditModal({
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-soft">ไฟล์แนบ (รูป/PDF)</label>
         {fileUrl ? (
-          <div className="flex items-center gap-2 rounded-lg border border-cream-soft px-3 py-2">
-            <a
-              href={fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate text-sm text-pine underline"
-            >
-              📎 {fileName || "เปิดไฟล์"}
-            </a>
-            <button
-              onClick={handleRemoveFile}
-              className="shrink-0 rounded-full p-1 text-ink-soft hover:bg-cream-soft"
-            >
-              ✕
-            </button>
+          <div className="rounded-lg border border-cream-soft px-3 py-2">
+            {/* รูปตั๋วให้ดูได้ในแอปเลย ไม่ต้องเด้งออกแท็บใหม่ (บนมือถือที่ติดตั้งเป็น PWA = เสียบริบททั้งหมด)
+                PDF ยังเป็นลิงก์เหมือนเดิม เพราะ render ในหน้าไม่ได้ */}
+            {isImageAttachment(fileName, fileUrl) && (
+              <button
+                type="button"
+                onClick={() => setZoomed(true)}
+                className="mb-2 block w-full max-w-40"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                <img src={fileUrl} alt="" className="w-full rounded-lg object-cover" />
+                <span className="mt-1 block text-[11px] text-pine-dark">แตะเพื่อดูขนาดเต็ม</span>
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 flex-1 truncate text-sm text-pine underline"
+              >
+                📎 {fileName || "เปิดไฟล์"}
+              </a>
+              <button
+                onClick={handleRemoveFile}
+                className="shrink-0 rounded-full p-1 text-ink-soft hover:bg-cream-soft"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         ) : (
           <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cream-soft px-3 py-3 text-xs text-ink-soft hover:bg-cream-soft">
@@ -343,6 +360,14 @@ export function BookingEditModal({
         )}
         {uploadError && <p className="mt-1 text-xs text-red-600">{uploadError}</p>}
       </div>
+
+      {zoomed && fileUrl && (
+        <PhotoLightbox
+          src={fileUrl}
+          alt={fileName || "รูปตั๋วที่แนบไว้"}
+          onClose={() => setZoomed(false)}
+        />
+      )}
     </Modal>
   );
 }

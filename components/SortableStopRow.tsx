@@ -10,6 +10,7 @@ import { computeDepartureAdvice } from "@/lib/departureAdvice";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { InsertBetweenRow } from "./InsertBetweenRow";
+import { PhotoLightbox } from "./PhotoLightbox";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
 import { TransferAdvicePanel } from "./TransferAdvicePanel";
@@ -93,6 +94,7 @@ export function SortableStopRow({
   const [noteDraft, setNoteDraft] = useState(stop.note ?? "");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [zoomedPhoto, setZoomedPhoto] = useState(false);
 
   async function handlePhotoChange(file: File | null) {
     if (!file) return;
@@ -438,12 +440,19 @@ export function SortableStopRow({
         <div className="px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
           {stop.photo_url ? (
             <div className="flex items-center gap-2">
-              {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
-              <img
-                src={stop.photo_url}
-                alt="รูปหน้างานของจุดแวะนี้"
-                className="h-14 w-14 shrink-0 rounded-lg object-cover"
-              />
+              <button
+                type="button"
+                onClick={() => setZoomedPhoto(true)}
+                aria-label="ดูรูปหน้างานขนาดเต็ม"
+                className="shrink-0"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                <img
+                  src={stop.photo_url}
+                  alt="รูปหน้างานของจุดแวะนี้"
+                  className="h-14 w-14 rounded-lg object-cover"
+                />
+              </button>
               {!locked && (
                 <button
                   onClick={handleRemovePhoto}
@@ -476,6 +485,13 @@ export function SortableStopRow({
           ⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว
           {closedHoursLabel ? ` — ${closedHoursLabel}` : " (ตามเวลาเปิด-ปิดจาก Google)"}
         </div>
+      )}
+      {zoomedPhoto && stop.photo_url && (
+        <PhotoLightbox
+          src={stop.photo_url}
+          alt="รูปหน้างานของจุดแวะนี้ ขนาดเต็ม"
+          onClose={() => setZoomedPhoto(false)}
+        />
       )}
     </div>
   );

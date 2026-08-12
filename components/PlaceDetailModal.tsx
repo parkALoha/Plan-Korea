@@ -11,6 +11,7 @@ import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 import { PhotoGallery } from "./PhotoGallery";
+import { PhotoLightbox } from "./PhotoLightbox";
 import { YouTubeEmbed } from "./YouTubeEmbed";
 
 export function PlaceDetailModal({
@@ -124,12 +125,12 @@ export function PlaceDetailModal({
         <h3 className="mb-1.5 text-sm font-semibold text-pine-dark">โน้ตของเรา</h3>
         {userNote && <p className="text-sm text-ink">📝 {userNote}</p>}
         {userPhotoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
           <button
             type="button"
             onClick={() => setZoomedPhoto(true)}
             className={`block w-full max-w-56 ${userNote ? "mt-2" : ""}`}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
             <img
               src={userPhotoUrl}
               alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ — กดเพื่อดูขนาดเต็ม"
@@ -167,20 +168,11 @@ export function PlaceDetailModal({
     )}
 
     {zoomedPhoto && userPhotoUrl && (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setZoomedPhoto(false)}
-        onKeyDown={(e) => e.key === "Escape" && setZoomedPhoto(false)}
-        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
-        <img
-          src={userPhotoUrl}
-          alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ ขนาดเต็ม"
-          className="max-h-full max-w-full rounded-lg object-contain"
-        />
-      </div>
+      <PhotoLightbox
+        src={userPhotoUrl}
+        alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ ขนาดเต็ม"
+        onClose={() => setZoomedPhoto(false)}
+      />
     )}
 
     {details?.openingHours?.weekdayDescriptions &&

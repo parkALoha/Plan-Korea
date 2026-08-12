@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
+import {
+  buildDayCitySegments,
+  stopCountIn,
+  type CitySegment,
+  type DayPoint,
+} from "@/lib/citySegments";
+import { INTERCITY_MODE_ICON, type IntercityMode } from "./IntercityEditModal";
 import {
   InfoWindow,
   Map,
@@ -39,12 +47,64 @@ export type DayMapPanelProps = {
   activeStopId: string | null;
   onSelectStop: (stopId: string | null) => void;
   onOpenDetail: (stopId: string) => void;
+  /** โหมดเดินทางข้ามเมืองของแถว kind="intercity" ที่คั่นอยู่ก่อนจุดแวะนั้น — ใช้เป็นไอคอนคั่นชิปเมือง
+   *  (🚌/🚄/🚗) · `ScheduledStop` ไม่มี `kind`/`intercity_*` จึงต้องส่งเข้ามาจาก DayStopsSection */
+  intercityModeBeforeStopId?: Record<string, IntercityMode>;
   className?: string;
 };
 
+/** ไม่ให้ fit ซูมเข้าไปจนเห็นแต่ถนนเส้นเดียว — ช่วงที่มี 2 จุดห่างกัน 300 ม. fit ได้ถึง z17
+ *  ค่าเดียวกับ branch "จุดเดียว" ด้านล่าง เพื่อให้ระดับซูมของทั้ง panel สม่ำเสมอ */
+const MAX_FIT_ZOOM = 15;
+
+/** ยังไม่ได้กดชิปเอง = ใช้ช่วงเริ่มต้นที่คำนวณให้ · resolve ตอนอ่าน ไม่ sync ด้วย effect
+ *  (แบบเดียวกับ `collapsed` ใน DayStopsSection — พอจุดแวะเปลี่ยน ค่าจะถูกคิดใหม่เองทันที) */
+type SegmentSelection = number | "all" | "auto";
+
 export function DayMapPanel(props: DayMapPanelProps) {
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY;
-  const resolvedStops = props.schedule.filter((s): s is ResolvedStop => s.place != null);
+  const resolvedStops = useMemo(
+    () => props.schedule.filter((s): s is ResolvedStop => s.place != null),
+    [props.schedule]
+  );
+
+  const [picked, setPicked] = useState<SegmentSelection>("auto");
+  // กดชิปเดิมซ้ำ = จัดกรอบใหม่ (เป็น affordance "กลับไปดูภาพรวม" อันเดียวที่ panel นี้มี
+  // เพราะ boundsKey อย่างเดียวจะนิ่งเมื่อจุดไม่เปลี่ยน แล้ว effect จะไม่ยิงหลังผู้ใช้ลากแผนที่ไปที่อื่น)
+  const [fitNonce, setFitNonce] = useState(0);
+
+  const segments = useMemo(
+    () =>
+      buildDayCitySegments({
+        stops: resolvedStops.map((s) => ({ id: s.id, place: s.place })),
+        startHotel: props.startHotel,
+        endHotel: props.endHotel,
+      }),
+    [resolvedStops, props.startHotel, props.endHotel]
+  );
+
+  // ช่วงแรกที่ "มีจุดแวะจริง" ไม่ใช่ index 0 เฉยๆ — วันที่ช่วงแรกมีแต่หมุดโรงแรมออกเดินทาง
+  // จะเปิดมาเจอโรงแรมเดี่ยวๆ ที่ zoom 15 แทนที่จะเห็นแผนของวัน
+  const defaultIndex = Math.max(
+    segments.findIndex((segment) => stopCountIn(segment) > 0),
+    0
+  );
+  const selectedIndex = picked === "auto" ? defaultIndex : picked;
+  // `?? null` กัน index ค้างหลังลบ/สลับจุดแวะ โดยไม่ต้องมี effect คอย sync
+  const selectedSegment = selectedIndex === "all" ? null : segments[selectedIndex] ?? null;
+
+  function selectSegment(next: number | "all") {
+    setPicked(next);
+    setFitNonce((n) => n + 1);
+    // จุดที่ไฮไลต์ไว้อยู่คนละช่วง = ป๊อปอัพจะค้างอยู่นอกจอ และแถวในลิสต์ยังติด ring อยู่
+    const stillVisible =
+      next === "all" ||
+      (props.activeStopId != null &&
+        segments[next]?.items.some(
+          (item) => item.kind === "stop" && item.stopId === props.activeStopId
+        ));
+    if (!stillVisible) props.onSelectStop(null);
+  }
 
   if (!key) {
     return <MapPlaceholder className={props.className}>แผนที่ใช้งานไม่ได้ (ยังไม่ตั้งค่า API key)</MapPlaceholder>;
@@ -57,21 +117,108 @@ export function DayMapPanel(props: DayMapPanelProps) {
   }
 
   return (
-    <div className={`overflow-hidden rounded-lg ${props.className ?? ""}`}>
-      <Map
-        defaultCenter={{ lat: resolvedStops[0].place.lat, lng: resolvedStops[0].place.lng }}
-        defaultZoom={12}
-        gestureHandling="greedy"
-        disableDefaultUI
-        zoomControl
-        // ช่องแผนที่ข้างลิสต์กว้างแค่ ~288px — ปุ่มเต็มจอของ Google ช่วยให้ดูเส้นทางทั้งวันได้จริงจัง
-        fullscreenControl
-        clickableIcons={false}
-        onClick={() => props.onSelectStop(null)}
-        style={{ width: "100%", height: "100%" }}
+    <div className={`flex flex-col ${props.className ?? ""}`}>
+      {segments.length >= 2 && (
+        <SegmentChips
+          segments={segments}
+          selectedIndex={selectedIndex}
+          onSelect={selectSegment}
+          intercityModeBeforeStopId={props.intercityModeBeforeStopId}
+        />
+      )}
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg">
+        <Map
+          defaultCenter={{ lat: resolvedStops[0].place.lat, lng: resolvedStops[0].place.lng }}
+          defaultZoom={12}
+          gestureHandling="greedy"
+          disableDefaultUI
+          zoomControl
+          // ช่องแผนที่ข้างลิสต์กว้างแค่ ~288px — ปุ่มเต็มจอของ Google ช่วยให้ดูเส้นทางทั้งวันได้จริงจัง
+          fullscreenControl
+          clickableIcons={false}
+          onClick={() => props.onSelectStop(null)}
+          style={{ width: "100%", height: "100%" }}
+        >
+          <DayMapContent
+            {...props}
+            resolvedStops={resolvedStops}
+            segments={segments}
+            selectedIndex={selectedIndex}
+            selectedSegment={selectedSegment}
+            fitNonce={fitNonce}
+            onSelectSegment={selectSegment}
+          />
+        </Map>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ชิปสลับเมืองของวันข้ามเมือง — วางในโฟลว์เหนือแผนที่ ไม่ใช่ overlay ลอยทับ
+ * เพราะช่องแผนที่กว้างแค่ ~288px บนจอคอม overlay จะบังพื้นที่ที่เรากำลังพยายามทำให้อ่านออกพอดี
+ * และชนกับปุ่มซูม/เต็มจอของ Google ด้วย
+ */
+function SegmentChips({
+  segments,
+  selectedIndex,
+  onSelect,
+  intercityModeBeforeStopId,
+}: {
+  segments: CitySegment<DayPoint>[];
+  selectedIndex: number | "all";
+  onSelect: (next: number | "all") => void;
+  intercityModeBeforeStopId?: Record<string, IntercityMode>;
+}) {
+  return (
+    <div className="mb-1.5 flex flex-wrap items-center gap-1">
+      {segments.map((segment, i) => {
+        const meta = segment.city ? CITY_META[segment.city] : null;
+        const name = segment.city ? CITY_NAME_TH[segment.city] : `ช่วงที่ ${i + 1}`;
+        const stops = stopCountIn(segment);
+        const active = selectedIndex === i;
+        // ไอคอนพาหนะของ hop ที่พามาถึงช่วงนี้ — เอาจากจุดแวะแรกของช่วง ถ้าไม่มีแถวข้ามเมืองก็ใช้ →
+        const firstStop = segment.items.find((item) => item.kind === "stop");
+        const hopIcon =
+          (firstStop?.kind === "stop"
+            ? intercityModeBeforeStopId?.[firstStop.stopId]
+            : undefined) ?? null;
+        return (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 && (
+              <span aria-hidden className="text-[11px] text-ink-soft">
+                {hopIcon ? INTERCITY_MODE_ICON[hopIcon] : "→"}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => onSelect(i)}
+              aria-pressed={active}
+              // ห้าม leading-none — "คังนึง"/"ซกโช" มีสระบน (ั ึ โ) ที่จะโดนตัดหัว
+              className={`rounded-full border px-2.5 py-1.5 text-[11px] leading-snug sm:py-1 ${
+                active
+                  ? "border-pine bg-pine-soft font-semibold text-pine-dark"
+                  : "border-cream-soft text-ink-soft hover:border-pine/40"
+              }`}
+            >
+              {meta ? `${meta.icon} ` : "📍 "}
+              {name} {stops > 0 ? stops : "🏨"}
+            </button>
+          </span>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => onSelect("all")}
+        aria-pressed={selectedIndex === "all"}
+        className={`rounded-full border px-2.5 py-1.5 text-[11px] leading-snug sm:py-1 ${
+          selectedIndex === "all"
+            ? "border-pine bg-pine-soft font-semibold text-pine-dark"
+            : "border-cream-soft text-ink-soft hover:border-pine/40"
+        }`}
       >
-        <DayMapContent {...props} resolvedStops={resolvedStops} />
-      </Map>
+        ทั้งวัน
+      </button>
     </div>
   );
 }
@@ -95,7 +242,19 @@ function DayMapContent({
   activeStopId,
   onSelectStop,
   onOpenDetail,
-}: DayMapPanelProps & { resolvedStops: ResolvedStop[] }) {
+  segments,
+  selectedIndex,
+  selectedSegment,
+  fitNonce,
+  onSelectSegment,
+}: DayMapPanelProps & {
+  resolvedStops: ResolvedStop[];
+  segments: CitySegment<DayPoint>[];
+  selectedIndex: number | "all";
+  selectedSegment: CitySegment<DayPoint> | null;
+  fitNonce: number;
+  onSelectSegment: (next: number | "all") => void;
+}) {
   const map = useMap();
   const apiLoaded = useApiIsLoaded();
   // ป๊อปอัพของหมุดที่พักแยกจาก activeStopId เพราะที่พักไม่ใช่จุดแวะในลิสต์
@@ -113,43 +272,60 @@ function DayMapContent({
     startHotel.lat === endHotel.lat &&
     startHotel.lng === endHotel.lng;
 
-  const boundsKey = useMemo(
-    () =>
-      [
-        ...points.map((p) => `${p.lat},${p.lng}`),
-        startHotel ? `s${startHotel.lat},${startHotel.lng}` : "",
-        endHotel ? `e${endHotel.lat},${endHotel.lng}` : "",
-      ].join("|"),
-    [points, startHotel, endHotel]
+  // เฟรมแค่ช่วงที่เลือก — "ทั้งวัน" (selectedSegment = null) ได้ชุดจุดเดิมเป๊ะ คือจุดแวะ + ที่พักหัวท้าย
+  // หมุดและเส้นยังวาดครบทั้งวันเสมอ เปลี่ยนแค่ viewport จุดของเมืองอื่นก็แค่อยู่นอกจอ
+  const fitPoints = useMemo(
+    () => (selectedSegment ? selectedSegment.items : segments.flatMap((s) => s.items)),
+    [selectedSegment, segments]
   );
 
-  // ซูมให้พอดีทุกจุดใหม่ทุกครั้งที่จุดแวะ/ที่พักเปลี่ยน (ของเดิมใช้ defaultBounds จึงค้างที่ค่าครั้งแรก)
+  const boundsKey = useMemo(
+    () => fitPoints.map((p) => `${p.lat},${p.lng}`).join("|"),
+    [fitPoints]
+  );
+
+  // ซูมให้พอดีทุกจุดใหม่ทุกครั้งที่จุดแวะ/ที่พัก/ช่วงที่เลือกเปลี่ยน
+  // (ของเดิมใช้ defaultBounds จึงค้างที่ค่าครั้งแรก)
   useEffect(() => {
-    if (!map || !apiLoaded) return;
-    const all = [
-      ...points,
-      ...(startHotel ? [{ lat: startHotel.lat, lng: startHotel.lng }] : []),
-      ...(endHotel ? [{ lat: endHotel.lat, lng: endHotel.lng }] : []),
-    ];
-    if (all.length === 0) return;
-    const bounds = new google.maps.LatLngBounds();
-    all.forEach((p) => bounds.extend(p));
-    if (all.length === 1) {
-      map.setCenter(all[0]);
-      map.setZoom(15);
+    if (!map || !apiLoaded || fitPoints.length === 0) return;
+    if (fitPoints.length === 1) {
+      map.setCenter({ lat: fitPoints[0].lat, lng: fitPoints[0].lng });
+      map.setZoom(MAX_FIT_ZOOM);
       return;
     }
-    map.fitBounds(bounds, 40);
+    const bounds = new google.maps.LatLngBounds();
+    fitPoints.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+    // 40px ต่อด้านกินไป 28% ของช่องกว้าง 288px — แยกเป็นซ้าย-ขวาแคบกว่าบน-ล่าง
+    map.fitBounds(bounds, { top: 28, right: 24, bottom: 28, left: 24 });
+    // ห้ามใช้ prop `maxZoom` ที่ <Map> เพราะจะบล็อกการซูมด้วยมือของผู้ใช้ไปด้วย
+    // ต้องคืน removeListener ไม่งั้น clamp ที่ค้างอยู่จะมายิงทับหลังผู้ใช้ซูมเอง
+    const once = google.maps.event.addListenerOnce(map, "idle", () => {
+      const zoom = map.getZoom();
+      if (zoom != null && zoom > MAX_FIT_ZOOM) map.setZoom(MAX_FIT_ZOOM);
+    });
+    return () => google.maps.event.removeListener(once);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, apiLoaded, boundsKey]);
+  }, [map, apiLoaded, boundsKey, fitNonce]);
 
   // เลือกจุดจากลิสต์ฝั่งซ้าย → เลื่อนแผนที่ไปหาหมุดนั้นให้เห็นแน่ๆ
+  // ถ้าจุดนั้นอยู่คนละช่วงกับที่กำลังดู ให้สลับช่วงแล้วปล่อยให้ fitBounds เฟรมให้ — ต้องรวมไว้ใน
+  // effect เดียวกัน ไม่งั้น fitBounds ของการสลับช่วงจะมาทับ panTo ช้าไปหนึ่ง commit
   useEffect(() => {
     if (!map || !activeStopId) return;
     const target = resolvedStops.find((s) => s.id === activeStopId);
-    if (target) map.panTo({ lat: target.place.lat, lng: target.place.lng });
+    if (!target) return;
+    if (selectedIndex !== "all") {
+      const owner = segments.findIndex((segment) =>
+        segment.items.some((item) => item.kind === "stop" && item.stopId === activeStopId)
+      );
+      if (owner >= 0 && owner !== selectedIndex) {
+        onSelectSegment(owner);
+        return;
+      }
+    }
+    map.panTo({ lat: target.place.lat, lng: target.place.lng });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, activeStopId]);
+  }, [map, activeStopId, selectedIndex]);
 
   if (!apiLoaded) return null;
 
@@ -180,21 +356,56 @@ function DayMapContent({
     ],
   };
 
+  // เส้นทางในเมืองวาดแยกทีละช่วง แล้วเชื่อมรอยต่อด้วยเส้นประ — ตอนดู "ทั้งวัน" จะได้อ่านออกว่า
+  // ช่วง 326 กม. คือการนั่งรถข้ามเมือง ไม่ใช่เส้นทางที่เดินจริงเหมือนเส้นทึบช่วงอื่น
+  function hotelVisible(role: "start" | "end") {
+    if (selectedIndex === "all") return true;
+    return segments[selectedIndex]?.items.some(
+      (item) => item.kind === "hotel" && (sameHotel || item.role === role)
+    );
+  }
+
+  const segmentStopPoints = segments.map((segment) =>
+    segment.items
+      .filter((item): item is Extract<DayPoint, { kind: "stop" }> => item.kind === "stop")
+      .map((item) => ({ lat: item.lat, lng: item.lng }))
+  );
+
   return (
     <>
-      <Polyline
-        path={points}
-        strokeColor={PINE}
-        strokeOpacity={0.75}
-        strokeWeight={3}
-        icons={[
-          {
-            icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 2.6 },
-            offset: "50%",
-            repeat: "90px",
-          },
-        ]}
-      />
+      {segmentStopPoints.map((path, i) =>
+        path.length >= 2 ? (
+          <Polyline
+            key={`route-${i}`}
+            path={path}
+            strokeColor={PINE}
+            strokeOpacity={0.75}
+            strokeWeight={3}
+            icons={[
+              {
+                icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 2.6 },
+                offset: "50%",
+                repeat: "90px",
+              },
+            ]}
+          />
+        ) : null
+      )}
+      {segmentStopPoints.map((path, i) => {
+        const next = segmentStopPoints[i + 1];
+        // ช่วงที่ไม่มีจุดแวะเลย (เช่นช่วงที่มีแต่หมุดโรงแรมของวัน 16 ต.ค.) — เส้นประที่พักด้านล่าง
+        // วาดเส้นเดียวกันนี้ให้อยู่แล้ว วาดซ้ำจะได้เส้นทับกันสองชั้น
+        if (!next || path.length === 0 || next.length === 0) return null;
+        const toCity = segments[i + 1].city;
+        return (
+          <Polyline
+            key={`hop-${i}`}
+            path={[path[path.length - 1], next[0]]}
+            strokeColor={toCity ? CITY_META[toCity].colorDark : PINE}
+            {...dotted}
+          />
+        );
+      })}
       {startHotel && (
         <Polyline
           path={[{ lat: startHotel.lat, lng: startHotel.lng }, first]}
@@ -280,7 +491,9 @@ function DayMapContent({
         </InfoWindow>
       )}
 
-      {openHotel && (startHotel || endHotel) && (
+      {/* สลับไปดูอีกเมืองแล้วป๊อปอัพที่พักของเมืองเดิมจะค้างอยู่นอกจอ — คิดจากช่วงที่เลือกเอาเลย
+          ไม่ต้องมี effect คอยล้าง state (แถมได้ผลถูกต้องกว่าเวลาที่พักไปโผล่กลางช่วงอื่น) */}
+      {openHotel && (startHotel || endHotel) && hotelVisible(openHotel) && (
         <HotelInfoWindow
           hotel={openHotel === "start" ? startHotel! : endHotel!}
           role={sameHotel ? "both" : openHotel}
