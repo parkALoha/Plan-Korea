@@ -23,12 +23,15 @@ export function PlaceDetailModal({
   onUpdatePhoto,
   onConfirm,
   onClose,
+  warningMessage,
 }: {
   place: Place;
   previousPlace: Place | null;
   hotel: TripHotel | null;
   /** โน้ตที่จดไว้เองกับจุดแวะนี้ (หรือที่ฝากไว้กับสถานที่ในคลัง) — โชว์นำหน้าข้อมูลจาก Google */
   userNote?: string | null;
+  /** ข้อความแจ้งเตือน (เช่น อาจไปไม่ทันเวลาปิด) โชว์เป็นแถบด้านบนโมดัล — มาจากไอคอน ⚠️ ในลิสต์ "ถัดจากนี้" */
+  warningMessage?: string | null;
   /** รูปที่เราอัปโหลดเอง เก็บใน Supabase Storage — คนละชุดกับ PhotoGallery ที่เป็นรูปจาก Google */
   userPhotoUrl?: string | null;
   /** id ของ trip_stops แถวนี้ — ใส่คู่กับ onUpdatePhoto เพื่อเปิดปุ่มถ่าย/แนบรูปจากในโมดัลเอง
@@ -85,6 +88,11 @@ export function PlaceDetailModal({
         ) : undefined
       }
     >
+    {warningMessage && (
+      <div className="mb-3 rounded-lg bg-panel-maple/70 px-3 py-2 text-xs text-panel-maple-ink">
+        {warningMessage}
+      </div>
+    )}
     <div className="mb-3 flex flex-wrap gap-2">
       <p className="inline-block rounded-full bg-pine-soft px-3 py-1 text-xs text-pine-dark">
         {travelLabel}

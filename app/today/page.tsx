@@ -323,6 +323,25 @@ export default function TodayPage() {
   const detailSched = detailIndex >= 0 ? schedule[detailIndex] : null;
   const detailPreviousPlace = detailIndex > 0 ? schedule[detailIndex - 1]?.place ?? null : null;
 
+  // ข้อความเตือนของจุดแวะที่กำลังเปิดโมดัลอยู่ (ถ้ามี) — เหมือนกับที่คำนวณให้ไอคอน ⚠️ ในลิสต์ "ถัดจากนี้"
+  // แยกคำนวณตรงนี้แทนที่จะโยง state จากลิสต์ เพราะเปิดโมดัลได้จากหลายจุด (การ์ดจุดถัดไป, ลิสต์ผ่านมาแล้ว ฯลฯ)
+  const detailHours = detailSched?.place
+    ? openingHoursByQuery.get(placeQueryKey(detailSched.place))
+    : undefined;
+  const detailMightMissClosing =
+    detailSched?.place != null &&
+    isOpenDuring(
+      detailHours,
+      day.date,
+      detailSched.arrivalMinutes + delayMinutes,
+      detailSched.departureMinutes + delayMinutes
+    ) === false;
+  const detailWarningMessage = detailMightMissClosing
+    ? `⚠️ ${delayMinutes !== 0 ? "ตามเวลาที่เลื่อนแล้ว " : ""}ช่วงเวลานี้สถานที่อาจปิดแล้ว — ${
+        weekdayHoursLabel(detailHours, day.date) ?? "ไม่มีข้อมูลเวลาเปิด-ปิด"
+      }`
+    : null;
+
   return (
     <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
       <header
@@ -651,10 +670,13 @@ export default function TodayPage() {
                   const label = stopRowLabel(s, sched?.place, endHotel, startHotel);
                   const displayArrival = sched ? shiftTime(sched.arrival, delayMinutes) : null;
                   // นาทีดิบ + delayMinutes ตรงๆ เหมือนการ์ด "จุดถัดไป" ด้านบน — กันเช็กพลาดตอนจุดแวะข้ามเที่ยงคืน
+                  const upcomingHours = sched?.place
+                    ? openingHoursByQuery.get(placeQueryKey(sched.place))
+                    : undefined;
                   const mightMissClosing =
                     sched?.place != null &&
                     isOpenDuring(
-                      openingHoursByQuery.get(placeQueryKey(sched.place)),
+                      upcomingHours,
                       day.date,
                       sched.arrivalMinutes + delayMinutes,
                       sched.departureMinutes + delayMinutes
@@ -671,7 +693,7 @@ export default function TodayPage() {
                         {displayArrival ?? "-"}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-content">{label}</span>
-                      {mightMissClosing && <span title="อาจไปไม่ทันเวลาปิด">⚠️</span>}
+                      {mightMissClosing && <span title="อาจไปไม่ทันเวลาปิด — แตะเพื่อดูรายละเอียด">⚠️</span>}
                     </button>
                   );
                 })}
@@ -782,6 +804,7 @@ export default function TodayPage() {
           userPhotoUrl={detailStop.photo_url}
           stopId={detailStop.id}
           onUpdatePhoto={(url) => updatePhoto(detailStop.id, url)}
+          warningMessage={detailWarningMessage}
           onClose={() => setDetailStopId(null)}
         />
       )}
