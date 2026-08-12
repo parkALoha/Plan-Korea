@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import type { Place } from "@/data/places";
+import { CITY_LOCALE, type Place } from "@/data/places";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
 import { resolvePlace } from "@/lib/resolvePlace";
@@ -129,7 +129,8 @@ export function useDaySchedule({
     () => Array.from(new Set(Array.from(placesById.values()).map((p) => p.mapsQuery))),
     [placesById]
   );
-  const openingHoursByQuery = useDayOpeningHours(mapsQueries);
+  // ภาษาท้องถิ่นของเมืองที่เที่ยววันนี้ — ใช้ขอชื่อ/ที่อยู่ภาษาท้องถิ่นมาพร้อมกันในคำขอเดียว (เฟส 14)
+  const openingHoursByQuery = useDayOpeningHours(mapsQueries, CITY_LOCALE[day.city]);
 
   // เหตุการณ์ตายตัว (เที่ยวบิน ฯลฯ) แบ่งเป็นก่อน/หลังช่วงว่างที่แทรกจุดแวะได้ ด้วย anchor "before"/"after"
   // (ดู DayEvent ใน data/itinerary.ts) — ถ้าวันนี้ไม่มี anchor เลย events ทั้งหมดจะแสดงเหนือจุดแวะเหมือนเดิม

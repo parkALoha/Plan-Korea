@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimitGuard } from "@/lib/rateLimit";
+
+// เพดานสูงสุดในบรรดา route ทั้งหมด — 1 request ต่อ 1 รูป และหน้าแผนมีรูปเกิน 200 ใบ
+const RATE_LIMIT_PER_MINUTE = 400;
 
 // สตรีมรูปจริงจาก Places API (New) โดยใส่ key ฝั่งเซิร์ฟเวอร์เท่านั้น
 export async function GET(req: NextRequest) {
+  const limited = rateLimitGuard(req, "place-photo", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
   const name = req.nextUrl.searchParams.get("name");
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 

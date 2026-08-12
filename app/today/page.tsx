@@ -9,7 +9,14 @@ import { applyOvernightOverrides } from "@/lib/hotelLegs";
 import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
 import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
-import { googleMapsDirectionsUrl, kakaoMapDirectionsUrl, openNaverMap } from "@/lib/mapLinks";
+import {
+  googleMapsDirectionsUrl,
+  kakaoMapDirectionsUrl,
+  navigationName,
+  openNaverMap,
+} from "@/lib/mapLinks";
+import { LocalNameCard } from "@/components/LocalNameCard";
+import { placeDetailsCache } from "@/hooks/usePlaceDetails";
 import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "@/components/IntercityEditModal";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "@/components/BookingsPanel";
 import { PlaceThumb } from "@/components/PlaceThumb";
@@ -171,6 +178,10 @@ export default function TodayPage() {
   }, [isRealToday, nextPlaceQuery]);
   const currentOpeningHours =
     isRealToday && currentOpeningHoursState?.query === nextPlaceQuery ? currentOpeningHoursState.hours : null;
+
+  // ชื่อ/ที่อยู่ภาษาท้องถิ่นของจุดถัดไป (เฟส 14) — สถานที่ในคลังมี nameLocal ฝังมาแล้ว
+  // ส่วนที่ผู้ใช้เพิ่มเองต้องอ่านจากแคชที่ useDaySchedule ยิงไว้ให้แล้วในคำขอเดียวกับเวลาเปิด-ปิด
+  const nextLocal = nextPlaceQuery ? placeDetailsCache.get(nextPlaceQuery) : undefined;
 
   // กรอง !visited_at ซ้ำอีกชั้น ไม่พึ่ง slice(nextIndex+1) เฉยๆ — ติ๊กข้ามลำดับ (หรือยกเลิกติ๊กจุดก่อนหน้า)
   // ทำให้จุดที่ visited แล้วอยู่หลัง nextIndex ได้ เดิมจะโผล่ซ้ำทั้ง "ถัดจากนี้" และ "ผ่านมาแล้ว" — บั๊ก 8.3
@@ -413,10 +424,16 @@ export default function TodayPage() {
                     )}
 
                     <div className="mt-4">
+                      {/* ส่งชื่อภาษาท้องถิ่นเข้าแอปแผนที่ ไม่ใช่ nameTh — Naver/Kakao ค้นชื่อไทยไม่เจอ (เฟส 14) */}
                       <NavButtons
                         lat={nextSched.place.lat}
                         lng={nextSched.place.lng}
-                        name={nextSched.place.nameTh}
+                        name={navigationName(nextSched.place, nextLocal?.nameLocal)}
+                      />
+                      <LocalNameCard
+                        place={nextSched.place}
+                        fallbackNameLocal={nextLocal?.nameLocal}
+                        fallbackAddressLocal={nextLocal?.addressLocal}
                       />
                     </div>
                   </>

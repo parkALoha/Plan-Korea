@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchNearby } from "@/lib/googlePlaces";
+import { rateLimitGuard } from "@/lib/rateLimit";
+
+// เปิดจาก modal ทีละครั้ง ไม่ได้ยิงเป็นชุด
+const RATE_LIMIT_PER_MINUTE = 60;
 
 // ประเภทสถานที่ที่เปิดให้ค้นหาได้ — จำกัดไว้เป็น allowlist ฝั่งเซิร์ฟเวอร์ ไม่ปล่อยให้ client ส่ง type อะไรก็ได้เข้า Google
 const ATTRACTION_TYPES = [
@@ -40,6 +44,9 @@ const KIND_OPTIONS: Record<string, { radius: number; rank: "POPULARITY" | "DISTA
 // kind=attraction → ที่เที่ยวของเมืองนั้น เรียงตามความนิยม รัศมีกว้างกว่าเพราะที่เที่ยวกระจายทั้งเมือง
 // kind=place → คละทุกประเภทแถวนั้น เรียงตามความนิยม ใช้เป็นลิสต์แนะนำของ "เพิ่มสถานที่เอง"
 export async function GET(req: NextRequest) {
+  const limited = rateLimitGuard(req, "place-nearby", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
   const lat = req.nextUrl.searchParams.get("lat");
   const lng = req.nextUrl.searchParams.get("lng");
   const kind = req.nextUrl.searchParams.get("kind") ?? "restaurant";

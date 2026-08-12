@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchPlacesText } from "@/lib/googlePlaces";
+import { rateLimitGuard } from "@/lib/rateLimit";
+
+// ผู้ใช้กดค้นหาเองทีละครั้ง ไม่ได้ยิงเป็นชุด — เพดานเดียวกับ place-autocomplete
+const RATE_LIMIT_PER_MINUTE = 60;
 
 // ค้นหาสถานที่แบบอิสระ (ใช้ตอนผู้ใช้กด "+ เพิ่มสถานที่เอง") — field mask กว้างกว่า
 // /api/place-photos เพราะต้องได้ชื่อ/พิกัด/ที่อยู่มาด้วย ไม่ใช่แค่รูป
 export async function GET(req: NextRequest) {
+  const limited = rateLimitGuard(req, "place-search", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
   const query = req.nextUrl.searchParams.get("query");
   const lat = req.nextUrl.searchParams.get("lat");
   const lng = req.nextUrl.searchParams.get("lng");

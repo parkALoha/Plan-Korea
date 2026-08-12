@@ -68,14 +68,17 @@ export async function searchPlacesText(
   restrictTo: { lat: number; lng: number } | null = null,
   radiusMeters = CITY_SEARCH_RADIUS_METERS,
   /** true = ข้าม cache 30 วันของ Next.js — ใช้ตอนต้องการ currentOpeningHours สดๆ (เฟส 11.5) ที่ห้ามค้างนาน */
-  noCache = false
+  noCache = false,
+  /** ภาษาที่อยากให้ Google คืนชื่อ/ที่อยู่มา — ค่าเริ่มต้น "th" เหมือนเดิมทุกจุดที่เรียกอยู่แล้ว
+   *  เฟส 14 ส่ง "ko"/"vi" เข้ามาเพื่อดึงชื่อภาษาท้องถิ่นไปใส่ Naver/Kakao และการ์ดให้คนขับแท็กซี่ดู */
+  languageCode = "th"
 ): Promise<{ places: GooglePlaceResult[]; error: string | null }> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     return { places: [], error: "GOOGLE_MAPS_API_KEY not set" };
   }
 
-  const body: Record<string, unknown> = { textQuery: query, languageCode: "th" };
+  const body: Record<string, unknown> = { textQuery: query, languageCode };
   if (restrictTo) {
     body.locationRestriction = { rectangle: circleToRectangle(restrictTo, radiusMeters) };
   }

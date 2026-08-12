@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchRealTravelTime } from "@/lib/travelProvider";
+import { rateLimitGuard } from "@/lib/rateLimit";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { TRAVEL_MODES, type TravelMode } from "@/lib/schedule";
+
+// ยิงเป็นชุดตอนเปิดหน้าแผน (1 ครั้งต่อคู่จุดที่เลือกโหมดแล้ว) — เผื่อไว้สำหรับทริปที่จุดแวะแน่นกว่านี้
+const RATE_LIMIT_PER_MINUTE = 150;
 
 // คำนวณเวลาเดินทางจริงระหว่าง 2 จุด ผ่าน Routes API (New)
 // เช็ค travel_time_cache ใน Supabase ก่อนเสมอ (แคชถาวร คู่จุด+โหมดในทริปคงที่) เจอแล้วไม่ยิง Google ซ้ำ
 // ใช้ key ฝั่งเซิร์ฟเวอร์เท่านั้น
 export async function GET(req: NextRequest) {
+  const limited = rateLimitGuard(req, "travel-time", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
   const originPlaceId = req.nextUrl.searchParams.get("originPlaceId");
   const destPlaceId = req.nextUrl.searchParams.get("destPlaceId");
   const originLat = req.nextUrl.searchParams.get("originLat");

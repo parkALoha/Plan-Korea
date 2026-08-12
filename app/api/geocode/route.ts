@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPlaceDetails, searchPlacesText } from "@/lib/googlePlaces";
+import { rateLimitGuard } from "@/lib/rateLimit";
+
+// เรียกตอนบันทึกที่พักเท่านั้น นานๆ ครั้ง
+const RATE_LIMIT_PER_MINUTE = 60;
 
 // fieldMask ของ Place Details ไม่มี prefix "places." แต่ของ Text Search ต้องมี (คืนเป็น array)
 const DETAILS_FIELD_MASK = "displayName,formattedAddress,location";
@@ -10,6 +14,9 @@ const SEARCH_FIELD_MASK = "places.displayName,places.formattedAddress,places.loc
 // รับ query (พิมพ์เต็มแล้วกด "ค้นหา" โดยไม่เลือก suggestion) เป็น fallback ผ่าน Places API (New) Text Search
 // หมายเหตุ: ห้ามใช้ Geocoding API (legacy) — key ของโปรเจกต์นี้เปิดใช้เฉพาะ Places API (New)
 export async function GET(req: NextRequest) {
+  const limited = rateLimitGuard(req, "geocode", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
   const placeId = req.nextUrl.searchParams.get("placeId");
   const query = req.nextUrl.searchParams.get("query");
 

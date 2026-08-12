@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { autocompletePlaces } from "@/lib/googlePlaces";
-import { isRateLimited } from "@/lib/rateLimit";
+import { rateLimitGuard } from "@/lib/rateLimit";
 
 const RATE_LIMIT_PER_MINUTE = 60;
 
@@ -8,10 +8,8 @@ const RATE_LIMIT_PER_MINUTE = 60;
 // เรียกทุกครั้งที่พิมพ์ (debounce ฝั่ง client แล้ว) ไม่แคช เพราะผลลัพธ์ขึ้นกับ input ที่เปลี่ยนทุกตัวอักษร
 // เส้นนี้เปิดสาธารณะและ Google คิดเงินต่อ request จึงต้องจำกัดต่อ IP กันโดนถล่ม
 export async function GET(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (isRateLimited(`place-autocomplete:${ip}`, RATE_LIMIT_PER_MINUTE, 60_000)) {
-    return NextResponse.json({ error: "rate limited" }, { status: 429 });
-  }
+  const limited = rateLimitGuard(req, "place-autocomplete", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
 
   const input = req.nextUrl.searchParams.get("input");
   const lat = req.nextUrl.searchParams.get("lat");

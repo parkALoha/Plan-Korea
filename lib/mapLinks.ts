@@ -3,26 +3,49 @@
  * เหตุผล: เฟส 1 พิสูจน์แล้วว่า Google DRIVE/WALK คืนค่าว่างในเกาหลี (กฎหมายแผนที่เกาหลี)
  * คนเกาหลีใช้ Naver/Kakao กันจริง แต่ที่ฮานอย Google กลับใช้ได้ดีที่สุด — ให้ผู้ใช้เลือกเองหน้างาน
  * ไม่มี API key ไหนเกี่ยวข้อง เป็นแค่ deep link เปิดแอป/เว็บของแต่ละเจ้า
+ *
+ * เฟส 14 — **ทุกลิงก์ต้องได้ชื่อภาษาท้องถิ่น** (เกาหลี/เวียดนาม) ไม่ใช่ชื่อไทย
+ * เดิมส่ง `place.nameTh` เข้าไปตรงๆ ("ตลาดจากัลชี") ซึ่ง Naver/Kakao ค้นไม่เจอแน่นอน
+ * ต้องเป็น "자갈치시장" ถึงจะเจอ — ดู navigationName() ด้านล่าง
  */
+
+/** ชื่อที่ใช้ส่งเข้าแอปแผนที่ — เอาภาษาท้องถิ่นก่อนเสมอ ตกไปอังกฤษ แล้วค่อยไทยเป็นทางสุดท้าย
+ *  `cachedLocal` มาจาก place_details_cache.name_local (สำหรับที่เพิ่มเองที่ไม่มี nameLocal ฝังไว้) */
+export function navigationName(
+  place: { nameLocal?: string; nameEn?: string; nameTh: string },
+  cachedLocal?: string | null
+): string {
+  return place.nameLocal || cachedLocal || place.nameEn || place.nameTh;
+}
 
 /** ลิงก์เว็บ Google Maps มาตรฐาน (api=1) — เปิดแอปบนมือถือ, เปิดเว็บบนคอม ใช้งานได้ทุกที่รวมฮานอย */
 export function googleMapsDirectionsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
 }
 
-/** Kakao Map "link/to" — URL เว็บทางการ ไม่ต้องใช้ API key เปิดแอป/เว็บให้อัตโนมัติตามเครื่อง */
+/** Kakao Map "link/to" — URL เว็บทางการ ไม่ต้องใช้ API key เปิดแอป/เว็บให้อัตโนมัติตามเครื่อง
+ *  ชื่อที่ส่งไปเป็นแค่ป้ายกำกับหมุด แต่ถ้าเป็นภาษาเกาหลีจะอ่านออกทันทีตอนแอปเปิดขึ้นมา */
 export function kakaoMapDirectionsUrl(lat: number, lng: number, name: string): string {
   return `https://map.kakao.com/link/to/${encodeURIComponent(name)},${lat},${lng}`;
 }
 
-/** ลิงก์ค้นหาสถานที่บนเว็บ Naver Map — ใช้เป็น fallback เมื่อแอป Naver Map ไม่ได้ติดตั้ง (nmap:// ไม่มี response ให้เช็ก) */
+/** ลิงก์ค้นหาสถานที่บนเว็บ Naver Map — ใช้เป็น fallback เมื่อแอป Naver Map ไม่ได้ติดตั้ง (nmap:// ไม่มี response ให้เช็ก)
+ *  ตรงนี้แหละที่ชื่อภาษาเกาหลีสำคัญที่สุด เพราะเป็นการ "ค้นด้วยข้อความ" ล้วนๆ ไม่ได้ใช้พิกัดเลย */
 export function naverMapSearchUrl(name: string): string {
   return `https://map.naver.com/p/search/${encodeURIComponent(name)}`;
 }
 
-/** nmap:// URL scheme — เปิดแอป Naver Map นำทางเดินไปจุดหมายตรงๆ ถ้าติดตั้งไว้ */
-export function naverMapAppSchemeUrl(lat: number, lng: number, name: string): string {
-  return `nmap://route/walk?dlat=${lat}&dlng=${lng}&dname=${encodeURIComponent(name)}&appname=plankorea.web`;
+/** nmap:// URL scheme — เปิดแอป Naver Map นำทางไปจุดหมายตรงๆ ถ้าติดตั้งไว้
+ *  ใช้ route/public (ขนส่งสาธารณะ) เป็นค่าเริ่มต้นเพราะเป็นวิธีเดินทางหลักของทริปนี้ในเกาหลี
+ *  ⚠️ พารามิเตอร์ชุดนี้ยังไม่ได้ยืนยันบนเครื่องที่ลงแอปจริง — `nmap://` ไม่คืน response ให้เช็ก
+ *     ถ้ากดแล้วแอปไม่เปิด ตัว fallback ด้านล่างจะพาไปเว็บ Naver ให้อยู่ดี (ซึ่งทดสอบแล้วว่าใช้ได้) */
+export function naverMapAppSchemeUrl(
+  lat: number,
+  lng: number,
+  name: string,
+  mode: "public" | "walk" | "car" = "public"
+): string {
+  return `nmap://route/${mode}?dlat=${lat}&dlng=${lng}&dname=${encodeURIComponent(name)}&appname=plankorea.web`;
 }
 
 /**

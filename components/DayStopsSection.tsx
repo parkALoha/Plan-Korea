@@ -9,6 +9,7 @@ import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
 import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
 import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { DayEventsPanel } from "./DayEventsPanel";
@@ -138,6 +139,8 @@ export function DayStopsSection({
   // ไฮไลต์สองทาง: คลิกหมุดบนแผนที่ ↔ คลิกชื่อสถานที่ในลิสต์ — แยกอิสระต่อวัน คนละหน้าที่กับ flashStopId (pulse ชั่วคราวตอนเพิ่งเพิ่มจุดแวะ)
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
+  // ตรงกับ breakpoint `lg:` ของ Tailwind ที่คุมเลย์เอาต์ลิสต์+แผนที่คู่กัน (เดียวกับที่ PlaceSidebar ใช้)
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const hasMapPoints = schedule.some((s) => s.place != null);
 
@@ -438,12 +441,11 @@ export function DayStopsSection({
           )}
         </div>
 
-        {hasMapPoints && (
-          <div
-            className={`h-72 px-3 pb-3 pt-3 lg:h-[420px] lg:w-72 lg:shrink-0 lg:px-0 lg:pb-0 lg:pt-0 ${
-              mobileView === "map" ? "block" : "hidden"
-            } lg:block`}
-          >
+        {/* บนมือถือต้อง unmount จริง ไม่ใช่ซ่อนด้วย `hidden` — เดิมแผนที่ทุกวัน mount และโหลด tile ครบทุกตัว
+            ทั้งที่ผู้ใช้ยังไม่ได้กดแท็บ 🗺️ เลย (วัดที่ 375px: mount 4 ตัว เห็น 0 ตัว, ยิง maps.googleapis.com 43 ครั้ง)
+            isDesktop มาจาก useMediaQuery ที่ SSR คืน false เสมอ — จอใหญ่จึง mount หลัง hydrate หนึ่งเฟรม ซึ่งรับได้ */}
+        {hasMapPoints && (mobileView === "map" || isDesktop) && (
+          <div className="h-72 px-3 pb-3 pt-3 lg:h-[420px] lg:w-72 lg:shrink-0 lg:px-0 lg:pb-0 lg:pt-0">
             <DayMapPanel
               schedule={schedule}
               startHotel={startHotel}
