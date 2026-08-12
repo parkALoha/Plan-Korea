@@ -23,14 +23,12 @@ import type { TripStop } from "@/lib/supabase";
 import { useHotels } from "@/hooks/useHotels";
 import { useBookings } from "@/hooks/useBookings";
 import { useChecklist } from "@/hooks/useChecklist";
-import { useSelections } from "@/hooks/useSelections";
 import { usePlans } from "@/hooks/usePlans";
 import { useStops } from "@/hooks/useStops";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { useHiddenPlaces } from "@/hooks/useHiddenPlaces";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
-import { useLegacyBootstrap } from "@/hooks/useLegacyBootstrap";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
 import { useTripWeather } from "@/hooks/useTripWeather";
@@ -53,9 +51,6 @@ function defaultTravelModeFor(
 }
 
 export default function Home() {
-  // ระบบเดิม (fixed slot) — ยังอ่านไว้เผื่อ bootstrap ครั้งแรกเท่านั้น ไม่ได้ใช้ render แล้ว
-  const { selections, loaded: selectionsLoaded } = useSelections();
-
   const { hotels, setHotel, clearHotel } = useHotels();
   const {
     bookings,
@@ -87,7 +82,6 @@ export default function Home() {
     updateNote,
     updatePhoto,
     removeStop,
-    bulkInsert,
   } = useStops(activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
   const {
@@ -141,15 +135,6 @@ export default function Home() {
       setSidebarMobileOpen(true);
     }
   }
-
-  useLegacyBootstrap({
-    plansLoaded,
-    selectionsLoaded,
-    plans,
-    selections,
-    createPlan,
-    bulkInsert,
-  });
 
   const { hotelLegs, hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
   // Open-Meteo มองไปข้างหน้าได้ ~16 วัน — ก่อนหน้านั้นทุกวันจะว่างเปล่า ซึ่งดูเหมือนฟีเจอร์พัง
@@ -284,7 +269,6 @@ export default function Home() {
   }
 
   const overallLoaded =
-    selectionsLoaded &&
     plansLoaded &&
     customPlacesLoaded &&
     hiddenPlacesLoaded &&

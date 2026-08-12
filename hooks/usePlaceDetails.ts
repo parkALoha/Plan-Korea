@@ -30,8 +30,61 @@ const EMPTY_DETAILS: PlaceDetails = {
 export const placeDetailsCache = new Map<string, PlaceDetails>();
 const inFlight = new Map<string, Promise<PlaceDetails>>();
 
+function toDetails(d: Record<string, unknown> | null | undefined): PlaceDetails {
+  if (!d) return EMPTY_DETAILS;
+  return {
+    openingHours: (d.openingHours as PlaceDetails["openingHours"]) ?? null,
+    rating: (d.rating as number | null) ?? null,
+    userRatingCount: (d.userRatingCount as number | null) ?? null,
+    primaryType: (d.primaryType as string | null) ?? null,
+    reviews: (d.reviews as PlaceDetails["reviews"]) ?? null,
+    nameLocal: (d.nameLocal as string | null) ?? null,
+    addressLocal: (d.addressLocal as string | null) ?? null,
+  };
+}
+
+/**
+ * รวมคำขอที่เกิดใน ~20ms เดียวกันให้เป็นคำขอเดียว (เฟส 19)
+ *
+ * หน้าแผน mount การ์ดวัน 11 ใบพร้อมกัน แต่ละใบขอรายละเอียดของสถานที่ในวันนั้น — เดิมกลายเป็น
+ * ~34 HTTP request ต่อการเปิดหน้า 1 ครั้ง ทั้งที่เป็น endpoint เดียวกันหมด · dedupe เดิม (แคช + inFlight
+ * จากบั๊ก 9.2) กันยิง "ซ้ำที่เดิม" ได้แล้ว แต่กัน "หลายที่ในเวลาไล่เลี่ยกัน" ไม่ได้
+ *
+ * แยกคิวตาม locale เพราะเซิร์ฟเวอร์ใช้ค่านี้ทั้งก้อน (ทริปนี้มีเกาหลีกับเวียดนามปนกันในวันเดียวไม่ได้อยู่แล้ว
+ * แต่คนละวันเป็นคนละภาษาแน่ๆ)
+ */
+const BATCH_WINDOW_MS = 20;
+type PendingEntry = { resolve: (details: PlaceDetails) => void };
+const pending = new Map<string, Map<string, PendingEntry[]>>(); // localeKey -> query -> waiters
+const flushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function flush(localeKey: string) {
+  flushTimers.delete(localeKey);
+  const byQuery = pending.get(localeKey);
+  pending.delete(localeKey);
+  if (!byQuery || byQuery.size === 0) return;
+
+  const queries = Array.from(byQuery.keys());
+  const localeParam = localeKey === "-" ? "" : `&locale=${localeKey}`;
+  const url = `/api/place-details?queries=${encodeURIComponent(queries.join("|"))}${localeParam}`;
+
+  fetch(url)
+    .then((r) => r.json())
+    .then((data) => (data.results ?? {}) as Record<string, Record<string, unknown>>)
+    .catch(() => ({} as Record<string, Record<string, unknown>>))
+    .then((results) => {
+      for (const query of queries) {
+        const details = toDetails(results[query]);
+        placeDetailsCache.set(query, details);
+        inFlight.delete(query);
+        for (const waiter of byQuery.get(query) ?? []) waiter.resolve(details);
+      }
+    });
+}
+
 /** ยิงขอ/อ่านจากแคช query เดียว dedupe ทั้งใน cache (เสร็จแล้ว) และ inFlight (กำลังโหลดอยู่) กันยิงซ้ำ
- *  ตอนการ์ดหลายใบ mount พร้อมกัน (บั๊ก 9.2 — เดิม usePlaceDetails ไม่มี inFlight เลย ต่างจาก useDayTravelTimes) */
+ *  ตอนการ์ดหลายใบ mount พร้อมกัน (บั๊ก 9.2 — เดิม usePlaceDetails ไม่มี inFlight เลย ต่างจาก useDayTravelTimes)
+ *  คำขอที่รอดด่าน dedupe จะถูกรวมเป็นคำขอเดียวต่อ ~20ms อีกชั้น (เฟส 19 — ดู flush ด้านบน) */
 export function fetchPlaceDetails(query: string, locale?: "ko" | "vi" | null): Promise<PlaceDetails> {
   const cached = placeDetailsCache.get(query);
   // มีในแคชแล้วแต่ยังไม่มีชื่อท้องถิ่น ทั้งที่รอบนี้ขอมาพร้อม locale → ต้องยิงใหม่ ไม่งั้นแคชรอบก่อน
@@ -40,26 +93,17 @@ export function fetchPlaceDetails(query: string, locale?: "ko" | "vi" | null): P
   const existing = inFlight.get(query);
   if (existing) return existing;
 
-  const localeParam = locale ? `&locale=${locale}` : "";
-  const promise = fetch(`/api/place-details?query=${encodeURIComponent(query)}${localeParam}`)
-    .then((r) => r.json())
-    .then(
-      (d): PlaceDetails => ({
-        openingHours: d.openingHours ?? null,
-        rating: d.rating ?? null,
-        userRatingCount: d.userRatingCount ?? null,
-        primaryType: d.primaryType ?? null,
-        reviews: d.reviews ?? null,
-        nameLocal: d.nameLocal ?? null,
-        addressLocal: d.addressLocal ?? null,
-      })
-    )
-    .catch(() => EMPTY_DETAILS)
-    .then((details) => {
-      placeDetailsCache.set(query, details);
-      inFlight.delete(query);
-      return details;
-    });
+  const localeKey = locale ?? "-";
+  const promise = new Promise<PlaceDetails>((resolve) => {
+    const byQuery = pending.get(localeKey) ?? new Map<string, PendingEntry[]>();
+    pending.set(localeKey, byQuery);
+    const waiters = byQuery.get(query) ?? [];
+    waiters.push({ resolve });
+    byQuery.set(query, waiters);
+    if (!flushTimers.has(localeKey)) {
+      flushTimers.set(localeKey, setTimeout(() => flush(localeKey), BATCH_WINDOW_MS));
+    }
+  });
 
   inFlight.set(query, promise);
   return promise;

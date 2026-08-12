@@ -3,6 +3,7 @@
 import { CATEGORY_EMOJI } from "@/data/places";
 import type { Place } from "@/data/places";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
+import { photoUrlAtWidth } from "@/lib/photoUrl";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 
@@ -35,8 +36,14 @@ export function PlaceCard({
       <button onClick={onClick} className="flex flex-col text-left">
         <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-cream-soft">
           {photo ? (
+            // การ์ดในคลังกว้างจริง ~130px (2 คอลัมน์ในไซด์บาร์) — 400px พอสำหรับจอ 3x (เฟส 19)
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={photo} alt="" className="h-full w-full object-cover" />
+            <img
+              src={photoUrlAtWidth(photo, 400)}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
           ) : (
             <span className="text-3xl">{CATEGORY_EMOJI[place.category]}</span>
           )}

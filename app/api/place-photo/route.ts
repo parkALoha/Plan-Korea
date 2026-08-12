@@ -4,6 +4,10 @@ import { rateLimitGuard } from "@/lib/rateLimit";
 // เพดานสูงสุดในบรรดา route ทั้งหมด — 1 request ต่อ 1 รูป และหน้าแผนมีรูปเกิน 200 ใบ
 const RATE_LIMIT_PER_MINUTE = 400;
 
+/** ขนาดที่รองรับ (px) — 160 = รูปย่อในแถวจุดแวะ/หมุดแผนที่ · 800 = แกลเลอรี/การ์ดใหญ่ (เฟส 19) */
+const ALLOWED_WIDTHS = new Set([160, 400, 800]);
+const DEFAULT_WIDTH = 800;
+
 // สตรีมรูปจริงจาก Places API (New) โดยใส่ key ฝั่งเซิร์ฟเวอร์เท่านั้น
 export async function GET(req: NextRequest) {
   const limited = rateLimitGuard(req, "place-photo", RATE_LIMIT_PER_MINUTE);
@@ -16,7 +20,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "missing name or api key" }, { status: 400 });
   }
 
-  const url = `https://places.googleapis.com/v1/${name}/media?maxWidthPx=800&key=${apiKey}`;
+  // ความกว้างที่ขอได้ — allowlist ไม่ใช่ตัวเลขอิสระ เพราะทุกค่าที่ต่างกันคือ URL ใหม่ = แคชแยกกันอีกก้อน
+  // (ทั้ง Next.js fetch cache และ Vercel edge) ปล่อยให้ client ส่งอะไรก็ได้ = แคชแตกกระจายและบิลบาน
+  const width = ALLOWED_WIDTHS.has(Number(req.nextUrl.searchParams.get("w")))
+    ? Number(req.nextUrl.searchParams.get("w"))
+    : DEFAULT_WIDTH;
+
+  const url = `https://places.googleapis.com/v1/${name}/media?maxWidthPx=${width}&key=${apiKey}`;
   // แคชฝั่งเซิร์ฟเวอร์ไว้ 30 วัน — รูปสถานที่ไม่เปลี่ยนบ่อย ลดจำนวนครั้งที่ดึงจาก Google
   const res = await fetch(url, { next: { revalidate: 2592000 } });
 

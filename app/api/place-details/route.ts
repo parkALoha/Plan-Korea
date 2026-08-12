@@ -3,8 +3,11 @@ import { searchPlacesText, type GoogleOpeningHours, type GoogleReview } from "@/
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
-// เพดานสูงเพราะหน้าแผนยิงเส้นนี้ทีละสถานที่ (~34 ครั้งต่อการเปิดหน้า 1 ครั้ง) — ดู rateLimitGuard
+// เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
 const RATE_LIMIT_PER_MINUTE = 300;
+
+/** จำนวนสถานที่สูงสุดต่อ 1 คำขอแบบกลุ่ม — ทั้งทริปมี ~46 ที่ เผื่อไว้พอ และกัน URL ยาวเกินเหตุ */
+const MAX_BATCH = 80;
 
 type PlaceDetailsResponse = {
   googlePlaceId: string | null;
@@ -25,6 +28,22 @@ type PlaceDetailsResponse = {
 /** ภาษาที่ยอมรับ — allowlist ฝั่งเซิร์ฟเวอร์ ไม่ปล่อยให้ client ส่ง languageCode อะไรก็ได้เข้า Google */
 const ALLOWED_LOCALES = ["ko", "vi"] as const;
 type Locale = (typeof ALLOWED_LOCALES)[number];
+
+const CACHE_COLUMNS =
+  "maps_query, google_place_id, opening_hours, rating, user_rating_count, primary_type, reviews, name_local, address_local, locale";
+
+type CacheRow = {
+  maps_query: string;
+  google_place_id: string | null;
+  opening_hours: unknown;
+  rating: number | null;
+  user_rating_count: number | null;
+  primary_type: string | null;
+  reviews: unknown;
+  name_local: string | null;
+  address_local: string | null;
+  locale: string | null;
+};
 
 function parseLocale(raw: string | null): Locale | null {
   return ALLOWED_LOCALES.includes(raw as Locale) ? (raw as Locale) : null;
@@ -53,74 +72,51 @@ async function fetchCurrentOpeningHoursLive(query: string): Promise<GoogleOpenin
   return places[0]?.currentOpeningHours ?? null;
 }
 
-// resolve สถานที่เป็น Google place ID + เวลาเปิด-ปิด + เรทติ้ง/รีวิว/ประเภทร้านครั้งเดียว (เฟส 2)
-// เช็ค place_details_cache ใน Supabase ก่อนเสมอ (แคชถาวร) เจอแล้วไม่ยิง Google ซ้ำ
-export async function GET(req: NextRequest) {
-  const limited = rateLimitGuard(req, "place-details", RATE_LIMIT_PER_MINUTE);
-  if (limited) return limited;
+function rowToResponse(row: CacheRow, nameLocal: string | null, addressLocal: string | null): PlaceDetailsResponse {
+  return {
+    googlePlaceId: row.google_place_id,
+    openingHours: row.opening_hours as GoogleOpeningHours | null,
+    rating: row.rating,
+    userRatingCount: row.user_rating_count,
+    primaryType: row.primary_type,
+    reviews: row.reviews as GoogleReview[] | null,
+    nameLocal,
+    addressLocal,
+  };
+}
 
-  const query = req.nextUrl.searchParams.get("query");
-  const live = req.nextUrl.searchParams.get("live") === "1";
-  const locale = parseLocale(req.nextUrl.searchParams.get("locale"));
-
-  if (!query) {
-    return NextResponse.json({ error: "missing query" }, { status: 400 });
-  }
-
-  if (supabaseConfigured) {
-    const { data: cached } = await supabase
+/** แคชไว้แล้วแต่ยังไม่มีชื่อท้องถิ่น (หรือเป็นคนละภาษากับที่ขอ) → เติมให้ครั้งเดียวแล้วเก็บลงแถวเดิม
+ *  แถวเก่าทั้งหมดที่มีอยู่ก่อนเฟส 14 จะค่อยๆ ถูกเติมเองเมื่อถูกเรียกใช้ ไม่ต้อง backfill ทั้งตาราง */
+async function backfillLocalName(row: CacheRow, locale: Locale) {
+  const fresh = await fetchLocalName(row.maps_query, locale);
+  if (fresh.nameLocal && supabaseConfigured) {
+    await supabase
       .from("place_details_cache")
-      .select(
-        "google_place_id, opening_hours, rating, user_rating_count, primary_type, reviews, name_local, address_local, locale"
-      )
-      .eq("maps_query", query)
-      .maybeSingle();
-    if (cached) {
-      // แคชไว้แล้วแต่ยังไม่มีชื่อท้องถิ่น (หรือเป็นคนละภาษากับที่ขอ) → เติมให้ครั้งเดียวแล้วเก็บลงแถวเดิม
-      // แถวเก่าทั้งหมดที่มีอยู่ก่อนเฟส 14 จะค่อยๆ ถูกเติมเองเมื่อถูกเรียกใช้ ไม่ต้อง backfill ทั้งตาราง
-      let nameLocal = cached.name_local as string | null;
-      let addressLocal = cached.address_local as string | null;
-      if (locale && cached.locale !== locale) {
-        const fresh = await fetchLocalName(query, locale);
-        nameLocal = fresh.nameLocal;
-        addressLocal = fresh.addressLocal;
-        if (nameLocal) {
-          await supabase
-            .from("place_details_cache")
-            .update({ name_local: nameLocal, address_local: addressLocal, locale })
-            .eq("maps_query", query);
-        }
-      }
-
-      const result: PlaceDetailsResponse = {
-        googlePlaceId: cached.google_place_id,
-        openingHours: cached.opening_hours as GoogleOpeningHours | null,
-        rating: cached.rating,
-        userRatingCount: cached.user_rating_count,
-        primaryType: cached.primary_type,
-        reviews: cached.reviews as GoogleReview[] | null,
-        currentOpeningHours: live ? await fetchCurrentOpeningHoursLive(query) : undefined,
-        nameLocal,
-        addressLocal,
-      };
-      return NextResponse.json(result);
-    }
+      .update({ name_local: fresh.nameLocal, address_local: fresh.addressLocal, locale })
+      .eq("maps_query", row.maps_query);
   }
+  return fresh;
+}
 
+/** ยิง Google ใหม่ทั้งชุดสำหรับสถานที่ที่ยังไม่เคยแคช แล้วเก็บลง place_details_cache */
+async function resolveFromGoogle(
+  query: string,
+  live: boolean,
+  locale: Locale | null
+): Promise<PlaceDetailsResponse> {
   const fieldMask = live
     ? "places.id,places.regularOpeningHours,places.currentOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews"
     : "places.id,places.regularOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews";
   const { places, error } = await searchPlacesText(query, fieldMask);
   if (error) {
-    return NextResponse.json({
+    return {
       googlePlaceId: null,
       openingHours: null,
       rating: null,
       userRatingCount: null,
       primaryType: null,
       reviews: null,
-      error,
-    });
+    };
   }
 
   const place = places[0];
@@ -148,7 +144,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const result: PlaceDetailsResponse = {
+  return {
     googlePlaceId,
     openingHours,
     rating,
@@ -159,5 +155,76 @@ export async function GET(req: NextRequest) {
     nameLocal: local.nameLocal,
     addressLocal: local.addressLocal,
   };
-  return NextResponse.json(result);
+}
+
+/**
+ * resolve สถานที่เป็น Google place ID + เวลาเปิด-ปิด + เรทติ้ง/รีวิว/ประเภทร้าน (เฟส 2)
+ * เช็ค place_details_cache ใน Supabase ก่อนเสมอ (แคชถาวร) เจอแล้วไม่ยิง Google ซ้ำ
+ *
+ * รับได้ 2 แบบ:
+ * - `?query=...` — ทีละที่ (ใช้กับ `?live=1` ของหน้า /today ที่ขอแค่จุดถัดไปจุดเดียว)
+ * - `?queries=a|b|c` — **ทีเดียวทั้งชุด (เฟส 19)** คืน `{ results: { [query]: {...} } }`
+ *   เดิมหน้าแผนยิงเส้นนี้ทีละสถานที่ ~34 ครั้งต่อการเปิดหน้า 1 ครั้ง ตอนนี้เหลือคำขอเดียว
+ *   และอ่าน place_details_cache ด้วย `.in()` ครั้งเดียวแทน 34 ครั้ง
+ */
+export async function GET(req: NextRequest) {
+  const limited = rateLimitGuard(req, "place-details", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
+  const live = req.nextUrl.searchParams.get("live") === "1";
+  const locale = parseLocale(req.nextUrl.searchParams.get("locale"));
+  const batchParam = req.nextUrl.searchParams.get("queries");
+  const query = req.nextUrl.searchParams.get("query");
+
+  if (batchParam) {
+    const queries = Array.from(
+      new Set(batchParam.split("|").map((q) => q.trim()).filter(Boolean))
+    ).slice(0, MAX_BATCH);
+    if (queries.length === 0) {
+      return NextResponse.json({ error: "missing queries" }, { status: 400 });
+    }
+    const results = await resolveMany(queries, locale);
+    return NextResponse.json({ results });
+  }
+
+  if (!query) {
+    return NextResponse.json({ error: "missing query" }, { status: 400 });
+  }
+
+  const results = await resolveMany([query], locale, live);
+  return NextResponse.json(results[query]);
+}
+
+/** แกนกลางที่ใช้ร่วมกันทั้งแบบเดี่ยวและแบบกลุ่ม — อ่านแคชทีเดียวด้วย `.in()` แล้วยิง Google เฉพาะที่ยังไม่มี */
+async function resolveMany(
+  queries: string[],
+  locale: Locale | null,
+  live = false
+): Promise<Record<string, PlaceDetailsResponse>> {
+  const cachedRows = new Map<string, CacheRow>();
+  if (supabaseConfigured) {
+    const { data } = await supabase
+      .from("place_details_cache")
+      .select(CACHE_COLUMNS)
+      .in("maps_query", queries);
+    for (const row of (data ?? []) as CacheRow[]) cachedRows.set(row.maps_query, row);
+  }
+
+  const entries = await Promise.all(
+    queries.map(async (q): Promise<[string, PlaceDetailsResponse]> => {
+      const row = cachedRows.get(q);
+      if (!row) return [q, await resolveFromGoogle(q, live, locale)];
+
+      const needsLocalName = locale != null && row.locale !== locale;
+      const local = needsLocalName
+        ? await backfillLocalName(row, locale)
+        : { nameLocal: row.name_local, addressLocal: row.address_local };
+
+      const result = rowToResponse(row, local.nameLocal, local.addressLocal);
+      if (live) result.currentOpeningHours = await fetchCurrentOpeningHoursLive(q);
+      return [q, result];
+    })
+  );
+
+  return Object.fromEntries(entries);
 }

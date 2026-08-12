@@ -10,6 +10,7 @@ import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
 import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useInViewOnce } from "@/hooks/useInViewOnce";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import type { DayWeather } from "@/lib/weather";
 import { WeatherBadge } from "./WeatherBadge";
@@ -157,6 +158,9 @@ export function DayStopsSection({
   // ตรงกับ breakpoint `lg:` ของ Tailwind ที่คุมเลย์เอาต์ลิสต์+แผนที่คู่กัน (เดียวกับที่ PlaceSidebar ใช้)
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // แผนที่ของวันนี้ mount ก็ต่อเมื่อเลื่อนมาใกล้แล้ว (เฟส 19 — ครึ่งหลังของ P-1 ที่เฟส 13 ทำฝั่งมือถือไป)
+  const mapWrapRef = useRef<HTMLDivElement>(null);
+  const mapInView = useInViewOnce(mapWrapRef);
   const hasMapPoints = schedule.some((s) => s.place != null);
 
   useEffect(() => {
@@ -487,7 +491,14 @@ export function DayStopsSection({
             ทั้งที่ผู้ใช้ยังไม่ได้กดแท็บ 🗺️ เลย (วัดที่ 375px: mount 4 ตัว เห็น 0 ตัว, ยิง maps.googleapis.com 43 ครั้ง)
             isDesktop มาจาก useMediaQuery ที่ SSR คืน false เสมอ — จอใหญ่จึง mount หลัง hydrate หนึ่งเฟรม ซึ่งรับได้ */}
         {hasMapPoints && !collapsed && (mobileView === "map" || isDesktop) && (
-          <div className="h-72 px-3 pb-3 pt-3 lg:h-[420px] lg:w-72 lg:shrink-0 lg:px-0 lg:pb-0 lg:pt-0">
+          <div
+            ref={mapWrapRef}
+            className="h-72 px-3 pb-3 pt-3 lg:h-[420px] lg:w-72 lg:shrink-0 lg:px-0 lg:pb-0 lg:pt-0"
+          >
+            {!mapInView ? (
+              // กล่องเปล่าขนาดเท่าของจริง — กันหน้ากระตุกตอนแผนที่โผล่มาแทนที่
+              <div className="h-full animate-pulse rounded-xl bg-cream-soft/60" />
+            ) : (
             <DayMapPanel
               schedule={schedule}
               startHotel={startHotel}
@@ -502,6 +513,7 @@ export function DayStopsSection({
               }}
               className="h-full"
             />
+            )}
           </div>
         )}
       </div>

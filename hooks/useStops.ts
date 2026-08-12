@@ -408,15 +408,6 @@ export function useStops(planId: string | null) {
     await supabase.from("trip_stops").delete().eq("id", stopId);
   }, []);
 
-  /** ใช้ตอนนำเข้าตัวเลือกเดิมจาก trip_selections เป็นครั้งแรก (ดู bootstrap ใน app/page.tsx) */
-  const bulkInsert = useCallback(async (rows: TripStop[]) => {
-    if (!supabaseConfigured) {
-      setStops((prev) => sortStops([...prev, ...rows]));
-      return;
-    }
-    await supabase.from("trip_stops").insert(rows);
-  }, []);
-
   return {
     stops,
     loaded,
@@ -435,7 +426,6 @@ export function useStops(planId: string | null) {
     markVisited,
     unmarkVisited,
     removeStop,
-    bulkInsert,
     supabaseConfigured,
   };
 }

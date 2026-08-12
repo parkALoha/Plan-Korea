@@ -1,6 +1,7 @@
 "use client";
 
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
+import { photoUrlAtWidth } from "@/lib/photoUrl";
 
 export function PhotoGallery({ query }: { query: string }) {
   const photos = usePlacePhotos(query);
@@ -27,8 +28,9 @@ export function PhotoGallery({ query }: { query: string }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img
           key={src}
-          src={src}
+          src={photoUrlAtWidth(src, 400)}
           alt=""
+          loading="lazy"
           className="h-24 w-full rounded-md object-cover"
         />
       ))}

@@ -5,23 +5,48 @@ import { photoCache } from "@/lib/photoCache";
 
 const inFlight = new Map<string, Promise<string[]>>();
 
+/** รวมคำขอที่เกิดใน ~20ms เดียวกันเป็นคำขอเดียว (เฟส 19) — เหตุผลและกลไกเดียวกับ usePlaceDetails
+ *  เดิมการ์ดวัน 11 ใบ + คลังสถานที่ ยิงเส้นนี้รวม ~27-34 ครั้งต่อการเปิดหน้า 1 ครั้ง */
+const BATCH_WINDOW_MS = 20;
+const pending = new Map<string, ((photos: string[]) => void)[]>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flush() {
+  flushTimer = null;
+  const byQuery = new Map(pending);
+  pending.clear();
+  if (byQuery.size === 0) return;
+
+  const queries = Array.from(byQuery.keys());
+  fetch(`/api/place-photos?queries=${encodeURIComponent(queries.join("|"))}`)
+    .then((r) => r.json())
+    .then((d) => (d.results ?? {}) as Record<string, string[]>)
+    .catch(() => ({} as Record<string, string[]>))
+    .then((results) => {
+      for (const query of queries) {
+        const photos = results[query] ?? [];
+        photoCache.set(query, photos);
+        inFlight.delete(query);
+        for (const resolve of byQuery.get(query) ?? []) resolve(photos);
+      }
+    });
+}
+
 /** ยิง/อ่านจากแคช query เดียว dedupe ทั้ง cache (เสร็จแล้ว) และ inFlight (กำลังโหลดอยู่)
- *  กันการ์ดหลายใบของสถานที่เดียวกัน mount พร้อมกันแล้วยิงซ้ำ (บั๊ก 9.2) */
+ *  กันการ์ดหลายใบของสถานที่เดียวกัน mount พร้อมกันแล้วยิงซ้ำ (บั๊ก 9.2)
+ *  ที่รอดด่านนี้ไปจะถูกรวมเป็นคำขอเดียวต่อ ~20ms อีกชั้น (เฟส 19) */
 function fetchPlacePhotos(query: string): Promise<string[]> {
   const cached = photoCache.get(query);
   if (cached) return Promise.resolve(cached);
   const existing = inFlight.get(query);
   if (existing) return existing;
 
-  const promise = fetch(`/api/place-photos?query=${encodeURIComponent(query)}`)
-    .then((r) => r.json())
-    .then((d) => (d.photos ?? []) as string[])
-    .catch(() => [] as string[])
-    .then((photos) => {
-      photoCache.set(query, photos);
-      inFlight.delete(query);
-      return photos;
-    });
+  const promise = new Promise<string[]>((resolve) => {
+    const waiters = pending.get(query) ?? [];
+    waiters.push(resolve);
+    pending.set(query, waiters);
+    if (!flushTimer) flushTimer = setTimeout(flush, BATCH_WINDOW_MS);
+  });
 
   inFlight.set(query, promise);
   return promise;

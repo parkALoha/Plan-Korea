@@ -12,14 +12,6 @@ export const supabase = createClient(
   supabaseAnonKey || "placeholder-anon-key"
 );
 
-export type TripSelection = {
-  slot_id: string;
-  day_id: string;
-  place_id: string;
-  selected_by: string | null;
-  updated_at: string;
-};
-
 export type TripHotel = {
   leg_id: string;
   city: string;
