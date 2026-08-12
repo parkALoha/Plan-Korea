@@ -13,6 +13,7 @@ import { GoogleMapEmbed } from "./GoogleMapEmbed";
 import { PhotoGallery } from "./PhotoGallery";
 import { PhotoLightbox } from "./PhotoLightbox";
 import { YouTubeEmbed } from "./YouTubeEmbed";
+import NoteBody from "./NoteBody";
 
 export function PlaceDetailModal({
   place,
@@ -123,7 +124,7 @@ export function PlaceDetailModal({
     {(userNote || userPhotoUrl || (stopId && onUpdatePhoto)) && (
       <div className="mb-4 rounded-xl bg-pine-soft/40 p-3">
         <h3 className="mb-1.5 text-sm font-semibold text-pine-dark">โน้ตของเรา</h3>
-        {userNote && <p className="text-sm text-ink">📝 {userNote}</p>}
+        {userNote && <NoteBody note={userNote} className="text-sm text-ink" />}
         {userPhotoUrl && (
           <button
             type="button"

@@ -10,6 +10,7 @@ import { computeDepartureAdvice } from "@/lib/departureAdvice";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { InsertBetweenRow } from "./InsertBetweenRow";
+import NoteBody from "./NoteBody";
 import { PhotoLightbox } from "./PhotoLightbox";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
@@ -339,16 +340,23 @@ export function SortableStopRow({
             (ของเดิมทุกอย่างอยู่แถวเดียว ช่องพิมพ์เลยแคบจนพิมพ์ไม่ได้จริง) */}
         {locked ? (
           stop.note ? (
-            <span className="block text-xs italic text-ink-soft">📝 {stop.note}</span>
+            <NoteBody
+              note={stop.note}
+              previewLines={2}
+              className="text-xs text-ink-soft"
+            />
           ) : null
         ) : editingNote ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            <input
+            {/* textarea ไม่ใช่ input — โน้ตหลายอันเป็นแพลนย่อยของสถานที่นั้น ต้องขึ้นบรรทัดใหม่/ทำบุลเล็ตได้
+                Enter = ขึ้นบรรทัด, Cmd/Ctrl+Enter = บันทึก (Enter เดี่ยวเคยบันทึกทันที เลยพิมพ์หลายบรรทัดไม่ได้เลย) */}
+            <textarea
               autoFocus
+              rows={Math.min(10, Math.max(2, noteDraft.split("\n").length))}
               value={noteDraft}
               onChange={(e) => setNoteDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
                   onUpdateNote(noteDraft.trim() || null);
                   setEditingNote(false);
@@ -358,8 +366,8 @@ export function SortableStopRow({
                   setEditingNote(false);
                 }
               }}
-              placeholder="จดโน้ตสั้นๆ เช่น ร้านนี้อร่อย รีบไป"
-              className="min-w-0 flex-1 basis-full rounded-lg border border-cream-soft px-2 py-1.5 text-sm text-ink focus:border-maple focus:outline-none sm:basis-0 sm:py-1 sm:text-xs"
+              placeholder={"จดได้ยาวๆ ขึ้นบรรทัดใหม่ได้ เช่น\n- สั่งบิบิมบับหม้อหิน\n10:30 ต่อคิวหน้าร้าน"}
+              className="min-w-0 flex-1 basis-full resize-y rounded-lg border border-cream-soft px-2 py-1.5 text-sm leading-relaxed text-ink focus:border-maple focus:outline-none"
             />
             <button
               onClick={() => {
@@ -393,15 +401,26 @@ export function SortableStopRow({
             )}
           </div>
         ) : stop.note ? (
-          <button
+          /* div ไม่ใช่ button — ข้างในมีปุ่ม "ดูทั้งหมด" ของ NoteBody อยู่ ซ้อน button ในกันไม่ได้ */
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => {
               setNoteDraft(stop.note ?? "");
               setEditingNote(true);
             }}
-            className="text-left text-xs italic text-ink-soft hover:text-ink"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setNoteDraft(stop.note ?? "");
+                setEditingNote(true);
+              }
+            }}
+            className="cursor-pointer rounded-lg border-l-2 border-pine-soft py-0.5 pl-2 text-left text-xs text-ink-soft hover:text-ink"
+            title="แตะเพื่อแก้โน้ต"
           >
-            📝 {stop.note}
-          </button>
+            <NoteBody note={stop.note} previewLines={2} />
+          </div>
         ) : (
           <button
             onClick={() => setEditingNote(true)}

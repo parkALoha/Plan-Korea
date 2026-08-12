@@ -24,6 +24,7 @@ import { DaySummaryBar } from "./DaySummaryBar";
 import { RouteSuggestionModal } from "./RouteSuggestionModal";
 import { dayCardElementId } from "./DayJumpBar";
 import { InsertBetweenRow } from "./InsertBetweenRow";
+import NoteBody from "./NoteBody";
 import { SortableStopRow } from "./SortableStopRow";
 import { TravelModeRow } from "./TravelModeRow";
 
@@ -239,7 +240,7 @@ export function DayStopsSection({
           </button>
         </div>
         {weather && <WeatherBadge weather={weather} className="mt-1.5" />}
-        {day.note && <div className="mt-1 text-xs leading-relaxed opacity-90">{day.note}</div>}
+        {day.note && <NoteBody note={day.note} className="mt-1 text-xs opacity-90" />}
         {/* ชื่อโรงแรมจาก Google มักพ่วงที่อยู่เต็มมาด้วย บนมือถือกินไป 2-3 บรรทัดในหัวการ์ด — ตัดให้เหลือบรรทัดเดียว */}
         {hotel && (
           <div className="mt-1 truncate text-xs opacity-90" title={hotel.hotel_name}>

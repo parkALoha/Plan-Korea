@@ -51,6 +51,7 @@ import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
+import NoteBody from "@/components/NoteBody";
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
   if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
@@ -158,7 +159,7 @@ function SummaryDayCard({
         </div>
         {/* โน้ตรายวันเป็นข้อความวางแผนของเราเอง ไม่มีคู่ภาษาอังกฤษ — โหมด en ซ่อนไว้แทนที่จะโชว์ไทยปนกลางหน้าอังกฤษ */}
         {day.note && !en && (
-          <div className="mt-1 text-xs leading-relaxed opacity-90">{day.note}</div>
+          <NoteBody note={day.note} className="mt-1 text-xs opacity-90" />
         )}
         <div className="mt-1 text-xs opacity-90">
           {t("departAt")} {effectiveStartTime}
@@ -280,7 +281,10 @@ function SummaryDayCard({
                     (usePlaceDetails แคชร่วมกันทั้งแท็บ) */}
                 {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
                 {stop.note && !en && (
-                  <div className="mt-0.5 text-xs italic text-content-soft">📝 {stop.note}</div>
+                  <NoteBody
+                    note={stop.note}
+                    className="mt-1 border-l-2 border-pine-soft pl-2 text-xs text-content-soft"
+                  />
                 )}
               </div>
             </div>

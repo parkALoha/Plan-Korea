@@ -8,6 +8,7 @@ import { photoUrlAtWidth } from "@/lib/photoUrl";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
+import { noteFirstLine } from "./NoteBody";
 
 export function PlaceCard({
   place,
@@ -86,7 +87,7 @@ export function PlaceCard({
           {/* โน้ตที่ติดมาตอนลากกลับคลัง — ขึ้นให้เห็นตรงนี้ ไม่งั้นไม่มีทางรู้เลยว่าเคยจดอะไรไว้ */}
           {stashedNote?.note && (
             <div className="mt-0.5 truncate text-[11px] italic text-pine-dark">
-              📝 {stashedNote.note}
+              📝 {noteFirstLine(stashedNote.note)}
             </div>
           )}
         </div>

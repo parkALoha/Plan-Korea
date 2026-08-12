@@ -43,6 +43,7 @@ import type { TravelMode } from "@/lib/schedule";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { showUndoToast } from "@/lib/toast";
+import NoteBody from "@/components/NoteBody";
 
 function isoDateOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -575,7 +576,9 @@ export default function TodayPage() {
                     })()}
 
                     {nextStop.note && (
-                      <div className="mt-2 text-sm italic text-content-soft">📝 {nextStop.note}</div>
+                      <div className="mt-2 rounded-lg border-l-2 border-pine-soft bg-surface-soft/50 py-1.5 pl-2.5 pr-2">
+                        <NoteBody note={nextStop.note} className="text-sm text-content-soft" />
+                      </div>
                     )}
 
                     {nextStop.photo_url && (

@@ -29,6 +29,7 @@ import { TRAVEL_MODE_EMOJI, type ScheduledStop, type TravelMode } from "@/lib/sc
 import { googleMapsPlaceUrl } from "@/lib/mapLinks";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { PlaceThumb } from "./PlaceThumb";
+import { noteFirstLine } from "./NoteBody";
 
 const PINE = "#33564a";
 
@@ -568,7 +569,7 @@ function StopCard({
           {stop.travelMinutesFromPrev} น.
         </div>
       )}
-      {note && <div className="mt-0.5 line-clamp-2 text-[10px] italic text-ink-soft">📝 {note}</div>}
+      {note && <div className="mt-0.5 line-clamp-2 text-[10px] italic text-ink-soft">📝 {noteFirstLine(note)}</div>}
       {isClosed && (
         <div className="mt-1 rounded bg-maple-soft/70 px-1.5 py-0.5 text-[10px] text-maple-dark">
           ⚠️ ช่วงนี้อาจปิดแล้ว
