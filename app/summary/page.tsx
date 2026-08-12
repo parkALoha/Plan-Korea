@@ -482,6 +482,14 @@ function SummaryContent() {
     URL.revokeObjectURL(url);
   }
 
+  /** ทุกข้อความปุ่มในดิกชันนารีขึ้นต้นด้วยอิโมจิ+เว้นวรรค — แยกออกมาโชว์อิโมจิเดี่ยวๆ บนจอมือถือ
+   *  (ซ่อนคำด้วย `hidden sm:inline`) กันปุ่มรองอย่าง Export/Print ดันจนล้นบรรทัด */
+  function splitIconLabel(text: string): [string, string] {
+    const spaceIndex = text.indexOf(" ");
+    if (spaceIndex === -1) return [text, ""];
+    return [text.slice(0, spaceIndex), text.slice(spaceIndex + 1)];
+  }
+
   return (
     <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
       {/* โหมด ตม.: ซ่อนหัวเว็บสีเขียวตอนพิมพ์ทั้งก้อน — กระดาษแผ่นแรกต้องเริ่มที่ "Travel Itinerary"
@@ -492,61 +500,79 @@ function SummaryContent() {
         }`}
       >
         <div className="mx-auto max-w-2xl">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 print:hidden">
+          {/* แถวลิงก์กลับ/วันนี้แยกจากแถวปุ่มเครื่องมือเสมอ (ไม่ใช้ ml-auto ดันมาแถวเดียวกันแบบเดิม)
+              บนจอมือถือแถวเดียวไม่พอที่อยู่แล้วสำหรับ 5 ปุ่ม เลยแยกให้ชัดเจนแทนที่จะปล่อย wrap มั่วๆ */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 print:hidden">
             <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
               {t("backToPlan")}
             </Link>
             <Link href="/today" className="text-sm text-cream/80 hover:text-cream hover:underline">
               {t("today")}
             </Link>
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-              {/* ปุ่มสลับภาษาอยู่ตำแหน่งเดียวกับปุ่มพิมพ์ตามที่วางไว้ในเฟส 16
-                  whitespace-nowrap ทุกปุ่ม — ไม่งั้นตอน EN คำยาวๆ อย่าง "Immigration sheet" จะตัดขึ้น
-                  บรรทัดสอง ทำให้ปุ่มนั้นสูงกว่าเพื่อน ปล่อยให้แถวทั้งก้อน wrap เอาแทน (flex-wrap ที่นี่) */}
-              <div className="flex shrink-0 overflow-hidden rounded-lg bg-cream/15">
-                {(["th", "en"] as const).map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => setLang(l)}
-                    className={`whitespace-nowrap px-2.5 py-1 text-xs font-medium ${
-                      lang === l ? "bg-cream text-pine" : "hover:bg-cream/25"
-                    }`}
-                  >
-                    {l === "th" ? "🇹🇭 ไทย" : "🇬🇧 EN"}
-                  </button>
-                ))}
-              </div>
-              <Link
-                href={
-                  immigrationView
-                    ? `/summary?lang=${lang}`
-                    : `/summary?lang=en&for=immigration`
-                }
-                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
-              >
-                {immigrationView ? t("fullSummary") : t("immigrationView")}
-              </Link>
-              <button
-                onClick={handleExportJson}
-                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
-              >
-                {t("exportJson")}
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
-              >
-                {t("print")}
-              </button>
-              {/* สลับธีมได้จากหน้านี้ด้วย ไม่ต้องอ้อมไปกดที่ /today — ค่าเก็บที่เดียวกัน */}
-              <button
-                onClick={toggleTheme}
-                aria-label={isDark ? "เปลี่ยนเป็นธีมสว่าง" : "เปลี่ยนเป็นธีมมืด"}
-                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
-              >
-                {isDark ? "☀️" : "🌙"}
-              </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 print:hidden">
+            <div className="flex shrink-0 overflow-hidden rounded-lg bg-cream/15">
+              {(["th", "en"] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  className={`whitespace-nowrap px-2.5 py-1 text-xs font-medium ${
+                    lang === l ? "bg-cream text-pine" : "hover:bg-cream/25"
+                  }`}
+                >
+                  {l === "th" ? "🇹🇭 ไทย" : "🇬🇧 EN"}
+                </button>
+              ))}
             </div>
+            {/* ปุ่มรอง 3 ปุ่ม: โชว์แค่อิโมจิบนจอแคบ (ซ่อนคำด้วย hidden sm:inline) กันดันจนล้นบรรทัด
+                — ยังกดใช้งานได้เหมือนเดิม แค่ไม่มีคำกำกับจนกว่าจอจะกว้างพอ (sm ขึ้นไป) */}
+            {(() => {
+              const [immIcon, immLabel] = splitIconLabel(
+                immigrationView ? t("fullSummary") : t("immigrationView")
+              );
+              return (
+                <Link
+                  href={
+                    immigrationView
+                      ? `/summary?lang=${lang}`
+                      : `/summary?lang=en&for=immigration`
+                  }
+                  className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
+                >
+                  {immIcon} <span className="hidden sm:inline">{immLabel}</span>
+                </Link>
+              );
+            })()}
+            {(() => {
+              const [icon, label] = splitIconLabel(t("exportJson"));
+              return (
+                <button
+                  onClick={handleExportJson}
+                  className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
+                >
+                  {icon} <span className="hidden sm:inline">{label}</span>
+                </button>
+              );
+            })()}
+            {(() => {
+              const [icon, label] = splitIconLabel(t("print"));
+              return (
+                <button
+                  onClick={() => window.print()}
+                  className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
+                >
+                  {icon} <span className="hidden sm:inline">{label}</span>
+                </button>
+              );
+            })()}
+            {/* สลับธีมได้จากหน้านี้ด้วย ไม่ต้องอ้อมไปกดที่ /today — ค่าเก็บที่เดียวกัน */}
+            <button
+              onClick={toggleTheme}
+              aria-label={isDark ? "เปลี่ยนเป็นธีมสว่าง" : "เปลี่ยนเป็นธีมมืด"}
+              className="ml-auto shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
+            >
+              {isDark ? "☀️" : "🌙"}
+            </button>
           </div>
           <h1 className="mt-3 text-2xl font-extrabold">{t("summaryTitle")}</h1>
           <p className="mt-1 text-sm text-pine-soft/80">
