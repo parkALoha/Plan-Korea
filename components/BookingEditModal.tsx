@@ -19,8 +19,11 @@ import { PhotoLightbox } from "./PhotoLightbox";
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
 
 const STATUSES: { value: BookingStatus; label: string }[] = [
+  { value: "pending", label: "⏳ ต้องจอง" },
   { value: "booked", label: "✅ จองแล้ว" },
-  { value: "pending", label: "⏳ รอจอง" },
+  // ของที่ไม่ต้องจองล่วงหน้าเลย (ซื้อตั๋วที่เคาน์เตอร์/แตะบัตรขึ้นได้) — เดิมไม่มีค่านี้ เลยต้องยัดเป็น
+  // "จองแล้ว" แล้วเขียนบอกในชื่อเอา ทำให้ตัวเลขบนหัวแผงนับรวมกับของที่จองจริงจนแยกไม่ออก
+  { value: "walk_up", label: "🎟️ ซื้อหน้างาน" },
 ];
 
 function randomSuffix() {
@@ -143,7 +146,10 @@ export function BookingEditModal({
       fileUrl: fileUrl || null,
       fileName: fileName || null,
       status,
-      bookByDaysBefore: bookByDaysBefore.trim() ? Number(bookByDaysBefore) : null,
+      // เก็บวันครบกำหนดเฉพาะของที่ยังต้องจอง — ถ้าเปลี่ยนสถานะเป็นจองแล้ว/ซื้อหน้างานแล้วยังเก็บค่าไว้
+      // พอสลับกลับมาเป็น "ต้องจอง" ทีหลังจะได้เดดไลน์เก่าที่ไม่มีใครตั้งใจโผล่มาเงียบๆ
+      bookByDaysBefore:
+        status === "pending" && bookByDaysBefore.trim() ? Number(bookByDaysBefore) : null,
     });
   }
 
@@ -196,7 +202,7 @@ export function BookingEditModal({
 
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-soft">สถานะ</label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {STATUSES.map((s) => (
             <button
               key={s.value}
@@ -260,24 +266,30 @@ export function BookingEditModal({
         </div>
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">
-          ต้องจองล่วงหน้ากี่วัน (ไม่บังคับ)
-        </label>
-        <input
-          type="number"
-          min={0}
-          value={bookByDaysBefore}
-          onChange={(e) => setBookByDaysBefore(e.target.value)}
-          placeholder="เช่น 30"
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
-        />
-        {deadline ? (
-          <p className="mt-1 text-xs text-ink-soft">📅 ต้องจองภายใน {deadline}</p>
-        ) : bookByDaysBefore.trim() && !date ? (
-          <p className="mt-1 text-xs text-ink-soft">ยังคำนวณวันครบกำหนดไม่ได้ — ใส่วันที่ใช้ตั๋วก่อน</p>
-        ) : null}
-      </div>
+      {/* วันครบกำหนดจองมีความหมายเฉพาะของที่ยังต้องไปจอง — จองแล้ว/ซื้อหน้างานไม่มีเดดไลน์ให้พลาด
+          ซ่อนช่องนี้ไปเลยแทนที่จะปล่อยให้กรอกแล้วไม่มีผล (ค่าที่กรอกค้างไว้จะไม่ถูกเซฟด้วย ดู handleSave) */}
+      {status === "pending" && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-soft">
+            ต้องจองล่วงหน้ากี่วัน (ไม่บังคับ)
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={bookByDaysBefore}
+            onChange={(e) => setBookByDaysBefore(e.target.value)}
+            placeholder="เช่น 30"
+            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          />
+          {deadline ? (
+            <p className="mt-1 text-xs text-ink-soft">📅 ต้องจองภายใน {deadline}</p>
+          ) : bookByDaysBefore.trim() && !date ? (
+            <p className="mt-1 text-xs text-ink-soft">
+              ยังคำนวณวันครบกำหนดไม่ได้ — ใส่วันที่ใช้ตั๋วก่อน
+            </p>
+          ) : null}
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-soft">เลขที่จอง</label>

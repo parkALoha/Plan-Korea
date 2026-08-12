@@ -5,7 +5,12 @@ import type { BookingCategory, TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { BookingEditModal } from "./BookingEditModal";
 import { ConfirmModal } from "./Modal";
-import { bookByDate, daysUntil } from "@/lib/bookingDeadline";
+import {
+  BOOKING_BADGE_CLASS,
+  bookingBadge,
+  bookingCounts,
+  sortBookingsByUrgency,
+} from "@/lib/bookingStatus";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { PhotoLightbox } from "./PhotoLightbox";
 
@@ -44,17 +49,6 @@ function dateLabel(booking: TripBooking) {
   return d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 }
 
-/** ป้ายกำหนดจอง — โชว์เฉพาะรายการที่ยัง "รอจอง" (จองแล้วไม่ต้องเตือนซ้ำ) */
-function deadlineBadge(booking: TripBooking): { text: string; overdue: boolean } | null {
-  if (booking.status !== "pending") return null;
-  const deadline = bookByDate(booking.date, booking.book_by_days_before);
-  if (!deadline) return null;
-  const daysLeft = daysUntil(deadline);
-  if (daysLeft < 0) return { text: `⚠️ เลยกำหนดจอง ${Math.abs(daysLeft)} วัน`, overdue: true };
-  if (daysLeft === 0) return { text: "⚠️ ต้องจองวันนี้", overdue: true };
-  return { text: `จองภายใน ${daysLeft} วัน`, overdue: false };
-}
-
 export function BookingsPanel({
   bookings,
   onAdd,
@@ -73,16 +67,29 @@ export function BookingsPanel({
   // เพราะไฟล์ที่อัปโหลดแนบไว้เอากลับมาจากในเว็บไม่ได้ (เฟส 20.2)
   const [deleting, setDeleting] = useState<TripBooking | null>(null);
   const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
-  const pendingCount = bookings.filter((b) => b.status === "pending").length;
+  const counts = bookingCounts(bookings);
+  // เรียงใหม่ทุกครั้งที่ render — อันดับขึ้นกับ "วันนี้" จึงขยับเองเมื่อเวลาผ่านไปโดยไม่ต้องแก้ข้อมูล
+  const sorted = sortBookingsByUrgency(bookings);
 
   return (
     <section className="mb-5">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
           🎫 ตั๋ว/booking
-          {pendingCount > 0 && (
+          {/* สามตัวเลขแยกกัน ไม่ใช่ป้าย "รอจอง N" อันเดียว — อันเดียวไม่บอกว่าที่เหลืออีกกี่ใบคืออะไร */}
+          {counts.toBook > 0 && (
             <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-amber-800">
-              รอจอง {pendingCount}
+              ต้องจอง {counts.toBook}
+            </span>
+          )}
+          {counts.booked > 0 && (
+            <span className="ml-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-emerald-700">
+              จองแล้ว {counts.booked}
+            </span>
+          )}
+          {counts.walkUp > 0 && (
+            <span className="ml-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-sky-700">
+              ซื้อหน้างาน {counts.walkUp}
             </span>
           )}
         </h2>
@@ -100,8 +107,8 @@ export function BookingsPanel({
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {bookings.map((booking) => {
-            const badge = deadlineBadge(booking);
+          {sorted.map((booking) => {
+            const badge = bookingBadge(booking);
             const link = safeHttpUrl(booking.link);
             // รูปตั๋วโชว์เป็นรูปย่อบนการ์ดเลย ไม่ใช่ไอคอน 📎 — เห็นปุ๊บรู้ว่าใบไหนคือใบไหน (เฟส 23)
             // PDF ยังเป็น 📎 ต่อท้ายชื่อเหมือนเดิม เพราะ render เป็นรูปไม่ได้
@@ -123,10 +130,19 @@ export function BookingsPanel({
                     {BOOKING_CATEGORY_ICON[booking.category]}
                   </span>
                   <div className="min-w-0">
-                    <div className="text-xs text-ink-soft">
-                      {BOOKING_CATEGORY_LABEL[booking.category]}
-                      {dateLabel(booking) ? ` · ${dateLabel(booking)}` : ""}
-                      {booking.time ? ` ${booking.time}` : ""}
+                    {/* ป้ายสถานะอยู่บรรทัดบนสุดของทุกใบ ตำแหน่งเดียวกันเสมอ — กวาดตาลงมาทีเดียว
+                        เห็นครบว่าใบไหนต้องรีบ ใบไหนจบแล้ว (ของเดิมอยู่ล่างสุดและมีเฉพาะบางใบ) */}
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-ink-soft">
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${BOOKING_BADGE_CLASS[badge.tone]}`}
+                      >
+                        {badge.label}
+                      </span>
+                      <span>
+                        {BOOKING_CATEGORY_LABEL[booking.category]}
+                        {dateLabel(booking) ? ` · ${dateLabel(booking)}` : ""}
+                        {booking.time ? ` ${booking.time}` : ""}
+                      </span>
                     </div>
                     <div className="truncate text-sm font-medium text-ink">
                       {booking.title}
@@ -134,13 +150,6 @@ export function BookingsPanel({
                     </div>
                     {booking.note && (
                       <div className="line-clamp-2 text-xs text-ink-soft">{booking.note}</div>
-                    )}
-                    {badge && (
-                      <div
-                        className={`text-xs font-medium ${badge.overdue ? "text-red-600" : "text-amber-700"}`}
-                      >
-                        {badge.text}
-                      </div>
                     )}
                   </div>
                 </button>

@@ -16,8 +16,17 @@ import { PIN_COOKIE, expectedPinToken, pinTokenMatches } from "@/lib/pinAuth";
  * - `/sw.js`, `/manifest.webmanifest` (เฟส 18) — เบราว์เซอร์ขอ 2 ไฟล์นี้แบบ **ไม่แนบคุกกี้**
  *   ถ้าโดนด่านดักจะได้ 307 ไปหน้า HTML แทนไฟล์จริง → ลงทะเบียน service worker ไม่ผ่าน
  *   และปุ่ม "เพิ่มลงหน้าจอโฮม" ไม่ขึ้น · ทั้งสองไฟล์ไม่มีข้อมูลทริปอยู่ข้างใน จึงเปิดสาธารณะได้
+ * - `/api/keep-alive` (เฟส 25) — Vercel Cron ยิงมาโดยไม่มีคุกกี้ PIN ถ้าโดนดักจะได้ 401
+ *   **ก่อนแตะ Supabase** = cron เขียวทุกวันแต่ DB ยังหลับ · route นั้นมีด่าน CRON_SECRET ของตัวเอง
+ *   และไม่คืนข้อมูลทริปออกมาเลย (ตอบแค่ ok/เวลา)
  */
-const PUBLIC_PATHS = ["/unlock", "/api/unlock", "/sw.js", "/manifest.webmanifest"];
+const PUBLIC_PATHS = [
+  "/unlock",
+  "/api/unlock",
+  "/sw.js",
+  "/manifest.webmanifest",
+  "/api/keep-alive",
+];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

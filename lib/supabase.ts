@@ -117,7 +117,10 @@ export type TripStop = {
 
 export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "other";
 
-export type BookingStatus = "booked" | "pending";
+/** 'walk_up' = ซื้อหน้างาน ไม่ต้องจองล่วงหน้า (migration 0031) — ต่างจาก booked ที่แปลว่า "ทำแล้ว"
+ *  ก่อนมีค่านี้ ของที่ซื้อหน้างานต้องยัดเป็น booked แล้วเขียน "ซื้อหน้างาน — " นำหน้า title เอาเอง
+ *  ทำให้ตัวเลข "จองแล้ว" นับของที่ยังไม่ได้จองรวมไปด้วย */
+export type BookingStatus = "booked" | "pending" | "walk_up";
 
 /** Supabase Storage bucket สำหรับไฟล์แนบตั๋ว (ตั้งสาธารณะเหมือน RLS ของตารางอื่น) */
 export const BOOKING_FILES_BUCKET = "booking-files";

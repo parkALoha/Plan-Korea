@@ -572,6 +572,36 @@ export const PLACES: Place[] = [
     mapsQuery: "Lee Jae Mo Pizza Seomyeon Busan",
     youtubeQuery: "이재모피자 부산",
   },
+  {
+    id: "busan-haeundae-gaya-milmyeon",
+    nameTh: "แฮอุนแดกายามิลมยอน (บะหมี่เย็นปูซาน)",
+    nameEn: "Haeundae Gaya Milmyeon",
+    nameLocal: "해운대 가야밀면",
+    addressLocal: "대한민국 부산광역시 해운대구 좌동순환로 27 가야밀면",
+    city: "busan",
+    category: "restaurant",
+    descriptionTh:
+      "มิลมยอนเจ้าดังฝั่งแฮอุนแด สั่งได้ทั้งแบบน้ำซุปเย็นชื่นใจ (물밀면) และแบบคลุกซอสพริกเผ็ดหวาน (비빔밀면) ตบท้ายด้วยเกี๊ยวนึ่ง (만두) · เปิด 10:00-20:50 ทุกวัน · อยู่ย่านชวาดง ไม่ติดหาด นั่งรถจากหาดแฮอุนแดราว 10 นาที",
+    lat: 35.1689,
+    lng: 129.1663,
+    mapsQuery: "Haeundae Gaya Milmyeon Busan",
+    youtubeQuery: "해운대 가야밀면",
+  },
+  {
+    id: "busan-tarako-soba",
+    nameTh: "ทาราโกะโซบะ (สาขาแฮอุนแด)",
+    nameEn: "Tarako Soba (Haeundae)",
+    nameLocal: "타라코소바",
+    addressLocal: "대한민국 부산광역시 해운대구 해운대해변로359번길 27 승훈빌딩 1층",
+    city: "busan",
+    category: "restaurant",
+    descriptionTh:
+      "โซบะฟิวชันที่ใช้ไข่ปลาเมนไทโกะ/ทาราโกะ วัตถุดิบขึ้นชื่อของปูซาน ตัวชูโรงคือโซบะครีมไข่ปลา (명란크림소바) และซึเคเมนซอสไข่ปลา (명란츠케멘) รสเข้มนุ่ม ได้เนื้อสัมผัสกรุบของไข่ปลา · เปิด 11:00-18:30 · ⚠️ ปิดวันอาทิตย์ ร้านเล็กคิวยาว ควรไปก่อนเที่ยง",
+    lat: 35.1649,
+    lng: 129.1684,
+    mapsQuery: "Tarako Soba Haeundae Busan",
+    youtubeQuery: "타라코소바 해운대",
+  },
 
   // ---------- Sokcho ----------
   {
