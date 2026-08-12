@@ -38,6 +38,7 @@ export function DayStopsSection({
   onAddPlace,
   onInsertPlace,
   onInsertIntercity,
+  onInsertTransfer,
   flashStopId,
   onOvernightCityChange,
   locked,
@@ -70,6 +71,8 @@ export function DayStopsSection({
   onInsertPlace: (atIndex: number, center: { lat: number; lng: number }, prevPlace: Place | null) => void;
   /** เปิด modal แทรกเดินทางข้ามเมืองที่ตำแหน่ง atIndex ของวันนี้ พร้อมค่า default จาก/ไปเมือง */
   onInsertIntercity: (atIndex: number, fromDefault: string, toDefault: string) => void;
+  /** เปิด modal แทรกแถว "ไปสนามบิน" ที่ตำแหน่ง atIndex ของวันนี้ */
+  onInsertTransfer: (atIndex: number) => void;
   /** id ของจุดแวะที่เพิ่งถูกเพิ่ม (ทั้งวันไหนก็ได้) — ใช้ไฮไลต์แถวนั้นสั้นๆ */
   flashStopId: string | null;
   /** true = วันนี้ลงตัวแล้ว ล็อกไว้กันเผลอลาก/แก้ตอนเลื่อนดู */
@@ -347,6 +350,9 @@ export function DayStopsSection({
                   index={i}
                   sched={sched}
                   prevPlace={prevPlace}
+                  travelMinutesIn={
+                    i === 0 ? daySchedule.travelMinutesFromStart : sched.travelMinutesFromPrev
+                  }
                   isFlashing={stop.id === flashStopId}
                   isActive={stop.id === activeStopId}
                   rowRef={(el) => {
@@ -428,6 +434,14 @@ export function DayStopsSection({
                 className="flex flex-1 items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
               >
                 + เพิ่มสถานที่ให้วันนี้
+              </button>
+              {/* ไปสนามบินเป็นแถวท้ายวันเสมอในทางปฏิบัติ จึงวางปุ่มไว้ท้ายการ์ดที่เดียว
+                  ไม่ไปเบียดแถวปุ่มแทรกระหว่างจุดที่มี 2 ปุ่มอยู่แล้ว (ถ้าอยากได้กลางวันก็ลากขึ้นไปได้) */}
+              <button
+                onClick={() => onInsertTransfer(stops.length)}
+                className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+              >
+                ✈️ + ไปสนามบิน
               </button>
               {stops.length >= 3 && (
                 <button

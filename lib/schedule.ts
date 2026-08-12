@@ -51,6 +51,9 @@ export const DEFAULT_DWELL_MINUTES: Record<Category, number> = {
   viewpoint: 25,
   shopping: 60,
   restaurant: 75,
+  // แถว kind="transfer" ตั้ง dwell เองเสมอ (= เวลาเผื่อเช็คอิน) ค่านี้เป็นแค่ fallback ให้ครบ type
+  // ใช้ 180 นาทีตามมาตรฐาน "ถึงสนามบิน 3 ชม. ก่อนบินระหว่างประเทศ" ที่ทริปนี้ยึดอยู่แล้ว
+  transport: 180,
 };
 
 /** คืน null เมื่อ parse ไม่ได้ (เช่น ค่าว่างจากการล้างช่อง <input type="time">) — ผู้เรียกต้อง fallback เอง */

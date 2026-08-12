@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import type { TripStop } from "@/lib/supabase";
@@ -43,12 +43,22 @@ export function RouteSuggestionModal({
   useBodyScrollLock();
   const [pinRestaurants, setPinRestaurants] = useState(true);
 
+  // แถวที่เอาไปจัดลำดับใหม่ได้ = จุดแวะเที่ยวจริงเท่านั้น
+  // แถวเดินทางข้ามเมือง (kind="intercity") resolve place ไม่ได้อยู่แล้วเลยหลุดออกเอง
+  // แต่แถว "ไปสนามบิน" (kind="transfer") **มี place จริง** (สนามบิน) ต้องกันออกด้วยมือ
+  // ไม่งั้นมันจะถูกย้ายไปกลางวันแล้วตารางทั้งวันเพี้ยน — มันคือปลายทางตายตัวของวัน ไม่ใช่จุดให้สลับ
+  const isReorderable = useCallback(
+    (stop: TripStop) => stop.kind !== "transfer" && placesById.has(stop.place_id),
+    [placesById]
+  );
+
   const routable = useMemo(
     () =>
       stops
+        .filter(isReorderable)
         .map((stop) => ({ stop, place: placesById.get(stop.place_id) }))
         .filter((x): x is { stop: TripStop; place: Place } => x.place != null),
-    [stops, placesById]
+    [stops, placesById, isReorderable]
   );
 
   const suggestion = useMemo(() => {
@@ -72,9 +82,9 @@ export function RouteSuggestionModal({
       else queueByPlaceId.set(place.id, [stop]);
     });
     const resolvedQueue = ordered.map((p) => queueByPlaceId.get(p.id)!.shift()!);
-    // จุดที่ resolve place ไม่ได้ (แถวเดินทางข้ามเมือง kind="intercity" หรือข้อมูลหาย) คงตำแหน่งเดิมไว้เป๊ะๆ
-    // ไม่ให้ suggestOrder ย้ายไปไหน เพราะมันเป็นตัวแบ่ง "ก่อน/หลังข้ามเมือง" ของ timeline ไม่ใช่จุดให้จัดลำดับใหม่
-    const orderedStops = stops.map((s) => (placesById.has(s.place_id) ? resolvedQueue.shift()! : s));
+    // แถวที่จัดลำดับใหม่ไม่ได้ (ข้ามเมือง / ไปสนามบิน / ข้อมูลหาย) คงตำแหน่งเดิมไว้เป๊ะๆ
+    // ไม่ให้ suggestOrder ย้ายไปไหน เพราะมันเป็นตัวแบ่งช่วงของ timeline ไม่ใช่จุดให้จัดลำดับใหม่
+    const orderedStops = stops.map((s) => (isReorderable(s) ? resolvedQueue.shift()! : s));
     return {
       points,
       ordered,
@@ -82,7 +92,7 @@ export function RouteSuggestionModal({
       distanceBeforeKm: routeDistanceKm(points, startAt, endAt),
       distanceAfterKm: routeDistanceKm(ordered, startAt, endAt),
     };
-  }, [routable, stops, placesById, startAt, endAt, pinRestaurants]);
+  }, [routable, stops, isReorderable, startAt, endAt, pinRestaurants]);
 
   const before = useMemo(() => buildSchedule(stops), [buildSchedule, stops]);
   const after = useMemo(

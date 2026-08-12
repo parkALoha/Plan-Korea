@@ -7,7 +7,10 @@ export type Category =
   | "nightlife"
   | "viewpoint"
   | "shopping"
-  | "restaurant";
+  | "restaurant"
+  /** สนามบิน/สถานี — ไม่ใช่ที่เที่ยว จึงไม่มีใน PLACES และไม่โผล่ในคลังสถานที่ (ดู CATEGORY_ORDER
+   *  ใน PlaceSidebar) มีไว้ให้แถว kind="transfer" resolve เป็น Place ได้ ดู data/transferPoints.ts */
+  | "transport";
 
 export type Place = {
   id: string;
@@ -59,6 +62,7 @@ export const CATEGORY_EMOJI: Record<Category, string> = {
   viewpoint: "📸",
   shopping: "🛍️",
   restaurant: "🍽️",
+  transport: "✈️",
 };
 
 // สีหมุดบนแผนที่รายวัน แยกตามหมวด — เดิมหมุดทุกจุดสี maple เหมือนกันหมด ดูไม่ออกว่าจุดไหนเป็นอะไร
@@ -73,6 +77,7 @@ export const CATEGORY_COLOR: Record<Category, string> = {
   viewpoint: "#c39338",
   shopping: "#b34f7d",
   restaurant: "#d9683a",
+  transport: "#4a6572",
 };
 
 /** สีเข้มของหมวดเดียวกัน ใช้เป็นขอบหมุดตอนถูกเลือก (ปกติขอบเป็นสีขาว) */
@@ -86,6 +91,7 @@ export const CATEGORY_COLOR_DARK: Record<Category, string> = {
   viewpoint: "#8d6720",
   shopping: "#82355a",
   restaurant: "#b8502a",
+  transport: "#33474f",
 };
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -98,6 +104,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   viewpoint: "จุดชมวิว/ถ่ายรูป",
   shopping: "ช้อปปิ้ง",
   restaurant: "ร้านอาหาร",
+  transport: "สนามบิน/สถานี",
 };
 
 // จุดกึ่งกลางของแต่ละเมือง — เฉลี่ยพิกัดสถานที่ทั้งหมดในเมืองนั้นจาก PLACES สดๆ แทนที่จะฝัง

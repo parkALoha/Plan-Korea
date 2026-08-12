@@ -67,13 +67,19 @@ export type TripStop = {
   added_by: string | null;
   updated_at: string;
   /** "place" (ปกติ) | "intercity" (แถวเดินทางข้ามเมือง กินเวลาใน timeline แต่ไม่ใช่สถานที่)
+   *  | "transfer" (ไปสนามบิน/สถานี — มี place_id จริงจาก data/transferPoints.ts เวลาเดินทางจึงเป็นของจริง)
    *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ — ให้ถือเป็น "place" */
-  kind?: "place" | "intercity";
+  kind?: "place" | "intercity" | "transfer";
   /** ใช้เมื่อ kind === "intercity" — เมืองต้นทาง/ปลายทางของช่วงเดินทางนี้ (ข้อความอิสระ) */
   intercity_from?: string | null;
   intercity_to?: string | null;
   /** ใช้เมื่อ kind === "intercity" — "bus" | "ktx" | "other" */
   intercity_mode?: string | null;
+  /** ใช้เมื่อ kind === "transfer" (migration 0025) — เวลาที่ต้องไปให้ทัน "HH:MM" เช่น เวลาบิน
+   *  ว่าง = ไม่มีเดดไลน์ เป็นแค่แถวเดินทางไปสนามบินเฉยๆ */
+  transfer_target_time?: string | null;
+  /** ป้ายกำกับสิ่งที่ต้องไปให้ทัน เช่น "VN409 อินชอน → โฮจิมินห์" */
+  transfer_target_label?: string | null;
   /** เวลาจริงที่มาถึงจุดนี้ ติ๊กจากหน้า "วันนี้" (เฟส 6) — null = ยังไม่มาถึง
    *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ */
   visited_at?: string | null;

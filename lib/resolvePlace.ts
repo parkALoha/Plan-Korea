@@ -1,9 +1,15 @@
 import { PLACES, Place } from "@/data/places";
+import { findTransferPoint } from "@/data/transferPoints";
 import type { CustomPlace } from "@/lib/supabase";
 
 export function resolvePlace(placeId: string, customPlaces: CustomPlace[]): Place | null {
   const known = PLACES.find((p) => p.id === placeId);
   if (known) return known;
+
+  // สนามบิน/สถานีของแถว kind="transfer" — อยู่นอก PLACES เพื่อไม่ให้โผล่ในคลังสถานที่
+  // แต่ต้อง resolve ได้ ไม่งั้น computeSchedule ถือว่าแถวนั้นไม่มีพิกัด แล้วเวลาเดินทางหายไปทั้งช่วง
+  const transferPoint = findTransferPoint(placeId);
+  if (transferPoint) return transferPoint;
 
   const custom = customPlaces.find((p) => p.id === placeId);
   if (!custom) return null;

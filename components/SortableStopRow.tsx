@@ -6,8 +6,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_EMOJI, Place } from "@/data/places";
 import { BOOKING_FILES_BUCKET, supabase, type TripStop } from "@/lib/supabase";
 import type { ScheduledStop, TravelMode } from "@/lib/schedule";
+import { computeDepartureAdvice } from "@/lib/departureAdvice";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
+import { TransferAdvicePanel } from "./TransferAdvicePanel";
 import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "./IntercityEditModal";
 
 const DWELL_STEP_MINUTES = 15;
@@ -27,6 +29,7 @@ export function SortableStopRow({
   index,
   sched,
   prevPlace,
+  travelMinutesIn,
   isFlashing,
   isActive,
   rowRef,
@@ -48,6 +51,9 @@ export function SortableStopRow({
   index: number;
   sched: ScheduledStop;
   prevPlace: Place | undefined;
+  /** เวลาเดินทางที่พามาถึงจุดนี้ — จุดแรกของวันใช้ค่าจากที่พัก (daySchedule.travelMinutesFromStart)
+   *  ซึ่ง sched.travelMinutesFromPrev ไม่มี · ใช้คำนวณ "ควรออกกี่โมง" ของแถว kind="transfer" */
+  travelMinutesIn: number | null;
   isFlashing: boolean;
   /** true = จุดแวะนี้ถูกเลือกอยู่ (คลิกหมุดบนแผนที่ หรือคลิกชื่อในลิสต์) — ไฮไลต์ค้างไว้ต่างจาก isFlashing ที่เป็น pulse ชั่วคราว */
   isActive: boolean;
@@ -119,6 +125,20 @@ export function SortableStopRow({
     setNodeRef(el);
     rowRef?.(el);
   };
+
+  // แถวพิเศษ (ข้ามเมือง/ไปสนามบิน) ไม่ใช่สถานที่ที่ไปถ่ายรูปหรือกดดูรายละเอียดได้
+  const isSpecialRow = stop.kind === "intercity" || stop.kind === "transfer";
+
+  // "ควรออกกี่โมงถึงจะทันเครื่อง" — คำนวณย้อนกลับจากเวลาบินที่ผูกไว้กับแถวนี้ (transfer_target_time)
+  const transferAdvice =
+    stop.kind === "transfer" && stop.transfer_target_time
+      ? computeDepartureAdvice({
+          targetTime: stop.transfer_target_time,
+          plannedArrivalMinutes: sched.arrivalMinutes,
+          travelMinutes: travelMinutesIn ?? 0,
+          checkinBufferMinutes: sched.resolvedDwellMinutes,
+        })
+      : null;
 
   // ปุ่มปรับเวลาที่อยู่ + ปุ่มลบ — ประกาศครั้งเดียวแล้ววางสองที่ เพราะมือถือกับจอใหญ่วางคนละแถวกัน
   // (มือถือยกลงไปแถวล่างเพื่อคืนความกว้างให้ชื่อสถานที่ ดูคอมเมนต์ที่แถวหลัก)
@@ -237,6 +257,21 @@ export function SortableStopRow({
               </span>
               <span className="block truncate text-xs text-ink-soft">
                 ใช้เวลาเดินทาง {sched.resolvedDwellMinutes} นาที
+              </span>
+            </span>
+          </div>
+        ) : stop.kind === "transfer" ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+              ✈️
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold text-ink">
+                ไปสนามบิน · {sched.place?.nameTh ?? "ไม่พบข้อมูลสนามบิน"}
+              </span>
+              <span className="block truncate text-xs text-ink-soft">
+                เผื่อเวลาที่สนามบิน {sched.resolvedDwellMinutes} นาที
+                {stop.transfer_target_label ? ` · ${stop.transfer_target_label}` : ""}
               </span>
             </span>
           </div>
@@ -374,7 +409,17 @@ export function SortableStopRow({
           )
         )}
       </div>
-      {(stop.photo_url || (!locked && stop.kind !== "intercity")) && (
+      {stop.kind === "transfer" && sched.place && (
+        <TransferAdvicePanel
+          advice={transferAdvice}
+          targetLabel={stop.transfer_target_label ?? null}
+          airportId={sched.place.id}
+          checkinBufferMinutes={sched.resolvedDwellMinutes}
+          travelMinutes={travelMinutesIn}
+          isTravelReal={isTravelReal}
+        />
+      )}
+      {(stop.photo_url || (!locked && !isSpecialRow)) && (
         <div className="px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
           {stop.photo_url ? (
             <div className="flex items-center gap-2">
@@ -395,7 +440,7 @@ export function SortableStopRow({
             </div>
           ) : (
             !locked &&
-            stop.kind !== "intercity" && (
+            !isSpecialRow && (
               <label className="inline-flex cursor-pointer items-center gap-1 py-1.5 text-xs text-ink-soft/60 hover:text-ink-soft">
                 {uploadingPhoto ? "กำลังอัปโหลด..." : "📷 + รูป"}
                 <input

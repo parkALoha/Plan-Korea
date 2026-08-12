@@ -9,6 +9,7 @@ import { ChecklistPanel } from "@/components/ChecklistPanel";
 import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
 import { IntercityEditModal } from "@/components/IntercityEditModal";
+import { TransferEditModal } from "@/components/TransferEditModal";
 import { TripHeader } from "@/components/TripHeader";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import type { Place } from "@/data/places";
@@ -75,6 +76,7 @@ export default function Home() {
     addStop,
     insertStopAt,
     insertIntercityAt,
+    insertTransferAt,
     reorderStops,
     moveStopToDay,
     updateDwellMinutes,
@@ -194,6 +196,12 @@ export default function Home() {
     atIndex: number;
     fromDefault: string;
     toDefault: string;
+  } | null>(null);
+
+  // บริบทตอนกด "✈️ + ไปสนามบิน" — เก็บวัน/ตำแหน่งที่จะแทรก (modal ดึงเที่ยวบินของวันนั้นมาเป็นตัวเลือกเดดไลน์เอง)
+  const [transferContext, setTransferContext] = useState<{
+    dayId: string;
+    atIndex: number;
   } | null>(null);
 
   // id ของจุดแวะที่เพิ่งถูกเพิ่ม (ลากหรือกด +) — ใช้ไฮไลต์แถวนั้นสั้นๆ ให้รู้สึกว่า "เพิ่มสำเร็จ"
@@ -362,6 +370,7 @@ export default function Home() {
                   onInsertIntercity={(atIndex, fromDefault, toDefault) =>
                     setIntercityContext({ dayId: day.id, atIndex, fromDefault, toDefault })
                   }
+                  onInsertTransfer={(atIndex) => setTransferContext({ dayId: day.id, atIndex })}
                   flashStopId={flashStopId}
                 />
               ))}
@@ -433,6 +442,26 @@ export default function Home() {
               defaultTravelModeFor(insertContext.prevPlace, coords)
             ).then(flashNewStop);
             setInsertContext(null);
+          }}
+        />
+      )}
+
+      {transferContext && (
+        <TransferEditModal
+          day={itinerary.find((d) => d.id === transferContext.dayId) ?? itinerary[0]}
+          onClose={() => setTransferContext(null)}
+          onSave={(input) => {
+            // จุดก่อนหน้าคือจุดสุดท้ายของวันตอนนี้ (ปุ่มอยู่ท้ายการ์ด) — เดาโหมดเดินทางแบบเดียวกับจุดแวะปกติ
+            const prevPlace =
+              transferContext.atIndex > 0 ? lastStopPlaceForDay(transferContext.dayId) : null;
+            const airport = resolvePlace(input.placeId, customPlaces);
+            insertTransferAt(
+              transferContext.dayId,
+              transferContext.atIndex,
+              { ...input, travelMode: defaultTravelModeFor(prevPlace, airport) },
+              who || undefined
+            ).then(flashNewStop);
+            setTransferContext(null);
           }}
         />
       )}

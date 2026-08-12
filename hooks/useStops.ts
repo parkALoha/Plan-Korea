@@ -189,6 +189,46 @@ export function useStops(planId: string | null) {
     [planId, stops, shiftForInsert, writeInsert]
   );
 
+  /** ใช้ตอน "แทรกไปสนามบินตรงนี้" — ต่างจาก intercity ตรงที่แถวนี้มี place_id จริง (สนามบิน)
+   *  เวลาเดินทางจากจุดก่อนหน้าจึงมาจาก Routes API เหมือนจุดแวะปกติ ส่วน dwell = เวลาเผื่อเช็คอินที่สนามบิน */
+  const insertTransferAt = useCallback(
+    async (
+      dayId: string,
+      atIndex: number,
+      input: {
+        placeId: string;
+        checkinBufferMinutes: number;
+        targetTime: string | null;
+        targetLabel: string | null;
+        travelMode: string | null;
+      },
+      addedBy?: string
+    ) => {
+      if (!planId) return undefined;
+      const dayStops = stops.filter((s) => s.day_id === dayId);
+      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
+      const newStop: TripStop = {
+        id: makeStopId(),
+        plan_id: planId,
+        day_id: dayId,
+        place_id: input.placeId,
+        order_index: targetOrderIndex,
+        dwell_minutes: input.checkinBufferMinutes,
+        travel_mode: input.travelMode,
+        note: null,
+        kind: "transfer",
+        transfer_target_time: input.targetTime,
+        transfer_target_label: input.targetLabel,
+        added_by: addedBy ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const toShift = shiftForInsert(dayId, targetOrderIndex);
+      setStops((prev) => sortStops([...prev, newStop]));
+      return writeInsert(toShift, newStop);
+    },
+    [planId, stops, shiftForInsert, writeInsert]
+  );
+
   const updateStopPlace = useCallback(async (stopId: string, placeId: string) => {
     if (!supabaseConfigured) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, place_id: placeId } : s)));
@@ -371,6 +411,7 @@ export function useStops(planId: string | null) {
     addStop,
     insertStopAt,
     insertIntercityAt,
+    insertTransferAt,
     updateStopPlace,
     updateDwellMinutes,
     updateTravelMode,
