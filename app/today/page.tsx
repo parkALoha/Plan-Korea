@@ -146,6 +146,7 @@ export default function TodayPage() {
     loaded: stopsLoaded,
     markVisited,
     unmarkVisited,
+    updatePhoto,
   } = useStops(activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
   const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides();
@@ -306,6 +307,18 @@ export default function TodayPage() {
   // ทุกครั้งที่ render กันข้อมูลค้างเวลาสลับวันหรือ schedule คำนวณใหม่ (delay เลื่อนเวลา ฯลฯ)
   const [detailStopId, setDetailStopId] = useState<string | null>(null);
   const detailIndex = detailStopId ? dayStops.findIndex((s) => s.id === detailStopId) : -1;
+
+  // คัดลอกชื่อที่พักให้คนขับดูตอนเที่ยวครบแล้วจะกลับ — เหมือน LocalNameCard แต่ endHotel เป็น TripHotel ไม่ใช่ Place
+  const [copiedHotelName, setCopiedHotelName] = useState(false);
+  async function copyHotelName(name: string) {
+    try {
+      await navigator.clipboard.writeText(name);
+      setCopiedHotelName(true);
+      setTimeout(() => setCopiedHotelName(false), 1500);
+    } catch {
+      // คัดลอกไม่ได้ (เบราว์เซอร์ไม่ให้สิทธิ์) — ไม่เป็นไร ยังยื่นจอให้คนขับอ่านเองได้
+    }
+  }
   const detailStop = detailIndex >= 0 ? dayStops[detailIndex] : null;
   const detailSched = detailIndex >= 0 ? schedule[detailIndex] : null;
   const detailPreviousPlace = detailIndex > 0 ? schedule[detailIndex - 1]?.place ?? null : null;
@@ -611,6 +624,16 @@ export default function TodayPage() {
                     lng={endAnchor.lng}
                     name={endHotel ? hotelNavigationName(endHotel) : endAnchor.label}
                   />
+                  {endHotel && (
+                    <button
+                      onClick={() => copyHotelName(hotelNavigationName(endHotel))}
+                      className="mt-2 w-full rounded-xl bg-white/70 px-3 py-2 text-center text-sm font-medium text-panel-pine-ink hover:bg-white"
+                    >
+                      {copiedHotelName
+                        ? "✓ คัดลอกชื่อที่พักแล้ว"
+                        : `📋 คัดลอกชื่อที่พัก (${hotelNavigationName(endHotel)})`}
+                    </button>
+                  )}
                 </div>
               )}
             </section>
@@ -757,6 +780,8 @@ export default function TodayPage() {
           hotel={endHotel}
           userNote={detailStop.note}
           userPhotoUrl={detailStop.photo_url}
+          stopId={detailStop.id}
+          onUpdatePhoto={(url) => updatePhoto(detailStop.id, url)}
           onClose={() => setDetailStopId(null)}
         />
       )}

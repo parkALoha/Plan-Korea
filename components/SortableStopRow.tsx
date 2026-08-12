@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_EMOJI, Place } from "@/data/places";
-import { BOOKING_FILES_BUCKET, supabase, type TripStop } from "@/lib/supabase";
+import type { TripStop } from "@/lib/supabase";
 import type { ScheduledStop, TravelMode } from "@/lib/schedule";
 import { computeDepartureAdvice } from "@/lib/departureAdvice";
 import { placeQueryKey } from "@/lib/placeQuery";
+import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { InsertBetweenRow } from "./InsertBetweenRow";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
@@ -16,13 +17,6 @@ import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from ".
 
 const DWELL_STEP_MINUTES = 15;
 const MIN_DWELL_MINUTES = 15;
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-
-function storagePathFromPublicUrl(url: string): string | null {
-  const marker = `/storage/v1/object/public/${BOOKING_FILES_BUCKET}/`;
-  const idx = url.indexOf(marker);
-  return idx === -1 ? null : url.slice(idx + marker.length);
-}
 
 /** หนึ่งแถวจุดแวะในตารางของวัน — ลากจัดลำดับได้ พร้อมโน้ต/รูป/เวลาที่อยู่/แถวเดินทางที่นำหน้ามัน */
 export function SortableStopRow({
@@ -102,30 +96,20 @@ export function SortableStopRow({
 
   async function handlePhotoChange(file: File | null) {
     if (!file) return;
-    if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError("ไฟล์ใหญ่เกิน 10MB กรุณาเลือกไฟล์อื่น");
-      return;
-    }
     setUploadingPhoto(true);
     setPhotoError(null);
-    const path = `stop-photo-${stop.id}-${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
-    const { error } = await supabase.storage.from(BOOKING_FILES_BUCKET).upload(path, file);
-    if (error) {
-      setPhotoError("อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง");
+    const result = await uploadStopPhoto(stop.id, file, stop.photo_url);
+    if ("error" in result) {
+      setPhotoError(result.error);
       setUploadingPhoto(false);
       return;
     }
-    // มีรูปเก่าอยู่แล้ว ลบทิ้งก่อนแทนที่ด้วยรูปใหม่ ไม่งั้นไฟล์ค้างใน bucket
-    const oldPath = stop.photo_url ? storagePathFromPublicUrl(stop.photo_url) : null;
-    if (oldPath) await supabase.storage.from(BOOKING_FILES_BUCKET).remove([oldPath]);
-    const { data } = supabase.storage.from(BOOKING_FILES_BUCKET).getPublicUrl(path);
-    onUpdatePhoto(data.publicUrl);
+    onUpdatePhoto(result.url);
     setUploadingPhoto(false);
   }
 
   async function handleRemovePhoto() {
-    const path = stop.photo_url ? storagePathFromPublicUrl(stop.photo_url) : null;
-    if (path) await supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
+    await removeStopPhoto(stop.photo_url);
     onUpdatePhoto(null);
   }
 

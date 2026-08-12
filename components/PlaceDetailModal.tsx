@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CATEGORY_EMOJI, CATEGORY_LABEL, Place } from "@/data/places";
 import { Modal } from "./Modal";
 import { useTravelTime } from "@/hooks/useTravelTime";
@@ -7,6 +8,7 @@ import { useHotelDistance } from "@/hooks/useHotelDistance";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import type { TripHotel } from "@/lib/supabase";
 import { placeQueryKey } from "@/lib/placeQuery";
+import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 import { PhotoGallery } from "./PhotoGallery";
 import { YouTubeEmbed } from "./YouTubeEmbed";
@@ -17,6 +19,8 @@ export function PlaceDetailModal({
   hotel,
   userNote,
   userPhotoUrl,
+  stopId,
+  onUpdatePhoto,
   onConfirm,
   onClose,
 }: {
@@ -27,6 +31,10 @@ export function PlaceDetailModal({
   userNote?: string | null;
   /** รูปที่เราอัปโหลดเอง เก็บใน Supabase Storage — คนละชุดกับ PhotoGallery ที่เป็นรูปจาก Google */
   userPhotoUrl?: string | null;
+  /** id ของ trip_stops แถวนี้ — ใส่คู่กับ onUpdatePhoto เพื่อเปิดปุ่มถ่าย/แนบรูปจากในโมดัลเอง
+   *  (เช่น ถ่ายป้ายเวลาเปิด-ปิดหน้างานตอนอยู่ใน /today) ไม่ใส่ = โหมดดูรูปอย่างเดียว */
+  stopId?: string;
+  onUpdatePhoto?: (photoUrl: string | null) => void;
   /** ไม่ใส่ = โหมดดูรายละเอียดอย่างเดียว (เช่น กดดูจุดแวะที่เลือกไว้แล้ว) ไม่โชว์ปุ่มยืนยันเลือก */
   onConfirm?: () => void;
   onClose: () => void;
@@ -35,6 +43,29 @@ export function PlaceDetailModal({
   const hotelLabel = useHotelDistance(hotel, place);
   const queryKey = placeQueryKey(place);
   const details = usePlaceDetails(queryKey);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [zoomedPhoto, setZoomedPhoto] = useState(false);
+
+  async function handlePhotoChange(file: File | null) {
+    if (!file || !stopId || !onUpdatePhoto) return;
+    setUploadingPhoto(true);
+    setPhotoError(null);
+    const result = await uploadStopPhoto(stopId, file, userPhotoUrl);
+    if ("error" in result) {
+      setPhotoError(result.error);
+      setUploadingPhoto(false);
+      return;
+    }
+    onUpdatePhoto(result.url);
+    setUploadingPhoto(false);
+  }
+
+  async function handleRemovePhoto() {
+    if (!onUpdatePhoto) return;
+    await removeStopPhoto(userPhotoUrl);
+    onUpdatePhoto(null);
+  }
 
   return (
     <Modal
@@ -78,19 +109,69 @@ export function PlaceDetailModal({
     <p className="mb-4 text-sm text-ink">{place.descriptionTh}</p>
 
     {/* ของที่เราใส่ไว้เอง มาก่อนข้อมูลจาก Google เสมอ — เปิดดูรายละเอียดแล้วต้องเจอโน้ต/รูปตัวเองทันที
-        ไม่ต้องเลื่อนผ่านเวลาเปิด-ปิดกับรีวิวคนอื่นไปหา (เฟส 22) */}
-    {(userNote || userPhotoUrl) && (
+        ไม่ต้องเลื่อนผ่านเวลาเปิด-ปิดกับรีวิวคนอื่นไปหา (เฟส 22)
+        stopId + onUpdatePhoto มาด้วยกัน = เปิดปุ่มถ่าย/ลบรูปในตัว (ใช้ตอนเจอป้ายเวลาเปิด-ปิดหน้างาน) */}
+    {(userNote || userPhotoUrl || (stopId && onUpdatePhoto)) && (
       <div className="mb-4 rounded-xl bg-pine-soft/40 p-3">
         <h3 className="mb-1.5 text-sm font-semibold text-pine-dark">โน้ตของเรา</h3>
         {userNote && <p className="text-sm text-ink">📝 {userNote}</p>}
         {userPhotoUrl && (
           // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
-          <img
-            src={userPhotoUrl}
-            alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้"
-            className={`w-full max-w-56 rounded-lg object-cover ${userNote ? "mt-2" : ""}`}
-          />
+          <button
+            type="button"
+            onClick={() => setZoomedPhoto(true)}
+            className={`block w-full max-w-56 ${userNote ? "mt-2" : ""}`}
+          >
+            <img
+              src={userPhotoUrl}
+              alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ — กดเพื่อดูขนาดเต็ม"
+              className="w-full rounded-lg object-cover"
+            />
+            <span className="mt-1 block text-[11px] text-pine-dark">แตะเพื่อดูขนาดเต็ม</span>
+          </button>
         )}
+        {stopId && onUpdatePhoto && (
+          <div className="mt-2">
+            {userPhotoUrl ? (
+              <button
+                onClick={handleRemovePhoto}
+                className="rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
+              >
+                ลบรูป
+              </button>
+            ) : (
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/70 px-3 py-1.5 text-xs font-medium text-pine-dark hover:bg-white">
+                {uploadingPhoto ? "กำลังอัปโหลด..." : "📷 ถ่าย/แนบรูปป้าย"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  onChange={(e) => handlePhotoChange(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            )}
+            {photoError && <p className="mt-1 text-[11px] text-red-600">{photoError}</p>}
+          </div>
+        )}
+      </div>
+    )}
+
+    {zoomedPhoto && userPhotoUrl && (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setZoomedPhoto(false)}
+        onKeyDown={(e) => e.key === "Escape" && setZoomedPhoto(false)}
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+        <img
+          src={userPhotoUrl}
+          alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ ขนาดเต็ม"
+          className="max-h-full max-w-full rounded-lg object-contain"
+        />
       </div>
     )}
 
