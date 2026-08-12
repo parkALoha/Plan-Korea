@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BookingCategory, TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { BookingEditModal } from "./BookingEditModal";
+import { ConfirmModal } from "./Modal";
 
 export const BOOKING_CATEGORY_LABEL: Record<BookingCategory, string> = {
   flight: "เที่ยวบิน",
@@ -54,6 +55,9 @@ export function BookingsPanel({
   who?: string;
 }) {
   const [editing, setEditing] = useState<TripBooking | "new" | null>(null);
+  // ตั๋วที่กำลังจะลบ — ยืนยันก่อนเสมอ ต่างจากการลบอย่างอื่นในเว็บที่ใช้ toast + เลิกทำ
+  // เพราะไฟล์ที่อัปโหลดแนบไว้เอากลับมาจากในเว็บไม่ได้ (เฟส 20.2)
+  const [deleting, setDeleting] = useState<TripBooking | null>(null);
 
   return (
     <section className="mb-5">
@@ -113,15 +117,30 @@ export function BookingsPanel({
             }
             setEditing(null);
           }}
-          onDelete={
-            editing !== "new"
-              ? () => {
-                  onRemove(editing.id);
-                  setEditing(null);
-                }
-              : undefined
-          }
+          onDelete={editing !== "new" ? () => setDeleting(editing) : undefined}
         />
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title="ลบตั๋ว/booking นี้"
+          confirmLabel="ลบเลย"
+          onClose={() => setDeleting(null)}
+          onConfirm={() => {
+            onRemove(deleting.id);
+            setDeleting(null);
+            setEditing(null);
+          }}
+        >
+          <p className="text-sm text-ink">
+            ลบ <span className="font-semibold">“{deleting.title}”</span> ทิ้งเลยไหม
+          </p>
+          <p className="rounded-lg bg-maple-soft/50 px-3 py-2 text-xs text-maple-dark">
+            {deleting.file_url
+              ? "⚠️ ไฟล์ที่แนบไว้จะเปิดจากในเว็บไม่ได้อีก และกดเลิกทำไม่ได้"
+              : "⚠️ กดเลิกทำไม่ได้"}
+          </p>
+        </ConfirmModal>
       )}
     </section>
   );

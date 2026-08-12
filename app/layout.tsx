@@ -4,6 +4,7 @@ import { MapsApiProvider } from "@/components/MapsApiProvider";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
+import { ToastHost } from "@/components/ToastHost";
 import "./globals.css";
 
 const thaiSans = Noto_Sans_Thai({
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-cream">
         <ServiceWorkerRegistrar />
         <OfflineBanner />
+        <ToastHost />
         <MapsApiProvider>
           <TripDataProvider>{children}</TripDataProvider>
         </MapsApiProvider>

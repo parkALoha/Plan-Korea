@@ -7,6 +7,7 @@ import { CATEGORY_EMOJI, Place } from "@/data/places";
 import { BOOKING_FILES_BUCKET, supabase, type TripStop } from "@/lib/supabase";
 import type { ScheduledStop, TravelMode } from "@/lib/schedule";
 import { computeDepartureAdvice } from "@/lib/departureAdvice";
+import { InsertBetweenRow } from "./InsertBetweenRow";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
 import { TransferAdvicePanel } from "./TransferAdvicePanel";
@@ -204,33 +205,26 @@ export function SortableStopRow({
         />
       )}
       {/* แทรกร้านอาหารกลางวันได้เลย ไม่ต้องเพิ่มท้ายวันแล้วลากขึ้นมาเอง — ศูนย์กลางค้นหาอิงจุดก่อนหน้าตรงนี้ */}
-      {!locked && (onInsertBefore || onInsertIntercityBefore || onInsertHotelBefore) && (
-        <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
-          {onInsertBefore && (
-            <button
-              onClick={onInsertBefore}
-              className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
-            >
-              + แทรกร้านอาหารตรงนี้
-            </button>
-          )}
-          {onInsertHotelBefore && (
-            <button
-              onClick={onInsertHotelBefore}
-              className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
-            >
-              🏨 + แวะที่พักตรงนี้
-            </button>
-          )}
-          {onInsertIntercityBefore && (
-            <button
-              onClick={onInsertIntercityBefore}
-              className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
-            >
-              + แทรกเดินทางข้ามเมืองตรงนี้
-            </button>
-          )}
-        </div>
+      {!locked && (
+        <InsertBetweenRow
+          actions={[
+            ...(onInsertBefore
+              ? [{ label: "+ แทรกร้านอาหารตรงนี้", tone: "maple" as const, onClick: onInsertBefore }]
+              : []),
+            ...(onInsertHotelBefore
+              ? [{ label: "🏨 + แวะที่พักตรงนี้", tone: "pine" as const, onClick: onInsertHotelBefore }]
+              : []),
+            ...(onInsertIntercityBefore
+              ? [
+                  {
+                    label: "+ แทรกเดินทางข้ามเมืองตรงนี้",
+                    tone: "pine" as const,
+                    onClick: onInsertIntercityBefore,
+                  },
+                ]
+              : []),
+          ]}
+        />
       )}
       {/* มือถือ: แถวนี้เหลือแค่ ที่จับลาก + เวลา + ชื่อ เพื่อให้ชื่อสถานที่ได้ความกว้างเต็ม
           (ของเดิมยัดปุ่มปรับเวลา/ลบไว้ด้วย ชื่อเลยเหลือ ~74px จาก 341px จนอ่านไม่ออก)

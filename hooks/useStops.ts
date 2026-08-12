@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripStop } from "@/lib/supabase";
 import { nextOrderIndex, orderIndexAtPosition } from "@/lib/stopOrdering";
 import { readCache, writeCache } from "@/lib/localCache";
+import { writeGuard } from "@/lib/writeGuard";
 
 function makeStopId() {
   return `stop-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -15,9 +16,33 @@ function sortStops(stops: TripStop[]) {
   );
 }
 
+async function fetchStops(planId: string) {
+  const { data } = await supabase.from("trip_stops").select("*").eq("plan_id", planId);
+  return (data as TripStop[] | null) ?? null;
+}
+
 export function useStops(planId: string | null) {
   const [stops, setStops] = useState<TripStop[]>([]);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+
+  /** ดึงของจริงจาก DB มาทับ state — ใช้ตอนเขียนไม่ผ่าน เพื่อให้หน้าจอเลิกโชว์ค่าที่เดาไว้ (เฟส 20.2) */
+  const reload = useCallback(async () => {
+    if (!supabaseConfigured || !planId) return;
+    const data = await fetchStops(planId);
+    if (!data) return;
+    setStops(sortStops(data));
+    writeCache(`stops:${planId}`, data);
+  }, [planId]);
+
+  /** เขียนลง DB แบบมีเสียง — พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
+  const guard = useCallback(
+    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
+      const ok = await writeGuard(label, run);
+      if (!ok) await reload();
+      return ok;
+    },
+    [reload]
+  );
 
   useEffect(() => {
     const channelName = `trip_stops_changes_${Math.random().toString(36).slice(2)}`;
@@ -38,10 +63,7 @@ export function useStops(planId: string | null) {
         setLoaded(true);
       }
 
-      const { data } = await supabase
-        .from("trip_stops")
-        .select("*")
-        .eq("plan_id", planId);
+      const data = await fetchStops(planId);
       if (cancelled) return;
       if (data) {
         setStops(sortStops(data as TripStop[]));
@@ -94,14 +116,15 @@ export function useStops(planId: string | null) {
         added_by: addedBy ?? null,
         updated_at: new Date().toISOString(),
       };
-      if (!supabaseConfigured) {
-        setStops((prev) => sortStops([...prev, newStop]));
-        return newStop.id;
-      }
-      await supabase.from("trip_stops").insert(newStop);
+      // อัปเดต state ทันทีเสมอ ไม่รอ realtime echo อย่างเดียวเหมือนเดิม — ไม่งั้นถ้า insert พัง
+      // ผู้ใช้จะเห็นแค่ "กดปุ่ม + แล้วไม่มีอะไรเกิดขึ้น" (แถม flashNewStop ก็ไฮไลต์ id ที่ไม่มีจริง)
+      // แถวจริงจาก realtime จะมาทับตัวนี้เองเพราะ id ตรงกัน
+      setStops((prev) => sortStops([...prev, newStop]));
+      if (!supabaseConfigured) return newStop.id;
+      await guard("เพิ่มจุดแวะ", () => supabase.from("trip_stops").insert(newStop));
       return newStop.id;
     },
-    [planId, stops]
+    [planId, stops, guard]
   );
 
   /** ดัน order_index ของจุดแวะที่อยู่ >= atIndex ในวันเดียวกันขึ้นไปทีละ 1 (ให้ที่ว่างสำหรับแทรกจุดใหม่ตรง atIndex)
@@ -121,19 +144,24 @@ export function useStops(planId: string | null) {
     [stops]
   );
 
-  const writeInsert = useCallback(async (toShift: TripStop[], newStop: TripStop) => {
-    if (!supabaseConfigured) return newStop.id;
-    await Promise.all([
-      ...toShift.map((s) =>
-        supabase
-          .from("trip_stops")
-          .update({ order_index: s.order_index + 1, updated_at: new Date().toISOString() })
-          .eq("id", s.id)
-      ),
-      supabase.from("trip_stops").insert(newStop),
-    ]);
-    return newStop.id;
-  }, []);
+  const writeInsert = useCallback(
+    async (toShift: TripStop[], newStop: TripStop) => {
+      if (!supabaseConfigured) return newStop.id;
+      await guard("เพิ่มจุดแวะ", () =>
+        Promise.all([
+          ...toShift.map((s) =>
+            supabase
+              .from("trip_stops")
+              .update({ order_index: s.order_index + 1, updated_at: new Date().toISOString() })
+              .eq("id", s.id)
+          ),
+          supabase.from("trip_stops").insert(newStop),
+        ])
+      );
+      return newStop.id;
+    },
+    [guard]
+  );
 
   /** ใช้ตอน "แทรกร้านตรงนี้" — เพิ่มจุดแวะแทรกกลางวันที่ atIndex แทนที่จะต่อท้ายวันเสมอเหมือน addStop */
   const insertStopAt = useCallback(
@@ -280,11 +308,13 @@ export function useStops(planId: string | null) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, place_id: placeId } : s)));
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ place_id: placeId, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("เปลี่ยนสถานที่", () =>
+      supabase
+        .from("trip_stops")
+        .update({ place_id: placeId, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   const updateDwellMinutes = useCallback(async (stopId: string, dwellMinutes: number | null) => {
     if (!supabaseConfigured) {
@@ -293,11 +323,13 @@ export function useStops(planId: string | null) {
       );
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ dwell_minutes: dwellMinutes, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("เวลาที่อยู่", () =>
+      supabase
+        .from("trip_stops")
+        .update({ dwell_minutes: dwellMinutes, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   const updateTravelMode = useCallback(async (stopId: string, travelMode: string | null) => {
     if (!supabaseConfigured) {
@@ -306,33 +338,39 @@ export function useStops(planId: string | null) {
       );
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ travel_mode: travelMode, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("โหมดเดินทาง", () =>
+      supabase
+        .from("trip_stops")
+        .update({ travel_mode: travelMode, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   const updateNote = useCallback(async (stopId: string, note: string | null) => {
     if (!supabaseConfigured) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, note } : s)));
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ note, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("โน้ต", () =>
+      supabase
+        .from("trip_stops")
+        .update({ note, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   const updatePhoto = useCallback(async (stopId: string, photoUrl: string | null) => {
     if (!supabaseConfigured) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, photo_url: photoUrl } : s)));
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ photo_url: photoUrl, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("รูปของจุดแวะ", () =>
+      supabase
+        .from("trip_stops")
+        .update({ photo_url: photoUrl, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   const updateOrderIndex = useCallback(async (stopId: string, orderIndex: number) => {
     if (!supabaseConfigured) {
@@ -341,11 +379,13 @@ export function useStops(planId: string | null) {
       );
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ order_index: orderIndex, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("ลำดับจุดแวะ", () =>
+      supabase
+        .from("trip_stops")
+        .update({ order_index: orderIndex, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   /** ใช้ตอนลากจัดลำดับใหม่ (drag-and-drop) — รับ id ทั้งวันเรียงตามลำดับใหม่ แล้วเขียน order_index ทับทั้งชุด
    *  อัปเดต state local ก่อนเลย (optimistic) กัน UI สะดุด/เด้งกลับระหว่างรอ realtime echo กลับมาทีละแถว */
@@ -359,15 +399,17 @@ export function useStops(planId: string | null) {
       )
     );
     if (!supabaseConfigured) return;
-    await Promise.all(
-      orderedStopIds.map((id, i) =>
-        supabase
-          .from("trip_stops")
-          .update({ order_index: i, updated_at: new Date().toISOString() })
-          .eq("id", id)
+    await guard("ลำดับจุดแวะ", () =>
+      Promise.all(
+        orderedStopIds.map((id, i) =>
+          supabase
+            .from("trip_stops")
+            .update({ order_index: i, updated_at: new Date().toISOString() })
+            .eq("id", id)
+        )
       )
     );
-  }, []);
+  }, [guard]);
 
   /** ใช้ตอนลากจุดแวะข้ามไปอีกวันหนึ่ง (คนละ day_id) — ต่อท้ายวันปลายทางเสมอ
    *  จัด order_index ของวันต้นทางที่เหลือให้ต่อเนื่อง 0..n-1 ทันทีหลังย้ายออก (บั๊ก 8.1 — เดิมปล่อยเป็นช่องว่างไว้เฉยๆ
@@ -399,20 +441,22 @@ export function useStops(planId: string | null) {
         )
       );
       if (!supabaseConfigured) return;
-      await Promise.all([
-        supabase
-          .from("trip_stops")
-          .update({ day_id: targetDayId, order_index: newOrderIndex, updated_at: new Date().toISOString() })
-          .eq("id", stopId),
-        ...renumbered.map((r) =>
+      await guard("ย้ายจุดแวะข้ามวัน", () =>
+        Promise.all([
           supabase
             .from("trip_stops")
-            .update({ order_index: r.order_index, updated_at: new Date().toISOString() })
-            .eq("id", r.id)
-        ),
-      ]);
+            .update({ day_id: targetDayId, order_index: newOrderIndex, updated_at: new Date().toISOString() })
+            .eq("id", stopId),
+          ...renumbered.map((r) =>
+            supabase
+              .from("trip_stops")
+              .update({ order_index: r.order_index, updated_at: new Date().toISOString() })
+              .eq("id", r.id)
+          ),
+        ])
+      );
     },
-    [stops]
+    [stops, guard]
   );
 
   /** ติ๊ก/ยกเลิกติ๊ก "มาถึงแล้ว" จากหน้า "วันนี้" — visitedAt = null ล้างค่า (ยกเลิกติ๊ก) */
@@ -421,11 +465,13 @@ export function useStops(planId: string | null) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, visited_at: visitedAt } : s)));
       return;
     }
-    await supabase
-      .from("trip_stops")
-      .update({ visited_at: visitedAt, updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-  }, []);
+    await guard("สถานะมาถึงแล้ว", () =>
+      supabase
+        .from("trip_stops")
+        .update({ visited_at: visitedAt, updated_at: new Date().toISOString() })
+        .eq("id", stopId)
+    );
+  }, [guard]);
 
   const markVisited = useCallback(
     (stopId: string) => setVisitedAt(stopId, new Date().toISOString()),
@@ -434,13 +480,27 @@ export function useStops(planId: string | null) {
 
   const unmarkVisited = useCallback((stopId: string) => setVisitedAt(stopId, null), [setVisitedAt]);
 
-  const removeStop = useCallback(async (stopId: string) => {
-    if (!supabaseConfigured) {
+  /** คืนแถวที่เพิ่งลบทั้งแถว (โน้ต/รูป/โหมดเดินทาง/ลำดับ ครบ) ให้ผู้เรียกเก็บไว้ทำปุ่ม "เลิกทำ" ได้ */
+  const removeStop = useCallback(
+    async (stopId: string): Promise<TripStop | undefined> => {
+      const snapshot = stops.find((s) => s.id === stopId);
       setStops((prev) => prev.filter((s) => s.id !== stopId));
-      return;
-    }
-    await supabase.from("trip_stops").delete().eq("id", stopId);
-  }, []);
+      if (!supabaseConfigured) return snapshot;
+      await guard("ลบจุดแวะ", () => supabase.from("trip_stops").delete().eq("id", stopId));
+      return snapshot;
+    },
+    [stops, guard]
+  );
+
+  /** เอาแถวที่ลบไปใส่กลับที่เดิมเป๊ะๆ — order_index ติดมากับ snapshot อยู่แล้วจึงกลับไปอยู่ตำแหน่งเดิม */
+  const restoreStop = useCallback(
+    async (stop: TripStop) => {
+      setStops((prev) => sortStops([...prev.filter((s) => s.id !== stop.id), stop]));
+      if (!supabaseConfigured) return;
+      await guard("กู้จุดแวะคืน", () => supabase.from("trip_stops").insert(stop));
+    },
+    [guard]
+  );
 
   return {
     stops,
@@ -461,6 +521,7 @@ export function useStops(planId: string | null) {
     markVisited,
     unmarkVisited,
     removeStop,
+    restoreStop,
     supabaseConfigured,
   };
 }

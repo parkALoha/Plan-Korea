@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
+import { writeGuard } from "@/lib/writeGuard";
 
 /** ทุกอย่างที่ต้องรู้ตอนบันทึกที่พักหนึ่งที่ — รวมเป็นอ็อบเจกต์เดียวตั้งแต่เฟส 16
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
@@ -100,14 +101,33 @@ function useHotelsStore() {
     };
   }, []);
 
+  /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
+  const reload = useCallback(async () => {
+    if (!supabaseConfigured) return;
+    const { data } = await supabase.from("trip_hotels").select("*");
+    if (!data) return;
+    const map: Record<string, TripHotel> = {};
+    for (const row of data as TripHotel[]) map[row.leg_id] = row;
+    setHotels(map);
+    writeCache("hotels", data);
+  }, []);
+
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  const guard = useCallback(
+    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
+      if (!(await writeGuard(label, run))) await reload();
+    },
+    [reload]
+  );
+
   const setHotel = useCallback(async (input: HotelInput) => {
     const row = toRow(input);
     if (!supabaseConfigured) {
       setHotels((prev) => ({ ...prev, [input.legId]: row }));
       return;
     }
-    await supabase.from("trip_hotels").upsert(row);
-  }, []);
+    await guard("บันทึกที่พัก", () => supabase.from("trip_hotels").upsert(row));
+  }, [guard]);
 
   const clearHotel = useCallback(async (legId: string) => {
     if (!supabaseConfigured) {
@@ -118,8 +138,8 @@ function useHotelsStore() {
       });
       return;
     }
-    await supabase.from("trip_hotels").delete().eq("leg_id", legId);
-  }, []);
+    await guard("ลบที่พัก", () => supabase.from("trip_hotels").delete().eq("leg_id", legId));
+  }, [guard]);
 
   return useMemo(
     () => ({ hotels, loaded, setHotel, clearHotel, supabaseConfigured }),

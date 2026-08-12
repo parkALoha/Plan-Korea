@@ -15,6 +15,7 @@ import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { CITY_NAME_TH, type Day } from "@/data/itinerary";
 import { resolvePlace } from "@/lib/resolvePlace";
 import type { CustomPlace, TripStop } from "@/lib/supabase";
+import { showUndoToast } from "@/lib/toast";
 
 interface UseTripDndArgs {
   itinerary: Day[];
@@ -36,7 +37,9 @@ interface UseTripDndArgs {
     addedBy?: string,
     travelMode?: string | null
   ) => Promise<string | undefined>;
-  removeStop: (stopId: string) => Promise<void>;
+  /** คืนแถวที่ลบไปทั้งแถว เพื่อเอาไปทำปุ่ม "เลิกทำ" บน toast */
+  removeStop: (stopId: string) => Promise<TripStop | undefined>;
+  restoreStop: (stop: TripStop) => Promise<void>;
   reorderStops: (dayId: string, orderedStopIds: string[]) => Promise<void>;
   moveStopToDay: (stopId: string, targetDayId: string) => Promise<void> | void;
   flashNewStop: (stopId: string | undefined) => void;
@@ -55,6 +58,7 @@ export function useTripDnd({
   defaultTravelModeFor,
   addStop,
   removeStop,
+  restoreStop,
   reorderStops,
   moveStopToDay,
   flashNewStop,
@@ -80,6 +84,13 @@ export function useTripDnd({
         ? { kind: "place", placeId: data.placeId }
         : { kind: "stop", stopId: event.active.id as string }
     );
+  }
+
+  /** ป้ายชื่อสั้นๆ ของจุดแวะ ใช้ในข้อความ toast — แถวพิเศษ (ข้ามเมือง/ที่พัก/สนามบิน) resolve ไม่ได้ ใช้คำกลางๆ */
+  function stopLabel(stopId: string) {
+    const placeId = stops.find((s) => s.id === stopId)?.place_id;
+    const place = placeId ? resolvePlace(placeId, customPlaces) : null;
+    return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "จุดแวะนี้";
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -110,28 +121,33 @@ export function useTripDnd({
       const targetDay = itinerary.find((d) => d.id === targetDayId);
       const place = resolvePlace(activeData.placeId, customPlaces);
       if (!targetDay || !place) return;
-      if (
-        place.city !== targetDay.city &&
-        !window.confirm(
-          `"${place.nameTh}" อยู่ที่${CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]} ต้องการเพิ่มเข้าวันนี้เลยไหม?`
-        )
-      ) {
-        return;
-      }
       const prevPlace = lastStopPlaceForDay(targetDayId);
       addStop(
         targetDayId,
         activeData.placeId,
         who || undefined,
         defaultTravelModeFor(prevPlace, place)
-      ).then(flashNewStop);
+      ).then((stopId) => {
+        flashNewStop(stopId);
+        // คนละเมืองกับที่เที่ยววันนั้น — ทำให้ก่อนแล้วค่อยบอก พร้อมทางกลับ (วันทางผ่านเที่ยว 2 เมืองได้จริง
+        // การเด้งกล่อง "แน่ใจไหม" ขวางทุกครั้งจึงผิดมากกว่าถูก) แทน window.confirm เดิม — เฟส 20.2
+        if (place.city !== targetDay.city && stopId) {
+          showUndoToast(
+            `"${place.nameTh}" อยู่ที่${CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]}`,
+            () => removeStop(stopId)
+          );
+        }
+      });
       return;
     }
 
     // activeData.type === "stop"
     const stopId = active.id as string;
     if (overData?.type === "library") {
-      removeStop(stopId);
+      const label = stopLabel(stopId);
+      removeStop(stopId).then((snapshot) => {
+        if (snapshot) showUndoToast(`เอา ${label} ออกจากแผนแล้ว`, () => restoreStop(snapshot));
+      });
       return;
     }
     if (!targetDayId) return;
@@ -154,15 +170,15 @@ export function useTripDnd({
     const movingStop = stops.find((s) => s.id === stopId);
     const place = movingStop ? resolvePlace(movingStop.place_id, customPlaces) : null;
     if (!targetDay || !place) return;
-    if (
-      place.city !== targetDay.city &&
-      !window.confirm(
-        `"${place.nameTh}" อยู่ที่${CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]} ต้องการย้ายมาวันนี้เลยไหม?`
-      )
-    ) {
-      return;
-    }
-    moveStopToDay(stopId, targetDayId);
+    const sourceDayId = activeData.dayId;
+    Promise.resolve(moveStopToDay(stopId, targetDayId)).then(() => {
+      if (place.city !== targetDay.city) {
+        showUndoToast(
+          `"${place.nameTh}" อยู่ที่${CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]}`,
+          () => moveStopToDay(stopId, sourceDayId)
+        );
+      }
+    });
   }
 
   const activeDragLabel = useMemo(() => {

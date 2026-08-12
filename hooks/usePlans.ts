@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripPlan } from "@/lib/supabase";
+import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
 
 function makePlanId() {
@@ -93,7 +94,9 @@ export function usePlans() {
         return id;
       }
 
-      await supabase.from("trip_plans").insert(newPlan);
+      if (!(await writeGuard("สร้างแผนใหม่", () => supabase.from("trip_plans").insert(newPlan)))) {
+        return undefined;
+      }
 
       if (options?.duplicateFrom) {
         const [{ data: stopRows }, { data: settingRows }] = await Promise.all([
@@ -101,23 +104,29 @@ export function usePlans() {
           supabase.from("trip_day_settings").select("*").eq("plan_id", options.duplicateFrom),
         ]);
         if (stopRows && stopRows.length > 0) {
-          await supabase.from("trip_stops").insert(
-            stopRows.map((row) => ({
-              ...row,
-              id: `${row.id}-copy-${Math.random().toString(36).slice(2)}`,
-              plan_id: id,
-            }))
+          await writeGuard("ก๊อปจุดแวะมาแผนใหม่", () =>
+            supabase.from("trip_stops").insert(
+              stopRows.map((row) => ({
+                ...row,
+                id: `${row.id}-copy-${Math.random().toString(36).slice(2)}`,
+                plan_id: id,
+              }))
+            )
           );
         }
         if (settingRows && settingRows.length > 0) {
-          await supabase
-            .from("trip_day_settings")
-            .insert(settingRows.map((row) => ({ ...row, plan_id: id })));
+          await writeGuard("ก๊อปตั้งค่ารายวันมาแผนใหม่", () =>
+            supabase
+              .from("trip_day_settings")
+              .insert(settingRows.map((row) => ({ ...row, plan_id: id })))
+          );
         }
       }
 
       if (options?.activate !== false) {
-        await supabase.from("trip_meta").upsert({ id: 1, active_plan_id: id });
+        await writeGuard("สลับแผนที่ใช้อยู่", () =>
+          supabase.from("trip_meta").upsert({ id: 1, active_plan_id: id })
+        );
       }
       return id;
     },
@@ -129,7 +138,9 @@ export function usePlans() {
       setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
       return;
     }
-    await supabase.from("trip_plans").update({ name }).eq("id", id);
+    await writeGuard("เปลี่ยนชื่อแผน", () =>
+      supabase.from("trip_plans").update({ name }).eq("id", id)
+    );
   }, []);
 
   const deletePlan = useCallback(
@@ -144,10 +155,16 @@ export function usePlans() {
         return;
       }
       // ลบ trip_plans แล้ว trip_stops/trip_day_settings ของแผนนี้จะถูกลบตามด้วย (on delete cascade)
-      await supabase.from("trip_plans").delete().eq("id", id);
+      if (!(await writeGuard("ลบแผน", () => supabase.from("trip_plans").delete().eq("id", id)))) {
+        return;
+      }
       if (activePlanId === id) {
         const next = plans.find((p) => p.id !== id);
-        if (next) await supabase.from("trip_meta").upsert({ id: 1, active_plan_id: next.id });
+        if (next) {
+          await writeGuard("สลับแผนที่ใช้อยู่", () =>
+            supabase.from("trip_meta").upsert({ id: 1, active_plan_id: next.id })
+          );
+        }
       }
     },
     [plans, activePlanId]
@@ -158,7 +175,9 @@ export function usePlans() {
       setActivePlanId(id);
       return;
     }
-    await supabase.from("trip_meta").upsert({ id: 1, active_plan_id: id });
+    await writeGuard("สลับแผนที่ใช้อยู่", () =>
+      supabase.from("trip_meta").upsert({ id: 1, active_plan_id: id })
+    );
   }, []);
 
   return {

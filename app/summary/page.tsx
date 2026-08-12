@@ -40,6 +40,7 @@ import { useDaySettings } from "@/hooks/useDaySettings";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
+import { useDarkTheme } from "@/hooks/useDarkTheme";
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
   if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
@@ -114,7 +115,7 @@ function SummaryDayCard({
   const allEvents = [...(eventsBeforeStops ?? []), ...eventsAfterStops];
 
   return (
-    <section className="mb-4 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5 print:break-inside-avoid print:shadow-none">
+    <section className="mb-4 overflow-hidden rounded-2xl border border-line bg-surface-raised shadow-sm shadow-ink/5 print:break-inside-avoid print:shadow-none">
       <div
         className="px-4 py-3 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]"
         style={{ background: `linear-gradient(135deg, ${meta.color}, ${meta.colorDark})` }}
@@ -146,8 +147,8 @@ function SummaryDayCard({
       </div>
 
       {allEvents.length > 0 && (
-        <div className="border-b border-cream-soft bg-cream-soft/40 px-4 py-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
+        <div className="border-b border-line bg-surface-soft/60 px-4 py-2.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-content-soft">
             {t("fixedTimes")}
           </div>
           <div className="mt-1 space-y-1">
@@ -155,19 +156,19 @@ function SummaryDayCard({
               <div
                 key={i}
                 className={`flex items-start gap-2.5 rounded-lg px-2 py-1 text-xs ${
-                  event.alert ? "bg-maple-soft/70 text-maple-dark" : "text-ink"
+                  event.alert ? "bg-panel-maple/70 text-panel-maple-ink" : "text-content"
                 }`}
               >
                 <div className="w-[4.5rem] shrink-0 text-right font-semibold tabular-nums">
                   {event.time}
-                  {event.endTime && <div className="font-normal text-ink-soft">↓ {event.endTime}</div>}
+                  {event.endTime && <div className="font-normal text-content-soft">↓ {event.endTime}</div>}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">
                     {event.icon} {(en && event.titleEn) || event.title}
                   </div>
                   {event.detail && !en && (
-                    <div className="mt-0.5 leading-relaxed text-ink-soft">{event.detail}</div>
+                    <div className="mt-0.5 leading-relaxed text-content-soft">{event.detail}</div>
                   )}
                   {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
                 </div>
@@ -177,9 +178,9 @@ function SummaryDayCard({
         </div>
       )}
 
-      <div className="divide-y divide-cream-soft">
+      <div className="divide-y divide-line">
         {startAnchor && schedule.length > 0 && (
-          <div className="flex items-center gap-2 bg-pine-soft/40 px-3 py-2 text-xs text-pine-dark sm:px-4">
+          <div className="flex items-center gap-2 bg-panel-pine/50 px-3 py-2 text-xs text-panel-pine-ink sm:px-4">
             <span className="w-12 shrink-0 text-center font-semibold tabular-nums">
               {effectiveStartTime}
             </span>
@@ -190,7 +191,7 @@ function SummaryDayCard({
         )}
 
         {schedule.length === 0 && (
-          <div className="px-4 py-5 text-center text-sm text-ink-soft">{t("noStopsToday")}</div>
+          <div className="px-4 py-5 text-center text-sm text-content-soft">{t("noStopsToday")}</div>
         )}
 
         {schedule.map((sched, i) => {
@@ -199,19 +200,19 @@ function SummaryDayCard({
           return (
             <div key={stop.id} className="px-3 py-2.5 sm:px-4">
               {i > 0 && mode && sched.travelMinutesFromPrev != null && (
-                <div className="mb-1.5 pl-14 text-[11px] text-ink-soft">
+                <div className="mb-1.5 pl-14 text-[11px] text-content-soft">
                   {TRAVEL_MODE_EMOJI[mode]}{" "}
                   {en ? TRAVEL_MODE_LABEL_EN[mode] : TRAVEL_MODE_LABEL[mode]} ~
                   {sched.travelMinutesFromPrev} {t("minutes")}
                 </div>
               )}
               <div className="flex items-start gap-2">
-                <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-ink-soft">
-                  <div className="font-semibold text-ink">{sched.arrival}</div>
+                <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft">
+                  <div className="font-semibold text-content">{sched.arrival}</div>
                   <div>{sched.departure}</div>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-ink">
+                  <div className="font-semibold text-content">
                     {stop.kind === "intercity"
                       ? `${INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]} ${
                           (en ? INTERCITY_MODE_LABEL_EN : INTERCITY_MODE_LABEL)[
@@ -229,12 +230,12 @@ function SummaryDayCard({
                           }`
                         : t("noPlaceData")}
                   </div>
-                  <div className="text-xs text-ink-soft">
+                  <div className="text-xs text-content-soft">
                     {t("stayFor")} {sched.resolvedDwellMinutes} {t("minutes")}
                     {stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""}
                   </div>
                   {stop.note && !en && (
-                    <div className="mt-0.5 text-xs italic text-ink-soft">📝 {stop.note}</div>
+                    <div className="mt-0.5 text-xs italic text-content-soft">📝 {stop.note}</div>
                   )}
                 </div>
               </div>
@@ -243,7 +244,7 @@ function SummaryDayCard({
         })}
 
         {endAnchor && daySchedule.arriveBackAt && (
-          <div className="flex items-center gap-2 bg-pine-soft/40 px-3 py-2 text-xs text-pine-dark sm:px-4">
+          <div className="flex items-center gap-2 bg-panel-pine/50 px-3 py-2 text-xs text-panel-pine-ink sm:px-4">
             <span className="w-12 shrink-0 text-center font-semibold tabular-nums">
               {daySchedule.arriveBackAt}
             </span>
@@ -255,11 +256,11 @@ function SummaryDayCard({
       </div>
 
       {bookings.length > 0 && (
-        <div className="border-t border-cream-soft px-4 py-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
+        <div className="border-t border-line px-4 py-2.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-content-soft">
             {t("todaysBookings")}
           </div>
-          <ul className="mt-1 space-y-0.5 text-xs text-ink">
+          <ul className="mt-1 space-y-0.5 text-xs text-content">
             {bookings.map((b) => (
               <li key={b.id}>
                 {BOOKING_CATEGORY_ICON[b.category]}{" "}
@@ -272,7 +273,7 @@ function SummaryDayCard({
       )}
 
       {schedule.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-cream-soft bg-cream-soft/40 px-4 py-2.5 text-[11px] text-ink-soft">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line bg-surface-soft/60 px-4 py-2.5 text-[11px] text-content-soft">
           <span>
             📍 {schedule.filter((s) => s.place).length} {t("stops")}
           </span>
@@ -300,7 +301,7 @@ function SummaryDayCard({
 export default function SummaryPage() {
   return (
     <Suspense
-      fallback={<div className="px-4 py-10 text-center text-sm text-ink-soft">กำลังโหลด...</div>}
+      fallback={<div className="px-4 py-10 text-center text-sm text-content-soft">กำลังโหลด...</div>}
     >
       <SummaryContent />
     </Suspense>
@@ -328,6 +329,9 @@ function SummaryContent() {
     [overnightOverrides]
   );
   const { hotelLegs, hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
+  // ธีมมืดชุดเดียวกับ /today (เฟส 20.4) — กลางดึกที่เกาหลีกดจาก "วันนี้" มาหน้านี้แล้วเจอพื้นครีม
+  // สว่างจ้าใส่ตา ทั้งที่เป็นสองหน้าที่ใช้ต่อกันที่สุด · หน้านี้อ่านอย่างเดียวจึงแปลงโทเคนไม่กี่จุด
+  const { isDark, toggle: toggleTheme } = useDarkTheme();
 
   const stopsByDay = useMemo(() => {
     const map: Record<string, TripStop[]> = {};
@@ -370,11 +374,11 @@ function SummaryContent() {
   }
 
   return (
-    <main className="min-h-full pb-24 lg:pb-10">
+    <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
       {/* โหมด ตม.: ซ่อนหัวเว็บสีเขียวตอนพิมพ์ทั้งก้อน — กระดาษแผ่นแรกต้องเริ่มที่ "Travel Itinerary"
           ไม่ใช่แถบแบรนด์ที่กินพื้นที่ A4 ไปฟรีๆ (บนจอยังโชว์ปกติเพื่อให้กดสลับกลับได้) */}
       <header
-        className={`bg-pine px-4 pb-6 pt-6 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact] ${
+        className={`focus-ring-on-dark bg-pine px-4 pb-6 pt-6 text-cream print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact] ${
           immigrationView ? "print:hidden" : ""
         }`}
       >
@@ -423,6 +427,14 @@ function SummaryContent() {
               >
                 {t("print")}
               </button>
+              {/* สลับธีมได้จากหน้านี้ด้วย ไม่ต้องอ้อมไปกดที่ /today — ค่าเก็บที่เดียวกัน */}
+              <button
+                onClick={toggleTheme}
+                aria-label={isDark ? "เปลี่ยนเป็นธีมสว่าง" : "เปลี่ยนเป็นธีมมืด"}
+                className="rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
+              >
+                {isDark ? "☀️" : "🌙"}
+              </button>
             </div>
           </div>
           <h1 className="mt-3 text-2xl font-extrabold">{t("summaryTitle")}</h1>
@@ -451,7 +463,7 @@ function SummaryContent() {
       </header>
 
       {!overallLoaded && (
-        <div className="px-4 py-10 text-center text-sm text-ink-soft">{t("loading")}</div>
+        <div className="px-4 py-10 text-center text-sm text-content-soft">{t("loading")}</div>
       )}
 
       {overallLoaded && immigrationView && (
@@ -466,34 +478,34 @@ function SummaryContent() {
       {overallLoaded && !immigrationView && (
         <div className="mx-auto max-w-2xl px-4 pt-5">
           {daysWithoutStops.length > 0 && (
-            <div className="mb-4 rounded-xl bg-maple-soft/60 px-3 py-2 text-xs text-maple-dark">
+            <div className="mb-4 rounded-xl bg-panel-maple/60 px-3 py-2 text-xs text-panel-maple-ink">
               ⚠️ {daysWithoutStops.length} {t("daysWithoutStops")}:{" "}
               {daysWithoutStops.map((d) => dateLabelOf(d.date, lang)).join(", ")}
             </div>
           )}
 
           <section className="mb-5">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
               {t("hotelsAll")}
             </h2>
-            <div className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
+            <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
               {hotelLegs.map((leg) => {
                 const hotel = hotels[leg.id];
                 return (
                   <div key={leg.id} className="px-3 py-2.5 text-sm">
-                    <div className="text-xs text-ink-soft">
+                    <div className="text-xs text-content-soft">
                       {CITY_META[leg.city].icon} {en ? CITY_NAME_EN[leg.city] : CITY_NAME_TH[leg.city]} ·{" "}
                       {dateLabelOf(leg.startDate, lang)}–{dateLabelOf(leg.endDate, lang)} (
                       {leg.nights.length} {t("nights")})
                     </div>
-                    <div className={hotel ? "font-medium text-ink" : "text-maple-dark"}>
+                    <div className={hotel ? "font-medium text-content" : "text-panel-maple-ink"}>
                       {hotel ? (en && hotel.name_en) || hotel.hotel_name : t("noHotelChosen")}
                     </div>
                     {/* ชื่อ/ที่อยู่ภาษาท้องถิ่นของที่พัก (migration 0026) — ยื่นให้คนขับแท็กซี่ดูได้ตรงนี้เลย */}
                     {hotel?.address_local && (
-                      <div className="text-xs text-ink-soft">🗣️ {hotel.address_local}</div>
+                      <div className="text-xs text-content-soft">🗣️ {hotel.address_local}</div>
                     )}
-                    {hotel?.phone && <div className="text-xs text-ink-soft">☎️ {hotel.phone}</div>}
+                    {hotel?.phone && <div className="text-xs text-content-soft">☎️ {hotel.phone}</div>}
                   </div>
                 );
               })}
@@ -502,21 +514,21 @@ function SummaryContent() {
 
           {bookings.length > 0 && (
             <section className="mb-5">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 {t("bookingsAll")} ({bookings.length})
               </h2>
-              <div className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
+              <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
                 {bookings.map((b) => (
                   <div key={b.id} className="px-3 py-2.5 text-sm">
-                    <div className="text-xs text-ink-soft">
+                    <div className="text-xs text-content-soft">
                       {BOOKING_CATEGORY_ICON[b.category]}{" "}
                       {(en ? BOOKING_CATEGORY_LABEL_EN : BOOKING_CATEGORY_LABEL)[b.category]}
                       {b.date ? ` · ${dateLabelOf(b.date, lang)}` : ""}
                       {b.time ? ` ${b.time}` : ""}
                     </div>
-                    <div className="font-medium text-ink">{b.title}</div>
+                    <div className="font-medium text-content">{b.title}</div>
                     {b.confirmation_number && (
-                      <div className="text-xs text-ink-soft">
+                      <div className="text-xs text-content-soft">
                         {t("confirmationNumber")} {b.confirmation_number}
                       </div>
                     )}
@@ -528,17 +540,17 @@ function SummaryContent() {
 
           {checklistItems.length > 0 && (
             <section className="mb-5">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 {t("checklistTitle")} ({checklistItems.filter((i) => i.is_checked).length}/
                 {checklistItems.length})
               </h2>
-              <ul className="divide-y divide-cream-soft rounded-2xl border border-cream-soft bg-white">
+              <ul className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
                 {checklistItems.map((item) => (
                   <li key={item.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <span className={item.is_checked ? "text-pine" : "text-ink-soft/40"}>
+                    <span className={item.is_checked ? "text-panel-pine-ink" : "text-content-soft/40"}>
                       {item.is_checked ? "✓" : "○"}
                     </span>
-                    <span className={item.is_checked ? "text-ink-soft line-through" : "text-ink"}>
+                    <span className={item.is_checked ? "text-content-soft line-through" : "text-content"}>
                       {item.text}
                     </span>
                   </li>
@@ -547,7 +559,7 @@ function SummaryContent() {
             </section>
           )}
 
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
             {t("dailyPlan")}
           </h2>
           {itinerary.map((day) => (

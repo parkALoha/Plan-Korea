@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
+import { writeGuard } from "@/lib/writeGuard";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -86,6 +87,23 @@ function useBookingsStore() {
     };
   }, []);
 
+  /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
+  const reload = useCallback(async () => {
+    if (!supabaseConfigured) return;
+    const { data } = await supabase.from("bookings").select("*");
+    if (!data) return;
+    setBookings(sortBookings(data as TripBooking[]));
+    writeCache("bookings", data);
+  }, []);
+
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  const guard = useCallback(
+    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
+      if (!(await writeGuard(label, run))) await reload();
+    },
+    [reload]
+  );
+
   const addBooking = useCallback(async (input: NewBooking) => {
     const now = new Date().toISOString();
     const newBooking: TripBooking = {
@@ -104,13 +122,11 @@ function useBookingsStore() {
       file_url: input.fileUrl ?? null,
       file_name: input.fileName ?? null,
     };
-    if (!supabaseConfigured) {
-      setBookings((prev) => sortBookings([...prev, newBooking]));
-      return newBooking.id;
-    }
-    await supabase.from("bookings").insert(newBooking);
+    setBookings((prev) => sortBookings([...prev, newBooking]));
+    if (!supabaseConfigured) return newBooking.id;
+    await guard("เพิ่มตั๋ว/booking", () => supabase.from("bookings").insert(newBooking));
     return newBooking.id;
-  }, []);
+  }, [guard]);
 
   const updateBooking = useCallback(
     async (bookingId: string, patch: Partial<NewBooking>) => {
@@ -152,18 +168,21 @@ function useBookingsStore() {
         );
         return;
       }
-      await supabase.from("bookings").update(dbPatch).eq("id", bookingId);
+      await guard("แก้ตั๋ว/booking", () =>
+        supabase.from("bookings").update(dbPatch).eq("id", bookingId)
+      );
     },
-    []
+    [guard]
   );
 
-  const removeBooking = useCallback(async (bookingId: string) => {
-    if (!supabaseConfigured) {
+  const removeBooking = useCallback(
+    async (bookingId: string) => {
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
-      return;
-    }
-    await supabase.from("bookings").delete().eq("id", bookingId);
-  }, []);
+      if (!supabaseConfigured) return;
+      await guard("ลบตั๋ว/booking", () => supabase.from("bookings").delete().eq("id", bookingId));
+    },
+    [guard]
+  );
 
   return useMemo(
     () => ({ bookings, loaded, addBooking, updateBooking, removeBooking, supabaseConfigured }),

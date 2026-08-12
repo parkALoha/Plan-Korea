@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
+import { writeGuard } from "@/lib/writeGuard";
 
 function makeChecklistId() {
   return `cl-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -60,6 +61,21 @@ export function useChecklist() {
     };
   }, []);
 
+  /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
+  const reload = useCallback(async () => {
+    if (!supabaseConfigured) return;
+    const { data } = await supabase.from("checklist_items").select("*");
+    if (data) setItems(sortItems(data as ChecklistItem[]));
+  }, []);
+
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  const guard = useCallback(
+    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
+      if (!(await writeGuard(label, run))) await reload();
+    },
+    [reload]
+  );
+
   const addItem = useCallback(
     async (text: string, category: ChecklistCategory = "packing", addedBy?: string | null) => {
       const now = new Date().toISOString();
@@ -73,14 +89,14 @@ export function useChecklist() {
         updated_at: now,
         category,
       };
-      if (!supabaseConfigured) {
-        setItems((prev) => sortItems([...prev, newItem]));
-        return newItem.id;
-      }
-      await supabase.from("checklist_items").insert(newItem);
+      setItems((prev) => sortItems([...prev, newItem]));
+      if (!supabaseConfigured) return newItem.id;
+      await guard("เพิ่มของที่ต้องเตรียม", () =>
+        supabase.from("checklist_items").insert(newItem)
+      );
       return newItem.id;
     },
-    []
+    [guard]
   );
 
   const toggleItem = useCallback(async (itemId: string, checked: boolean, checkedBy?: string | null) => {
@@ -89,20 +105,35 @@ export function useChecklist() {
       checked_by: checked ? checkedBy ?? null : null,
       updated_at: new Date().toISOString(),
     };
-    if (!supabaseConfigured) {
-      setItems((prev) => sortItems(prev.map((i) => (i.id === itemId ? { ...i, ...patch } : i))));
-      return;
-    }
-    await supabase.from("checklist_items").update(patch).eq("id", itemId);
-  }, []);
+    setItems((prev) => sortItems(prev.map((i) => (i.id === itemId ? { ...i, ...patch } : i))));
+    if (!supabaseConfigured) return;
+    await guard("ติ๊กของที่ต้องเตรียม", () =>
+      supabase.from("checklist_items").update(patch).eq("id", itemId)
+    );
+  }, [guard]);
 
-  const removeItem = useCallback(async (itemId: string) => {
-    if (!supabaseConfigured) {
+  /** คืนแถวที่เพิ่งลบ ให้ผู้เรียกเอาไปทำปุ่ม "เลิกทำ" บน toast (เฟส 20.2) */
+  const removeItem = useCallback(
+    async (itemId: string): Promise<ChecklistItem | undefined> => {
+      const snapshot = items.find((i) => i.id === itemId);
       setItems((prev) => prev.filter((i) => i.id !== itemId));
-      return;
-    }
-    await supabase.from("checklist_items").delete().eq("id", itemId);
-  }, []);
+      if (!supabaseConfigured) return snapshot;
+      await guard("ลบของที่ต้องเตรียม", () =>
+        supabase.from("checklist_items").delete().eq("id", itemId)
+      );
+      return snapshot;
+    },
+    [items, guard]
+  );
 
-  return { items, loaded, addItem, toggleItem, removeItem, supabaseConfigured };
+  const restoreItem = useCallback(
+    async (item: ChecklistItem) => {
+      setItems((prev) => sortItems([...prev.filter((i) => i.id !== item.id), item]));
+      if (!supabaseConfigured) return;
+      await guard("กู้ของที่ต้องเตรียมคืน", () => supabase.from("checklist_items").insert(item));
+    },
+    [guard]
+  );
+
+  return { items, loaded, addItem, toggleItem, removeItem, restoreItem, supabaseConfigured };
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { City } from "@/data/itinerary";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
 
 type Overrides = Record<string, City>;
@@ -68,7 +69,12 @@ export function useOvernightOverrides() {
       const next = { ...overrides, [dayId]: city };
       setOverrides(next); // อัปเดตทันทีไม่รอ realtime ตีกลับ
       if (!supabaseConfigured) return;
-      await supabase.from("trip_meta").upsert({ id: 1, overnight_overrides: next });
+      // เขียนไม่ผ่าน → บอกแล้วคืนค่าเดิม (แถวเดียวจึง rollback ตรงๆ ได้ ไม่ต้องดึงใหม่ทั้งตาราง)
+      if (!(await writeGuard("เมืองที่นอนคืนนี้", () =>
+        supabase.from("trip_meta").upsert({ id: 1, overnight_overrides: next })
+      ))) {
+        setOverrides(overrides);
+      }
     },
     [overrides]
   );

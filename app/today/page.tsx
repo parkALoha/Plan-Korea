@@ -39,6 +39,7 @@ import { WeatherBadge } from "@/components/WeatherBadge";
 import { EmergencyCard } from "@/components/EmergencyCard";
 import type { TravelMode } from "@/lib/schedule";
 import { safeHttpUrl } from "@/lib/url";
+import { showUndoToast } from "@/lib/toast";
 
 function isoDateOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -64,6 +65,35 @@ function findTodayIndex(itinerary: Day[], todayIso: string): number {
   if (exact >= 0) return exact;
   if (todayIso < itinerary[0].date) return 0;
   return itinerary.length - 1;
+}
+
+/** โครงหน้าตอนโหลด — ทรงเดียวกับการ์ด "จุดถัดไป" + ลิสต์ถัดจากนี้ (เฟส 20.4)
+ *  เดิมเป็นข้อความ "กำลังโหลด..." เปล่าๆ ขณะที่หน้าแผนมี skeleton อยู่แล้ว
+ *  หน้านี้เปิดบนเน็ตมือถือระหว่างเดินทางจริง ยิ่งต้องดูเหมือนกำลังทำงาน ไม่ใช่เหมือนพัง */
+function TodaySkeleton() {
+  return (
+    <div className="mx-auto max-w-2xl animate-pulse px-4 pt-4" aria-hidden>
+      <div className="mb-5 overflow-hidden rounded-2xl border-2 border-line bg-surface-raised">
+        <div className="h-7 bg-surface-soft" />
+        <div className="space-y-3 p-4">
+          <div className="flex items-center gap-3">
+            <div className="h-16 w-16 shrink-0 rounded-xl bg-surface-soft" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-5 w-2/3 rounded bg-surface-soft" />
+              <div className="h-4 w-24 rounded bg-surface-soft" />
+            </div>
+          </div>
+          <div className="h-16 rounded-xl bg-surface-soft" />
+          <div className="h-12 rounded-xl bg-surface-soft" />
+        </div>
+      </div>
+      <div className="space-y-2 rounded-2xl border border-line bg-surface-raised p-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-6 rounded bg-surface-soft" />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function NavButtons({ lat, lng, name }: { lat: number; lng: number; name: string }) {
@@ -233,6 +263,25 @@ export default function TodayPage() {
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const CLOSING_SOON_THRESHOLD_MINUTES = 60;
 
+  // ปัดซ้าย/ขวาบนหัวการ์ดเพื่อเปลี่ยนวัน — ปุ่ม ‹ › ยังอยู่ครบ อันนี้เป็นทางลัดสำหรับมือเดียว (เฟส 20.4)
+  // ใช้ pointer events ล้วนๆ ไม่เพิ่ม dependency · เช็คว่าแนวนอนชนะแนวตั้งชัดเจน ไม่งั้นจะไปแย่งกับการสกรอลล์
+  const SWIPE_MIN_PX = 60;
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  function handleSwipeStart(e: React.PointerEvent) {
+    swipeStartRef.current = { x: e.clientX, y: e.clientY };
+  }
+  function handleSwipeEnd(e: React.PointerEvent) {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) <= Math.abs(dy)) return;
+    setDayIndex((i) =>
+      dx < 0 ? Math.min(itinerary.length - 1, i + 1) : Math.max(0, i - 1)
+    );
+  }
+
   const dateLabel = new Date(day.date).toLocaleDateString("th-TH", {
     day: "numeric",
     month: "short",
@@ -244,7 +293,11 @@ export default function TodayPage() {
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
-      <header className="bg-pine px-4 pb-5 pt-6 text-cream">
+      <header
+        className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream"
+        onPointerDown={handleSwipeStart}
+        onPointerUp={handleSwipeEnd}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
@@ -307,9 +360,7 @@ export default function TodayPage() {
         )}
       </header>
 
-      {!overallLoaded && (
-        <div className="px-4 py-10 text-center text-sm text-content-soft">กำลังโหลด...</div>
-      )}
+      {!overallLoaded && <TodaySkeleton />}
 
       {overallLoaded && !activePlanId && (
         <div className="px-4 py-10 text-center text-sm text-content-soft">
@@ -343,7 +394,10 @@ export default function TodayPage() {
           )}
 
           {delayMinutes !== 0 && (
-            <div className="mb-3 rounded-xl bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink">
+            <div
+              role="status"
+              className="mb-3 rounded-xl bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink"
+            >
               {delayMinutes > 0
                 ? `⏱️ ดูช้ากว่าแผนไปประมาณ ${delayMinutes} นาที`
                 : `⏱️ ดูเร็วกว่าแผนไปประมาณ ${Math.abs(delayMinutes)} นาที`}{" "}
@@ -492,7 +546,15 @@ export default function TodayPage() {
                 )}
 
                 <button
-                  onClick={() => markVisited(nextStop.id)}
+                  onClick={() => {
+                    markVisited(nextStop.id);
+                    // ยกเลิกได้จากลิสต์ "ผ่านมาแล้ว" อยู่แล้ว แต่ต้องเลื่อนไปหาเอง —
+                    // ตอนเดินอยู่กลางถนนที่เกาหลี ปุ่มเลิกทำตรงนี้เร็วกว่ามาก (เฟส 20.4)
+                    showUndoToast(
+                      `ติ๊กว่ามาถึง ${stopRowLabel(nextStop, nextSched.place, endHotel)} แล้ว`,
+                      () => unmarkVisited(nextStop.id)
+                    );
+                  }}
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-pine py-4 text-base font-bold text-cream hover:bg-pine-dark active:opacity-70"
                 >
                   ✅ มาถึงแล้ว

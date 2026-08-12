@@ -6,7 +6,7 @@ import { CITY_NAME_TH } from "@/data/itinerary";
 import { CITY_LOCALE, cityCenter, type Place } from "@/data/places";
 import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
-import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { Modal } from "./Modal";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 
 function localizedFrom(data: Record<string, unknown>): HotelLocalized {
@@ -38,7 +38,6 @@ export function HotelEditModal({
   }) => void;
   onClear: () => void;
 }) {
-  useBodyScrollLock();
   const [address, setAddress] = useState(existing?.hotel_name ?? "");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualLat, setManualLat] = useState(existing ? String(existing.lat) : "");
@@ -178,155 +177,11 @@ export function HotelEditModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl bg-white sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* หัว + ปุ่มบันทึก อยู่นิ่งตลอด ไม่ว่าจะเลื่อนเนื้อหาตรงกลางไปแค่ไหน — ไม่ต้องเลื่อนหาปุ่ม */}
-        <div className="shrink-0 px-5 pt-5">
-        <div className="mb-3 flex items-start justify-between">
-          <h2 className="text-lg font-bold text-ink">
-            ที่พัก — {CITY_NAME_TH[leg.city]}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-full p-2 text-ink-soft hover:bg-cream-soft"
-          >
-            ✕
-          </button>
-        </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-3">
-        <label className="mb-1 block text-xs font-medium text-ink-soft">
-          ชื่อ/ที่อยู่โรงแรม
-        </label>
-        <div className="relative">
-          <div className="flex gap-2">
-            <input
-              value={address}
-              onChange={(e) => {
-                setAddress(e.target.value);
-                setResolved(null);
-                if (!e.target.value.trim()) {
-                  setSuggestions([]);
-                  setSuggestOpen(false);
-                }
-              }}
-              onFocus={() => {
-                if (suggestions.length > 0) setSuggestOpen(true);
-              }}
-              onBlur={() => setSuggestOpen(false)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleGeocode();
-                }
-              }}
-              placeholder="เช่น Lotte Hotel Busan"
-              className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
-            />
-            <button
-              onClick={handleGeocode}
-              disabled={!address.trim() || status === "loading"}
-              className="shrink-0 rounded-lg bg-pine px-4 py-2 text-sm font-medium text-cream hover:bg-pine-dark disabled:opacity-40"
-            >
-              {status === "loading" ? "..." : "ค้นหา"}
-            </button>
-          </div>
-
-          {suggestOpen && suggestions.length > 0 && (
-            <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-cream-soft bg-white shadow-lg shadow-ink/10">
-              {suggestions.map((s) => (
-                <li key={s.placeId}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      // onMouseDown ไม่ใช่ onClick — ให้ยิงก่อน onBlur ของ input จะได้เลือกได้ก่อนกล่องปิด
-                      e.preventDefault();
-                      resolvePlaceId(
-                        s.placeId,
-                        s.secondaryText ? `${s.mainText}, ${s.secondaryText}` : s.mainText
-                      );
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm hover:bg-cream-soft"
-                  >
-                    <div className="text-ink">{s.mainText}</div>
-                    {s.secondaryText && (
-                      <div className="text-xs text-ink-soft">{s.secondaryText}</div>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {status === "error" && (
-          <p className="mt-2 text-xs text-maple-dark">
-            หาพิกัดอัตโนมัติไม่ได้ ลองกรอกพิกัดเองด้านล่าง
-          </p>
-        )}
-
-        {resolved && (
-          <div className="mt-3">
-            <p className="mb-2 text-xs text-pine">
-              📍 {resolved.formattedAddress ?? `${resolved.lat}, ${resolved.lng}`}
-            </p>
-            {/* ชื่อ/ที่อยู่ภาษาท้องถิ่น = สิ่งที่ปุ่มนำทาง Naver/Kakao จะส่งจริง โชว์ให้เห็นก่อนบันทึก
-                (เฟส 14 ทำให้จุดแวะไปแล้ว ที่พักเพิ่งได้ในเฟส 16) · เบอร์โทรไว้กรอกเอกสาร ตม. */}
-            {(resolved.localized?.nameLocal || resolved.localized?.phone) && (
-              <div className="mb-2 rounded-lg bg-cream-soft/60 px-2.5 py-1.5 text-xs text-ink-soft">
-                {resolved.localized.nameLocal && (
-                  <div>
-                    🗣️ <span className="font-medium text-ink">{resolved.localized.nameLocal}</span>
-                    {resolved.localized.addressLocal ? ` · ${resolved.localized.addressLocal}` : ""}
-                  </div>
-                )}
-                {resolved.localized.phone && <div>☎️ {resolved.localized.phone}</div>}
-              </div>
-            )}
-            <GoogleMapEmbed query={`${resolved.lat},${resolved.lng}`} />
-          </div>
-        )}
-
-        <button
-          onClick={() => setManualOpen((v) => !v)}
-          className="mt-3 text-xs text-ink-soft underline hover:text-ink"
-        >
-          {manualOpen ? "ซ่อนช่องกรอกพิกัดเอง" : "กรอกพิกัดเอง (lat, lng)"}
-        </button>
-
-        {manualOpen && (
-          <div className="mt-2 flex gap-2">
-            <input
-              value={manualLat}
-              onChange={(e) => setManualLat(e.target.value)}
-              placeholder="lat เช่น 35.1587"
-              className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
-            />
-            <input
-              value={manualLng}
-              onChange={(e) => setManualLng(e.target.value)}
-              placeholder="lng เช่น 129.0603"
-              className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
-            />
-            <button
-              onClick={handleSaveManual}
-              className="shrink-0 rounded-lg bg-cream-soft px-3 py-2 text-sm text-ink hover:bg-maple-soft"
-            >
-              ใช้พิกัดนี้
-            </button>
-          </div>
-        )}
-
-        </div>
-
-        <div className="shrink-0 flex gap-2 px-5 pb-5 pt-3">
+    <Modal
+      onClose={onClose}
+      title={`ที่พัก — ${CITY_NAME_TH[leg.city]}`}
+      footer={
+        <>
           {existing && (
             <button
               onClick={() => {
@@ -345,8 +200,131 @@ export function HotelEditModal({
           >
             บันทึก
           </button>
-        </div>
+        </>
+      }
+    >
+    <label className="mb-1 block text-xs font-medium text-ink-soft">
+      ชื่อ/ที่อยู่โรงแรม
+    </label>
+    <div className="relative">
+      <div className="flex gap-2">
+        <input
+          value={address}
+          onChange={(e) => {
+            setAddress(e.target.value);
+            setResolved(null);
+            if (!e.target.value.trim()) {
+              setSuggestions([]);
+              setSuggestOpen(false);
+            }
+          }}
+          onFocus={() => {
+            if (suggestions.length > 0) setSuggestOpen(true);
+          }}
+          onBlur={() => setSuggestOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleGeocode();
+            }
+          }}
+          placeholder="เช่น Lotte Hotel Busan"
+          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+        />
+        <button
+          onClick={handleGeocode}
+          disabled={!address.trim() || status === "loading"}
+          className="shrink-0 rounded-lg bg-pine px-4 py-2 text-sm font-medium text-cream hover:bg-pine-dark disabled:opacity-40"
+        >
+          {status === "loading" ? "..." : "ค้นหา"}
+        </button>
       </div>
+
+      {suggestOpen && suggestions.length > 0 && (
+        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-cream-soft bg-white shadow-lg shadow-ink/10">
+          {suggestions.map((s) => (
+            <li key={s.placeId}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  // onMouseDown ไม่ใช่ onClick — ให้ยิงก่อน onBlur ของ input จะได้เลือกได้ก่อนกล่องปิด
+                  e.preventDefault();
+                  resolvePlaceId(
+                    s.placeId,
+                    s.secondaryText ? `${s.mainText}, ${s.secondaryText}` : s.mainText
+                  );
+                }}
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-cream-soft"
+              >
+                <div className="text-ink">{s.mainText}</div>
+                {s.secondaryText && (
+                  <div className="text-xs text-ink-soft">{s.secondaryText}</div>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
+
+    {status === "error" && (
+      <p className="mt-2 text-xs text-maple-dark">
+        หาพิกัดอัตโนมัติไม่ได้ ลองกรอกพิกัดเองด้านล่าง
+      </p>
+    )}
+
+    {resolved && (
+      <div className="mt-3">
+        <p className="mb-2 text-xs text-pine">
+          📍 {resolved.formattedAddress ?? `${resolved.lat}, ${resolved.lng}`}
+        </p>
+        {/* ชื่อ/ที่อยู่ภาษาท้องถิ่น = สิ่งที่ปุ่มนำทาง Naver/Kakao จะส่งจริง โชว์ให้เห็นก่อนบันทึก
+            (เฟส 14 ทำให้จุดแวะไปแล้ว ที่พักเพิ่งได้ในเฟส 16) · เบอร์โทรไว้กรอกเอกสาร ตม. */}
+        {(resolved.localized?.nameLocal || resolved.localized?.phone) && (
+          <div className="mb-2 rounded-lg bg-cream-soft/60 px-2.5 py-1.5 text-xs text-ink-soft">
+            {resolved.localized.nameLocal && (
+              <div>
+                🗣️ <span className="font-medium text-ink">{resolved.localized.nameLocal}</span>
+                {resolved.localized.addressLocal ? ` · ${resolved.localized.addressLocal}` : ""}
+              </div>
+            )}
+            {resolved.localized.phone && <div>☎️ {resolved.localized.phone}</div>}
+          </div>
+        )}
+        <GoogleMapEmbed query={`${resolved.lat},${resolved.lng}`} />
+      </div>
+    )}
+
+    <button
+      onClick={() => setManualOpen((v) => !v)}
+      className="mt-3 text-xs text-ink-soft underline hover:text-ink"
+    >
+      {manualOpen ? "ซ่อนช่องกรอกพิกัดเอง" : "กรอกพิกัดเอง (lat, lng)"}
+    </button>
+
+    {manualOpen && (
+      <div className="mt-2 flex gap-2">
+        <input
+          value={manualLat}
+          onChange={(e) => setManualLat(e.target.value)}
+          placeholder="lat เช่น 35.1587"
+          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+        />
+        <input
+          value={manualLng}
+          onChange={(e) => setManualLng(e.target.value)}
+          placeholder="lng เช่น 129.0603"
+          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+        />
+        <button
+          onClick={handleSaveManual}
+          className="shrink-0 rounded-lg bg-cream-soft px-3 py-2 text-sm text-ink hover:bg-maple-soft"
+        >
+          ใช้พิกัดนี้
+        </button>
+      </div>
+    )}
+
+    </Modal>
   );
 }

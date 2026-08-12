@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
+import { writeGuard } from "@/lib/writeGuard";
 
 function makeCustomPlaceId() {
   return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -75,7 +76,12 @@ function useCustomPlacesStore() {
       // เช็ค exists กันตอน echo ย้อนกลับมาซ้ำทีหลัง
       setCustomPlaces((prev) => (prev.some((p) => p.id === newPlace.id) ? prev : [...prev, newPlace]));
       if (!supabaseConfigured) return newPlace;
-      await supabase.from("custom_places").insert(newPlace);
+      // เขียนไม่ผ่าน → ถอนการ์ดที่เพิ่งโผล่ในคลังออก ไม่งั้นมันค้างอยู่จนรีโหลดแล้วหายไปเฉยๆ
+      if (!(await writeGuard("เพิ่มสถานที่ใหม่", () =>
+        supabase.from("custom_places").insert(newPlace)
+      ))) {
+        setCustomPlaces((prev) => prev.filter((p) => p.id !== newPlace.id));
+      }
       return newPlace;
     },
     []

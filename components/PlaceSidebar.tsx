@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, Place, cityCenter, placesByCity } from "@/data/places";
@@ -9,6 +9,7 @@ import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { useDismissable } from "@/hooks/useDismissable";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
@@ -366,7 +367,11 @@ function BottomSheet({
   title: string;
   subtitle?: string;
 }) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useBodyScrollLock();
+  // Esc ปิด / โฟกัสวนอยู่ในชีต / คืนโฟกัสให้ปุ่ม "📍 สถานที่" ตอนปิด — ชุดเดียวกับที่ Modal ใช้ (เฟส 20.1)
+  useDismissable(sheetRef, onClose);
   return (
     <div className="fixed inset-0 z-40 lg:hidden">
       <div
@@ -374,17 +379,27 @@ function BottomSheet({
         onClick={onClose}
         aria-hidden
       />
-      <div className="animate-sheet-up absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-2xl shadow-ink/30">
+      <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="animate-sheet-up absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-2xl shadow-ink/30 outline-none"
+      >
         <div className="flex justify-center pt-2">
           <div className="h-1.5 w-10 rounded-full bg-cream-soft" />
         </div>
         <div className="flex items-center justify-between border-b border-cream-soft px-4 pb-3 pt-2">
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-bold text-ink">{title}</h2>
+            <h2 id={titleId} className="truncate text-sm font-bold text-ink">
+              {title}
+            </h2>
             {subtitle && <p className="truncate text-xs text-ink-soft">{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
+            aria-label="ปิดคลังสถานที่"
             className="shrink-0 rounded-full p-2 text-ink-soft hover:bg-cream-soft"
           >
             ✕

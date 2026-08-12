@@ -80,6 +80,23 @@ body {
   color: var(--content);
 }
 
+/* กรอบโฟกัสของทั้งเว็บ (เฟส 20.1) — เดิมมี `focus:outline-none` 25 จุดแต่ไม่มี focus ring เลยสักอัน
+   กด Tab แล้วมองไม่ออกว่าอยู่ตรงไหน
+   · ใช้ `:focus-visible` ไม่ใช่ `:focus` → กดด้วยเมาส์/นิ้วไม่มีกรอบโผล่ ได้เฉพาะตอนใช้คีย์บอร์ดจริง
+     จึงไม่ต้องไปไล่ลบ `focus:outline-none` ทั้ง 25 จุด (มันคุมคนละสถานะกัน)
+   · กฎนี้อยู่นอก @layer จึงชนะคลาสยูทิลิตี้ของ Tailwind v4 ได้เองโดยไม่ต้องใช้ !important
+     — หลักการเดียวกับกฎ button:active ด้านล่างและกฎ font-size:16px บนมือถือ
+   · บนพื้นเข้ม (หัวเว็บ/หัวการ์ดวัน สีสน) สีเมเปิลคอนทราสต์ไม่พอ — สลับเป็นสีทองผ่าน
+     .focus-ring-on-dark ที่แปะไว้บนตัวครอบพื้นเข้มนั้นๆ */
+:focus-visible {
+  outline: 2px solid var(--color-maple);
+  outline-offset: 2px;
+}
+
+.focus-ring-on-dark :focus-visible {
+  outline-color: var(--color-gold);
+}
+
 /* ปุ่มกดแล้วมีการตอบสนอง (ทั้งเว็บ ไม่ต้องไล่แก้ทีละปุ่ม) — ใช้ opacity ไม่ใช่ scale
    เพราะปุ่มบางอันเป็นที่จับลาก (dnd-kit) การเปลี่ยนขนาดจะไปกวน bounding box ตอนเริ่มลาก */
 button:not(:disabled) {
@@ -167,10 +184,54 @@ button:not(:disabled):active {
   }
 }
 
+/* toast — เลื่อนขึ้นมานิดเดียวพร้อมจางเข้า ไม่ให้สะดุดตาเกินกว่าที่ควร (เฟส 20.1) */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-in {
+    animation: none;
+  }
+}
+
 /* หน้า /summary พิมพ์ได้จริง — พกกระดาษสำรองไว้เผื่อแบตหมด/มือถือหาย (เฟส 10) */
 @media print {
   body {
     background-color: white;
+  }
+
+  /* /summary รองรับธีมมืดตั้งแต่เฟส 20.4 แล้ว — สั่งพิมพ์ตอนธีมมืดต้องได้กระดาษขาวตัวดำเหมือนเดิม
+     ไม่ใช่กระดาษที่หมึกดำเต็มแผ่น จึงพลิกโทเคนกลับเป็นชุดสว่างเฉพาะตอนพิมพ์ */
+  :root[data-theme="dark"] {
+    --surface: #fdf6ec;
+    --surface-raised: #ffffff;
+    --surface-soft: #f7ead6;
+    --content: #2b241f;
+    --content-soft: #6b6058;
+    --line: #f7ead6;
+    --panel-pine: #e2ede8;
+    --panel-pine-ink: #24382f;
+    --panel-maple: #fbe2d3;
+    --panel-maple-ink: #b8502a;
+    --panel-gold: #f6e6c8;
+    --panel-gold-ink: #7a5312;
+  }
+
+  :root[data-theme="dark"] body {
+    background-color: white;
+    color: var(--content);
   }
 
   @page {

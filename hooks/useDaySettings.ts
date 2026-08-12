@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
+import { writeGuard } from "@/lib/writeGuard";
 
 export function useDaySettings(planId: string | null) {
   const [settings, setSettings] = useState<Record<string, TripDaySettings>>({});
@@ -76,6 +77,28 @@ export function useDaySettings(planId: string | null) {
     };
   }, [planId]);
 
+  /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
+  const reload = useCallback(async () => {
+    if (!supabaseConfigured || !planId) return;
+    const { data } = await supabase
+      .from("trip_day_settings")
+      .select("*")
+      .eq("plan_id", planId);
+    if (!data) return;
+    const map: Record<string, TripDaySettings> = {};
+    for (const row of data as TripDaySettings[]) map[row.day_id] = row;
+    setSettings(map);
+    writeCache(`daySettings:${planId}`, data);
+  }, [planId]);
+
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  const guard = useCallback(
+    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
+      if (!(await writeGuard(label, run))) await reload();
+    },
+    [reload]
+  );
+
   const setStartTime = useCallback(
     async (dayId: string, startTime: string) => {
       if (!planId) return;
@@ -87,11 +110,13 @@ export function useDaySettings(planId: string | null) {
         [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime },
       }));
       if (!supabaseConfigured) return;
-      await supabase
-        .from("trip_day_settings")
-        .upsert({ plan_id: planId, day_id: dayId, start_time: startTime });
+      await guard("เวลาออกเดินทาง", () =>
+        supabase
+          .from("trip_day_settings")
+          .upsert({ plan_id: planId, day_id: dayId, start_time: startTime })
+      );
     },
-    [planId]
+    [planId, guard]
   );
 
   // โหมดเดินทางขากลับที่พักของวันนั้น — คอลัมน์ return_travel_mode มาจาก migration 0015
@@ -106,14 +131,16 @@ export function useDaySettings(planId: string | null) {
         [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime, return_travel_mode: mode },
       }));
       if (!supabaseConfigured) return;
-      await supabase.from("trip_day_settings").upsert({
-        plan_id: planId,
-        day_id: dayId,
-        start_time: startTime,
-        return_travel_mode: mode,
-      });
+      await guard("โหมดเดินทางขากลับที่พัก", () =>
+        supabase.from("trip_day_settings").upsert({
+          plan_id: planId,
+          day_id: dayId,
+          start_time: startTime,
+          return_travel_mode: mode,
+        })
+      );
     },
-    [planId, settings]
+    [planId, settings, guard]
   );
 
   // ล็อก/ปลดล็อกวัน — คอลัมน์ is_locked มาจาก migration 0021
@@ -134,9 +161,11 @@ export function useDaySettings(planId: string | null) {
         return next;
       });
       if (!supabaseConfigured) return;
-      await supabase.from("trip_day_settings").upsert(rows);
+      await guard(locked ? "ล็อกวัน" : "ปลดล็อกวัน", () =>
+        supabase.from("trip_day_settings").upsert(rows)
+      );
     },
-    [planId, settings]
+    [planId, settings, guard]
   );
 
   return { settings, loaded, setStartTime, setReturnTravelMode, setDaysLocked, supabaseConfigured };

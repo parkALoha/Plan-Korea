@@ -20,6 +20,7 @@ import { DayMapPanel } from "./DayMapPanel";
 import { DaySummaryBar } from "./DaySummaryBar";
 import { RouteSuggestionModal } from "./RouteSuggestionModal";
 import { dayCardElementId } from "./DayJumpBar";
+import { InsertBetweenRow } from "./InsertBetweenRow";
 import { SortableStopRow } from "./SortableStopRow";
 import { TravelModeRow } from "./TravelModeRow";
 
@@ -155,6 +156,8 @@ export function DayStopsSection({
 
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [suggestingRoute, setSuggestingRoute] = useState(false);
+  // ปุ่มรองท้ายการ์ด (แวะที่พัก / ไปสนามบิน / จัดเส้นทางใหม่) — ปิดไว้ก่อน กดกางเอา
+  const [moreOpen, setMoreOpen] = useState(false);
   const viewSched = viewIndex != null ? schedule[viewIndex] : null;
 
   // ส่งให้แผนที่ใช้โชว์ในป๊อปอัพ (โน้ต + จุดที่จะไปตอนปิด)
@@ -188,7 +191,7 @@ export function DayStopsSection({
       } scroll-mt-16`}
     >
       <div
-        className="px-4 py-3 text-cream"
+        className="focus-ring-on-dark px-4 py-3 text-cream"
         style={{
           background: `linear-gradient(135deg, ${meta.color}, ${meta.colorDark})`,
         }}
@@ -367,28 +370,36 @@ export function DayStopsSection({
             />
           )}
           {stops.length > 0 && !locked && (
-            <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
-              <button
-                onClick={() => onInsertPlace(0, centerBeforeFirstStop, null)}
-                className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
-              >
-                + แทรกร้านอาหารก่อนจุดแรก
-              </button>
-              {hotel && (
-                <button
-                  onClick={() => onInsertHotel(0)}
-                  className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
-                >
-                  🏨 + แวะที่พักก่อนจุดแรก
-                </button>
-              )}
-              <button
-                onClick={() => onInsertIntercity(0, intercityFromDefault, intercityToDefault, intercityFromCity, intercityToCity)}
-                className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
-              >
-                + แทรกเดินทางข้ามเมืองก่อนจุดแรก
-              </button>
-            </div>
+            <InsertBetweenRow
+              actions={[
+                {
+                  label: "+ แทรกร้านอาหารก่อนจุดแรก",
+                  tone: "maple",
+                  onClick: () => onInsertPlace(0, centerBeforeFirstStop, null),
+                },
+                ...(hotel
+                  ? [
+                      {
+                        label: "🏨 + แวะที่พักก่อนจุดแรก",
+                        tone: "pine" as const,
+                        onClick: () => onInsertHotel(0),
+                      },
+                    ]
+                  : []),
+                {
+                  label: "+ แทรกเดินทางข้ามเมืองก่อนจุดแรก",
+                  tone: "pine",
+                  onClick: () =>
+                    onInsertIntercity(
+                      0,
+                      intercityFromDefault,
+                      intercityToDefault,
+                      intercityFromCity,
+                      intercityToCity
+                    ),
+                },
+              ]}
+            />
           )}
           <SortableContext items={stops.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             {schedule.map((sched, i) => {
@@ -483,38 +494,53 @@ export function DayStopsSection({
               🔒 วันนี้ล็อกไว้ — แตะเพื่อปลดล็อกและแก้ไข
             </button>
           ) : (
-            <div className="flex flex-wrap items-center justify-center gap-1">
-              <button
-                onClick={onAddPlace}
-                className="flex flex-1 items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
-              >
-                + เพิ่มสถานที่ให้วันนี้
-              </button>
-              {/* ไปสนามบินเป็นแถวท้ายวันเสมอในทางปฏิบัติ จึงวางปุ่มไว้ท้ายการ์ดที่เดียว
-                  ไม่ไปเบียดแถวปุ่มแทรกระหว่างจุดที่มี 2 ปุ่มอยู่แล้ว (ถ้าอยากได้กลางวันก็ลากขึ้นไปได้) */}
-              {/* แวะที่พักท้ายวัน = เอาของไปเก็บก่อนออกไปกินข้าวเย็นต่อ (ต่างจาก anchor "กลับถึงที่พัก"
-                  ที่เป็นจุดจบวันเฉยๆ แวะแล้วไปต่อไม่ได้) — ขึ้นเฉพาะวันที่ตั้งที่พักไว้แล้ว */}
-              {hotel && (
+            <div>
+              {/* งานที่ทำบ่อยที่สุดของการ์ดนี้ ให้เป็นปุ่มเดียวเต็มความกว้าง (เฟส 20.3)
+                  เดิมมี 4 ปุ่มเรียงกันรวดในแถวเดียว บนมือถือกลายเป็นแถวตัวหนังสือที่หาปุ่มหลักไม่เจอ */}
+              <div className="flex items-center">
                 <button
-                  onClick={() => onInsertHotel(stops.length)}
-                  className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                  onClick={onAddPlace}
+                  className="flex flex-1 items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-maple hover:bg-maple-soft/40"
                 >
-                  🏨 + แวะที่พัก
+                  + เพิ่มสถานที่ให้วันนี้
                 </button>
-              )}
-              <button
-                onClick={() => onInsertTransfer(stops.length)}
-                className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
-              >
-                ✈️ + ไปสนามบิน/สถานี
-              </button>
-              {stops.length >= 3 && (
                 <button
-                  onClick={() => setSuggestingRoute(true)}
-                  className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  aria-expanded={moreOpen}
+                  className="shrink-0 px-4 py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft/60"
                 >
-                  ✨ ลองจัดเส้นทางใหม่
+                  อื่นๆ {moreOpen ? "▲" : "▼"}
                 </button>
+              </div>
+              {moreOpen && (
+                <div className="flex flex-wrap items-center justify-center gap-1 border-t border-cream-soft bg-cream-soft/20">
+                  {/* ไปสนามบินเป็นแถวท้ายวันเสมอในทางปฏิบัติ จึงวางปุ่มไว้ท้ายการ์ดที่เดียว
+                      (ถ้าอยากได้กลางวันก็ลากขึ้นไปได้) */}
+                  {/* แวะที่พักท้ายวัน = เอาของไปเก็บก่อนออกไปกินข้าวเย็นต่อ (ต่างจาก anchor "กลับถึงที่พัก"
+                      ที่เป็นจุดจบวันเฉยๆ แวะแล้วไปต่อไม่ได้) — ขึ้นเฉพาะวันที่ตั้งที่พักไว้แล้ว */}
+                  {hotel && (
+                    <button
+                      onClick={() => onInsertHotel(stops.length)}
+                      className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                    >
+                      🏨 + แวะที่พัก
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onInsertTransfer(stops.length)}
+                    className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                  >
+                    ✈️ + ไปสนามบิน/สถานี
+                  </button>
+                  {stops.length >= 3 && (
+                    <button
+                      onClick={() => setSuggestingRoute(true)}
+                      className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                    >
+                      ✨ ลองจัดเส้นทางใหม่
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}

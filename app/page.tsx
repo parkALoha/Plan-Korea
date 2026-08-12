@@ -12,13 +12,15 @@ import { IntercityEditModal } from "@/components/IntercityEditModal";
 import { TransferEditModal } from "@/components/TransferEditModal";
 import { PlanEditModal, type PlanEditMode } from "@/components/PlanEditModal";
 import { TripHeader } from "@/components/TripHeader";
+import { TripPrepPanel } from "@/components/TripPrepPanel";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
-import type { Place } from "@/data/places";
+import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
 import type { City, Day } from "@/data/itinerary";
 import { applyOvernightOverrides, hotelAnchorId } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
 import { haversineKm } from "@/lib/geo";
+import { showUndoToast } from "@/lib/toast";
 import type { TravelMode } from "@/lib/schedule";
 import type { TripStop } from "@/lib/supabase";
 import { useHotels } from "@/hooks/useHotels";
@@ -66,6 +68,7 @@ export default function Home() {
     addItem: addChecklistItem,
     toggleItem: toggleChecklistItem,
     removeItem: removeChecklistItem,
+    restoreItem: restoreChecklistItem,
   } = useChecklist();
   const { plans, activePlanId, loaded: plansLoaded, createPlan, renamePlan, deletePlan, switchActivePlan } =
     usePlans();
@@ -84,6 +87,7 @@ export default function Home() {
     updateNote,
     updatePhoto,
     removeStop,
+    restoreStop,
   } = useStops(activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
   const {
@@ -249,6 +253,7 @@ export default function Home() {
     defaultTravelModeFor,
     addStop,
     removeStop,
+    restoreStop,
     reorderStops,
     moveStopToDay,
     flashNewStop,
@@ -275,6 +280,23 @@ export default function Home() {
       },
       who || undefined
     ).then(flashNewStop);
+  }
+
+  /** ลบจุดแวะแล้วยื่นปุ่ม "เลิกทำ" ให้ (เฟส 20.2) — เดิมกด ✕ ทีเดียวหายถาวร ไม่มีทางกู้
+   *  snapshot ที่ removeStop คืนมาเป็นแถวเต็ม (โน้ต/รูป/โหมดเดินทาง/order_index) จึงกลับมาที่เดิมเป๊ะ */
+  async function handleRemoveStop(stopId: string) {
+    const stop = stops.find((s) => s.id === stopId);
+    const place = stop ? resolvePlace(stop.place_id, customPlaces) : null;
+    const label = place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "จุดแวะนี้";
+    const snapshot = await removeStop(stopId);
+    if (snapshot) showUndoToast(`เอา ${label} ออกแล้ว`, () => restoreStop(snapshot));
+  }
+
+  async function handleRemoveChecklistItem(itemId: string) {
+    const snapshot = await removeChecklistItem(itemId);
+    if (snapshot) {
+      showUndoToast(`ลบ "${snapshot.text}" แล้ว`, () => restoreChecklistItem(snapshot));
+    }
   }
 
   async function handlePlanEditSubmit(name: string | null) {
@@ -334,31 +356,37 @@ export default function Home() {
               </>
             )}
 
-            {overallLoaded && (
-              <HotelLegsPanel legs={hotelLegs} hotels={hotels} onSave={setHotel} onClear={clearHotel} />
-            )}
-
-            {overallLoaded && (
-              <BookingsPanel
-                bookings={bookings}
-                onAdd={addBooking}
-                onUpdate={updateBooking}
-                onRemove={removeBooking}
-                who={who || undefined}
-              />
-            )}
-
-            {overallLoaded && (
-              <ChecklistPanel
-                items={checklistItems}
-                onAdd={(text, category) => addChecklistItem(text, category, who || undefined)}
-                onToggle={(itemId, checked) => toggleChecklistItem(itemId, checked, who || undefined)}
-                onRemove={removeChecklistItem}
-              />
-            )}
-
-            {/* แถบวัน sticky — กระโดดข้ามวันได้โดยไม่ต้องสกรอลล์ผ่านทั้ง 11 วัน (เฟส 17) */}
+            {/* แถบวัน sticky — กระโดดข้ามวันได้โดยไม่ต้องสกรอลล์ผ่านทั้ง 11 วัน (เฟส 17)
+                เฟส 20.3 ย้ายขึ้นมาไว้บนสุด: เดิมอยู่ใต้แผงเตรียมทริปทั้งสาม จึงต้องเลื่อนผ่าน
+                แผงพวกนั้นไปก่อนมันถึงจะติดบนจอ = ใช้ไม่ได้ตอนที่ต้องใช้ที่สุด */}
             {overallLoaded && <DayJumpBar itinerary={itinerary} />}
+
+            {overallLoaded && (
+              <TripPrepPanel
+                hotelsSetCount={hotelLegs.filter((leg) => hotels[leg.id]).length}
+                hotelsTotal={hotelLegs.length}
+                bookingCount={bookings.length}
+                checklistCheckedCount={checklistItems.filter((i) => i.is_checked).length}
+                checklistTotal={checklistItems.length}
+              >
+                <HotelLegsPanel legs={hotelLegs} hotels={hotels} onSave={setHotel} onClear={clearHotel} />
+
+                <BookingsPanel
+                  bookings={bookings}
+                  onAdd={addBooking}
+                  onUpdate={updateBooking}
+                  onRemove={removeBooking}
+                  who={who || undefined}
+                />
+
+                <ChecklistPanel
+                  items={checklistItems}
+                  onAdd={(text, category) => addChecklistItem(text, category, who || undefined)}
+                  onToggle={(itemId, checked) => toggleChecklistItem(itemId, checked, who || undefined)}
+                  onRemove={handleRemoveChecklistItem}
+                />
+              </TripPrepPanel>
+            )}
 
             {overallLoaded && daysUntilFirstDay != null && daysUntilFirstDay > 16 && (
               <div className="mb-4 rounded-xl bg-cream-soft/70 px-3 py-2 text-xs text-ink-soft">
@@ -392,7 +420,7 @@ export default function Home() {
                       ? (city) => setOvernightCity(day.id, city)
                       : undefined
                   }
-                  onRemoveStop={removeStop}
+                  onRemoveStop={handleRemoveStop}
                   onUpdateDwell={updateDwellMinutes}
                   onUpdateTravelMode={updateTravelMode}
                   onUpdateNote={updateNote}
