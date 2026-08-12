@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/localCache";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -43,9 +44,18 @@ function useBookingsStore() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
+      const cached = readCache<TripBooking[]>("bookings");
+      if (cached) {
+        setBookings(sortBookings(cached));
+        setLoaded(true);
+      }
+
       const { data } = await supabase.from("bookings").select("*");
       if (cancelled) return;
-      if (data) setBookings(sortBookings(data as TripBooking[]));
+      if (data) {
+        setBookings(sortBookings(data as TripBooking[]));
+        writeCache("bookings", data);
+      }
       setLoaded(true);
 
       channel = supabase

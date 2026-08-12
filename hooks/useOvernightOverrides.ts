@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { City } from "@/data/itinerary";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/localCache";
 
 type Overrides = Record<string, City>;
 
@@ -23,13 +24,22 @@ export function useOvernightOverrides() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
+      const cached = readCache<Overrides>("overnightOverrides");
+      if (cached) {
+        setOverrides(cached);
+        setLoaded(true);
+      }
+
       const { data } = await supabase
         .from("trip_meta")
         .select("overnight_overrides")
         .eq("id", 1)
         .maybeSingle();
       if (cancelled) return;
-      if (data?.overnight_overrides) setOverrides(data.overnight_overrides as Overrides);
+      if (data?.overnight_overrides) {
+        setOverrides(data.overnight_overrides as Overrides);
+        writeCache("overnightOverrides", data.overnight_overrides);
+      }
       setLoaded(true);
 
       channel = supabase

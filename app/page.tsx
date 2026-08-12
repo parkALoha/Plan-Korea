@@ -34,6 +34,7 @@ import { useLegacyBootstrap } from "@/hooks/useLegacyBootstrap";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
 import { useTripWeather } from "@/hooks/useTripWeather";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
 
@@ -219,17 +220,28 @@ export default function Home() {
     flashTimeoutRef.current = setTimeout(() => setFlashStopId(null), 1100);
   }, []);
 
+  // เน็ตหลุด = ทั้งหน้าเป็นอ่านอย่างเดียว (เฟส 18) — ใช้กลไก "ล็อกวัน" เดิมซึ่งปิดปุ่มแก้ครบทุกอันอยู่แล้ว
+  // (ที่จับลาก / +- เวลา / ลบ / โน้ต / รูป / ปุ่มแทรก / ตัวเลือกโหมดเดินทาง / droppable ของ dnd-kit)
+  // แทนที่จะไล่ใส่ disabled ทีละปุ่มใหม่ทั้งหน้า · การแก้ตอนออฟไลน์จะเงียบหายเพราะเขียนตรงเข้า Supabase
+  const online = useOnlineStatus();
+
   // วันที่ล็อกไว้ = แก้ไม่ได้จนกว่าจะปลดล็อก (คอลัมน์ is_locked จาก migration 0021 — ยังไม่รัน = undefined = ไม่ล็อก)
   const isDayLocked = useCallback(
+    (dayId: string) => !online || daySettings[dayId]?.is_locked === true,
+    [daySettings, online]
+  );
+  // ตัวนับ/ปุ่ม "ล็อกทุกวัน" อ่านค่าจริงจาก DB ไม่ใช่ isDayLocked ที่ถูกบังคับเป็นล็อกตอนออฟไลน์
+  // ไม่งั้นเน็ตหลุดแล้วหัวเว็บจะขึ้น "ล็อกแล้ว 11/11" ทั้งที่ไม่มีวันไหนถูกล็อกจริงสักวัน
+  const isDayLockedInDb = useCallback(
     (dayId: string) => daySettings[dayId]?.is_locked === true,
     [daySettings]
   );
-  const lockedDayCount = itinerary.filter((d) => isDayLocked(d.id)).length;
+  const lockedDayCount = itinerary.filter((d) => isDayLockedInDb(d.id)).length;
 
   async function handleToggleLockAll() {
     const lockAll = lockedDayCount < itinerary.length;
     await setDaysLocked(
-      itinerary.map((d) => d.id).filter((id) => isDayLocked(id) !== lockAll),
+      itinerary.map((d) => d.id).filter((id) => isDayLockedInDb(id) !== lockAll),
       lockAll
     );
   }
@@ -366,7 +378,9 @@ export default function Home() {
                   startTime={daySettings[day.id]?.start_time ?? null}
                   onStartTimeChange={(value) => setStartTime(day.id, value)}
                   locked={isDayLocked(day.id)}
-                  onToggleLock={() => setDaysLocked([day.id], !isDayLocked(day.id))}
+                  onToggleLock={() =>
+                    setDaysLocked([day.id], !isDayLockedInDb(day.id))
+                  }
                   onReorder={(orderedStopIds) => reorderStops(day.id, orderedStopIds)}
                   onOvernightCityChange={
                     day.overnightOptions

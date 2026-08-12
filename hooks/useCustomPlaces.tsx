@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/localCache";
 
 function makeCustomPlaceId() {
   return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -21,9 +22,18 @@ function useCustomPlacesStore() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
+      const cached = readCache<CustomPlace[]>("customPlaces");
+      if (cached) {
+        setCustomPlaces(cached);
+        setLoaded(true);
+      }
+
       const { data } = await supabase.from("custom_places").select("*");
       if (cancelled) return;
-      if (data) setCustomPlaces(data as CustomPlace[]);
+      if (data) {
+        setCustomPlaces(data as CustomPlace[]);
+        writeCache("customPlaces", data);
+      }
       setLoaded(true);
 
       channel = supabase

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/localCache";
 
 export function useDaySettings(planId: string | null) {
   const [settings, setSettings] = useState<Record<string, TripDaySettings>>({});
@@ -18,15 +19,26 @@ export function useDaySettings(planId: string | null) {
         return;
       }
 
+      const toMap = (rows: TripDaySettings[]) => {
+        const map: Record<string, TripDaySettings> = {};
+        for (const row of rows) map[row.day_id] = row;
+        return map;
+      };
+
+      const cached = readCache<TripDaySettings[]>(`daySettings:${planId}`);
+      if (cached) {
+        setSettings(toMap(cached));
+        setLoaded(true);
+      }
+
       const { data } = await supabase
         .from("trip_day_settings")
         .select("*")
         .eq("plan_id", planId);
       if (cancelled) return;
       if (data) {
-        const map: Record<string, TripDaySettings> = {};
-        for (const row of data as TripDaySettings[]) map[row.day_id] = row;
-        setSettings(map);
+        setSettings(toMap(data as TripDaySettings[]));
+        writeCache(`daySettings:${planId}`, data);
       }
       setLoaded(true);
 

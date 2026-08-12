@@ -10,8 +10,14 @@ import { PIN_COOKIE, expectedPinToken, pinTokenMatches } from "@/lib/pinAuth";
  * ไฟล์นี้รันบน Node.js runtime เป็นค่าเริ่มต้น จึงใช้ `node:crypto` ใน lib/pinAuth.ts ได้ตรงๆ
  */
 
-/** เส้นทางที่ต้องเข้าได้เสมอ ไม่งั้นจะกรอก PIN ไม่ได้เลย (ไก่กับไข่) */
-const PUBLIC_PATHS = ["/unlock", "/api/unlock"];
+/**
+ * เส้นทางที่ต้องเข้าได้เสมอ
+ * - `/unlock`, `/api/unlock` — ไม่งั้นจะกรอก PIN ไม่ได้เลย (ไก่กับไข่)
+ * - `/sw.js`, `/manifest.webmanifest` (เฟส 18) — เบราว์เซอร์ขอ 2 ไฟล์นี้แบบ **ไม่แนบคุกกี้**
+ *   ถ้าโดนด่านดักจะได้ 307 ไปหน้า HTML แทนไฟล์จริง → ลงทะเบียน service worker ไม่ผ่าน
+ *   และปุ่ม "เพิ่มลงหน้าจอโฮม" ไม่ขึ้น · ทั้งสองไฟล์ไม่มีข้อมูลทริปอยู่ข้างใน จึงเปิดสาธารณะได้
+ */
+const PUBLIC_PATHS = ["/unlock", "/api/unlock", "/sw.js", "/manifest.webmanifest"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

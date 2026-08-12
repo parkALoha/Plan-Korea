@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/localCache";
 
 /** ทุกอย่างที่ต้องรู้ตอนบันทึกที่พักหนึ่งที่ — รวมเป็นอ็อบเจกต์เดียวตั้งแต่เฟส 16
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
@@ -50,12 +51,23 @@ function useHotelsStore() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
+      const toMap = (rows: TripHotel[]) => {
+        const map: Record<string, TripHotel> = {};
+        for (const row of rows) map[row.leg_id] = row;
+        return map;
+      };
+
+      const cached = readCache<TripHotel[]>("hotels");
+      if (cached) {
+        setHotels(toMap(cached));
+        setLoaded(true);
+      }
+
       const { data } = await supabase.from("trip_hotels").select("*");
       if (cancelled) return;
       if (data) {
-        const map: Record<string, TripHotel> = {};
-        for (const row of data as TripHotel[]) map[row.leg_id] = row;
-        setHotels(map);
+        setHotels(toMap(data as TripHotel[]));
+        writeCache("hotels", data);
       }
       setLoaded(true);
 

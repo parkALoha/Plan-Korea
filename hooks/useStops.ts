@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripStop } from "@/lib/supabase";
 import { nextOrderIndex, orderIndexAtPosition } from "@/lib/stopOrdering";
+import { readCache, writeCache } from "@/lib/localCache";
 
 function makeStopId() {
   return `stop-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -29,12 +30,23 @@ export function useStops(planId: string | null) {
         return;
       }
 
+      // ขึ้นจากแคชในเครื่องก่อน แล้วค่อยทับด้วยของสดเมื่อ Supabase ตอบ (เฟส 18)
+      // ตอนเน็ตหลุด คำขอด้านล่างจะ throw/คืนค่าว่าง แต่หน้ายังมีข้อมูลชุดล่าสุดให้ดู
+      const cached = readCache<TripStop[]>(`stops:${planId}`);
+      if (cached) {
+        setStops(sortStops(cached));
+        setLoaded(true);
+      }
+
       const { data } = await supabase
         .from("trip_stops")
         .select("*")
         .eq("plan_id", planId);
       if (cancelled) return;
-      if (data) setStops(sortStops(data as TripStop[]));
+      if (data) {
+        setStops(sortStops(data as TripStop[]));
+        writeCache(`stops:${planId}`, data);
+      }
       setLoaded(true);
 
       channel = supabase

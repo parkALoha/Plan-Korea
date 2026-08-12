@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured, TripPlan } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/localCache";
 
 function makePlanId() {
   return `plan-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -24,6 +25,13 @@ export function usePlans() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
+      const cached = readCache<{ plans: TripPlan[]; activePlanId: string | null }>("plans");
+      if (cached) {
+        setPlans(cached.plans);
+        setActivePlanId(cached.activePlanId);
+        setLoaded(true);
+      }
+
       const [{ data: planRows }, { data: metaRow }] = await Promise.all([
         supabase.from("trip_plans").select("*").order("created_at", { ascending: true }),
         supabase.from("trip_meta").select("*").eq("id", 1).maybeSingle(),
@@ -31,6 +39,12 @@ export function usePlans() {
       if (cancelled) return;
       if (planRows) setPlans(planRows as TripPlan[]);
       if (metaRow) setActivePlanId(metaRow.active_plan_id);
+      if (planRows) {
+        writeCache("plans", {
+          plans: planRows,
+          activePlanId: metaRow?.active_plan_id ?? null,
+        });
+      }
       setLoaded(true);
 
       channel = supabase
