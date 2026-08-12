@@ -20,6 +20,7 @@ import {
   openNaverMap,
 } from "@/lib/mapLinks";
 import { LocalNameCard } from "@/components/LocalNameCard";
+import { PlaceDetailModal } from "@/components/PlaceDetailModal";
 import { placeDetailsCache } from "@/hooks/usePlaceDetails";
 import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "@/components/IntercityEditModal";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "@/components/BookingsPanel";
@@ -301,6 +302,14 @@ export default function TodayPage() {
     .filter((b) => b.day_id === day.id || (!b.day_id && b.date === day.date))
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 
+  // ดูรายละเอียดสถานที่แบบเดียวกับหน้าแผน — เก็บแค่ id แล้วหา place/index สดจาก dayStops/schedule
+  // ทุกครั้งที่ render กันข้อมูลค้างเวลาสลับวันหรือ schedule คำนวณใหม่ (delay เลื่อนเวลา ฯลฯ)
+  const [detailStopId, setDetailStopId] = useState<string | null>(null);
+  const detailIndex = detailStopId ? dayStops.findIndex((s) => s.id === detailStopId) : -1;
+  const detailStop = detailIndex >= 0 ? dayStops[detailIndex] : null;
+  const detailSched = detailIndex >= 0 ? schedule[detailIndex] : null;
+  const detailPreviousPlace = detailIndex > 0 ? schedule[detailIndex - 1]?.place ?? null : null;
+
   return (
     <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
       <header
@@ -450,7 +459,13 @@ export default function TodayPage() {
                   </div>
                 ) : nextSched.place ? (
                   <>
-                    <div className="flex items-center gap-3">
+                    {/* แตะรูป/ชื่อเพื่อเปิดรายละเอียดสถานที่แบบเดียวกับหน้าแผน (รีวิว/รูป Google/แผนที่)
+                        แยกจากปุ่ม "มาถึงแล้ว" ด้านล่างซึ่งเป็นปุ่มคนละหน้าที่กัน */}
+                    <button
+                      type="button"
+                      onClick={() => setDetailStopId(nextStop.id)}
+                      className="flex w-full items-center gap-3 text-left active:opacity-70"
+                    >
                       {/* แถวแวะที่พักไม่มีรูปสถานที่ให้ดึง (พิกัดล้วนๆ จาก trip_hotels) ใช้ไอคอนแทน */}
                       {nextStop.kind === "hotel" ? (
                         <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-panel-pine/50 text-3xl">
@@ -473,7 +488,8 @@ export default function TodayPage() {
                           {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
                         </div>
                       </div>
-                    </div>
+                      <span className="shrink-0 self-start text-content-soft/50">›</span>
+                    </button>
 
                     {(() => {
                       // ใช้นาทีดิบ + delayMinutes ตรงๆ แทนการ shift สตริง HH:MM แล้ว parse กลับ — เดิมจุดแวะที่
@@ -621,13 +637,19 @@ export default function TodayPage() {
                       sched.departureMinutes + delayMinutes
                     ) === false;
                   return (
-                    <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => sched?.place && setDetailStopId(s.id)}
+                      disabled={!sched?.place}
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60 active:opacity-70 disabled:hover:bg-transparent"
+                    >
                       <span className="w-12 shrink-0 text-center font-semibold tabular-nums text-content-soft">
                         {displayArrival ?? "-"}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-content">{label}</span>
                       {mightMissClosing && <span title="อาจไปไม่ทันเวลาปิด">⚠️</span>}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -645,15 +667,29 @@ export default function TodayPage() {
                   const sched = schedule.find((sc) => sc.id === s.id);
                   const label = stopRowLabel(s, sched?.place, endHotel, startHotel);
                   return (
-                    <button
-                      key={s.id}
-                      onClick={() => unmarkVisited(s.id)}
-                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60"
-                    >
-                      <span className="shrink-0 text-pine">✓</span>
-                      <span className="min-w-0 flex-1 truncate text-content-soft line-through">{label}</span>
-                      <span className="shrink-0 text-[11px] text-content-soft/60">แตะเพื่อยกเลิก</span>
-                    </button>
+                    <div key={s.id} className="flex items-center gap-1 px-1 py-1">
+                      {/* แตะแถวหลัก = ยกเลิกติ๊ก (เหมือนเดิม) ส่วนปุ่ม ℹ️ แยกไว้ต่างหากสำหรับดูรายละเอียด
+                          ซ้อนปุ่มในปุ่มไม่ได้ เลยแยกเป็น 2 ปุ่มข้างกันแทนที่จะเป็นแถวเดียวกดได้ทั้งแถว */}
+                      <button
+                        type="button"
+                        onClick={() => unmarkVisited(s.id)}
+                        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-soft/60"
+                      >
+                        <span className="shrink-0 text-pine">✓</span>
+                        <span className="min-w-0 flex-1 truncate text-content-soft line-through">{label}</span>
+                        <span className="shrink-0 text-[11px] text-content-soft/60">แตะเพื่อยกเลิก</span>
+                      </button>
+                      {sched?.place && (
+                        <button
+                          type="button"
+                          onClick={() => setDetailStopId(s.id)}
+                          aria-label="ดูรายละเอียดสถานที่"
+                          className="shrink-0 rounded-full px-2 py-1.5 text-content-soft hover:bg-surface-soft"
+                        >
+                          ℹ️
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -712,6 +748,17 @@ export default function TodayPage() {
               เบอร์เปลี่ยนตามประเทศที่อยู่วันนั้น (ฮานอย = เวียดนาม, ที่เหลือ = เกาหลี) */}
           <EmergencyCard city={day.city} hotel={endHotel} bookings={bookings} />
         </div>
+      )}
+
+      {detailStop && detailSched?.place && (
+        <PlaceDetailModal
+          place={detailSched.place}
+          previousPlace={detailPreviousPlace}
+          hotel={endHotel}
+          userNote={detailStop.note}
+          userPhotoUrl={detailStop.photo_url}
+          onClose={() => setDetailStopId(null)}
+        />
       )}
       <BottomNav />
     </main>
