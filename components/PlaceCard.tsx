@@ -2,10 +2,12 @@
 
 import { CATEGORY_EMOJI } from "@/data/places";
 import type { Place } from "@/data/places";
+import type { PlaceNote } from "@/lib/supabase";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
 import { photoUrlAtWidth } from "@/lib/photoUrl";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import { weekdayHoursLabel } from "@/lib/openingHours";
+import { placeQueryKey } from "@/lib/placeQuery";
 
 export function PlaceCard({
   place,
@@ -13,6 +15,7 @@ export function PlaceCard({
   distanceLabel,
   /** ใช้หาว่าวันนั้นในทริปตรงกับวันในสัปดาห์ไหน จะได้โชว์เวลาเปิด-ปิดของวันนั้นเป๊ะๆ */
   dayDate,
+  stashedNote,
   onClick,
   onHide,
   onAdd,
@@ -21,25 +24,31 @@ export function PlaceCard({
   isCustom?: boolean;
   distanceLabel?: string | null;
   dayDate?: string;
+  /** โน้ต/รูปที่ติดมากับสถานที่นี้ตอนถูกลากกลับคลัง (เฟส 22) — ลากลงวันอีกครั้งแล้วมันจะกลับไปอยู่บนจุดแวะเอง */
+  stashedNote?: PlaceNote | null;
   onClick: () => void;
   onHide?: () => void;
   /** เพิ่มลงวันที่โฟกัสอยู่ตรงๆ โดยไม่ต้องเปิดโมดัลรายละเอียดก่อน */
   onAdd?: () => void;
 }) {
-  const photos = usePlacePhotos(place.mapsQuery);
-  const photo = photos?.[0];
-  const details = usePlaceDetails(place.mapsQuery);
+  const queryKey = placeQueryKey(place);
+  const photos = usePlacePhotos(queryKey);
+  // รูปที่เราอัปโหลดเองมาก่อนรูปจาก Google เสมอ — ลากกลับคลังแล้วยังจำได้ว่าที่นี่คือที่ไหน
+  // (คนละ URL คนละที่มา: ของเราอยู่ Supabase Storage ตรงๆ · ของ Google ผ่าน /api/place-photo ที่รับ ?w=)
+  const googlePhoto = photos?.[0];
+  const photoSrc = stashedNote?.photo_url ?? (googlePhoto ? photoUrlAtWidth(googlePhoto, 400) : null);
+  const details = usePlaceDetails(queryKey);
   const hoursLabel = dayDate ? weekdayHoursLabel(details?.openingHours, dayDate) : null;
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40">
       <button onClick={onClick} className="flex flex-col text-left">
         <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-cream-soft">
-          {photo ? (
+          {photoSrc ? (
             // การ์ดในคลังกว้างจริง ~130px (2 คอลัมน์ในไซด์บาร์) — 400px พอสำหรับจอ 3x (เฟส 19)
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={photoUrlAtWidth(photo, 400)}
+              src={photoSrc}
               alt=""
               loading="lazy"
               className="h-full w-full object-cover"
@@ -50,6 +59,11 @@ export function PlaceCard({
           {isCustom && (
             <span className="absolute left-1.5 top-1.5 rounded-full bg-pine px-2 py-0.5 text-[10px] font-medium text-cream">
               เพิ่มเอง
+            </span>
+          )}
+          {stashedNote?.photo_url && (
+            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-ink/60 px-2 py-0.5 text-[10px] font-medium text-cream">
+              📷 รูปของเรา
             </span>
           )}
         </div>
@@ -68,6 +82,12 @@ export function PlaceCard({
           )}
           {hoursLabel && (
             <div className="mt-0.5 truncate text-[11px] text-ink-soft">🕐 {hoursLabel}</div>
+          )}
+          {/* โน้ตที่ติดมาตอนลากกลับคลัง — ขึ้นให้เห็นตรงนี้ ไม่งั้นไม่มีทางรู้เลยว่าเคยจดอะไรไว้ */}
+          {stashedNote?.note && (
+            <div className="mt-0.5 truncate text-[11px] italic text-pine-dark">
+              📝 {stashedNote.note}
+            </div>
           )}
         </div>
       </button>

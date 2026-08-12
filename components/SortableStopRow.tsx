@@ -7,6 +7,7 @@ import { CATEGORY_EMOJI, Place } from "@/data/places";
 import { BOOKING_FILES_BUCKET, supabase, type TripStop } from "@/lib/supabase";
 import type { ScheduledStop, TravelMode } from "@/lib/schedule";
 import { computeDepartureAdvice } from "@/lib/departureAdvice";
+import { placeQueryKey } from "@/lib/placeQuery";
 import { InsertBetweenRow } from "./InsertBetweenRow";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
@@ -308,7 +309,7 @@ export function SortableStopRow({
             {sched.place ? (
               <>
                 <PlaceThumb
-                  query={sched.place.mapsQuery}
+                  query={placeQueryKey(sched.place)}
                   category={sched.place.category}
                   className="h-10 w-10 shrink-0"
                 />

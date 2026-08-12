@@ -9,6 +9,7 @@ import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides } from "@/lib/hotelLegs";
 import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
+import { placeQueryKey } from "@/lib/placeQuery";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
 import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
 import {
@@ -211,7 +212,7 @@ export default function TodayPage() {
 
   // เวลาเปิด-ปิดจริง 7 วันข้างหน้า (รวมวันหยุดพิเศษ) ของจุดถัดไป — ยิงสดทุกครั้ง ไม่พึ่งแคชถาวร
   // (เฟส 11.5) เพราะข้อมูลนี้มีความหมายแค่ตอนใกล้ถึงวันจริงเท่านั้น เลยเช็คเฉพาะ isRealToday
-  const nextPlaceQuery = nextSched?.place?.mapsQuery ?? null;
+  const nextPlaceQuery = nextSched?.place ? placeQueryKey(nextSched.place) : null;
   // เก็บ query คู่กับผลลัพธ์ไว้ในสเตทเดียวกัน แล้วเช็คตรงกันตอน render แทนการ setState(null) ตรงๆ ในตัว effect
   // (ต้นเหตุเดียวกับบั๊ก useDayOpeningHours cancelled เดิม — เฟส 7.6/9.2) กันโชว์ค่าของจุดแวะก่อนหน้าค้าง
   const [currentOpeningHoursState, setCurrentOpeningHoursState] = useState<{
@@ -448,7 +449,7 @@ export default function TodayPage() {
                         </span>
                       ) : (
                         <PlaceThumb
-                          query={nextSched.place.mapsQuery}
+                          query={placeQueryKey(nextSched.place)}
                           category={nextSched.place.category}
                           className="h-16 w-16 shrink-0"
                         />
@@ -468,7 +469,7 @@ export default function TodayPage() {
                     {(() => {
                       // ใช้นาทีดิบ + delayMinutes ตรงๆ แทนการ shift สตริง HH:MM แล้ว parse กลับ — เดิมจุดแวะที่
                       // ข้ามเที่ยงคืนไปวันถัดไปจะเช็กเวลาเปิด-ปิดผิด (บั๊ก 7.4 เดียวกับ deadlineOverrunMinutes)
-                      const hours = openingHoursByQuery.get(nextSched.place.mapsQuery);
+                      const hours = openingHoursByQuery.get(placeQueryKey(nextSched.place));
                       const hoursLabel = weekdayHoursLabel(hours, day.date);
                       const closed =
                         isOpenDuring(
@@ -503,7 +504,7 @@ export default function TodayPage() {
 
                     {(() => {
                       // เตือนถ้าเวลาเปิด-ปิดจริงของ 7 วันข้างหน้า (รวมวันหยุดพิเศษ) ต่างจากตารางปกติที่โชว์ด้านบน
-                      const hours = openingHoursByQuery.get(nextSched.place.mapsQuery);
+                      const hours = openingHoursByQuery.get(placeQueryKey(nextSched.place));
                       const regularLabel = weekdayHoursLabel(hours, day.date);
                       const currentLabel = weekdayHoursLabel(currentOpeningHours, day.date);
                       if (!currentLabel || currentLabel === regularLabel) return null;
@@ -605,7 +606,7 @@ export default function TodayPage() {
                   const mightMissClosing =
                     sched?.place != null &&
                     isOpenDuring(
-                      openingHoursByQuery.get(sched.place.mapsQuery),
+                      openingHoursByQuery.get(placeQueryKey(sched.place)),
                       day.date,
                       sched.arrivalMinutes + delayMinutes,
                       sched.departureMinutes + delayMinutes

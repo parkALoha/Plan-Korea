@@ -56,8 +56,23 @@ export type CustomPlace = {
   lat: number;
   lng: number;
   maps_query: string;
+  /** Google place id ของสถานที่นี้ (migration 0027) — เก็บตอนกดเพิ่มจากลิสต์ค้นหา/แนะนำ
+   *  optional เพราะแถวที่บันทึกไว้ก่อน migration ยังเป็น null จนกว่าสคริปต์ backfill จะเติมให้ */
+  google_place_id?: string | null;
   description: string | null;
   created_at: string;
+};
+
+/**
+ * โน้ต/รูปที่ฝากไว้กับสถานที่ในคลัง ระหว่างที่มันไม่ได้อยู่ในวันไหนของแผนนี้ (migration 0028)
+ * ย้ายมาจากแถว trip_stops ตอนลากกลับคลัง แล้วย้ายกลับไปตอนลากลงวันอีกครั้ง — ดู hooks/usePlaceNotes.ts
+ */
+export type PlaceNote = {
+  plan_id: string;
+  place_id: string;
+  note: string | null;
+  photo_url: string | null;
+  updated_at: string;
 };
 
 export type TripStop = {

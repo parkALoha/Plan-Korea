@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchPlacesText, type GoogleOpeningHours, type GoogleReview } from "@/lib/googlePlaces";
+import { lookupPlace, type GoogleOpeningHours, type GoogleReview } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
@@ -51,25 +51,20 @@ function parseLocale(raw: string | null): Locale | null {
 
 /** ดึงชื่อ+ที่อยู่ภาษาท้องถิ่นจาก Google (คนละ request กับตัวหลักเพราะขอคนละ languageCode) */
 async function fetchLocalName(query: string, locale: Locale) {
-  const { places } = await searchPlacesText(
-    query,
-    "places.displayName,places.formattedAddress",
-    null,
-    undefined,
-    false,
-    locale
-  );
+  const { place } = await lookupPlace(query, "places.displayName,places.formattedAddress", {
+    languageCode: locale,
+  });
   return {
-    nameLocal: places[0]?.displayName?.text ?? null,
-    addressLocal: places[0]?.formattedAddress ?? null,
+    nameLocal: place?.displayName?.text ?? null,
+    addressLocal: place?.formattedAddress ?? null,
   };
 }
 
 // ยิงขอ currentOpeningHours สดจาก Google เสมอ ไม่พึ่ง cache ไหนเลย (ทั้ง DB และ Next.js fetch cache)
 // เพราะข้อมูลนี้มีความหมายแค่ 7 วันข้างหน้านับจากตอนเรียก แคชไว้นานจะกลายเป็นข้อมูลผิดเงียบๆ
 async function fetchCurrentOpeningHoursLive(query: string): Promise<GoogleOpeningHours | null> {
-  const { places } = await searchPlacesText(query, "places.currentOpeningHours", null, undefined, true);
-  return places[0]?.currentOpeningHours ?? null;
+  const { place } = await lookupPlace(query, "places.currentOpeningHours", { noCache: true });
+  return place?.currentOpeningHours ?? null;
 }
 
 function rowToResponse(row: CacheRow, nameLocal: string | null, addressLocal: string | null): PlaceDetailsResponse {
@@ -107,7 +102,7 @@ async function resolveFromGoogle(
   const fieldMask = live
     ? "places.id,places.regularOpeningHours,places.currentOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews"
     : "places.id,places.regularOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews";
-  const { places, error } = await searchPlacesText(query, fieldMask);
+  const { place, error } = await lookupPlace(query, fieldMask);
   if (error) {
     return {
       googlePlaceId: null,
@@ -119,7 +114,6 @@ async function resolveFromGoogle(
     };
   }
 
-  const place = places[0];
   const googlePlaceId = place?.id ?? null;
   const openingHours = place?.regularOpeningHours ?? null;
   const rating = place?.rating ?? null;

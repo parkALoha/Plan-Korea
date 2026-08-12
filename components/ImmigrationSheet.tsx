@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CITY_NAME_EN, ITINERARY, type Day, type DayEvent } from "@/data/itinerary";
+import type { Place } from "@/data/places";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel, TripStop } from "@/lib/supabase";
 import { resolvePlace } from "@/lib/resolvePlace";
+import { looksLatin } from "@/lib/latinScript";
+import { placeQueryKey } from "@/lib/placeQuery";
+import { usePlaceNamesEn } from "@/hooks/usePlaceNamesEn";
 import type { CustomPlace } from "@/lib/supabase";
 
 const NAMES_STORAGE_KEY = "trip-passport-names";
@@ -75,6 +79,39 @@ export function ImmigrationSheet({
 
   const flights = allFlights();
   const nameLines = names.split("\n").map((n) => n.trim()).filter(Boolean);
+
+  // สถานที่ทั้งทริปเรียงตามวัน — คำนวณครั้งเดียวแล้วใช้ทั้งการหาชื่ออังกฤษและตาราง Daily outline
+  const placesByDay = useMemo(() => {
+    const map: Record<string, Place[]> = {};
+    for (const day of ITINERARY) {
+      map[day.id] = (stopsByDay[day.id] ?? [])
+        .filter((s) => s.kind !== "intercity")
+        .map((s) => resolvePlace(s.place_id, customPlaces))
+        .filter((p): p is Place => p != null);
+    }
+    return map;
+  }, [stopsByDay, customPlaces]);
+
+  // สถานที่ที่เพิ่มเองระหว่างทางเก็บชื่อที่ Google คืนมาเป็นภาษาไทย (custom_places.name_en เป็น null
+  // ดู NearbyPlacesModal) — เอกสารที่ยื่นเจ้าหน้าที่เลยมี "ตลาดปลาจากัลชิ" ปนอยู่ · ขอชื่ออังกฤษของ
+  // ที่เดียวกันจาก Google มาแทนเฉพาะตัวที่ชื่อไม่ใช่อักษรละติน (ที่คัดไว้เองใน PLACES มี nameEn ครบอยู่แล้ว)
+  const nonLatinQueries = useMemo(() => {
+    const queries = new Set<string>();
+    for (const places of Object.values(placesByDay)) {
+      for (const place of places) {
+        if (!looksLatin(place.nameEn)) queries.add(placeQueryKey(place));
+      }
+    }
+    return Array.from(queries);
+  }, [placesByDay]);
+  const namesEn = usePlaceNamesEn(nonLatinQueries);
+
+  /** ชื่อที่จะพิมพ์ลงเอกสาร — อังกฤษที่มีอยู่แล้วมาก่อน ไม่งั้นใช้ที่เพิ่งขอจาก Google
+   *  ขอไม่ได้ (ออฟไลน์/Google ไม่มีให้) ก็ยอมใช้ชื่อเดิม ดีกว่าเว้นว่างจนเจ้าหน้าที่อ่านไม่ออกว่าไปไหน */
+  function documentName(place: Place): string {
+    if (looksLatin(place.nameEn)) return place.nameEn;
+    return namesEn[placeQueryKey(place)] ?? place.nameEn;
+  }
 
   return (
     <div className="mx-auto max-w-3xl bg-white px-4 py-5 text-ink print:px-0 print:py-0">
@@ -188,10 +225,7 @@ export function ImmigrationSheet({
       <Section title="Daily outline">
         <Table head={["Date", "Day", "City", "Places"]}>
           {ITINERARY.map((day) => {
-            const places = (stopsByDay[day.id] ?? [])
-              .filter((s) => s.kind !== "intercity")
-              .map((s) => resolvePlace(s.place_id, customPlaces)?.nameEn)
-              .filter(Boolean);
+            const places = placesByDay[day.id].map(documentName);
             return (
               <tr key={day.id} className="border-b border-cream-soft last:border-0">
                 <Td className="whitespace-nowrap">{formatDateEn(day.date)}</Td>

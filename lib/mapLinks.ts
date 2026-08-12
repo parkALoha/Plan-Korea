@@ -29,6 +29,15 @@ export function hotelNavigationName(hotel: {
   return hotel.name_local || hotel.name_en || hotel.hotel_name;
 }
 
+/** ลิงก์เปิดหน้าสถานที่บน Google Maps
+ *  รู้ place id → ใช้ `place/?q=place_id:...` ซึ่งชี้ร้านนั้นเป๊ะ ไม่มีทางเพี้ยน
+ *  ไม่รู้ → ตกไปค้นด้วยข้อความ ซึ่ง Google จะเดาจากตำแหน่งของคนที่กดลิงก์ (เปิดจากไทยได้ร้านในไทย) */
+export function googleMapsPlaceUrl(query: string, googlePlaceId?: string | null): string {
+  return googlePlaceId
+    ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(googlePlaceId)}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
 /** ลิงก์เว็บ Google Maps มาตรฐาน (api=1) — เปิดแอปบนมือถือ, เปิดเว็บบนคอม ใช้งานได้ทุกที่รวมฮานอย */
 export function googleMapsDirectionsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;

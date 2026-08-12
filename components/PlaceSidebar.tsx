@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, Place, cityCenter, placesByCity } from "@/data/places";
 import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
-import type { CustomPlace, TripHotel } from "@/lib/supabase";
+import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { useDismissable } from "@/hooks/useDismissable";
@@ -32,6 +32,7 @@ type PlaceCardProps = {
   isCustom?: boolean;
   distanceLabel?: string | null;
   dayDate?: string;
+  stashedNote?: PlaceNote | null;
   onClick: () => void;
   onHide?: () => void;
   onAdd?: () => void;
@@ -69,6 +70,7 @@ function customPlaceToPlace(cp: CustomPlace): Place {
     lat: cp.lat,
     lng: cp.lng,
     mapsQuery: cp.maps_query,
+    googlePlaceId: cp.google_place_id ?? null,
     youtubeQuery: cp.name_th,
   };
 }
@@ -82,6 +84,8 @@ type SidebarProps = {
   /** coords ส่งมาเฉพาะตอนเพิ่มสถานที่ที่เพิ่งสร้างใหม่ (custom place) — เอาไว้เดาโหมดเดินทางเริ่มต้นได้ทันที
    *  โดยไม่ต้อง resolvePlace(placeId, customPlaces) เอง ซึ่ง state ยังไม่ทันอัปเดตตอนนั้น (รอ realtime echo) */
   onAddStopToDay: (dayId: string, placeId: string, coords?: { lat: number; lng: number }) => void;
+  /** โน้ต/รูปที่ฝากไว้กับสถานที่ในคลัง คีย์ด้วย place id (เฟส 22) — ว่างเปล่าเมื่อยังไม่ได้รัน migration 0028 */
+  placeNotes: Record<string, PlaceNote>;
   /** id ของสถานที่ที่ถูกเพิ่มลงวันไหนก็ได้ในเมืองนี้แล้ว (ไม่ต้องโชว์ให้เลือกซ้ำ) */
   selectedPlaceIdsForCity: (city: Day["city"]) => Set<string>;
   hiddenPlaceIds: Set<string>;
@@ -105,6 +109,7 @@ function PlaceSidebarContent({
   lastStopPlaceForDay,
   hotelForDay,
   onAddStopToDay,
+  placeNotes,
   selectedPlaceIdsForCity,
   hiddenPlaceIds,
   onHidePlace,
@@ -281,6 +286,7 @@ function PlaceSidebarContent({
                     isCustom={isCustom}
                     distanceLabel={distanceLabelFor(place)}
                     dayDate={focusedDayDate}
+                    stashedNote={placeNotes[place.id] ?? null}
                     onClick={() => setDetailPlace(place)}
                     onHide={() => onHidePlace(place.id)}
                     onAdd={() => onAddStopToDay(focusedDayId, place.id)}
@@ -327,6 +333,8 @@ function PlaceSidebarContent({
           place={detailPlace}
           previousPlace={lastStopPlaceForDay(focusedDayId)}
           hotel={hotelForDay(focusedDayId)}
+          userNote={placeNotes[detailPlace.id]?.note}
+          userPhotoUrl={placeNotes[detailPlace.id]?.photo_url}
           onClose={() => setDetailPlace(null)}
           onConfirm={() => {
             onAddStopToDay(focusedDayId, detailPlace.id);

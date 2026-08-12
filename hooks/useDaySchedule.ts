@@ -19,6 +19,7 @@ import {
 import { useDayTravelTimes, type TravelTimePair } from "@/hooks/useDayTravelTimes";
 import { useDayOpeningHours } from "@/hooks/useDayOpeningHours";
 import { isOpenDuring } from "@/lib/openingHours";
+import { placeQueryKey } from "@/lib/placeQuery";
 import { hotelAnchorId } from "@/lib/hotelLegs";
 
 /**
@@ -126,7 +127,7 @@ export function useDaySchedule({
   const realTravelTimes = useDayTravelTimes(travelPairs);
 
   const mapsQueries = useMemo(
-    () => Array.from(new Set(Array.from(placesById.values()).map((p) => p.mapsQuery))),
+    () => Array.from(new Set(Array.from(placesById.values()).map(placeQueryKey))),
     [placesById]
   );
   // ภาษาท้องถิ่นของเมืองที่เที่ยววันนี้ — ใช้ขอชื่อ/ที่อยู่ภาษาท้องถิ่นมาพร้อมกันในคำขอเดียว (เฟส 14)
@@ -208,7 +209,8 @@ export function useDaySchedule({
 
   const isClosedAt = useCallback(
     (place: Place, arrivalMinutes: number, departureMinutes: number) =>
-      isOpenDuring(openingHoursByQuery.get(place.mapsQuery), day.date, arrivalMinutes, departureMinutes) === false,
+      isOpenDuring(openingHoursByQuery.get(placeQueryKey(place)), day.date, arrivalMinutes, departureMinutes) ===
+      false,
     [openingHoursByQuery, day.date]
   );
 

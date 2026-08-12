@@ -6,6 +6,7 @@ import { useTravelTime } from "@/hooks/useTravelTime";
 import { useHotelDistance } from "@/hooks/useHotelDistance";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import type { TripHotel } from "@/lib/supabase";
+import { placeQueryKey } from "@/lib/placeQuery";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 import { PhotoGallery } from "./PhotoGallery";
 import { YouTubeEmbed } from "./YouTubeEmbed";
@@ -14,19 +15,26 @@ export function PlaceDetailModal({
   place,
   previousPlace,
   hotel,
+  userNote,
+  userPhotoUrl,
   onConfirm,
   onClose,
 }: {
   place: Place;
   previousPlace: Place | null;
   hotel: TripHotel | null;
+  /** โน้ตที่จดไว้เองกับจุดแวะนี้ (หรือที่ฝากไว้กับสถานที่ในคลัง) — โชว์นำหน้าข้อมูลจาก Google */
+  userNote?: string | null;
+  /** รูปที่เราอัปโหลดเอง เก็บใน Supabase Storage — คนละชุดกับ PhotoGallery ที่เป็นรูปจาก Google */
+  userPhotoUrl?: string | null;
   /** ไม่ใส่ = โหมดดูรายละเอียดอย่างเดียว (เช่น กดดูจุดแวะที่เลือกไว้แล้ว) ไม่โชว์ปุ่มยืนยันเลือก */
   onConfirm?: () => void;
   onClose: () => void;
 }) {
   const travelLabel = useTravelTime(previousPlace, place);
   const hotelLabel = useHotelDistance(hotel, place);
-  const details = usePlaceDetails(place.mapsQuery);
+  const queryKey = placeQueryKey(place);
+  const details = usePlaceDetails(queryKey);
 
   return (
     <Modal
@@ -69,6 +77,23 @@ export function PlaceDetailModal({
     </div>
     <p className="mb-4 text-sm text-ink">{place.descriptionTh}</p>
 
+    {/* ของที่เราใส่ไว้เอง มาก่อนข้อมูลจาก Google เสมอ — เปิดดูรายละเอียดแล้วต้องเจอโน้ต/รูปตัวเองทันที
+        ไม่ต้องเลื่อนผ่านเวลาเปิด-ปิดกับรีวิวคนอื่นไปหา (เฟส 22) */}
+    {(userNote || userPhotoUrl) && (
+      <div className="mb-4 rounded-xl bg-pine-soft/40 p-3">
+        <h3 className="mb-1.5 text-sm font-semibold text-pine-dark">โน้ตของเรา</h3>
+        {userNote && <p className="text-sm text-ink">📝 {userNote}</p>}
+        {userPhotoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
+          <img
+            src={userPhotoUrl}
+            alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้"
+            className={`w-full max-w-56 rounded-lg object-cover ${userNote ? "mt-2" : ""}`}
+          />
+        )}
+      </div>
+    )}
+
     {details?.openingHours?.weekdayDescriptions &&
       details.openingHours.weekdayDescriptions.length > 0 && (
         <div className="mb-4">
@@ -105,11 +130,11 @@ export function PlaceDetailModal({
       </div>
     )}
 
-    <h3 className="mb-2 text-sm font-semibold text-ink">รูปสถานที่</h3>
-    <PhotoGallery query={place.mapsQuery} />
+    <h3 className="mb-2 text-sm font-semibold text-ink">รูปจาก Google</h3>
+    <PhotoGallery query={queryKey} />
 
     <h3 className="mb-2 mt-4 text-sm font-semibold text-ink">แผนที่</h3>
-    <GoogleMapEmbed query={place.mapsQuery} />
+    <GoogleMapEmbed query={queryKey} />
 
     <h3 className="mb-2 mt-4 text-sm font-semibold text-ink">คลิปวิดีโอ</h3>
     <YouTubeEmbed query={place.youtubeQuery} />

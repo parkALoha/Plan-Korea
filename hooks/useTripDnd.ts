@@ -40,6 +40,15 @@ interface UseTripDndArgs {
   /** คืนแถวที่ลบไปทั้งแถว เพื่อเอาไปทำปุ่ม "เลิกทำ" บน toast */
   removeStop: (stopId: string) => Promise<TripStop | undefined>;
   restoreStop: (stop: TripStop) => Promise<void>;
+  /** ฝากโน้ต/รูปของจุดแวะไว้กับสถานที่ในคลังก่อนลบแถวทิ้ง (เฟส 22) — คืน false เมื่อไม่มีอะไรให้ฝาก
+   *  หรือยังไม่ได้รัน migration 0028 */
+  stashPlaceNote: (
+    placeId: string,
+    note: string | null,
+    photoUrl: string | null
+  ) => Promise<boolean>;
+  /** ล้างโน้ตที่ฝากไว้ — ใช้ตอนกด "เลิกทำ" ซึ่งเอาจุดแวะ (พร้อมโน้ตในตัว) กลับไปที่เดิมแล้ว */
+  clearPlaceNote: (placeId: string) => Promise<void>;
   reorderStops: (dayId: string, orderedStopIds: string[]) => Promise<void>;
   moveStopToDay: (stopId: string, targetDayId: string) => Promise<void> | void;
   flashNewStop: (stopId: string | undefined) => void;
@@ -59,6 +68,8 @@ export function useTripDnd({
   addStop,
   removeStop,
   restoreStop,
+  stashPlaceNote,
+  clearPlaceNote,
   reorderStops,
   moveStopToDay,
   flashNewStop,
@@ -145,9 +156,26 @@ export function useTripDnd({
     const stopId = active.id as string;
     if (overData?.type === "library") {
       const label = stopLabel(stopId);
-      removeStop(stopId).then((snapshot) => {
-        if (snapshot) showUndoToast(`เอา ${label} ออกจากแผนแล้ว`, () => restoreStop(snapshot));
-      });
+      const stop = stops.find((s) => s.id === stopId);
+      // "เก็บกลับคลัง" = พักไว้ก่อน ไม่ใช่ทิ้ง — โน้ต/รูปจึงย้ายไปฝากไว้กับตัวสถานที่ในคลัง
+      // แล้วติดกลับมาเองตอนลากลงวันอีกครั้ง (เฟส 22) · แถว trip_stops ยังถูกลบเหมือนเดิม
+      const stashing = stop
+        ? stashPlaceNote(stop.place_id, stop.note ?? null, stop.photo_url ?? null)
+        : Promise.resolve(false);
+      stashing.then((stashed) =>
+        removeStop(stopId).then((snapshot) => {
+          if (!snapshot) return;
+          showUndoToast(
+            stashed ? `เก็บ ${label} กลับคลังแล้ว — โน้ตติดไปด้วย` : `เอา ${label} ออกจากแผนแล้ว`,
+            () => {
+              // จุดแวะที่กู้คืนมามีโน้ต/รูปติดมาในตัวอยู่แล้ว ตัวที่ฝากไว้ในคลังจึงต้องล้างทิ้ง
+              // ไม่งั้นสถานที่เดียวกันจะมีโน้ตค้างอยู่ 2 ที่
+              restoreStop(snapshot);
+              if (stashed) clearPlaceNote(snapshot.place_id);
+            }
+          );
+        })
+      );
       return;
     }
     if (!targetDayId) return;

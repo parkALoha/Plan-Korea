@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchPlacesText } from "@/lib/googlePlaces";
+import { lookupPlace } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
@@ -32,10 +32,10 @@ async function resolveMany(queries: string[]): Promise<Record<string, string[]>>
       const hit = cachedNames.get(query);
       if (hit) return [query, toPhotoUrls(hit)];
 
-      const { places, error } = await searchPlacesText(query, "places.photos");
+      const { place, error } = await lookupPlace(query, "places.photos");
       if (error) return [query, []];
 
-      const photoNames: string[] = places[0]?.photos?.slice(0, 6).map((p) => p.name) ?? [];
+      const photoNames: string[] = place?.photos?.slice(0, 6).map((p) => p.name) ?? [];
       if (supabaseConfigured && photoNames.length > 0) {
         await supabase.from("place_photo_cache").upsert({
           maps_query: query,

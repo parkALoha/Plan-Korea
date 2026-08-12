@@ -12,6 +12,7 @@ import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
 import { weekdayHoursLabel } from "@/lib/openingHours";
+import { placeQueryKey } from "@/lib/placeQuery";
 import type { DayWeather } from "@/lib/weather";
 import { WeatherBadge } from "./WeatherBadge";
 import { PlaceDetailModal } from "./PlaceDetailModal";
@@ -430,7 +431,7 @@ export function DayStopsSection({
                   closedWarning={closedStopIds.has(stop.id)}
                   closedHoursLabel={
                     sched.place != null
-                      ? weekdayHoursLabel(openingHoursByQuery.get(sched.place.mapsQuery), day.date)
+                      ? weekdayHoursLabel(openingHoursByQuery.get(placeQueryKey(sched.place)), day.date)
                       : null
                   }
                   locked={locked}
@@ -619,6 +620,8 @@ export function DayStopsSection({
             viewIndex != null && viewIndex > 0 ? schedule[viewIndex - 1].place ?? null : null
           }
           hotel={hotel}
+          userNote={viewIndex != null ? stops[viewIndex]?.note : null}
+          userPhotoUrl={viewIndex != null ? stops[viewIndex]?.photo_url : null}
           onClose={() => setViewIndex(null)}
         />
       )}

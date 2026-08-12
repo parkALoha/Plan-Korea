@@ -30,6 +30,10 @@ export type Place = {
   lng: number;
   /** query string used for Google Maps embed / search */
   mapsQuery: string;
+  /** Google place id ("ChIJ...") — มีเฉพาะสถานที่ที่เพิ่มเองจากลิสต์ค้นหา (custom_places.google_place_id
+   *  migration 0027) · มีค่าเมื่อไหร่ให้ใช้ระบุตัวสถานที่แทนการค้นด้วยชื่อเสมอ ดู lib/placeQuery.ts
+   *  ที่คัดไว้ใน PLACES ไม่ต้องมีเพราะ mapsQuery ต่อท้ายด้วยชื่อเมืองอยู่แล้ว ("... Busan") */
+  googlePlaceId?: string | null;
   /** query string used for the YouTube search-embed */
   youtubeQuery: string;
 };

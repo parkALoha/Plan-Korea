@@ -101,7 +101,14 @@ export function useStops(planId: string | null) {
 
   // คืน id ของจุดแวะที่เพิ่งเพิ่ม (ให้ผู้เรียกเอาไปเล่น animation "เพิ่งถูกเพิ่ม" ต่อได้)
   const addStop = useCallback(
-    async (dayId: string, placeId: string, addedBy?: string, travelMode?: string | null) => {
+    async (
+      dayId: string,
+      placeId: string,
+      addedBy?: string,
+      travelMode?: string | null,
+      /** โน้ต/รูปที่เคยฝากไว้กับสถานที่นี้ในคลัง (เฟส 22) — ติดกลับมากับจุดแวะใหม่ตอนลากลงวันอีกครั้ง */
+      stashed?: { note: string | null; photoUrl: string | null }
+    ) => {
       if (!planId) return undefined;
       const dayStops = stops.filter((s) => s.day_id === dayId);
       const newStop: TripStop = {
@@ -112,7 +119,8 @@ export function useStops(planId: string | null) {
         order_index: nextOrderIndex(dayStops),
         dwell_minutes: null,
         travel_mode: travelMode ?? null,
-        note: null,
+        note: stashed?.note ?? null,
+        photo_url: stashed?.photoUrl ?? null,
         added_by: addedBy ?? null,
         updated_at: new Date().toISOString(),
       };
@@ -121,8 +129,10 @@ export function useStops(planId: string | null) {
       // แถวจริงจาก realtime จะมาทับตัวนี้เองเพราะ id ตรงกัน
       setStops((prev) => sortStops([...prev, newStop]));
       if (!supabaseConfigured) return newStop.id;
-      await guard("เพิ่มจุดแวะ", () => supabase.from("trip_stops").insert(newStop));
-      return newStop.id;
+      // เขียนไม่ผ่าน = คืน undefined (guard ดึงของจริงมาทับ state ให้แล้ว แถวนี้จึงไม่มีอยู่จริง)
+      // ผู้เรียกจะได้ไม่ไปไฮไลต์ id ที่ไม่มี และไม่ล้างโน้ตที่ฝากไว้ในคลังทิ้งทั้งที่จุดแวะไม่ได้ถูกสร้าง (เฟส 22)
+      const ok = await guard("เพิ่มจุดแวะ", () => supabase.from("trip_stops").insert(newStop));
+      return ok ? newStop.id : undefined;
     },
     [planId, stops, guard]
   );

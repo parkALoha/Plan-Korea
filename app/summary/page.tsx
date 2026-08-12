@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CATEGORY_EMOJI } from "@/data/places";
+import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
@@ -15,6 +15,10 @@ import {
   type TravelMode,
 } from "@/lib/schedule";
 import { haversineKm } from "@/lib/geo";
+import { placeQueryKey } from "@/lib/placeQuery";
+import { looksLatin } from "@/lib/latinScript";
+import { resolvePlace } from "@/lib/resolvePlace";
+import { weekdayHoursLabel } from "@/lib/openingHours";
 import { useLang, type Lang, type TKey } from "@/lib/i18n";
 import {
   INTERCITY_MODE_ICON,
@@ -30,12 +34,16 @@ import {
 import { BottomNav } from "@/components/BottomNav";
 import { ImmigrationSheet, formatDateEn } from "@/components/ImmigrationSheet";
 import { LayoverBadges } from "@/components/LayoverBadges";
+import { PlaceDetailModal } from "@/components/PlaceDetailModal";
+import { PlaceThumb } from "@/components/PlaceThumb";
 import { useHotels } from "@/hooks/useHotels";
 import { useBookings } from "@/hooks/useBookings";
 import { useChecklist } from "@/hooks/useChecklist";
 import { usePlans } from "@/hooks/usePlans";
 import { useStops } from "@/hooks/useStops";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
+import { usePlaceDetails } from "@/hooks/usePlaceDetails";
+import { usePlaceNamesEn } from "@/hooks/usePlaceNamesEn";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
@@ -45,6 +53,16 @@ import { useDarkTheme } from "@/hooks/useDarkTheme";
 function dateLabelOf(iso: string, lang: Lang = "th") {
   if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
   return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+}
+
+/**
+ * ชื่ออังกฤษที่ใช้โชว์ในโหมด EN — สถานที่ที่เพิ่มเองมี `nameEn` fallback เป็นชื่อไทย (custom_places.name_en
+ * เป็น null · ดูเฟส 22.4) หน้าอังกฤษเลยมี "ตลาดปลาจากัลชิ" โผล่ · ตัวไหนไม่ใช่อักษรละตินใช้ชื่อที่ขอ
+ * จาก Google มาแทน ขอไม่ได้ก็ใช้ของเดิม (ตรรกะเดียวกับ documentName ในหน้า ตม.)
+ */
+function placeNameEn(place: Place, namesEn: Record<string, string>): string {
+  if (looksLatin(place.nameEn)) return place.nameEn;
+  return namesEn[placeQueryKey(place)] ?? place.nameEn;
 }
 
 function formatMinutes(total: number, lang: Lang = "th") {
@@ -70,6 +88,7 @@ function SummaryDayCard({
   locked,
   bookings,
   lang,
+  namesEn,
   t,
 }: {
   day: Day;
@@ -82,10 +101,14 @@ function SummaryDayCard({
   locked: boolean;
   bookings: TripBooking[];
   lang: Lang;
+  /** ชื่ออังกฤษที่ขอจาก Google ให้สถานที่ที่ชื่อไม่ใช่อักษรละติน คีย์ด้วย placeQueryKey (โหมด EN เท่านั้น) */
+  namesEn: Record<string, string>;
   t: (key: TKey) => string;
 }) {
   const en = lang === "en";
   const meta = CITY_META[day.city];
+  // แถวที่กดเปิดดูรายละเอียดอยู่ — หน้านี้ยังอ่านอย่างเดียวเหมือนเดิม โมดัลไม่มีปุ่มแก้อะไรเลย
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
   const {
     schedule,
     daySchedule,
@@ -197,6 +220,68 @@ function SummaryDayCard({
         {schedule.map((sched, i) => {
           const stop = stops[i];
           const mode = (stop.travel_mode as TravelMode | null) ?? null;
+          // แถวสถานที่จริงเท่านั้นที่กดดูรายละเอียดได้ — แถวข้ามเมือง/แวะที่พัก/ไปสนามบิน ไม่มีอะไรให้ดูต่อ
+          const place = stop.kind === "intercity" || stop.kind === "hotel" ? null : sched.place;
+          const title =
+            stop.kind === "intercity"
+              ? `${INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]} ${
+                  (en ? INTERCITY_MODE_LABEL_EN : INTERCITY_MODE_LABEL)[
+                    (stop.intercity_mode as IntercityMode) ?? "other"
+                  ]
+                } · ${stop.intercity_from} → ${stop.intercity_to}`
+              : stop.kind === "hotel"
+                ? // ชื่อจาก trip_hotels ไม่ใช่จาก sched.place (ซึ่งเป็นชื่อกลางๆ "ที่พัก" จาก id)
+                  `🏨 ${en ? "Stop by the hotel" : "แวะที่พัก"}${
+                    hotel ? ` · ${(en && hotel.name_en) || hotel.hotel_name}` : ""
+                  }`
+                : sched.place
+                  ? `${CATEGORY_EMOJI[sched.place.category]} ${
+                      en ? placeNameEn(sched.place, namesEn) : sched.place.nameTh
+                    }`
+                  : t("noPlaceData");
+
+          const body = (
+            <div className="flex w-full items-start gap-2 text-left">
+              <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft">
+                <div className="font-semibold text-content">{sched.arrival}</div>
+                <div>{sched.departure}</div>
+              </div>
+              {/* รูปตัวอย่าง: รูปที่เราอัปโหลดเองมาก่อน ไม่มีก็ใช้รูปแรกจาก Google (เฟส 22)
+                  — หน้าสรุปเดิมเป็นตัวหนังสือล้วนจนดูไม่ออกว่าแต่ละที่หน้าตาแบบไหน */}
+              {place &&
+                (stop.photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
+                  <img
+                    src={stop.photo_url}
+                    alt=""
+                    loading="lazy"
+                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <PlaceThumb
+                    query={placeQueryKey(place)}
+                    category={place.category}
+                    className="h-12 w-12 shrink-0"
+                  />
+                ))}
+              <div className="min-w-0 flex-1">
+                <div className={`font-semibold text-content ${place ? "hover:underline" : ""}`}>
+                  {title}
+                </div>
+                <div className="text-xs text-content-soft">
+                  {t("stayFor")} {sched.resolvedDwellMinutes} {t("minutes")}
+                  {stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""}
+                </div>
+                {/* เรทติ้ง/ประเภทร้านจาก Google — ข้อมูลชุดเดียวกับที่การ์ดในคลังโชว์ ไม่ต้องยิง API เพิ่ม
+                    (usePlaceDetails แคชร่วมกันทั้งแท็บ) */}
+                {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
+                {stop.note && !en && (
+                  <div className="mt-0.5 text-xs italic text-content-soft">📝 {stop.note}</div>
+                )}
+              </div>
+            </div>
+          );
+
           return (
             <div key={stop.id} className="px-3 py-2.5 sm:px-4">
               {i > 0 && mode && sched.travelMinutesFromPrev != null && (
@@ -206,39 +291,13 @@ function SummaryDayCard({
                   {sched.travelMinutesFromPrev} {t("minutes")}
                 </div>
               )}
-              <div className="flex items-start gap-2">
-                <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft">
-                  <div className="font-semibold text-content">{sched.arrival}</div>
-                  <div>{sched.departure}</div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-content">
-                    {stop.kind === "intercity"
-                      ? `${INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]} ${
-                          (en ? INTERCITY_MODE_LABEL_EN : INTERCITY_MODE_LABEL)[
-                            (stop.intercity_mode as IntercityMode) ?? "other"
-                          ]
-                        } · ${stop.intercity_from} → ${stop.intercity_to}`
-                      : stop.kind === "hotel"
-                        ? // ชื่อจาก trip_hotels ไม่ใช่จาก sched.place (ซึ่งเป็นชื่อกลางๆ "ที่พัก" จาก id)
-                          `🏨 ${en ? "Stop by the hotel" : "แวะที่พัก"}${
-                            hotel ? ` · ${(en && hotel.name_en) || hotel.hotel_name}` : ""
-                          }`
-                        : sched.place
-                        ? `${CATEGORY_EMOJI[sched.place.category]} ${
-                            en ? sched.place.nameEn : sched.place.nameTh
-                          }`
-                        : t("noPlaceData")}
-                  </div>
-                  <div className="text-xs text-content-soft">
-                    {t("stayFor")} {sched.resolvedDwellMinutes} {t("minutes")}
-                    {stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""}
-                  </div>
-                  {stop.note && !en && (
-                    <div className="mt-0.5 text-xs italic text-content-soft">📝 {stop.note}</div>
-                  )}
-                </div>
-              </div>
+              {place ? (
+                <button onClick={() => setViewIndex(i)} className="w-full">
+                  {body}
+                </button>
+              ) : (
+                body
+              )}
             </div>
           );
         })}
@@ -289,7 +348,41 @@ function SummaryDayCard({
           </span>
         </div>
       )}
+
+      {viewIndex != null && schedule[viewIndex]?.place && (
+        <PlaceDetailModal
+          place={schedule[viewIndex].place!}
+          previousPlace={viewIndex > 0 ? schedule[viewIndex - 1].place ?? null : null}
+          hotel={hotel}
+          userNote={stops[viewIndex]?.note}
+          userPhotoUrl={stops[viewIndex]?.photo_url}
+          onClose={() => setViewIndex(null)}
+        />
+      )}
     </section>
+  );
+}
+
+/** เรทติ้ง + ประเภทร้าน + เวลาเปิด-ปิดของวันนั้น — บรรทัดเดียวใต้ชื่อสถานที่ในหน้าสรุป (เฟส 22)
+ *  แยกเป็นคอมโพเนนต์เพราะ usePlaceDetails เป็น hook เรียกใน .map() ของ SummaryDayCard ตรงๆ ไม่ได้ */
+function SummaryPlaceMeta({ place, dayDate }: { place: Place; dayDate: string }) {
+  const details = usePlaceDetails(placeQueryKey(place));
+  const hoursLabel = weekdayHoursLabel(details?.openingHours, dayDate);
+  if (details?.rating == null && !hoursLabel) return null;
+  // คนละบรรทัดกัน — บนมือถือ (375px) ยัดสองอย่างในบรรทัดเดียวแล้วเวลาเปิด-ปิดถูกตัดเหลือ "Monday: Op..."
+  return (
+    <>
+      {details?.rating != null && (
+        <div className="mt-0.5 truncate text-[11px] text-content-soft">
+          ⭐ {details.rating.toFixed(1)}
+          {details.userRatingCount != null && ` (${details.userRatingCount})`}
+          {details.primaryType && ` · ${details.primaryType}`}
+        </div>
+      )}
+      {hoursLabel && (
+        <div className="mt-0.5 truncate text-[11px] text-content-soft">🕐 {hoursLabel}</div>
+      )}
+    </>
   );
 }
 
@@ -338,6 +431,20 @@ function SummaryContent() {
     for (const stop of stops) (map[stop.day_id] ??= []).push(stop);
     return map;
   }, [stops]);
+
+  // โหมด EN เท่านั้น: สถานที่ที่ชื่อยังเป็นไทย/เกาหลี ต้องไปขอชื่ออังกฤษจาก Google (เฟส 22.4)
+  // โหมดไทยส่งลิสต์ว่างเข้าไป = ไม่ยิงอะไรเลย · หน้า ตม. มีชุดของตัวเองใน ImmigrationSheet
+  const nonLatinQueries = useMemo(() => {
+    if (!en || immigrationView) return [];
+    const queries = new Set<string>();
+    for (const stop of stops) {
+      if (stop.kind === "intercity" || stop.kind === "hotel") continue;
+      const place = resolvePlace(stop.place_id, customPlaces);
+      if (place && !looksLatin(place.nameEn)) queries.add(placeQueryKey(place));
+    }
+    return Array.from(queries);
+  }, [en, immigrationView, stops, customPlaces]);
+  const namesEn = usePlaceNamesEn(nonLatinQueries);
 
   const overallLoaded =
     plansLoaded &&
@@ -577,6 +684,7 @@ function SummaryContent() {
                 (b) => b.day_id === day.id || (!b.day_id && b.date === day.date)
               )}
               lang={lang}
+              namesEn={namesEn}
               t={t}
             />
           ))}

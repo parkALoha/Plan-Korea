@@ -1,3 +1,5 @@
+import { parsePlaceIdKey } from "@/lib/placeQuery";
+
 export type GoogleOpeningHours = {
   openNow?: boolean;
   periods?: Array<{
@@ -226,7 +228,9 @@ export async function getPlaceDetails(
   fieldMask: string,
   /** ภาษาที่อยากให้ Google คืนชื่อ/ที่อยู่มา — เฟส 16 เรียกซ้ำด้วย "ko"/"vi"/"en" เพื่อเก็บชื่อที่พัก
    *  หลายภาษาไว้ในคราวเดียว (ชื่อท้องถิ่นไว้ให้แท็กซี่ · ชื่ออังกฤษไว้กรอกเอกสาร ตม.) */
-  languageCode?: string
+  languageCode?: string,
+  /** true = ข้าม cache 30 วันของ Next.js — ใช้ตอนขอ currentOpeningHours สดๆ เหมือน searchPlacesText */
+  noCache = false
 ): Promise<{ place: GooglePlaceResult | null; error: string | null }> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
@@ -239,7 +243,7 @@ export async function getPlaceDetails(
       "X-Goog-Api-Key": apiKey,
       "X-Goog-FieldMask": fieldMask,
     },
-    next: { revalidate: 2592000 },
+    ...(noCache ? { cache: "no-store" as const } : { next: { revalidate: 2592000 } }),
   });
 
   if (!res.ok) {
@@ -248,4 +252,34 @@ export async function getPlaceDetails(
 
   const place = (await res.json()) as GooglePlaceResult;
   return { place, error: null };
+}
+
+/**
+ * หาสถานที่ 1 แห่งจาก "คีย์ระบุตัวสถานที่" (ดู lib/placeQuery.ts) — เส้นทางเดียวที่ route ควรเรียก
+ *
+ * - คีย์เป็น `place_id:ChIJ...` → ยิง Place Details ตรงๆ ได้ร้านที่ต้องการเป๊ะ 100%
+ * - คีย์เป็นข้อความ → ตกไป searchText เหมือนเดิม (ที่คัดไว้เองใน data/places.ts มีชื่อเมืองต่อท้ายอยู่แล้ว)
+ *
+ * fieldMask เขียนแบบ searchText ("places.rating") ที่เดียวพอ — ฝั่ง Place Details ไม่มีคำนำหน้า
+ * `places.` จึงตัดออกให้ตรงนี้ ผู้เรียกไม่ต้องรู้ว่ากำลังคุยกับ endpoint ไหน
+ */
+export async function lookupPlace(
+  queryKey: string,
+  fieldMask: string,
+  opts: { noCache?: boolean; languageCode?: string } = {}
+): Promise<{ place: GooglePlaceResult | null; error: string | null }> {
+  const placeId = parsePlaceIdKey(queryKey);
+  if (placeId) {
+    return getPlaceDetails(placeId, fieldMask.replaceAll("places.", ""), opts.languageCode, opts.noCache);
+  }
+
+  const { places, error } = await searchPlacesText(
+    queryKey,
+    fieldMask,
+    null,
+    undefined,
+    opts.noCache ?? false,
+    opts.languageCode ?? "th"
+  );
+  return { place: places[0] ?? null, error };
 }

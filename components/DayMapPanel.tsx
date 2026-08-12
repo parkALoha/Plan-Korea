@@ -18,6 +18,8 @@ import {
 } from "@/data/places";
 import type { TripHotel } from "@/lib/supabase";
 import { TRAVEL_MODE_EMOJI, type ScheduledStop, type TravelMode } from "@/lib/schedule";
+import { googleMapsPlaceUrl } from "@/lib/mapLinks";
+import { placeQueryKey } from "@/lib/placeQuery";
 import { PlaceThumb } from "./PlaceThumb";
 
 const PINE = "#33564a";
@@ -333,11 +335,11 @@ function StopCard({
   onOpenDetail: () => void;
 }) {
   const place = stop.place;
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.mapsQuery)}`;
+  const mapsUrl = googleMapsPlaceUrl(place.mapsQuery, place.googlePlaceId);
   // การ์ดต้องแคบพอจะอยู่ในช่องแผนที่ข้างลิสต์ (~288px) โดยไม่ล้น — ตัวหนังสือเล็ก รูปเตี้ย
   return (
     <div className="w-44 text-ink">
-      <PlaceThumb query={place.mapsQuery} category={place.category} className="mb-1.5 h-14 w-full" />
+      <PlaceThumb query={placeQueryKey(place)} category={place.category} className="mb-1.5 h-14 w-full" />
       <div className="text-[10px] text-ink-soft">
         จุดที่ {index + 1} · {CATEGORY_LABEL[place.category]}
       </div>

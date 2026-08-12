@@ -29,6 +29,7 @@ import { useChecklist } from "@/hooks/useChecklist";
 import { usePlans } from "@/hooks/usePlans";
 import { useStops } from "@/hooks/useStops";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
+import { usePlaceNotes } from "@/hooks/usePlaceNotes";
 import { useDaySettings } from "@/hooks/useDaySettings";
 import { useHiddenPlaces } from "@/hooks/useHiddenPlaces";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
@@ -90,6 +91,7 @@ export default function Home() {
     restoreStop,
   } = useStops(activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
+  const { placeNotes, stashNote, clearNote } = usePlaceNotes(activePlanId);
   const {
     settings: daySettings,
     loaded: daySettingsLoaded,
@@ -242,6 +244,25 @@ export default function Home() {
     );
   }
 
+  /** เพิ่มจุดแวะพร้อมคืนโน้ต/รูปที่เคยฝากไว้กับสถานที่นี้ตอนลากกลับคลัง (เฟส 22)
+   *  ทางเข้าเดียวของทั้งหน้า — ทั้งลากการ์ดจากคลัง กดปุ่ม "+ เพิ่มลงวันนี้" และกดยืนยันในโมดัลรายละเอียด */
+  const addStopWithStashedNote = useCallback(
+    async (dayId: string, placeId: string, addedBy?: string, travelMode?: string | null) => {
+      const stashed = placeNotes[placeId];
+      const stopId = await addStop(
+        dayId,
+        placeId,
+        addedBy,
+        travelMode,
+        stashed ? { note: stashed.note, photoUrl: stashed.photo_url } : undefined
+      );
+      // ย้ายกลับไปอยู่บนแถวจุดแวะแล้ว — ที่ฝากไว้ในคลังต้องหายไป ไม่งั้นการ์ดยังขึ้นป้าย "มีโน้ต" ค้าง
+      if (stashed && stopId) await clearNote(placeId);
+      return stopId;
+    },
+    [placeNotes, addStop, clearNote]
+  );
+
   const { sensors, handleDragStart, handleDragEnd, activeDragLabel } = useTripDnd({
     itinerary,
     customPlaces,
@@ -251,9 +272,11 @@ export default function Home() {
     lastStopPlaceForDay,
     isDayLocked,
     defaultTravelModeFor,
-    addStop,
+    addStop: addStopWithStashedNote,
     removeStop,
     restoreStop,
+    stashPlaceNote: stashNote,
+    clearPlaceNote: clearNote,
     reorderStops,
     moveStopToDay,
     flashNewStop,
@@ -283,13 +306,28 @@ export default function Home() {
   }
 
   /** ลบจุดแวะแล้วยื่นปุ่ม "เลิกทำ" ให้ (เฟส 20.2) — เดิมกด ✕ ทีเดียวหายถาวร ไม่มีทางกู้
-   *  snapshot ที่ removeStop คืนมาเป็นแถวเต็ม (โน้ต/รูป/โหมดเดินทาง/order_index) จึงกลับมาที่เดิมเป๊ะ */
+   *  snapshot ที่ removeStop คืนมาเป็นแถวเต็ม (โน้ต/รูป/โหมดเดินทาง/order_index) จึงกลับมาที่เดิมเป๊ะ
+   *
+   *  ปุ่ม ✕ ฝากโน้ตไว้กับสถานที่ในคลังเหมือนการลากกลับคลังทุกประการ (เฟส 22) — **บนมือถือการ์ดในคลัง
+   *  ลากไม่ได้เลย** (draggable=false กันนิ้วเลื่อนดูคลังไม่ได้ ดู PlaceSidebar) ปุ่มนี้จึงเป็นทางเดียว
+   *  ที่จะเอาจุดแวะออก ถ้าไม่ฝากด้วย ฟีเจอร์นี้จะใช้ได้แต่บนจอใหญ่ */
   async function handleRemoveStop(stopId: string) {
     const stop = stops.find((s) => s.id === stopId);
     const place = stop ? resolvePlace(stop.place_id, customPlaces) : null;
     const label = place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "จุดแวะนี้";
+    const stashed = stop
+      ? await stashNote(stop.place_id, stop.note ?? null, stop.photo_url ?? null)
+      : false;
     const snapshot = await removeStop(stopId);
-    if (snapshot) showUndoToast(`เอา ${label} ออกแล้ว`, () => restoreStop(snapshot));
+    if (!snapshot) return;
+    showUndoToast(
+      stashed ? `เก็บ ${label} กลับคลังแล้ว — โน้ตติดไปด้วย` : `เอา ${label} ออกแล้ว`,
+      () => {
+        // แถวที่กู้คืนมามีโน้ต/รูปติดมาในตัวอยู่แล้ว ตัวที่ฝากไว้ในคลังจึงต้องล้างทิ้ง (เหมือนทาง drag)
+        restoreStop(snapshot);
+        if (stashed) clearNote(snapshot.place_id);
+      }
+    );
   }
 
   async function handleRemoveChecklistItem(itemId: string) {
@@ -459,13 +497,14 @@ export default function Home() {
                 // coords มาจาก NearbyPlacesModal ตอนสร้าง custom place ใหม่ — ใช้แทน resolvePlace
                 // เพราะ customPlaces state ยังไม่ทันมีสถานที่นี้ (รอ realtime echo) ส่วนสถานที่จากคลังปกติ resolve ได้เลย
                 const newPlace = coords ?? resolvePlace(placeId, customPlaces);
-                addStop(
+                addStopWithStashedNote(
                   dayId,
                   placeId,
                   who || undefined,
                   defaultTravelModeFor(prevPlace, newPlace)
                 ).then(flashNewStop);
               }}
+              placeNotes={placeNotes}
               selectedPlaceIdsForCity={selectedPlaceIdsForCity}
               hiddenPlaceIds={hiddenPlaceIds}
               onHidePlace={(placeId) => hidePlace(placeId, who || undefined)}

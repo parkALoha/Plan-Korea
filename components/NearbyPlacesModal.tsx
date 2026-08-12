@@ -5,6 +5,7 @@ import { Modal } from "./Modal";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
 import type { Category, Place } from "@/data/places";
 import { categoryFromGoogleType } from "@/lib/placeCategory";
+import { PLACE_ID_PREFIX } from "@/lib/placeQuery";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 
 type NearbyResult = {
@@ -72,6 +73,7 @@ function resultToPreviewPlace(
     lat: r.lat,
     lng: r.lng,
     mapsQuery: r.name,
+    googlePlaceId: r.id,
     youtubeQuery: r.name,
   };
 }
@@ -177,6 +179,22 @@ export function NearbyPlacesModal({
     setSearchStatus("idle");
   }
 
+  /** ชื่ออังกฤษของผลลัพธ์นี้ — ลิสต์ที่โชว์อยู่เป็นชื่อภาษาไทยที่ Google คืนมา (languageCode: "th")
+   *  ซึ่งใช้ในเอกสาร ตม./K-ETA ไม่ได้ · ขอชื่ออังกฤษเก็บใส่ name_en ตั้งแต่ตอนบันทึกเลย จะได้ไม่ต้อง
+   *  ไปตามขอทีหลังตอนเปิดหน้า ตม. (เฟส 22) · ขอไม่ได้ = null เหมือนเดิม ไม่ขวางการบันทึก */
+  async function fetchNameEn(result: NearbyResult): Promise<string | null> {
+    const query = result.id ? PLACE_ID_PREFIX + result.id : result.name;
+    try {
+      const res = await fetch(
+        `/api/place-name?queries=${encodeURIComponent(query)}&lang=en`,
+      );
+      const data = await res.json();
+      return (data.results?.[query] as string | null) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   // บันทึกเข้าคลังก่อนเสมอ (ทั้ง 2 ปุ่มต้องมีสถานที่นี้ในคลัง) แล้วคืน id + พิกัดให้ผู้เรียกตัดสินใจต่อ
   async function saveToLibrary(result: NearbyResult) {
     if (result.lat == null || result.lng == null) return null;
@@ -184,11 +202,14 @@ export function NearbyPlacesModal({
       added_by: addedBy ?? null,
       city,
       name_th: result.name,
-      name_en: null,
+      name_en: await fetchNameEn(result),
       category: categoryFor(kind, result),
       lat: result.lat,
       lng: result.lng,
       maps_query: result.name,
+      // ตัวระบุตัวจริงของร้าน — ชื่อดิบอย่างเดียวไม่พอ ("Cup & Cup" ที่กวางอัลลี เคยไป resolve
+      // เป็นร้านชื่อเดียวกันที่ Texas/ไทย) ดู lib/placeQuery.ts · ต้องรัน migration 0027 ก่อนถึงจะบันทึกผ่าน
+      google_place_id: result.id,
       description: result.formattedAddress,
     });
     return { id: saved.id, coords: { lat: result.lat, lng: result.lng } };

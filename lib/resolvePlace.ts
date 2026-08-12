@@ -54,6 +54,7 @@ export function resolvePlace(placeId: string, customPlaces: CustomPlace[]): Plac
     lat: custom.lat,
     lng: custom.lng,
     mapsQuery: custom.maps_query,
+    googlePlaceId: custom.google_place_id ?? null,
     youtubeQuery: custom.name_th,
   };
 }
