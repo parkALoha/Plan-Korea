@@ -218,7 +218,12 @@ function SummaryDayCard({
                             (stop.intercity_mode as IntercityMode) ?? "other"
                           ]
                         } · ${stop.intercity_from} → ${stop.intercity_to}`
-                      : sched.place
+                      : stop.kind === "hotel"
+                        ? // ชื่อจาก trip_hotels ไม่ใช่จาก sched.place (ซึ่งเป็นชื่อกลางๆ "ที่พัก" จาก id)
+                          `🏨 ${en ? "Stop by the hotel" : "แวะที่พัก"}${
+                            hotel ? ` · ${(en && hotel.name_en) || hotel.hotel_name}` : ""
+                          }`
+                        : sched.place
                         ? `${CATEGORY_EMOJI[sched.place.category]} ${
                             en ? sched.place.nameEn : sched.place.nameTh
                           }`

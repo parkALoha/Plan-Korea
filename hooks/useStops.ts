@@ -201,6 +201,40 @@ export function useStops(planId: string | null) {
     [planId, stops, shiftForInsert, writeInsert]
   );
 
+  /** ใช้ตอน "แทรกที่พักตรงนี้" — แวะเช็คอิน/ฝากกระเป๋า/พักกลางวัน แล้วออกไปเที่ยวต่อ
+   *  place_id ฝังพิกัดที่พักไว้ในตัว (`hotel@lat,lng` — ดู hotelAnchorId) เวลาเดินทางเข้า/ออกจึง
+   *  เป็นของจริงจาก Routes API เหมือนจุดแวะปกติ · dwell_minutes = เวลาที่อยู่ที่พัก
+   *  ใช้ id เดียวกับ anchor หัว-ท้ายวันโดยตั้งใจ แคชเวลาเดินทางจึงใช้ร่วมกันได้ ไม่ยิง API ซ้ำ */
+  const insertHotelAt = useCallback(
+    async (
+      dayId: string,
+      atIndex: number,
+      input: { hotelPlaceId: string; dwellMinutes: number; travelMode: string | null },
+      addedBy?: string
+    ) => {
+      if (!planId) return undefined;
+      const dayStops = stops.filter((s) => s.day_id === dayId);
+      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
+      const newStop: TripStop = {
+        id: makeStopId(),
+        plan_id: planId,
+        day_id: dayId,
+        place_id: input.hotelPlaceId,
+        order_index: targetOrderIndex,
+        dwell_minutes: input.dwellMinutes,
+        travel_mode: input.travelMode,
+        note: null,
+        kind: "hotel",
+        added_by: addedBy ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const toShift = shiftForInsert(dayId, targetOrderIndex);
+      setStops((prev) => sortStops([...prev, newStop]));
+      return writeInsert(toShift, newStop);
+    },
+    [planId, stops, shiftForInsert, writeInsert]
+  );
+
   /** ใช้ตอน "แทรกไปสนามบินตรงนี้" — ต่างจาก intercity ตรงที่แถวนี้มี place_id จริง (สนามบิน)
    *  เวลาเดินทางจากจุดก่อนหน้าจึงมาจาก Routes API เหมือนจุดแวะปกติ ส่วน dwell = เวลาเผื่อเช็คอินที่สนามบิน */
   const insertTransferAt = useCallback(
@@ -415,6 +449,7 @@ export function useStops(planId: string | null) {
     insertStopAt,
     insertIntercityAt,
     insertTransferAt,
+    insertHotelAt,
     updateStopPlace,
     updateDwellMinutes,
     updateTravelMode,

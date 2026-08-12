@@ -9,6 +9,11 @@ import { DEFAULT_CHECKIN_BUFFER_MINUTES } from "@/lib/departureAdvice";
 
 const CHECKIN_PRESETS_MIN = [90, 120, 150, 180, 240];
 
+const GROUPS = [
+  { kind: "airport" as const, label: "✈️ สนามบิน", icon: "✈️" },
+  { kind: "station" as const, label: "🚉 สถานีรถไฟ/ขนส่ง", icon: "🚉" },
+];
+
 /** สนามบินที่ควรเสนอเป็นค่าเริ่มต้นของเมืองนั้น — เมืองที่ไม่มีสนามบินของตัวเองให้เลือกเองจากลิสต์ */
 const DEFAULT_AIRPORT_BY_CITY: Partial<Record<Day["city"], string>> = {
   hanoi: "airport-han",
@@ -24,7 +29,7 @@ export type TransferInput = {
 };
 
 /**
- * แทรกแถว "✈️ ไปสนามบิน" — ต่างจากแถวเดินทางข้ามเมืองตรงที่ไม่ต้องกรอกระยะเวลาเอง
+ * แทรกแถว "✈️ ไปสนามบิน/สถานี" — ต่างจากแถวเดินทางข้ามเมืองตรงที่ไม่ต้องกรอกระยะเวลาเอง
  * ระบบดึงเวลาเดินทางจริงจาก Routes API ให้ (จุดก่อนหน้า → สนามบิน) แล้วคำนวณย้อนกลับว่าควรออกกี่โมง
  */
 export function TransferEditModal({
@@ -71,7 +76,7 @@ export function TransferEditModal({
       >
         <div className="shrink-0 px-5 pt-5">
           <div className="mb-3 flex items-start justify-between">
-            <h2 className="text-lg font-bold text-ink">ไปสนามบิน</h2>
+            <h2 className="text-lg font-bold text-ink">ไปสนามบิน / สถานี</h2>
             <button onClick={onClose} className="rounded-full p-2 text-ink-soft hover:bg-cream-soft">
               ✕
             </button>
@@ -81,25 +86,39 @@ export function TransferEditModal({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-soft">ไปที่ไหน</label>
-            <div className="space-y-1.5">
-              {TRANSFER_POINTS.map((point) => (
-                <button
-                  key={point.id}
-                  onClick={() => setPlaceId(point.id)}
-                  className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
-                    placeId === point.id
-                      ? "border-maple bg-maple-soft text-maple-dark"
-                      : "border-cream-soft text-ink-soft hover:bg-cream-soft"
-                  }`}
-                >
-                  <span>✈️</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium">{point.nameTh}</span>
-                    <span className="block truncate text-xs opacity-80">{point.nameLocal}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+            {/* แยกกลุ่มสนามบิน/สถานี — รวมกันเป็นลิสต์เดียว 11 อันแล้วหาของที่ต้องการไม่เจอ
+                เมืองของวันนี้ขึ้นก่อนในแต่ละกลุ่ม เพราะเกือบทุกครั้งคือที่ที่ต้องการ */}
+            {GROUPS.map((group) => {
+              const points = TRANSFER_POINTS.filter((p) => p.transferKind === group.kind).sort(
+                (a, b) => Number(b.city === day.city) - Number(a.city === day.city)
+              );
+              return (
+                <div key={group.kind} className="mb-3 last:mb-0">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-soft/70">
+                    {group.label}
+                  </div>
+                  <div className="space-y-1.5">
+                    {points.map((point) => (
+                      <button
+                        key={point.id}
+                        onClick={() => setPlaceId(point.id)}
+                        className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
+                          placeId === point.id
+                            ? "border-maple bg-maple-soft text-maple-dark"
+                            : "border-cream-soft text-ink-soft hover:bg-cream-soft"
+                        }`}
+                      >
+                        <span>{group.icon}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">{point.nameTh}</span>
+                          <span className="block truncate text-xs opacity-80">{point.nameLocal}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div>
@@ -144,7 +163,7 @@ export function TransferEditModal({
 
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-soft">
-              เผื่อเวลาที่สนามบินก่อนเครื่องออก
+              เผื่อเวลาที่สนามบิน/สถานีก่อนออกเดินทาง
             </label>
             <div className="flex flex-wrap gap-1.5">
               {CHECKIN_PRESETS_MIN.map((m) => (

@@ -78,8 +78,10 @@ export type TripStop = {
   updated_at: string;
   /** "place" (ปกติ) | "intercity" (แถวเดินทางข้ามเมือง กินเวลาใน timeline แต่ไม่ใช่สถานที่)
    *  | "transfer" (ไปสนามบิน/สถานี — มี place_id จริงจาก data/transferPoints.ts เวลาเดินทางจึงเป็นของจริง)
-   *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ — ให้ถือเป็น "place" */
-  kind?: "place" | "intercity" | "transfer";
+   *  | "hotel" (แวะที่พักกลางวัน เช็คอิน/ฝากกระเป๋า — place_id ฝังพิกัดที่พักไว้ในตัว `hotel@lat,lng`)
+   *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ — ให้ถือเป็น "place"
+   *  หมายเหตุ: คอลัมน์ `kind` ใน DB เป็น text อิสระ ไม่มี CHECK constraint — เพิ่มค่าใหม่ไม่ต้อง migration */
+  kind?: "place" | "intercity" | "transfer" | "hotel";
   /** ใช้เมื่อ kind === "intercity" — เมืองต้นทาง/ปลายทางของช่วงเดินทางนี้ (ข้อความอิสระ) */
   intercity_from?: string | null;
   intercity_to?: string | null;

@@ -43,6 +43,7 @@ export function DayStopsSection({
   onInsertPlace,
   onInsertIntercity,
   onInsertTransfer,
+  onInsertHotel,
   weather,
   flashStopId,
   onOvernightCityChange,
@@ -74,10 +75,19 @@ export function DayStopsSection({
   onAddPlace: () => void;
   /** เปิด modal หาร้านอาหารแทรกที่ตำแหน่ง atIndex ของวันนี้ ศูนย์กลางค้นหา = จุดก่อนหน้าตำแหน่งนั้น (หรือที่พัก/กลางเมืองถ้าแทรกก่อนจุดแรก) */
   onInsertPlace: (atIndex: number, center: { lat: number; lng: number }, prevPlace: Place | null) => void;
-  /** เปิด modal แทรกเดินทางข้ามเมืองที่ตำแหน่ง atIndex ของวันนี้ พร้อมค่า default จาก/ไปเมือง */
-  onInsertIntercity: (atIndex: number, fromDefault: string, toDefault: string) => void;
+  /** เปิด modal แทรกเดินทางข้ามเมืองที่ตำแหน่ง atIndex ของวันนี้ พร้อมค่า default จาก/ไปเมือง
+   *  (ส่ง city id ไปด้วยเพื่อให้ modal เสนอสถานีจริงของเมืองนั้นเป็นตัวเลือกด่วน) */
+  onInsertIntercity: (
+    atIndex: number,
+    fromDefault: string,
+    toDefault: string,
+    fromCity: City,
+    toCity: City
+  ) => void;
   /** เปิด modal แทรกแถว "ไปสนามบิน" ที่ตำแหน่ง atIndex ของวันนี้ */
   onInsertTransfer: (atIndex: number) => void;
+  /** แทรกแถว "แวะที่พัก" ที่ตำแหน่ง atIndex ของวันนี้ — เช็คอิน/ฝากกระเป๋ากลางวันแล้วเที่ยวต่อ */
+  onInsertHotel: (atIndex: number) => void;
   /** พยากรณ์อากาศของวันนี้ — null/undefined เมื่อยังอยู่นอกช่วงพยากรณ์ ~16 วัน (ปกติตอนวางแผนล่วงหน้า) */
   weather?: DayWeather | null;
   /** id ของจุดแวะที่เพิ่งถูกเพิ่ม (ทั้งวันไหนก็ได้) — ใช้ไฮไลต์แถวนั้นสั้นๆ */
@@ -104,8 +114,10 @@ export function DayStopsSection({
   const centerBeforeFirstStop = hotel ? { lat: hotel.lat, lng: hotel.lng } : cityCenter(day.city);
 
   // ค่า default จาก/ไปของแถวเดินทางข้ามเมือง — เดาจาก city ของวันนี้ ไปเมืองที่นอนคืนนี้ (ถ้าต่างจากเมืองที่เที่ยว)
-  const intercityFromDefault = CITY_NAME_TH[day.city];
-  const intercityToDefault = CITY_NAME_TH[day.overnightCity ?? day.city];
+  const intercityFromCity = day.city;
+  const intercityToCity = day.overnightCity ?? day.city;
+  const intercityFromDefault = CITY_NAME_TH[intercityFromCity];
+  const intercityToDefault = CITY_NAME_TH[intercityToCity];
 
   const {
     mealCount,
@@ -362,8 +374,16 @@ export function DayStopsSection({
               >
                 + แทรกร้านอาหารก่อนจุดแรก
               </button>
+              {hotel && (
+                <button
+                  onClick={() => onInsertHotel(0)}
+                  className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
+                >
+                  🏨 + แวะที่พักก่อนจุดแรก
+                </button>
+              )}
               <button
-                onClick={() => onInsertIntercity(0, intercityFromDefault, intercityToDefault)}
+                onClick={() => onInsertIntercity(0, intercityFromDefault, intercityToDefault, intercityFromCity, intercityToCity)}
                 className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
               >
                 + แทรกเดินทางข้ามเมืองก่อนจุดแรก
@@ -419,9 +439,12 @@ export function DayStopsSection({
                   }
                   onInsertIntercityBefore={
                     i > 0
-                      ? () => onInsertIntercity(i, intercityFromDefault, intercityToDefault)
+                      ? () =>
+                          onInsertIntercity(i, intercityFromDefault, intercityToDefault, intercityFromCity, intercityToCity)
                       : undefined
                   }
+                  onInsertHotelBefore={i > 0 && hotel ? () => onInsertHotel(i) : undefined}
+                  hotelName={hotel?.hotel_name ?? null}
                 />
               );
             })}
@@ -469,11 +492,21 @@ export function DayStopsSection({
               </button>
               {/* ไปสนามบินเป็นแถวท้ายวันเสมอในทางปฏิบัติ จึงวางปุ่มไว้ท้ายการ์ดที่เดียว
                   ไม่ไปเบียดแถวปุ่มแทรกระหว่างจุดที่มี 2 ปุ่มอยู่แล้ว (ถ้าอยากได้กลางวันก็ลากขึ้นไปได้) */}
+              {/* แวะที่พักท้ายวัน = เอาของไปเก็บก่อนออกไปกินข้าวเย็นต่อ (ต่างจาก anchor "กลับถึงที่พัก"
+                  ที่เป็นจุดจบวันเฉยๆ แวะแล้วไปต่อไม่ได้) — ขึ้นเฉพาะวันที่ตั้งที่พักไว้แล้ว */}
+              {hotel && (
+                <button
+                  onClick={() => onInsertHotel(stops.length)}
+                  className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                >
+                  🏨 + แวะที่พัก
+                </button>
+              )}
               <button
                 onClick={() => onInsertTransfer(stops.length)}
                 className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
               >
-                ✈️ + ไปสนามบิน
+                ✈️ + ไปสนามบิน/สถานี
               </button>
               {stops.length >= 3 && (
                 <button

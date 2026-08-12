@@ -45,6 +45,8 @@ export function SortableStopRow({
   onRemoveStop,
   onInsertBefore,
   onInsertIntercityBefore,
+  onInsertHotelBefore,
+  hotelName,
 }: {
   stop: TripStop;
   dayId: string;
@@ -76,6 +78,10 @@ export function SortableStopRow({
   onInsertBefore: (() => void) | undefined;
   /** เปิด modal แทรกเดินทางข้ามเมืองก่อนจุดแวะนี้ */
   onInsertIntercityBefore: (() => void) | undefined;
+  /** แทรกแถว "แวะที่พัก" ก่อนจุดแวะนี้ — undefined เมื่อวันนี้ยังไม่ได้ตั้งที่พัก (ไม่มีพิกัดให้แวะ) */
+  onInsertHotelBefore: (() => void) | undefined;
+  /** ชื่อที่พักของช่วงนี้ — ใช้โชว์บนแถว kind="hotel" (ดึงสดจาก trip_hotels ไม่ใช่จาก place_id) */
+  hotelName: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stop.id,
@@ -126,8 +132,9 @@ export function SortableStopRow({
     rowRef?.(el);
   };
 
-  // แถวพิเศษ (ข้ามเมือง/ไปสนามบิน) ไม่ใช่สถานที่ที่ไปถ่ายรูปหรือกดดูรายละเอียดได้
-  const isSpecialRow = stop.kind === "intercity" || stop.kind === "transfer";
+  // แถวพิเศษ (ข้ามเมือง/ไปสนามบิน/แวะที่พัก) ไม่ใช่สถานที่ที่ไปถ่ายรูปหรือกดดูรายละเอียดได้
+  const isSpecialRow =
+    stop.kind === "intercity" || stop.kind === "transfer" || stop.kind === "hotel";
 
   // "ควรออกกี่โมงถึงจะทันเครื่อง" — คำนวณย้อนกลับจากเวลาบินที่ผูกไว้กับแถวนี้ (transfer_target_time)
   const transferAdvice =
@@ -197,7 +204,7 @@ export function SortableStopRow({
         />
       )}
       {/* แทรกร้านอาหารกลางวันได้เลย ไม่ต้องเพิ่มท้ายวันแล้วลากขึ้นมาเอง — ศูนย์กลางค้นหาอิงจุดก่อนหน้าตรงนี้ */}
-      {!locked && (onInsertBefore || onInsertIntercityBefore) && (
+      {!locked && (onInsertBefore || onInsertIntercityBefore || onInsertHotelBefore) && (
         <div className="flex flex-wrap gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
           {onInsertBefore && (
             <button
@@ -205,6 +212,14 @@ export function SortableStopRow({
               className="py-2 text-[11px] font-medium text-maple hover:underline sm:py-1"
             >
               + แทรกร้านอาหารตรงนี้
+            </button>
+          )}
+          {onInsertHotelBefore && (
+            <button
+              onClick={onInsertHotelBefore}
+              className="py-2 text-[11px] font-medium text-pine-dark hover:underline sm:py-1"
+            >
+              🏨 + แวะที่พักตรงนี้
             </button>
           )}
           {onInsertIntercityBefore && (
@@ -260,6 +275,21 @@ export function SortableStopRow({
               </span>
             </span>
           </div>
+        ) : stop.kind === "hotel" ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+              🏨
+            </span>
+            <span className="min-w-0 flex-1">
+              {/* ชื่อโรงแรมมาจาก trip_hotels สดๆ ไม่ใช่จาก place_id — เปลี่ยนโรงแรมแล้วแถวนี้เปลี่ยนตาม */}
+              <span className="block truncate font-semibold text-ink">
+                แวะที่พัก · {hotelName ?? "ยังไม่ได้ตั้งที่พักของช่วงนี้"}
+              </span>
+              <span className="block truncate text-xs text-ink-soft">
+                อยู่ที่พัก {sched.resolvedDwellMinutes} นาที (เช็คอิน / ฝากกระเป๋า / พัก)
+              </span>
+            </span>
+          </div>
         ) : stop.kind === "transfer" ? (
           <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
@@ -267,10 +297,10 @@ export function SortableStopRow({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate font-semibold text-ink">
-                ไปสนามบิน · {sched.place?.nameTh ?? "ไม่พบข้อมูลสนามบิน"}
+                ไปสนามบิน/สถานี · {sched.place?.nameTh ?? "ไม่พบข้อมูลปลายทาง"}
               </span>
               <span className="block truncate text-xs text-ink-soft">
-                เผื่อเวลาที่สนามบิน {sched.resolvedDwellMinutes} นาที
+                เผื่อเวลาที่นั่น {sched.resolvedDwellMinutes} นาที
                 {stop.transfer_target_label ? ` · ${stop.transfer_target_label}` : ""}
               </span>
             </span>

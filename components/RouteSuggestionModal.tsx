@@ -47,8 +47,13 @@ export function RouteSuggestionModal({
   // แถวเดินทางข้ามเมือง (kind="intercity") resolve place ไม่ได้อยู่แล้วเลยหลุดออกเอง
   // แต่แถว "ไปสนามบิน" (kind="transfer") **มี place จริง** (สนามบิน) ต้องกันออกด้วยมือ
   // ไม่งั้นมันจะถูกย้ายไปกลางวันแล้วตารางทั้งวันเพี้ยน — มันคือปลายทางตายตัวของวัน ไม่ใช่จุดให้สลับ
+  // แถวที่ "ปักหมุดอยู่กับที่" ห้ามให้ตัวจัดเส้นทางย้าย — ทั้งคู่ resolve เป็น Place ได้จริง
+  // จึงไม่ถูกกรองออกด้วยเงื่อนไข placesById เหมือนแถว intercity
+  //   · transfer = สนามบิน/สถานี ต้องอยู่ท้ายวันตามเวลาบิน (ย้ายไปกลางวัน = ตกเครื่อง)
+  //   · hotel    = แวะเช็คอิน/ฝากกระเป๋า มีความหมายเฉพาะกับตำแหน่งที่ผู้ใช้วางไว้เอง
   const isReorderable = useCallback(
-    (stop: TripStop) => stop.kind !== "transfer" && placesById.has(stop.place_id),
+    (stop: TripStop) =>
+      stop.kind !== "transfer" && stop.kind !== "hotel" && placesById.has(stop.place_id),
     [placesById]
   );
 

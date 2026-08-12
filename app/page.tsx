@@ -10,12 +10,13 @@ import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
 import { IntercityEditModal } from "@/components/IntercityEditModal";
 import { TransferEditModal } from "@/components/TransferEditModal";
+import { PlanEditModal, type PlanEditMode } from "@/components/PlanEditModal";
 import { TripHeader } from "@/components/TripHeader";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import type { Place } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
-import type { Day } from "@/data/itinerary";
-import { applyOvernightOverrides } from "@/lib/hotelLegs";
+import type { City, Day } from "@/data/itinerary";
+import { applyOvernightOverrides, hotelAnchorId } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
 import { haversineKm } from "@/lib/geo";
 import type { TravelMode } from "@/lib/schedule";
@@ -75,6 +76,7 @@ export default function Home() {
     insertStopAt,
     insertIntercityAt,
     insertTransferAt,
+    insertHotelAt,
     reorderStops,
     moveStopToDay,
     updateDwellMinutes,
@@ -187,7 +189,12 @@ export default function Home() {
     atIndex: number;
     fromDefault: string;
     toDefault: string;
+    fromCity: City;
+    toCity: City;
   } | null>(null);
+
+  // modal จัดการแผน (สร้าง/เปลี่ยนชื่อ/ลบ) — null = ปิดอยู่ · เดิมใช้ window.prompt/confirm ของเบราว์เซอร์
+  const [planEditMode, setPlanEditMode] = useState<PlanEditMode | null>(null);
 
   // บริบทตอนกด "✈️ + ไปสนามบิน" — เก็บวัน/ตำแหน่งที่จะแทรก (modal ดึงเที่ยวบินของวันนั้นมาเป็นตัวเลือกเดดไลน์เอง)
   const [transferContext, setTransferContext] = useState<{
@@ -247,25 +254,39 @@ export default function Home() {
     flashNewStop,
   });
 
-  async function handleNewPlan() {
-    const name = window.prompt("ชื่อแผนใหม่ (เช่น แผน B)");
-    if (!name?.trim()) return;
-    await createPlan(name.trim(), { duplicateFrom: activePlanId ?? undefined, activate: true });
+  /** เวลาเริ่มต้นของแถว "แวะที่พัก" — เช็คอิน/ฝากกระเป๋าแล้วออกไปต่อ ปกติไม่เกินครึ่งชั่วโมง
+   *  (ปรับด้วยปุ่ม +/− ที่แถวได้เหมือนจุดแวะปกติ) */
+  const HOTEL_STOP_DWELL_MINUTES = 30;
+
+  function handleInsertHotel(dayId: string, atIndex: number) {
+    const hotel = hotelForDay(dayId);
+    if (!hotel) return; // ปุ่มถูกซ่อนอยู่แล้วเมื่อยังไม่มีที่พัก — กันไว้อีกชั้นเผื่อเรียกจากทางอื่น
+    // จุดก่อนหน้าตำแหน่งที่จะแทรก ใช้เดาโหมดเดินทางเข้าแบบเดียวกับจุดแวะปกติ
+    const dayStops = stopsByDay[dayId] ?? [];
+    const prevStop = atIndex > 0 ? dayStops[atIndex - 1] : undefined;
+    const prevPlace = prevStop ? resolvePlace(prevStop.place_id, customPlaces) : null;
+    insertHotelAt(
+      dayId,
+      atIndex,
+      {
+        hotelPlaceId: hotelAnchorId(hotel),
+        dwellMinutes: HOTEL_STOP_DWELL_MINUTES,
+        travelMode: defaultTravelModeFor(prevPlace, hotel),
+      },
+      who || undefined
+    ).then(flashNewStop);
   }
 
-  async function handleRenamePlan() {
-    if (!activePlanId) return;
-    const current = plans.find((p) => p.id === activePlanId);
-    const name = window.prompt("ตั้งชื่อแผนใหม่", current?.name);
-    if (!name?.trim()) return;
-    await renamePlan(activePlanId, name.trim());
-  }
-
-  async function handleDeletePlan() {
-    if (!activePlanId || plans.length <= 1) return;
-    const current = plans.find((p) => p.id === activePlanId);
-    if (!window.confirm(`ลบแผน "${current?.name}" ทิ้งเลยไหม (ลบจุดแวะในแผนนี้ทั้งหมดด้วย)`)) return;
-    await deletePlan(activePlanId);
+  async function handlePlanEditSubmit(name: string | null) {
+    const mode = planEditMode;
+    setPlanEditMode(null);
+    if (mode === "create" && name) {
+      await createPlan(name, { duplicateFrom: activePlanId ?? undefined, activate: true });
+    } else if (mode === "rename" && name && activePlanId) {
+      await renamePlan(activePlanId, name);
+    } else if (mode === "delete" && activePlanId) {
+      await deletePlan(activePlanId);
+    }
   }
 
   const overallLoaded =
@@ -293,9 +314,9 @@ export default function Home() {
           plans={plans}
           activePlanId={activePlanId}
           onSwitchPlan={switchActivePlan}
-          onNewPlan={handleNewPlan}
-          onRenamePlan={handleRenamePlan}
-          onDeletePlan={handleDeletePlan}
+          onNewPlan={() => setPlanEditMode("create")}
+          onRenamePlan={() => setPlanEditMode("rename")}
+          onDeletePlan={() => setPlanEditMode("delete")}
           lockedDayCount={lockedDayCount}
           totalDayCount={itinerary.length}
           onToggleLockAll={handleToggleLockAll}
@@ -380,10 +401,18 @@ export default function Home() {
                   onInsertPlace={(atIndex, center, prevPlace) =>
                     setInsertContext({ dayId: day.id, atIndex, center, prevPlace })
                   }
-                  onInsertIntercity={(atIndex, fromDefault, toDefault) =>
-                    setIntercityContext({ dayId: day.id, atIndex, fromDefault, toDefault })
+                  onInsertIntercity={(atIndex, fromDefault, toDefault, fromCity, toCity) =>
+                    setIntercityContext({
+                      dayId: day.id,
+                      atIndex,
+                      fromDefault,
+                      toDefault,
+                      fromCity,
+                      toCity,
+                    })
                   }
                   onInsertTransfer={(atIndex) => setTransferContext({ dayId: day.id, atIndex })}
+                  onInsertHotel={(atIndex) => handleInsertHotel(day.id, atIndex)}
                   weather={weatherByDay[day.id] ?? null}
                   flashStopId={flashStopId}
                 />
@@ -480,10 +509,21 @@ export default function Home() {
         />
       )}
 
+      {planEditMode && (
+        <PlanEditModal
+          mode={planEditMode}
+          plan={plans.find((p) => p.id === activePlanId) ?? null}
+          onClose={() => setPlanEditMode(null)}
+          onSubmit={handlePlanEditSubmit}
+        />
+      )}
+
       {intercityContext && (
         <IntercityEditModal
           fromDefault={intercityContext.fromDefault}
           toDefault={intercityContext.toDefault}
+          fromCity={intercityContext.fromCity}
+          toCity={intercityContext.toCity}
           onClose={() => setIntercityContext(null)}
           onSave={(input) => {
             insertIntercityAt(

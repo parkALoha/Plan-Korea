@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CATEGORY_EMOJI } from "@/data/places";
+import type { Place } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
+import type { TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides } from "@/lib/hotelLegs";
 import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
@@ -40,6 +42,20 @@ import { safeHttpUrl } from "@/lib/url";
 
 function isoDateOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** ป้ายชื่อของแถวจุดแวะในลิสต์ "ถัดจากนี้" / "ผ่านมาแล้ว"
+ *  แถวพิเศษไม่มีชื่อสถานที่ของตัวเองให้ใช้: ข้ามเมืองใช้ต้นทาง→ปลายทาง ส่วนแวะที่พักดึงชื่อจาก
+ *  `trip_hotels` สดๆ (ไม่ใช่จาก place ที่ resolve จาก id ซึ่งเป็นชื่อกลางๆ ว่า "ที่พัก") */
+function stopRowLabel(stop: TripStop, place: Place | undefined, hotel: TripHotel | null): string {
+  if (stop.kind === "intercity") {
+    const mode = (stop.intercity_mode as IntercityMode) ?? "other";
+    return `${INTERCITY_MODE_ICON[mode]} ${stop.intercity_from} → ${stop.intercity_to}`;
+  }
+  if (stop.kind === "hotel") {
+    return `🏨 แวะที่พัก${hotel ? ` · ${hotel.hotel_name}` : ""}`;
+  }
+  return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "ไม่พบข้อมูลสถานที่";
 }
 
 /** วันในทริปที่ตรงกับวันที่ todayIso ตามนาฬิกาเครื่อง — ก่อนทริปคืนวันแรก, หลังทริปคืนวันสุดท้าย */
@@ -371,14 +387,23 @@ export default function TodayPage() {
                 ) : nextSched.place ? (
                   <>
                     <div className="flex items-center gap-3">
-                      <PlaceThumb
-                        query={nextSched.place.mapsQuery}
-                        category={nextSched.place.category}
-                        className="h-16 w-16 shrink-0"
-                      />
+                      {/* แถวแวะที่พักไม่มีรูปสถานที่ให้ดึง (พิกัดล้วนๆ จาก trip_hotels) ใช้ไอคอนแทน */}
+                      {nextStop.kind === "hotel" ? (
+                        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-panel-pine/50 text-3xl">
+                          🏨
+                        </span>
+                      ) : (
+                        <PlaceThumb
+                          query={nextSched.place.mapsQuery}
+                          category={nextSched.place.category}
+                          className="h-16 w-16 shrink-0"
+                        />
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="text-xl font-bold leading-tight text-content">
-                          {CATEGORY_EMOJI[nextSched.place.category]} {nextSched.place.nameTh}
+                          {nextStop.kind === "hotel"
+                            ? stopRowLabel(nextStop, nextSched.place, endHotel)
+                            : `${CATEGORY_EMOJI[nextSched.place.category]} ${nextSched.place.nameTh}`}
                         </div>
                         <div className="mt-0.5 text-lg font-semibold tabular-nums text-panel-maple-ink">
                           {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
@@ -512,12 +537,7 @@ export default function TodayPage() {
               <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
                 {upcoming.map((s, i) => {
                   const sched = upcomingSched[i];
-                  const label =
-                    s.kind === "intercity"
-                      ? `${INTERCITY_MODE_ICON[(s.intercity_mode as IntercityMode) ?? "other"]} ${s.intercity_from} → ${s.intercity_to}`
-                      : sched?.place
-                        ? `${CATEGORY_EMOJI[sched.place.category]} ${sched.place.nameTh}`
-                        : "ไม่พบข้อมูลสถานที่";
+                  const label = stopRowLabel(s, sched?.place, endHotel);
                   const displayArrival = sched ? shiftTime(sched.arrival, delayMinutes) : null;
                   // นาทีดิบ + delayMinutes ตรงๆ เหมือนการ์ด "จุดถัดไป" ด้านบน — กันเช็กพลาดตอนจุดแวะข้ามเที่ยงคืน
                   const mightMissClosing =
@@ -551,12 +571,7 @@ export default function TodayPage() {
               <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
                 {done.map((s) => {
                   const sched = schedule.find((sc) => sc.id === s.id);
-                  const label =
-                    s.kind === "intercity"
-                      ? `${INTERCITY_MODE_ICON[(s.intercity_mode as IntercityMode) ?? "other"]} ${s.intercity_from} → ${s.intercity_to}`
-                      : sched?.place
-                        ? `${CATEGORY_EMOJI[sched.place.category]} ${sched.place.nameTh}`
-                        : "ไม่พบข้อมูลสถานที่";
+                  const label = stopRowLabel(s, sched?.place, endHotel);
                   return (
                     <button
                       key={s.id}

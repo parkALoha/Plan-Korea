@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import type { Place } from "@/data/places";
+import { stationsForCity } from "@/data/transferPoints";
 
 export type IntercityMode = "bus" | "ktx" | "other";
 
@@ -27,14 +29,53 @@ export const INTERCITY_MODE_LABEL_EN: Record<IntercityMode, string> = {
 const MODES: IntercityMode[] = ["bus", "ktx", "other"];
 const DURATION_PRESETS_MIN = [60, 120, 180, 240, 300, 360];
 
+/** ปุ่มเลือกสถานีจริงของเมืองนั้น — กดแล้วเติมชื่อลงช่องให้เลย ไม่ต้องพิมพ์เอง/จำชื่อเกาหลี
+ *  ซ่อนทั้งแถวถ้าเมืองนั้นยังไม่มีสถานีในลิสต์ (ดู data/transferPoints.ts) */
+function StationPicks({
+  city,
+  value,
+  onPick,
+}: {
+  city: Place["city"] | undefined;
+  value: string;
+  onPick: (name: string) => void;
+}) {
+  const stations = city ? stationsForCity(city) : [];
+  if (stations.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {stations.map((s) => (
+        <button
+          key={s.id}
+          onClick={() => onPick(s.nameTh)}
+          title={s.descriptionTh}
+          className={`rounded-full border px-2 py-1 text-[11px] ${
+            value === s.nameTh
+              ? "border-maple bg-maple-soft text-maple-dark"
+              : "border-cream-soft text-ink-soft hover:border-maple/40"
+          }`}
+        >
+          {s.nameTh}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function IntercityEditModal({
   fromDefault,
   toDefault,
+  fromCity,
+  toCity,
   onClose,
   onSave,
 }: {
   fromDefault: string;
   toDefault: string;
+  /** เมืองต้นทาง/ปลายทาง — ใช้เสนอสถานีจริงของเมืองนั้นเป็นตัวเลือกด่วน (ไม่ใช่แค่ชื่อเมืองลอยๆ) */
+  fromCity?: Place["city"];
+  toCity?: Place["city"];
   onClose: () => void;
   onSave: (input: { from: string; to: string; mode: IntercityMode; minutes: number }) => void;
 }) {
@@ -91,7 +132,8 @@ export function IntercityEditModal({
             </div>
           </div>
 
-          <div className="flex gap-2">
+          {/* มือถือซ้อนกันแนวตั้ง — ปุ่มเลือกสถานีกินที่แนวนอนเยอะ ถ้าวางคู่กันชื่อสถานีจะถูกตัดจนอ่านไม่ออก */}
+          <div className="flex flex-col gap-3 sm:flex-row">
             <div className="flex-1">
               <label className="mb-1 block text-xs font-medium text-ink-soft">จาก</label>
               <input
@@ -99,6 +141,7 @@ export function IntercityEditModal({
                 onChange={(e) => setFrom(e.target.value)}
                 className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
               />
+              <StationPicks city={fromCity} value={from} onPick={setFrom} />
             </div>
             <div className="flex-1">
               <label className="mb-1 block text-xs font-medium text-ink-soft">ไป</label>
@@ -107,6 +150,7 @@ export function IntercityEditModal({
                 onChange={(e) => setTo(e.target.value)}
                 className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
               />
+              <StationPicks city={toCity} value={to} onPick={setTo} />
             </div>
           </div>
 
