@@ -7,7 +7,7 @@ import type { Place } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
-import { applyOvernightOverrides } from "@/lib/hotelLegs";
+import { applyOvernightOverrides, hotelForStop } from "@/lib/hotelLegs";
 import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
@@ -48,13 +48,20 @@ function isoDateOf(d: Date): string {
 
 /** ป้ายชื่อของแถวจุดแวะในลิสต์ "ถัดจากนี้" / "ผ่านมาแล้ว"
  *  แถวพิเศษไม่มีชื่อสถานที่ของตัวเองให้ใช้: ข้ามเมืองใช้ต้นทาง→ปลายทาง ส่วนแวะที่พักดึงชื่อจาก
- *  `trip_hotels` สดๆ (ไม่ใช่จาก place ที่ resolve จาก id ซึ่งเป็นชื่อกลางๆ ว่า "ที่พัก") */
-function stopRowLabel(stop: TripStop, place: Place | undefined, hotel: TripHotel | null): string {
+ *  `trip_hotels` สดๆ (ไม่ใช่จาก place ที่ resolve จาก id ซึ่งเป็นชื่อกลางๆ ว่า "ที่พัก")
+ *  — วันย้ายเมืองมีที่พัก 2 แห่ง จึงต้องเลือกให้ตรงกับพิกัดในแถวนั้น ดู hotelForStop */
+function stopRowLabel(
+  stop: TripStop,
+  place: Place | undefined,
+  endHotel: TripHotel | null,
+  startHotel: TripHotel | null
+): string {
   if (stop.kind === "intercity") {
     const mode = (stop.intercity_mode as IntercityMode) ?? "other";
     return `${INTERCITY_MODE_ICON[mode]} ${stop.intercity_from} → ${stop.intercity_to}`;
   }
   if (stop.kind === "hotel") {
+    const hotel = hotelForStop(stop.place_id, endHotel, startHotel);
     return `🏨 แวะที่พัก${hotel ? ` · ${hotel.hotel_name}` : ""}`;
   }
   return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "ไม่พบข้อมูลสถานที่";
@@ -185,6 +192,8 @@ export default function TodayPage() {
 
   // ที่พักคืนนี้ — ดึงแยกไว้เพราะปุ่มนำทางกลับที่พักต้องใช้ชื่อภาษาเกาหลีจากแถวนี้ ไม่ใช่ label ไทยของ anchor
   const endHotel = hotelForDay(day.id);
+  // ที่พักคืนก่อนหน้า — วันย้ายเมืองอาจมีแถว "แวะที่พัก" ที่หมายถึงที่นี่ (เช่น กลับไปเอากระเป๋าก่อนย้ายเมือง)
+  const startHotel = hotelBeforeDay(day.id);
 
   // อ่านค่าเดียวกับหน้าแผนเป๊ะๆ (เวลาออกเดินทาง + โหมดขากลับที่พัก) ไม่งั้นเวลาสองหน้าจะไม่ตรงกัน
   const { schedule, startAnchor, endAnchor, daySchedule, openingHoursByQuery, beforeAnchorEvent, afterAnchorEvent } =
@@ -193,7 +202,7 @@ export default function TodayPage() {
       stops: dayStops,
       customPlaces,
       hotel: endHotel,
-      startHotel: hotelBeforeDay(day.id),
+      startHotel,
       returnTravelMode: (daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null,
       startTime: daySettings[day.id]?.start_time ?? null,
     });
@@ -457,7 +466,7 @@ export default function TodayPage() {
                       <div className="min-w-0 flex-1">
                         <div className="text-xl font-bold leading-tight text-content">
                           {nextStop.kind === "hotel"
-                            ? stopRowLabel(nextStop, nextSched.place, endHotel)
+                            ? stopRowLabel(nextStop, nextSched.place, endHotel, startHotel)
                             : `${CATEGORY_EMOJI[nextSched.place.category]} ${nextSched.place.nameTh}`}
                         </div>
                         <div className="mt-0.5 text-lg font-semibold tabular-nums text-panel-maple-ink">
@@ -552,7 +561,7 @@ export default function TodayPage() {
                     // ยกเลิกได้จากลิสต์ "ผ่านมาแล้ว" อยู่แล้ว แต่ต้องเลื่อนไปหาเอง —
                     // ตอนเดินอยู่กลางถนนที่เกาหลี ปุ่มเลิกทำตรงนี้เร็วกว่ามาก (เฟส 20.4)
                     showUndoToast(
-                      `ติ๊กว่ามาถึง ${stopRowLabel(nextStop, nextSched.place, endHotel)} แล้ว`,
+                      `ติ๊กว่ามาถึง ${stopRowLabel(nextStop, nextSched.place, endHotel, startHotel)} แล้ว`,
                       () => unmarkVisited(nextStop.id)
                     );
                   }}
@@ -600,7 +609,7 @@ export default function TodayPage() {
               <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
                 {upcoming.map((s, i) => {
                   const sched = upcomingSched[i];
-                  const label = stopRowLabel(s, sched?.place, endHotel);
+                  const label = stopRowLabel(s, sched?.place, endHotel, startHotel);
                   const displayArrival = sched ? shiftTime(sched.arrival, delayMinutes) : null;
                   // นาทีดิบ + delayMinutes ตรงๆ เหมือนการ์ด "จุดถัดไป" ด้านบน — กันเช็กพลาดตอนจุดแวะข้ามเที่ยงคืน
                   const mightMissClosing =
@@ -634,7 +643,7 @@ export default function TodayPage() {
               <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
                 {done.map((s) => {
                   const sched = schedule.find((sc) => sc.id === s.id);
-                  const label = stopRowLabel(s, sched?.place, endHotel);
+                  const label = stopRowLabel(s, sched?.place, endHotel, startHotel);
                   return (
                     <button
                       key={s.id}

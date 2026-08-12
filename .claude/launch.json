@@ -9,6 +9,13 @@
       "autoPort": true
     },
     {
+      "comment": "โปรเจ็ค MU Phone อยู่คนละโฟลเดอร์ (/Users/park/mu-phone) — ใส่ไว้ตรงนี้เพื่อให้ preview เปิดได้ตอน session ยืนอยู่ที่ plan-korea",
+      "name": "mu-phone-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/park/mu-phone", "run", "dev", "--", "-p", "3200"],
+      "port": 3200
+    },
+    {
       "name": "korea-trip-plan-prod",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["next", "start", "-p", "3100"],

@@ -179,14 +179,15 @@ export function NearbyPlacesModal({
     setSearchStatus("idle");
   }
 
-  /** ชื่ออังกฤษของผลลัพธ์นี้ — ลิสต์ที่โชว์อยู่เป็นชื่อภาษาไทยที่ Google คืนมา (languageCode: "th")
-   *  ซึ่งใช้ในเอกสาร ตม./K-ETA ไม่ได้ · ขอชื่ออังกฤษเก็บใส่ name_en ตั้งแต่ตอนบันทึกเลย จะได้ไม่ต้อง
-   *  ไปตามขอทีหลังตอนเปิดหน้า ตม. (เฟส 22) · ขอไม่ได้ = null เหมือนเดิม ไม่ขวางการบันทึก */
-  async function fetchNameEn(result: NearbyResult): Promise<string | null> {
+  /** ชื่อของผลลัพธ์นี้ในภาษาที่ขอ — ลิสต์ที่โชว์อยู่เป็นชื่อภาษาไทยที่ Google คืนมา (languageCode: "th")
+   *  ซึ่งใช้ในเอกสาร ตม./K-ETA ไม่ได้ (อังกฤษ) หรือหน้าคนขับแท็กซี่/Naver-Kakao ไม่ได้ (เกาหลี)
+   *  ขอชื่อพวกนี้เก็บใส่ name_en/name_ko ตั้งแต่ตอนบันทึกเลย จะได้ไม่ต้องไปตามขอทีหลัง (เฟส 22, 0029)
+   *  ขอไม่ได้ = null เหมือนเดิม ไม่ขวางการบันทึก */
+  async function fetchNameIn(result: NearbyResult, lang: "en" | "ko"): Promise<string | null> {
     const query = result.id ? PLACE_ID_PREFIX + result.id : result.name;
     try {
       const res = await fetch(
-        `/api/place-name?queries=${encodeURIComponent(query)}&lang=en`,
+        `/api/place-name?queries=${encodeURIComponent(query)}&lang=${lang}`,
       );
       const data = await res.json();
       return (data.results?.[query] as string | null) ?? null;
@@ -198,11 +199,16 @@ export function NearbyPlacesModal({
   // บันทึกเข้าคลังก่อนเสมอ (ทั้ง 2 ปุ่มต้องมีสถานที่นี้ในคลัง) แล้วคืน id + พิกัดให้ผู้เรียกตัดสินใจต่อ
   async function saveToLibrary(result: NearbyResult) {
     if (result.lat == null || result.lng == null) return null;
+    const [nameEn, nameKo] = await Promise.all([
+      fetchNameIn(result, "en"),
+      fetchNameIn(result, "ko"),
+    ]);
     const saved = await addCustomPlace({
       added_by: addedBy ?? null,
       city,
       name_th: result.name,
-      name_en: await fetchNameEn(result),
+      name_en: nameEn,
+      name_ko: nameKo,
       category: categoryFor(kind, result),
       lat: result.lat,
       lng: result.lng,

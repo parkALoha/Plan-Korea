@@ -5,6 +5,8 @@ import type { BookingCategory, TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { BookingEditModal } from "./BookingEditModal";
 import { ConfirmModal } from "./Modal";
+import { bookByDate, daysUntil } from "@/lib/bookingDeadline";
+import { safeHttpUrl } from "@/lib/url";
 
 export const BOOKING_CATEGORY_LABEL: Record<BookingCategory, string> = {
   flight: "เที่ยวบิน",
@@ -41,6 +43,17 @@ function dateLabel(booking: TripBooking) {
   return d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 }
 
+/** ป้ายกำหนดจอง — โชว์เฉพาะรายการที่ยัง "รอจอง" (จองแล้วไม่ต้องเตือนซ้ำ) */
+function deadlineBadge(booking: TripBooking): { text: string; overdue: boolean } | null {
+  if (booking.status !== "pending") return null;
+  const deadline = bookByDate(booking.date, booking.book_by_days_before);
+  if (!deadline) return null;
+  const daysLeft = daysUntil(deadline);
+  if (daysLeft < 0) return { text: `⚠️ เลยกำหนดจอง ${Math.abs(daysLeft)} วัน`, overdue: true };
+  if (daysLeft === 0) return { text: "⚠️ ต้องจองวันนี้", overdue: true };
+  return { text: `จองภายใน ${daysLeft} วัน`, overdue: false };
+}
+
 export function BookingsPanel({
   bookings,
   onAdd,
@@ -58,12 +71,18 @@ export function BookingsPanel({
   // ตั๋วที่กำลังจะลบ — ยืนยันก่อนเสมอ ต่างจากการลบอย่างอื่นในเว็บที่ใช้ toast + เลิกทำ
   // เพราะไฟล์ที่อัปโหลดแนบไว้เอากลับมาจากในเว็บไม่ได้ (เฟส 20.2)
   const [deleting, setDeleting] = useState<TripBooking | null>(null);
+  const pendingCount = bookings.filter((b) => b.status === "pending").length;
 
   return (
     <section className="mb-5">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
           🎫 ตั๋ว/booking
+          {pendingCount > 0 && (
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-amber-800">
+              รอจอง {pendingCount}
+            </span>
+          )}
         </h2>
         <button
           onClick={() => setEditing("new")}
@@ -79,28 +98,57 @@ export function BookingsPanel({
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {bookings.map((booking) => (
-            <button
-              key={booking.id}
-              onClick={() => setEditing(booking)}
-              className="flex min-w-0 items-center gap-2 rounded-xl border border-cream-soft bg-white px-3 py-2 text-left shadow-sm shadow-ink/5 hover:border-maple/40"
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cream-soft text-sm">
-                {BOOKING_CATEGORY_ICON[booking.category]}
-              </span>
-              <div className="min-w-0">
-                <div className="text-xs text-ink-soft">
-                  {BOOKING_CATEGORY_LABEL[booking.category]}
-                  {dateLabel(booking) ? ` · ${dateLabel(booking)}` : ""}
-                  {booking.time ? ` ${booking.time}` : ""}
-                </div>
-                <div className="truncate text-sm font-medium text-ink">
-                  {booking.title}
-                  {booking.file_url ? " 📎" : ""}
-                </div>
+          {bookings.map((booking) => {
+            const badge = deadlineBadge(booking);
+            const link = safeHttpUrl(booking.link);
+            return (
+              <div
+                key={booking.id}
+                className="rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40"
+              >
+                <button
+                  onClick={() => setEditing(booking)}
+                  className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cream-soft text-sm">
+                    {BOOKING_CATEGORY_ICON[booking.category]}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs text-ink-soft">
+                      {BOOKING_CATEGORY_LABEL[booking.category]}
+                      {dateLabel(booking) ? ` · ${dateLabel(booking)}` : ""}
+                      {booking.time ? ` ${booking.time}` : ""}
+                    </div>
+                    <div className="truncate text-sm font-medium text-ink">
+                      {booking.title}
+                      {booking.file_url ? " 📎" : ""}
+                    </div>
+                    {booking.note && (
+                      <div className="line-clamp-2 text-xs text-ink-soft">{booking.note}</div>
+                    )}
+                    {badge && (
+                      <div
+                        className={`text-xs font-medium ${badge.overdue ? "text-red-600" : "text-amber-700"}`}
+                      >
+                        {badge.text}
+                      </div>
+                    )}
+                  </div>
+                </button>
+                {link && (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="block truncate border-t border-cream-soft px-3 py-1.5 text-xs text-pine hover:underline"
+                  >
+                    🔗 เปิดลิงก์จอง
+                  </a>
+                )}
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       )}
 

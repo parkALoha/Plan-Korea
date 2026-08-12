@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { supabase, supabaseConfigured, TripBooking, BookingCategory } from "@/lib/supabase";
+import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
@@ -29,6 +29,8 @@ export type NewBooking = {
   addedBy?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
+  status?: BookingStatus;
+  bookByDaysBefore?: number | null;
 };
 
 /** ตั๋ว/booking ทั้งหมดของทริป — trip-wide ไม่แยกตามแผน A/B เหมือน trip_hotels
@@ -121,6 +123,8 @@ function useBookingsStore() {
       updated_at: now,
       file_url: input.fileUrl ?? null,
       file_name: input.fileName ?? null,
+      status: input.status ?? "booked",
+      book_by_days_before: input.bookByDaysBefore ?? null,
     };
     setBookings((prev) => sortBookings([...prev, newBooking]));
     if (!supabaseConfigured) return newBooking.id;
@@ -141,6 +145,8 @@ function useBookingsStore() {
       if (patch.note !== undefined) dbPatch.note = patch.note;
       if (patch.fileUrl !== undefined) dbPatch.file_url = patch.fileUrl;
       if (patch.fileName !== undefined) dbPatch.file_name = patch.fileName;
+      if (patch.status !== undefined) dbPatch.status = patch.status;
+      if (patch.bookByDaysBefore !== undefined) dbPatch.book_by_days_before = patch.bookByDaysBefore;
 
       if (!supabaseConfigured) {
         setBookings((prev) =>
@@ -161,6 +167,10 @@ function useBookingsStore() {
                     ...(patch.note !== undefined ? { note: patch.note } : {}),
                     ...(patch.fileUrl !== undefined ? { file_url: patch.fileUrl } : {}),
                     ...(patch.fileName !== undefined ? { file_name: patch.fileName } : {}),
+                    ...(patch.status !== undefined ? { status: patch.status } : {}),
+                    ...(patch.bookByDaysBefore !== undefined
+                      ? { book_by_days_before: patch.bookByDaysBefore }
+                      : {}),
                   }
                 : b
             )

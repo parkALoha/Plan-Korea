@@ -1,14 +1,26 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { BOOKING_FILES_BUCKET, supabase, type BookingCategory, type TripBooking } from "@/lib/supabase";
+import {
+  BOOKING_FILES_BUCKET,
+  supabase,
+  type BookingCategory,
+  type BookingStatus,
+  type TripBooking,
+} from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { Modal } from "./Modal";
 import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
 import { safeHttpUrl } from "@/lib/url";
+import { bookByDate } from "@/lib/bookingDeadline";
 
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
+
+const STATUSES: { value: BookingStatus; label: string }[] = [
+  { value: "booked", label: "✅ จองแล้ว" },
+  { value: "pending", label: "⏳ รอจอง" },
+];
 
 function randomSuffix() {
   return Math.random().toString(36).slice(2);
@@ -38,6 +50,10 @@ export function BookingEditModal({
   onDelete?: () => void;
 }) {
   const [category, setCategory] = useState<BookingCategory>(existing?.category ?? "flight");
+  const [status, setStatus] = useState<BookingStatus>(existing?.status ?? "booked");
+  const [bookByDaysBefore, setBookByDaysBefore] = useState(
+    existing?.book_by_days_before != null ? String(existing.book_by_days_before) : ""
+  );
   const [title, setTitle] = useState(existing?.title ?? "");
   const [dayId, setDayId] = useState(existing?.day_id ?? "");
   const [date, setDate] = useState(existing?.date ?? "");
@@ -124,8 +140,12 @@ export function BookingEditModal({
       addedBy: existing?.added_by ?? who ?? null,
       fileUrl: fileUrl || null,
       fileName: fileName || null,
+      status,
+      bookByDaysBefore: bookByDaysBefore.trim() ? Number(bookByDaysBefore) : null,
     });
   }
+
+  const deadline = bookByDate(date || null, bookByDaysBefore.trim() ? Number(bookByDaysBefore) : null);
 
   return (
     <Modal
@@ -167,6 +187,25 @@ export function BookingEditModal({
             >
               <span>{BOOKING_CATEGORY_ICON[c]}</span>
               <span>{BOOKING_CATEGORY_LABEL[c]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink-soft">สถานะ</label>
+        <div className="grid grid-cols-2 gap-2">
+          {STATUSES.map((s) => (
+            <button
+              key={s.value}
+              onClick={() => setStatus(s.value)}
+              className={`rounded-lg border px-2 py-2 text-xs font-medium ${
+                status === s.value
+                  ? "border-maple bg-maple-soft text-maple-dark"
+                  : "border-cream-soft text-ink-soft hover:bg-cream-soft"
+              }`}
+            >
+              {s.label}
             </button>
           ))}
         </div>
@@ -217,6 +256,25 @@ export function BookingEditModal({
             className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink-soft">
+          ต้องจองล่วงหน้ากี่วัน (ไม่บังคับ)
+        </label>
+        <input
+          type="number"
+          min={0}
+          value={bookByDaysBefore}
+          onChange={(e) => setBookByDaysBefore(e.target.value)}
+          placeholder="เช่น 30"
+          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+        />
+        {deadline ? (
+          <p className="mt-1 text-xs text-ink-soft">📅 ต้องจองภายใน {deadline}</p>
+        ) : bookByDaysBefore.trim() && !date ? (
+          <p className="mt-1 text-xs text-ink-soft">ยังคำนวณวันครบกำหนดไม่ได้ — ใส่วันที่ใช้ตั๋วก่อน</p>
+        ) : null}
       </div>
 
       <div>

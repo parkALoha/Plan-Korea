@@ -7,7 +7,7 @@ import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
-import { applyOvernightOverrides } from "@/lib/hotelLegs";
+import { applyOvernightOverrides, hotelForStop } from "@/lib/hotelLegs";
 import {
   TRAVEL_MODE_EMOJI,
   TRAVEL_MODE_LABEL,
@@ -222,6 +222,8 @@ function SummaryDayCard({
           const mode = (stop.travel_mode as TravelMode | null) ?? null;
           // แถวสถานที่จริงเท่านั้นที่กดดูรายละเอียดได้ — แถวข้ามเมือง/แวะที่พัก/ไปสนามบิน ไม่มีอะไรให้ดูต่อ
           const place = stop.kind === "intercity" || stop.kind === "hotel" ? null : sched.place;
+          // วันย้ายเมืองมีที่พัก 2 แห่ง — แถว "แวะที่พัก" เลือกตามพิกัดในแถวนั้น ไม่ใช่ที่พักคืนนี้เสมอไป
+          const stopHotel = hotelForStop(stop.place_id, hotel, startHotel);
           const title =
             stop.kind === "intercity"
               ? `${INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]} ${
@@ -232,7 +234,7 @@ function SummaryDayCard({
               : stop.kind === "hotel"
                 ? // ชื่อจาก trip_hotels ไม่ใช่จาก sched.place (ซึ่งเป็นชื่อกลางๆ "ที่พัก" จาก id)
                   `🏨 ${en ? "Stop by the hotel" : "แวะที่พัก"}${
-                    hotel ? ` · ${(en && hotel.name_en) || hotel.hotel_name}` : ""
+                    stopHotel ? ` · ${(en && stopHotel.name_en) || stopHotel.hotel_name}` : ""
                   }`
                 : sched.place
                   ? `${CATEGORY_EMOJI[sched.place.category]} ${
@@ -497,14 +499,16 @@ function SummaryContent() {
             <Link href="/today" className="text-sm text-cream/80 hover:text-cream hover:underline">
               {t("today")}
             </Link>
-            <div className="ml-auto flex items-center gap-1.5">
-              {/* ปุ่มสลับภาษาอยู่ตำแหน่งเดียวกับปุ่มพิมพ์ตามที่วางไว้ในเฟส 16 */}
-              <div className="flex overflow-hidden rounded-lg bg-cream/15">
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+              {/* ปุ่มสลับภาษาอยู่ตำแหน่งเดียวกับปุ่มพิมพ์ตามที่วางไว้ในเฟส 16
+                  whitespace-nowrap ทุกปุ่ม — ไม่งั้นตอน EN คำยาวๆ อย่าง "Immigration sheet" จะตัดขึ้น
+                  บรรทัดสอง ทำให้ปุ่มนั้นสูงกว่าเพื่อน ปล่อยให้แถวทั้งก้อน wrap เอาแทน (flex-wrap ที่นี่) */}
+              <div className="flex shrink-0 overflow-hidden rounded-lg bg-cream/15">
                 {(["th", "en"] as const).map((l) => (
                   <button
                     key={l}
                     onClick={() => setLang(l)}
-                    className={`px-2.5 py-1 text-xs font-medium ${
+                    className={`whitespace-nowrap px-2.5 py-1 text-xs font-medium ${
                       lang === l ? "bg-cream text-pine" : "hover:bg-cream/25"
                     }`}
                   >
@@ -518,19 +522,19 @@ function SummaryContent() {
                     ? `/summary?lang=${lang}`
                     : `/summary?lang=en&for=immigration`
                 }
-                className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
               >
                 {immigrationView ? t("fullSummary") : t("immigrationView")}
               </Link>
               <button
                 onClick={handleExportJson}
-                className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
               >
                 {t("exportJson")}
               </button>
               <button
                 onClick={() => window.print()}
-                className="rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
+                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-3 py-1 text-xs font-medium hover:bg-cream/25"
               >
                 {t("print")}
               </button>
@@ -538,7 +542,7 @@ function SummaryContent() {
               <button
                 onClick={toggleTheme}
                 aria-label={isDark ? "เปลี่ยนเป็นธีมสว่าง" : "เปลี่ยนเป็นธีมมืด"}
-                className="rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
+                className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
               >
                 {isDark ? "☀️" : "🌙"}
               </button>

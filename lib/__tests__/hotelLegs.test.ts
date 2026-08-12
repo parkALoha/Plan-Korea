@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { applyOvernightOverrides, deriveHotelLegs, dayIdToLegId } from "@/lib/hotelLegs";
+import {
+  applyOvernightOverrides,
+  deriveHotelLegs,
+  dayIdToLegId,
+  hotelAnchorId,
+  hotelForStop,
+} from "@/lib/hotelLegs";
 import type { Day } from "@/data/itinerary";
+import type { TripHotel } from "@/lib/supabase";
 
 function day(partial: Partial<Day> & Pick<Day, "id" | "date" | "city">): Day {
   return {
@@ -105,5 +112,38 @@ describe("applyOvernightOverrides", () => {
     const itinerary: Day[] = [day({ id: "d1", date: "2026-10-12", city: "busan" })];
     const result = applyOvernightOverrides(itinerary, { d1: "seoul" });
     expect(result[0].overnightCity).toBeUndefined();
+  });
+});
+
+describe("hotelForStop", () => {
+  function hotel(name: string, lat: number, lng: number): TripHotel {
+    return {
+      leg_id: name,
+      city: "sokcho",
+      hotel_name: name,
+      formatted_address: "",
+      lat,
+      lng,
+      updated_at: "2026-08-12T00:00:00Z",
+    } as TripHotel;
+  }
+
+  const sokcho = hotel("Lecollective SokchoBeach", 38.1899269, 128.600906);
+  const gangneung = hotel("Hotel Flow-er", 37.7618307, 128.9026897);
+
+  it("แถวที่ชี้ที่พักคืนนี้ได้ชื่อที่พักคืนนี้", () => {
+    expect(hotelForStop(hotelAnchorId(gangneung), gangneung, sokcho)).toBe(gangneung);
+  });
+
+  it("แถวที่ชี้ที่พักคืนก่อนหน้าได้ชื่อที่พักคืนก่อนหน้า (วันย้ายเมือง)", () => {
+    expect(hotelForStop(hotelAnchorId(sokcho), gangneung, sokcho)).toBe(sokcho);
+  });
+
+  it("พิกัดที่ไม่ตรงกับที่พักไหนเลย ตกกลับไปใช้ที่พักคืนนี้เหมือนเดิม", () => {
+    expect(hotelForStop("hotel@0.00000,0.00000", gangneung, sokcho)).toBe(gangneung);
+  });
+
+  it("ไม่มีที่พักคืนก่อนหน้า (คืนแรกของทริป) ก็ยังคืนที่พักคืนนี้", () => {
+    expect(hotelForStop(hotelAnchorId(gangneung), gangneung, null)).toBe(gangneung);
   });
 });

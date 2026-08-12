@@ -69,7 +69,7 @@ export function TripHeader({
           </div>
         </div>
 
-        <div className="mt-1 flex items-end justify-between gap-3">
+        <div className="mt-1 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-extrabold sm:text-3xl">🍁 แพลนเที่ยวเกาหลี</h1>
             {/* ข้อความสอนใช้งาน อ่านรอบเดียวก็พอ — บนมือถือมันแย่งที่กับเนื้อหาจริงทุกครั้งที่เปิด */}

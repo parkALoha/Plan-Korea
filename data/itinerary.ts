@@ -227,6 +227,17 @@ export const ITINERARY: Day[] = [
           toEn: "Busan (Gimhae)",
         },
       },
+      {
+        time: "10:00",
+        icon: "🚌",
+        title: "ถึงย่านซอมยอน (โดยประมาณ)",
+        titleEn: "Arrive Seomyeon, Busan (approx.)",
+        detail:
+          "ออกจากกิมแฮ ~08:30 หลังผ่าน ตม./รับกระเป๋า · Light Rail (BGL) ต่อรถไฟฟ้าสาย 2 หรือแท็กซี่ ~1 ชม. 30 น. รวมรอ · ปรับเวลานี้ได้ที่ช่อง “🕐 ออกเดินทาง” ถ้าผ่าน ตม. เร็ว/ช้ากว่าที่เผื่อไว้",
+        anchor: "before",
+        kind: "transfer",
+        editable: true,
+      },
     ],
     slots: [
       { id: "d1-s1", label: "สาย-บ่าย", candidateIds: ["busan-gamcheon"] },
@@ -245,7 +256,7 @@ export const ITINERARY: Day[] = [
     city: "busan",
     cityTh: "ปูซาน",
     cityEn: "Busan",
-    note: "วันชายฝั่งแฮอึนแด-กวังอัลลี",
+    note: "วันเกาะยองโด-เมืองเก่า: หมู่บ้านฮึนยอล → นัมโพดง → ขึ้นฮวังรยองซานดูพระอาทิตย์ตกและไฟเมือง",
     slots: [
       { id: "d2-s1", label: "เช้า-สาย", candidateIds: ["busan-haeundae-beach"] },
       {
@@ -268,7 +279,7 @@ export const ITINERARY: Day[] = [
     city: "busan",
     cityTh: "ปูซาน",
     cityEn: "Busan",
-    note: "วันชิลก่อนเดินทางไกล",
+    note: "วันชายฝั่งแฮอึนแด: สกายแคปซูล → วัดริมทะเลยงกุงซา → จบที่หาดควังอัลลี · คืนนี้เก็บของให้พร้อม พรุ่งนี้นั่งบัสยาวไปซกโช",
     slots: [
       { id: "d3-s1", label: "เช้า-บ่าย", candidateIds: ["busan-jeonpo"] },
       {
@@ -286,7 +297,7 @@ export const ITINERARY: Day[] = [
     city: "sokcho",
     cityTh: "ซกโช",
     cityEn: "Sokcho",
-    note: "เดินทางบัสปูซาน→ซกโช (~5-6 ชม.)",
+    note: "วันนั่งบัสยาว: ออกจากซอมยอน 06:45 → สถานีโนโพ → บัสด่วน 07:30 ถึงซกโช ~12:30 · บ่ายเดินหาดหน้าโรงแรม + ชิงช้าสวรรค์ เย็นตลาดปลา แล้วนั่งแพข้ามไปหมู่บ้านอาไบ",
     slots: [
       {
         id: "d4-s1",
@@ -303,7 +314,7 @@ export const ITINERARY: Day[] = [
     city: "sokcho",
     cityTh: "ซอรัคซาน",
     cityEn: "Seoraksan",
-    note: "ช่วงพีคใบไม้เปลี่ยนสี ควรไปแต่เช้า · คืนนี้เลือกได้ว่าจะนอนคังนึงต่อ (ที่จองไว้ตอนนี้) หรือค้างซกโชอีกคืน",
+    note: "ซอรัคซานเต็มอิ่มทั้งเช้า (ไปถึง 07:00 ต่อคิวกระเช้า) → กลับมาเก็บกระเป๋า → คาเฟ่ริมหาดส่งท้ายซกโช → บัสเข้าคังนึงบ่ายแก่ๆ เย็นเดินตลาดจุงอัง · คืนนี้เลือกได้ว่าจะนอนคังนึงต่อ (ที่จองไว้ตอนนี้) หรือค้างซกโชอีกคืน",
     overnightCity: "gangneung",
     overnightOptions: ["gangneung", "sokcho"],
     slots: [
@@ -322,7 +333,7 @@ export const ITINERARY: Day[] = [
     city: "gangneung",
     cityTh: "คังนึง → โซล",
     cityEn: "Gangneung → Seoul",
-    note: "คืนก่อนพักที่คังนึงแล้ว วันนี้เที่ยวคังนึงต่อทั้งวัน แล้ว KTX เข้าโซลตอนเย็น",
+    note: "เช้าตามรอย BTS/Goblin ที่จูมุนจิน + กาแฟหาดอันมก (ฝากกระเป๋าตู้ล็อกเกอร์สถานีคังนึง) → KTX 13:30 เข้าโซล → เช็คอินเมียงดง เย็นช้อปปิ้ง + คัลกุกซู แล้วขึ้นนัมซานทาวเวอร์ดูวิวกลางคืน",
     overnightCity: "seoul",
     slots: [
       {
@@ -346,16 +357,17 @@ export const ITINERARY: Day[] = [
     city: "seoul",
     cityTh: "โซล",
     cityEn: "Seoul",
+    note: "วันช้อปย่านวัยรุ่น: ฮงแด-ยอนนัมดงตอนสาย → ห้าง The Hyundai ยออีโด → นั่งชิลกินรามยอนริมแม่น้ำฮันดูพระอาทิตย์ตก → ปิดท้ายซองซูดงตอนค่ำ",
     slots: [
       {
         id: "d7-s1",
         label: "เช้า-บ่าย",
-        candidateIds: ["seoul-gyeongbokgung", "seoul-bukchon", "seoul-insadong"],
+        candidateIds: ["seoul-hongdae", "seoul-yeonnamdong", "seoul-the-hyundai"],
       },
       {
         id: "d7-s2",
         label: "เย็น",
-        candidateIds: ["seoul-myeongdong", "seoul-n-tower", "seoul-dongdaemun-ddp"],
+        candidateIds: ["seoul-yeouido-hangang", "seoul-seongsudong"],
       },
     ],
   },
@@ -364,26 +376,29 @@ export const ITINERARY: Day[] = [
     date: "2026-10-19",
     weekdayTh: "จันทร์",
     weekdayEn: "Monday",
-    city: "suwon",
-    cityTh: "ซูวอน → โซล",
-    cityEn: "Suwon → Seoul",
-    note: "วันแน่นสุดในทริป จัดเวลาดีๆ · ไปเช้าเผื่อเวลาหลง/ผิดพลาด จะได้เดินทางกลับโรงแรมทัน",
-    overnightCity: "seoul",
+    city: "seoul",
+    cityTh: "โซล",
+    cityEn: "Seoul",
+    note: "วันฮันบก: เช่าชุดเช้า → เคียงบกกุง → ไก่ตุ๋นโสมโทโซกชน → คืนชุดแล้วเดินบุคชน-อินซาดง-อิกซอนดง → เย็นเก็บของฝาก/เครื่องสำอางที่เมียงดง · สลับมาจากวันที่ 20 เพราะเคียงบกกุงปิดทุกวันอังคาร",
     slots: [
       {
         id: "d8-s1",
-        label: "เช้า (ซูวอน)",
+        label: "เช้า-บ่าย (ฮันบก)",
         candidateIds: [
-          "suwon-hwaseong",
-          "suwon-haenglidan",
-          "suwon-starfield-library",
-          "suwon-hwahongmun",
+          "seoul-hanboknam",
+          "seoul-gyeongbokgung",
+          "seoul-tosokchon",
+          "seoul-bukchon",
         ],
       },
       {
         id: "d8-s2",
-        label: "บ่าย-เย็น (กลับโซล)",
-        candidateIds: ["seoul-seongsudong", "seoul-n-tower", "seoul-ikseondong"],
+        label: "บ่าย-เย็น",
+        candidateIds: [
+          "seoul-insadong",
+          "seoul-ikseondong",
+          "seoul-olive-young-myeongdong",
+        ],
       },
     ],
   },
@@ -392,15 +407,26 @@ export const ITINERARY: Day[] = [
     date: "2026-10-20",
     weekdayTh: "อังคาร",
     weekdayEn: "Tuesday",
-    city: "seoul",
-    cityTh: "โซล",
-    cityEn: "Seoul",
-    note: "วันเที่ยวเต็มวันสุดท้าย · คืนนี้เก็บของให้เรียบร้อย พรุ่งนี้ต้องออกจากโรงแรมตั้งแต่เช้ามืด",
+    city: "suwon",
+    cityTh: "ซูวอน → โซล",
+    cityEn: "Suwon → Seoul",
+    note: "วันเที่ยวเต็มวันสุดท้าย ไปเช้ากลับเย็น: กำแพงฮวาซ็อง → ตรอกไก่ทอด → แฮงลีดันกิล+วังแฮงกุง → Starfield แล้วขึ้นสาย 1 กลับจากสถานีฮวาซอ · คืนนี้เก็บของให้เรียบร้อย พรุ่งนี้ออกจากโรงแรมตั้งแต่เช้ามืด",
+    overnightCity: "seoul",
     slots: [
       {
         id: "d9-s1",
-        label: "บ่าย-ค่ำ",
-        candidateIds: ["seoul-hongdae", "seoul-yeonnamdong"],
+        label: "เช้า-บ่าย (ซูวอน)",
+        candidateIds: [
+          "suwon-changnyongmun",
+          "suwon-hwahongmun",
+          "suwon-hwaseong",
+          "suwon-tongdak-street",
+        ],
+      },
+      {
+        id: "d9-s2",
+        label: "บ่าย-เย็น",
+        candidateIds: ["suwon-haenglidan", "suwon-haenggung", "suwon-starfield-library"],
       },
     ],
   },
@@ -434,7 +460,7 @@ export const ITINERARY: Day[] = [
         title: "AREX โซล → อินชอน (ICN)",
         titleEn: "AREX Seoul → Incheon (ICN)",
         detail:
-          "ด่วน (Express) จากสถานีโซล 43 น. รอบแรก ~05:20 · ธรรมดา (All-stop) ~59 น. ขึ้นได้จากฮงแด/ควังฮวามุนสายตรง · หรือลิมูซีนบัสหน้าโรงแรมถ้าใกล้กว่า",
+          "ด่วน (Express) จากสถานีโซล 43 น. รอบแรก ~05:20 · ธรรมดา (All-stop) ~59 น. ขึ้นได้จากฮงแด/ควังฮวามุนสายตรง · หรือลิมูซีนบัสหน้าโรงแรมถ้าใกล้กว่า · ⚠️ เช็คอิน/โหลดกระเป๋าที่สถานีโซล (City Airport Check-in) ใช้กับ VN409 ไม่ได้ — บริการนี้รับเฉพาะ KE/OZ/7C/TW/RS/BX/LJ/ZE/LH ต้องไปเช็คอินที่ ICN เหมือนปกติ",
         kind: "transfer",
         editable: true,
       },

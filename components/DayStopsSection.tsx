@@ -11,6 +11,7 @@ import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
+import { hotelForStop } from "@/lib/hotelLegs";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
 import type { DayWeather } from "@/lib/weather";
@@ -456,7 +457,7 @@ export function DayStopsSection({
                       : undefined
                   }
                   onInsertHotelBefore={i > 0 && hotel ? () => onInsertHotel(i) : undefined}
-                  hotelName={hotel?.hotel_name ?? null}
+                  hotelName={hotelForStop(stop.place_id, hotel, startHotel)?.hotel_name ?? null}
                 />
               );
             })}

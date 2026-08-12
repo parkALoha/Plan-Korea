@@ -52,6 +52,9 @@ export type CustomPlace = {
   city: string;
   name_th: string;
   name_en: string | null;
+  /** ชื่อเกาหลี (migration 0029) — ใช้โชว์คนขับแท็กซี่/ค้นใน Naver-Kakao · optional เพราะแถวเก่า
+   *  ก่อน migration ยังเป็น null จนกว่าจะกดบันทึกสถานที่นั้นใหม่ */
+  name_ko?: string | null;
   category: string;
   lat: number;
   lng: number;
@@ -114,6 +117,8 @@ export type TripStop = {
 
 export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "other";
 
+export type BookingStatus = "booked" | "pending";
+
 /** Supabase Storage bucket สำหรับไฟล์แนบตั๋ว (ตั้งสาธารณะเหมือน RLS ของตารางอื่น) */
 export const BOOKING_FILES_BUCKET = "booking-files";
 
@@ -132,6 +137,11 @@ export type TripBooking = {
   updated_at: string;
   file_url: string | null;
   file_name: string | null;
+  /** จองแล้ว/รอจอง (migration 0030) — default 'booked' ฝั่ง DB เพราะแถวเก่าส่วนใหญ่มีเลขที่จองอยู่แล้ว */
+  status: BookingStatus;
+  /** ต้องจองล่วงหน้ากี่วันก่อนวันที่ใช้ตั๋ว (คอลัมน์ `date`) — ใช้คำนวณวันครบกำหนดจอง ดู lib/bookingDeadline.ts
+   *  null = ยังไม่รู้/ไม่มีกำหนด */
+  book_by_days_before: number | null;
 };
 
 export type ChecklistCategory = "packing" | "before_hotel_checkout" | "before_flight";

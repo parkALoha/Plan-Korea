@@ -70,6 +70,24 @@ export function applyOvernightOverrides(
   });
 }
 
+/**
+ * ที่พักที่แถว `kind="hotel"` แถวนั้นหมายถึงจริงๆ — เทียบ `place_id` (`hotel@lat,lng`) กับ anchor
+ * ของที่พักคืนนี้ก่อน แล้วค่อยลองที่พักคืนก่อนหน้า
+ *
+ * วันย้ายเมืองมีที่พัก 2 แห่งในวันเดียว: เช้ายังอยู่ที่พักคืนก่อน (เช่น 16 ต.ค. กลับไปเอากระเป๋าที่ซกโช)
+ * แล้วเย็นถึงเช็คอินที่พักคืนนี้ (คังนึง) — เดิมทุกที่ที่โชว์ชื่อโรงแรมของแถวนี้ใช้ "ที่พักคืนนี้" อย่างเดียว
+ * แถวตอนเช้าจึงขึ้นชื่อโรงแรมผิดเมือง ทั้งที่พิกัด/เวลาเดินทางถูกอยู่แล้ว
+ */
+export function hotelForStop(
+  placeId: string,
+  endHotel: TripHotel | null,
+  startHotel: TripHotel | null
+): TripHotel | null {
+  if (endHotel && placeId === hotelAnchorId(endHotel)) return endHotel;
+  if (startHotel && placeId === hotelAnchorId(startHotel)) return startHotel;
+  return endHotel;
+}
+
 export function dayIdToLegId(legs: HotelLeg[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const leg of legs) {

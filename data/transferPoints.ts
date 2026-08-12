@@ -143,7 +143,9 @@ export const TRANSFER_POINTS: TransferPoint[] = [
     descriptionTh: "ต้นทาง KTX สายคยองกัง คังนึง → โซล (~2 ชม.) · จองล่วงหน้าผ่านแอป Korail ได้",
     lat: 37.7644776,
     lng: 128.8995536,
-    mapsQuery: "강릉역",
+    // ต้องมีเลขที่อยู่ต่อท้าย — ค้นด้วย "강릉역" เฉยๆ Google คืนป้ายรถเมล์ชื่อเดียวกันหน้าสถานี (รีวิว 82)
+    // แทนตัวสถานีจริง (รีวิว 405) แล้วเวลาเปิด-ปิด/เรทติ้งในแอปกลายเป็นของป้ายรถเมล์
+    mapsQuery: "강릉역 용지로 176",
     youtubeQuery: "Gangneung KTX station to Seoul",
   },
   {
@@ -177,6 +179,40 @@ export const TRANSFER_POINTS: TransferPoint[] = [
     lng: 127.048958,
     mapsQuery: "청량리역",
     youtubeQuery: "Cheongnyangni station guide",
+  },
+  // ── สถานีของวันเที่ยวซูวอนไปเช้า-กลับเย็น (20 ต.ค.) — ขาไปลงสถานีซูวอน ขากลับขึ้นที่ฮวาซอ
+  // เพราะ Starfield ที่เป็นจุดสุดท้ายของวันอยู่ติดสถานีฮวาซอ ไม่ต้องย้อนกลับสถานีซูวอน
+  {
+    id: "station-suwon",
+    transferKind: "station",
+    nameTh: "สถานีซูวอน",
+    nameEn: "Suwon Station",
+    nameLocal: "수원역",
+    addressLocal: "대한민국 경기도 수원시 팔달구 덕영대로 924",
+    city: "suwon",
+    category: "transport",
+    descriptionTh:
+      "สถานีหลักของซูวอน · จากสถานีโซลมาที่นี่ได้ 2 แบบ: Subway สาย 1 (แตะ T-money ขึ้นได้เลย ~60 น.) หรือรถไฟ ITX-Saemaeul/มูกุงฮวา (จองที่นั่งล่วงหน้า ~30 น.) · ต่อบัสไปกำแพงฮวาซ็องได้ที่หน้าสถานี",
+    lat: 37.26644,
+    lng: 126.999408,
+    mapsQuery: "수원역",
+    youtubeQuery: "Suwon station to Hwaseong Fortress bus",
+  },
+  {
+    id: "station-hwaseo",
+    transferKind: "station",
+    nameTh: "สถานีฮวาซอ (ติด Starfield)",
+    nameEn: "Hwaseo Station",
+    nameLocal: "화서역",
+    addressLocal: "대한민국 경기도 수원시 팔달구 화서동 460-14",
+    city: "suwon",
+    category: "transport",
+    descriptionTh:
+      "สถานี Subway สาย 1 ถัดจากสถานีซูวอนไปทางโซล 1 สถานี · ห้าง Starfield Suwon อยู่ห่างแค่ 400 ม. เดินถึง — ขากลับเข้าโซลขึ้นจากที่นี่ประหยัดกว่าย้อนไปสถานีซูวอน",
+    lat: 37.28399,
+    lng: 126.989581,
+    mapsQuery: "화서역",
+    youtubeQuery: "화서역 스타필드 수원 도보",
   },
   {
     id: "station-east-seoul-bus",

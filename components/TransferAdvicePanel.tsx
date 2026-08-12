@@ -16,6 +16,7 @@ export function TransferAdvicePanel({
   advice,
   targetLabel,
   airportId,
+  isAirport,
   checkinBufferMinutes,
   travelMinutes,
   isTravelReal,
@@ -23,12 +24,15 @@ export function TransferAdvicePanel({
   advice: DepartureAdvice | null;
   targetLabel: string | null;
   airportId: string;
+  /** false = ไปสถานีรถ/รถบัส ไม่ใช่สนามบิน — เปลี่ยนคำอธิบายไม่ให้เขียนว่า "ถึงสนามบิน" ผิดๆ */
+  isAirport: boolean;
   checkinBufferMinutes: number;
   travelMinutes: number | null;
   isTravelReal: boolean;
 }) {
   const [showOptions, setShowOptions] = useState(false);
   const options = AIRPORT_ACCESS[airportId] ?? [];
+  const arriveLabel = isAirport ? "ถึงสนามบิน" : "ถึงสถานี";
 
   if (!advice) {
     return options.length > 0 ? (
@@ -52,8 +56,8 @@ export function TransferAdvicePanel({
       >
         <div className="font-semibold">
           {late
-            ? `⚠️ ช้ากว่าที่ควร ${advice.lateByMinutes} นาที — ถึงสนามบิน ${advice.plannedArrival} แต่ควรถึงไม่เกิน ${advice.mustArriveBy}`
-            : `✅ ทัน — ถึงสนามบิน ${advice.plannedArrival} ก่อนเส้นตาย ${advice.mustArriveBy} อยู่ ${advice.slackMinutes} นาที`}
+            ? `⚠️ ช้ากว่าที่ควร ${advice.lateByMinutes} นาที — ${arriveLabel} ${advice.plannedArrival} แต่ควรถึงไม่เกิน ${advice.mustArriveBy}`
+            : `✅ ทัน — ${arriveLabel} ${advice.plannedArrival} ก่อนเส้นตาย ${advice.mustArriveBy} อยู่ ${advice.slackMinutes} นาที`}
         </div>
         <div className="mt-0.5">
           ควรออกจากจุดก่อนหน้าไม่เกิน <span className="font-semibold tabular-nums">{advice.shouldLeaveBy}</span>

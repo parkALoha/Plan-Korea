@@ -288,11 +288,16 @@ export function SortableStopRow({
         ) : stop.kind === "transfer" ? (
           <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
-              ✈️
+              {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
+                ? "🚉"
+                : "✈️"}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate font-semibold text-ink">
-                ไปสนามบิน/สถานี · {sched.place?.nameTh ?? "ไม่พบข้อมูลปลายทาง"}
+                {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
+                  ? "ไปสถานี"
+                  : "ไปสนามบิน"}{" "}
+                · {sched.place?.nameTh ?? "ไม่พบข้อมูลปลายทาง"}
               </span>
               <span className="block truncate text-xs text-ink-soft">
                 เผื่อเวลาที่นั่น {sched.resolvedDwellMinutes} นาที
@@ -439,6 +444,7 @@ export function SortableStopRow({
           advice={transferAdvice}
           targetLabel={stop.transfer_target_label ?? null}
           airportId={sched.place.id}
+          isAirport={!("transferKind" in sched.place) || sched.place.transferKind !== "station"}
           checkinBufferMinutes={sched.resolvedDwellMinutes}
           travelMinutes={travelMinutesIn}
           isTravelReal={isTravelReal}
