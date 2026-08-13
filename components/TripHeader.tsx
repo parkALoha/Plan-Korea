@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { TripPlan } from "@/lib/supabase";
 import { TripSettingsModal } from "./TripSettingsModal";
+import { useMounted } from "@/hooks/useMounted";
 
 interface TripHeaderProps {
   who: string;
@@ -43,6 +44,7 @@ export function TripHeader({
   onToggleLockAll,
 }: TripHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const mounted = useMounted();
   const activePlan = plans.find((p) => p.id === activePlanId);
 
   return (
@@ -88,8 +90,11 @@ export function TripHeader({
           >
             ⚙️
             {/* ยังไม่ได้ใส่ชื่อ = จุดแวะที่เพิ่มจะไม่มี "เลือกโดย …" ให้อีกคนดู — สะกิดไว้ตรงนี้
-                เพราะช่องกรอกหลบเข้าไปอยู่ในโมดัลแล้ว ไม่ได้เห็นเองเหมือนตอนอยู่บนหัวเว็บ */}
-            {!who && (
+                เพราะช่องกรอกหลบเข้าไปอยู่ในโมดัลแล้ว ไม่ได้เห็นเองเหมือนตอนอยู่บนหัวเว็บ
+                ต้องรอ mounted ด้วย: `who` อ่านจาก localStorage ตอนตั้งค่า state ตั้งต้น (app/page.tsx)
+                ซึ่งฝั่งเซิร์ฟเวอร์ได้ค่าว่างเสมอ — เครื่องที่เคยใส่ชื่อไว้จึงได้ HTML ที่มีจุดแดงมาจาก
+                build แต่ client ไม่วาด = hydration mismatch (ดู hooks/useMounted.ts) */}
+            {mounted && !who && (
               <span
                 aria-hidden
                 className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-maple ring-2 ring-pine"

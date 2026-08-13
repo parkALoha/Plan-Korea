@@ -45,6 +45,7 @@ import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { showUndoToast } from "@/lib/toast";
 import NoteBody from "@/components/NoteBody";
 import { localDateIso } from "@/lib/localDate";
+import { useMounted } from "@/hooks/useMounted";
 
 
 /** ป้ายชื่อของแถวจุดแวะในลิสต์ "ถัดจากนี้" / "ผ่านมาแล้ว"
@@ -161,6 +162,7 @@ export default function TodayPage() {
   // ธีมมืดของหน้านี้โดยเฉพาะ — เปิดตอน 05:45 วันกลับและทุกคืนระหว่างทริป (เฟส 17)
   const { isDark, toggle: toggleTheme } = useDarkTheme();
 
+  const mounted = useMounted();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);
@@ -342,6 +344,18 @@ export default function TodayPage() {
         weekdayHoursLabel(detailHours, day.date) ?? "ไม่มีข้อมูลเวลาเปิด-ปิด"
       }`
     : null;
+
+  // ทั้งหน้านี้ขึ้นกับ "ตอนนี้กี่โมง วันไหนของทริป" ซึ่งมีคำตอบเฉพาะฝั่ง client — ก่อน hydrate เสร็จ
+  // จึงแสดงโครงหน้าไปก่อน · ไม่ได้เสียอะไรเลยเพราะข้อมูลทั้งหมดมาจาก Supabase ฝั่ง client อยู่แล้ว
+  // HTML ที่ prerender ตอน build ก็เป็น skeleton อยู่ก่อนแล้ว ต่างกันแค่หัวเว็บที่เคยฝังเวลา build ลงไป
+  // (ดูเหตุผลเต็มที่ hooks/useMounted.ts)
+  if (!mounted) {
+    return (
+      <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
+        <TodaySkeleton />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
