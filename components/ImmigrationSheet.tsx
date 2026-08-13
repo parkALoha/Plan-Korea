@@ -44,7 +44,14 @@ function allFlights(): FlightRow[] {
 }
 
 /**
- * เอกสารสำหรับยื่น ตม./กรอก K-ETA — ภาษาอังกฤษล้วน ขาวดำ พิมพ์ลง A4 ได้พอดี
+ * เอกสารสำหรับยื่น ตม./กรอก K-ETA — ภาษาอังกฤษล้วน ขาวดำ พิมพ์ลง A4 ได้
+ *
+ * **ได้ 2 แผ่น ไม่ใช่แผ่นเดียว** (วัดจริง 13 ส.ค. 2026 ที่ความกว้างกระดาษ 186mm: เอกสารสูง 1216px
+ * เทียบพื้นที่พิมพ์หน้าละ 1032px) — ตั้งใจปล่อยไว้แบบนี้ ตาราง Daily outline 11 วันตัดให้สั้นกว่านี้
+ * ไม่ได้โดยไม่ทิ้งข้อมูลที่เจ้าหน้าที่ถาม · `print:break-inside-avoid` ดันทั้งก้อนไปหน้า 2 รอยต่อจึงตก
+ * ระหว่างหัวข้อพอดี **ไม่มีแถวไหนถูกผ่าครึ่ง** ซึ่งเป็นสิ่งเดียวที่ทำให้เอกสารอ่านไม่รู้เรื่อง
+ * · เส้นคั่นแถวในตารางใช้ `border-content-soft/50` ไม่ใช่ `border-line` — `--line` เป็นครีมอ่อนที่บน
+ * กระดาษขาวได้คอนทราสต์ ~1.13:1 คือมองไม่เห็นเลย ตารางที่ไม่มีเส้นคั่นแถวอ่านยากขึ้นมากเมื่อมี 11 แถว
  *
  * ต่างจากหน้าสรุปปกติตรงที่ตัดทุกอย่างที่เจ้าหน้าที่ไม่ได้ถามออกหมด (โน้ต, เวลาเดินทาง, ระยะทาง,
  * checklist) เหลือแค่ 3 อย่างที่ถูกถามจริง: **บินเข้า-ออกวันไหนเที่ยวบินอะไร · นอนที่ไหนคืนไหน ·
@@ -176,7 +183,7 @@ export function ImmigrationSheet({
       <Section title="Flights">
         <Table head={["Date", "Flight", "Route", "Dep", "Arr"]}>
           {flights.map(({ day, event }) => (
-            <tr key={event.flight!.no} className="border-b border-line last:border-0">
+            <tr key={event.flight!.no} className="border-b border-content-soft/50 last:border-0">
               <Td>{formatDateEn(day.date, event.dayOffset ?? 0)}</Td>
               <Td className="font-semibold">{event.flight!.no}</Td>
               <Td>
@@ -197,7 +204,7 @@ export function ImmigrationSheet({
           {hotelLegs.map((leg) => {
             const hotel = hotels[leg.id];
             return (
-              <tr key={leg.id} className="border-b border-line last:border-0">
+              <tr key={leg.id} className="border-b border-content-soft/50 last:border-0">
                 <Td className="whitespace-nowrap">
                   {formatDateEn(leg.startDate)} – {formatDateEn(leg.endDate)}
                 </Td>
@@ -230,7 +237,7 @@ export function ImmigrationSheet({
           {ITINERARY.map((day) => {
             const places = placesByDay[day.id].map(documentName);
             return (
-              <tr key={day.id} className="border-b border-line last:border-0">
+              <tr key={day.id} className="border-b border-content-soft/50 last:border-0">
                 <Td className="whitespace-nowrap">{formatDateEn(day.date)}</Td>
                 <Td className="text-[11px]">{day.weekdayEn}</Td>
                 <Td className="whitespace-nowrap font-medium">{day.cityEn}</Td>
