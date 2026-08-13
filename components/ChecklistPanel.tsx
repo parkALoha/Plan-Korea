@@ -95,14 +95,21 @@ export function ChecklistPanel({
                       key={item.id}
                       className="flex items-center gap-2 rounded-xl border border-cream-soft bg-white px-3 py-2 shadow-sm shadow-ink/5"
                     >
+                      {/* role="checkbox" + aria-checked ไม่ใช่แค่ aria-label — ไม่งั้น screen reader
+                          อ่านว่า "ปุ่ม ติ๊กว่าเตรียมแล้ว" ทุกแถวเหมือนกันหมด ไม่บอกว่าติ๊กไปแล้วหรือยัง
+                          และ aria-label เป็นชื่อของที่ต้องเตรียม ไม่ใช่ชื่อการกระทำ (จะได้ยิน "ซิมการ์ด, ช่องทำเครื่องหมาย, ติ๊กแล้ว")
+                          · before:-inset-[10px] ขยายพื้นที่แตะจาก 24px เป็น 44px โดยกล่องที่มองเห็นเท่าเดิม
+                            (ใช้ padding/margin ติดลบแทนจะไปดันแถวให้สูงขึ้น) */}
                       <button
+                        role="checkbox"
+                        aria-checked={item.is_checked}
                         onClick={() => onToggle(item.id, !item.is_checked)}
-                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm ${
+                        className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm before:absolute before:-inset-[10px] before:content-[''] ${
                           item.is_checked
                             ? "border-maple bg-maple text-white"
                             : "border-cream-soft text-transparent hover:border-maple/60"
                         }`}
-                        aria-label={item.is_checked ? "ยกเลิกติ๊ก" : "ติ๊กว่าเตรียมแล้ว"}
+                        aria-label={item.text}
                       >
                         ✓
                       </button>
@@ -120,8 +127,8 @@ export function ChecklistPanel({
                       </div>
                       <button
                         onClick={() => onRemove(item.id)}
-                        className="shrink-0 rounded-full p-1.5 text-ink-soft hover:bg-cream-soft"
-                        aria-label="ลบ"
+                        className="relative shrink-0 rounded-full p-1.5 text-ink-soft before:absolute before:-inset-2 before:content-[''] hover:bg-cream-soft"
+                        aria-label={`ลบ ${item.text}`}
                       >
                         ✕
                       </button>

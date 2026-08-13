@@ -37,11 +37,21 @@ function setOnline(next: boolean) {
   for (const listener of listeners) listener();
 }
 
+/** ต้องมี timeout — เคสที่ต้องรับมือคือ "สัญญาณติดแต่ข้อมูลไม่วิ่ง" (อุโมงค์รถไฟใต้ดิน, WiFi ที่ยัง
+ *  ไม่ได้กด accept) ซึ่ง `fetch` **ไม่ reject เร็ว** แต่ค้างรอจนครบ timeout ของเบราว์เซอร์เอง (30-120 วิ)
+ *  ระหว่างนั้นธง `probing` ใน check() บล็อกการเช็คซ้ำทุกครั้ง แถบ "เน็ตหลุด" จึงไม่ขึ้น
+ *  ผู้ใช้เห็นหน้าปกติ แก้แผนไป แล้วการเขียนหายเงียบ · 3 วิพอสำหรับไฟล์ 1 KB บนเน็ตที่ใช้งานได้จริง */
+const PROBE_TIMEOUT_MS = 3_000;
+
 async function probe(): Promise<boolean> {
   try {
-    const res = await fetch(PROBE_URL, { cache: "no-store" });
+    const res = await fetch(PROBE_URL, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     return res.ok;
   } catch {
+    // รวมทั้งกรณี AbortError จาก timeout ข้างบน — ช้าเกิน 3 วินาที = ถือว่าใช้งานไม่ได้
     return false;
   }
 }

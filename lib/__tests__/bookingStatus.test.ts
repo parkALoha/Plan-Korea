@@ -25,7 +25,12 @@ function booking(patch: Partial<TripBooking>): TripBooking {
   };
 }
 
-const TODAY = new Date("2026-08-12T00:00:00Z");
+/** "วันนี้" ในเทสต์ต้องสร้างด้วย `new Date(ปี, เดือน, วัน)` = เที่ยงคืน **ตามเครื่อง**
+ *  ไม่ใช่ `new Date("...T00:00:00Z")` — `daysUntil` เทียบวันตามปฏิทินท้องถิ่น (ดู lib/bookingDeadline.ts)
+ *  สตริง Z จะกลายเป็นคนละวันบนเครื่องที่ offset ติดลบ แล้วเทสต์จะผ่าน/ไม่ผ่านตาม timezone ของคนรัน */
+const localMidnight = (year: number, month: number, day: number) => new Date(year, month - 1, day);
+
+const TODAY = localMidnight(2026, 8, 12);
 
 describe("bookingBadge", () => {
   it("ทุกใบต้องมีป้ายเสมอ — จองแล้วกับซื้อหน้างานต้องแยกออกจากกัน", () => {
@@ -45,12 +50,12 @@ describe("bookingBadge", () => {
     expect(bookingBadge(far, TODAY).tone).toBe("soon");
 
     // ขยับวันนี้มาใกล้เดดไลน์: 10 ต.ค. → เหลือ 4 วัน
-    expect(bookingBadge(far, new Date("2026-10-10T00:00:00Z")).tone).toBe("urgent");
+    expect(bookingBadge(far, localMidnight(2026, 10, 10)).tone).toBe("urgent");
   });
 
   it("เลยกำหนดจองแล้วต้องขึ้นสีแดงพร้อมจำนวนวันที่เลยมา", () => {
     const late = booking({ status: "pending", date: "2026-10-21", book_by_days_before: 7 });
-    const badge = bookingBadge(late, new Date("2026-10-17T00:00:00Z"));
+    const badge = bookingBadge(late, localMidnight(2026, 10, 17));
     expect(badge.tone).toBe("overdue");
     expect(badge.label).toContain("3 วัน");
   });
@@ -78,7 +83,7 @@ describe("sortBookingsByUrgency", () => {
         booking({ id: "sky", status: "pending", date: "2026-10-14", book_by_days_before: 14 }),
         booking({ id: "ktx", status: "pending", date: "2026-10-17", book_by_days_before: 30 }),
       ],
-      new Date("2026-09-25T00:00:00Z")
+      localMidnight(2026, 9, 25)
     );
     expect(sorted.map((b) => b.id)).toEqual(["ktx", "sky", "walkup"]);
   });

@@ -48,13 +48,17 @@ export function Modal({
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
       onClick={onClose}
     >
+      {/* ใช้โทเคน surface/content ไม่ใช่ bg-white/text-ink — /today กับ /summary รองรับธีมมืดแล้ว
+          แต่ shell ตัวนี้ฮาร์ดโค้ดขาวไว้ ผลคือกลางจอมืดเด้งแผ่นขาวจ้าขึ้นมา และตัวหนังสือที่ไม่ได้
+          ระบุสีเองจะ inherit --content (ครีม) มาอยู่บนพื้นขาว = อ่านไม่ออกเลย
+          ต้องมี text-content บนตัว panel ด้วย ไม่ใช่แค่เปลี่ยนพื้น ไม่งั้นลูกที่ inherit ยังพังเหมือนเดิม */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-white outline-none sm:rounded-2xl ${
+        className={`flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface-raised text-content outline-none sm:rounded-2xl ${
           size === "md" ? "max-w-md" : "max-w-lg"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -62,16 +66,16 @@ export function Modal({
         <div className="shrink-0 px-5 pt-5">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div className="min-w-0">
-              {eyebrow && <div className="text-xs text-ink-soft">{eyebrow}</div>}
-              <h2 id={titleId} className="text-lg font-bold text-ink">
+              {eyebrow && <div className="text-xs text-content-soft">{eyebrow}</div>}
+              <h2 id={titleId} className="text-lg font-bold text-content">
                 {title}
               </h2>
-              {subtitle && <div className="text-xs text-ink-soft">{subtitle}</div>}
+              {subtitle && <div className="text-xs text-content-soft">{subtitle}</div>}
             </div>
             <button
               onClick={onClose}
               aria-label="ปิด"
-              className="-mr-2 shrink-0 rounded-full p-2 text-ink-soft hover:bg-cream-soft"
+              className="-mr-2 shrink-0 rounded-full p-2 text-content-soft hover:bg-surface-soft"
             >
               ✕
             </button>
@@ -116,7 +120,7 @@ export function ConfirmModal({
         <>
           <button
             onClick={onClose}
-            className="rounded-xl border border-cream-soft px-4 py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft"
+            className="rounded-xl border border-line px-4 py-3 text-sm font-medium text-content-soft hover:bg-surface-soft"
           >
             ยกเลิก
           </button>

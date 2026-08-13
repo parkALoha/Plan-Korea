@@ -532,7 +532,9 @@ function SummaryContent() {
               ))}
             </div>
             {/* ปุ่มรอง 3 ปุ่ม: โชว์แค่อิโมจิบนจอแคบ (ซ่อนคำด้วย hidden sm:inline) กันดันจนล้นบรรทัด
-                — ยังกดใช้งานได้เหมือนเดิม แค่ไม่มีคำกำกับจนกว่าจอจะกว้างพอ (sm ขึ้นไป) */}
+                — ยังกดใช้งานได้เหมือนเดิม แค่ไม่มีคำกำกับจนกว่าจอจะกว้างพอ (sm ขึ้นไป)
+                ต้องมี aria-label ทั้ง 3 ปุ่ม เพราะบนมือถือเหลือแค่อิโมจิ = accessible name ว่างเปล่า
+                (อิโมจิไม่นับเป็นชื่อ) ใช้ค่า label ตัวเดียวกับที่โชว์บนจอกว้าง ชื่อจึงตรงกับที่ตาเห็นเสมอ */}
             {(() => {
               const [immIcon, immLabel] = splitIconLabel(
                 immigrationView ? t("fullSummary") : t("immigrationView")
@@ -544,6 +546,7 @@ function SummaryContent() {
                       ? `/summary?lang=${lang}`
                       : `/summary?lang=en&for=immigration`
                   }
+                  aria-label={immLabel}
                   className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
                 >
                   {immIcon} <span className="hidden sm:inline">{immLabel}</span>
@@ -555,6 +558,7 @@ function SummaryContent() {
               return (
                 <button
                   onClick={handleExportJson}
+                  aria-label={label}
                   className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
                 >
                   {icon} <span className="hidden sm:inline">{label}</span>
@@ -566,6 +570,7 @@ function SummaryContent() {
               return (
                 <button
                   onClick={() => window.print()}
+                  aria-label={label}
                   className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
                 >
                   {icon} <span className="hidden sm:inline">{label}</span>

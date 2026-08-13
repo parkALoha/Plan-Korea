@@ -51,7 +51,8 @@ export function TransferAdvicePanel({
     <div className="px-3 pb-2 pl-10 text-[11px] sm:px-4 sm:pl-14">
       <div
         className={`rounded-lg px-2.5 py-1.5 leading-relaxed ${
-          late ? "bg-maple-soft text-maple-dark" : "bg-pine-soft text-pine-dark"
+          // โทเคน panel-* เพื่อให้พลิกตามธีมมืดของ /today ได้ (เหมือน LayoverBadges)
+          late ? "bg-panel-maple text-panel-maple-ink" : "bg-panel-pine text-panel-pine-ink"
         }`}
       >
         <div className="font-semibold">

@@ -385,7 +385,11 @@ export default function Home() {
         {/* pb-28 บนมือถือ: เว้นที่ให้ปุ่มลอย "📍 สถานที่" ไม่ไปทับปุ่ม "+ เพิ่มสถานที่" ของวันสุดท้าย
             lg:max-w-7xl: จอกว้างให้คอลัมน์จุดแวะ (ที่มีแผนที่ต่อวันแปะข้างในอยู่แล้ว) มีที่หายใจ ไม่ใช่ 672px แคบๆ เหมือนเดิม */}
         <div className="mx-auto max-w-5xl px-4 pb-28 pt-6 lg:flex lg:max-w-7xl lg:items-start lg:gap-6 lg:pb-6">
-          <div className="mx-auto max-w-2xl flex-1 lg:mx-0 lg:max-w-none">
+          {/* min-w-0 บน flex item ตัวนี้จำเป็นจริงๆ — เหตุผลเดียวกับที่อธิบายไว้ใน DayStopsSection.tsx
+              (flex item ค่าเริ่มต้นคือ min-width:auto หดต่ำกว่า min-content ไม่ได้) แต่ที่นี่ผลหนักกว่า:
+              ไม่มีแล้วคอลัมน์นี้จะกว้าง 1129px ทั้งที่มีที่ให้ 904px แล้วดัน <aside> คลังสถานที่
+              หลุดออกนอกจอไป 209px บนจอ 1280 (วัดจริง: scrollWidth 1489 vs clientWidth 1280) */}
+          <div className="mx-auto min-w-0 max-w-2xl flex-1 lg:mx-0 lg:max-w-none">
             {!overallLoaded && (
               <>
                 <DayCardSkeleton />

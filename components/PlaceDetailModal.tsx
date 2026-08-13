@@ -96,35 +96,35 @@ export function PlaceDetailModal({
       </div>
     )}
     <div className="mb-3 flex flex-wrap gap-2">
-      <p className="inline-block rounded-full bg-pine-soft px-3 py-1 text-xs text-pine-dark">
+      <p className="inline-block rounded-full bg-panel-pine px-3 py-1 text-xs text-panel-pine-ink">
         {travelLabel}
       </p>
       {hotelLabel && (
-        <p className="inline-block rounded-full bg-maple-soft px-3 py-1 text-xs text-maple-dark">
+        <p className="inline-block rounded-full bg-panel-maple px-3 py-1 text-xs text-panel-maple-ink">
           {hotelLabel}
         </p>
       )}
       {details?.rating != null && (
-        <p className="inline-block rounded-full bg-gold/20 px-3 py-1 text-xs font-medium text-maple-dark">
+        <p className="inline-block rounded-full bg-panel-gold px-3 py-1 text-xs font-medium text-panel-gold-ink">
           ⭐ {details.rating.toFixed(1)}
           {details.userRatingCount != null && ` (${details.userRatingCount} รีวิว)`}
         </p>
       )}
       {details?.primaryType && (
-        <p className="inline-block rounded-full bg-cream-soft px-3 py-1 text-xs text-ink-soft">
+        <p className="inline-block rounded-full bg-surface-soft px-3 py-1 text-xs text-content-soft">
           {details.primaryType}
         </p>
       )}
     </div>
-    <p className="mb-4 text-sm text-ink">{place.descriptionTh}</p>
+    <p className="mb-4 text-sm text-content">{place.descriptionTh}</p>
 
     {/* ของที่เราใส่ไว้เอง มาก่อนข้อมูลจาก Google เสมอ — เปิดดูรายละเอียดแล้วต้องเจอโน้ต/รูปตัวเองทันที
         ไม่ต้องเลื่อนผ่านเวลาเปิด-ปิดกับรีวิวคนอื่นไปหา (เฟส 22)
         stopId + onUpdatePhoto มาด้วยกัน = เปิดปุ่มถ่าย/ลบรูปในตัว (ใช้ตอนเจอป้ายเวลาเปิด-ปิดหน้างาน) */}
     {(userNote || userPhotoUrl || (stopId && onUpdatePhoto)) && (
-      <div className="mb-4 rounded-xl bg-pine-soft/40 p-3">
-        <h3 className="mb-1.5 text-sm font-semibold text-pine-dark">โน้ตของเรา</h3>
-        {userNote && <NoteBody note={userNote} className="text-sm text-ink" />}
+      <div className="mb-4 rounded-xl bg-panel-pine/40 p-3">
+        <h3 className="mb-1.5 text-sm font-semibold text-panel-pine-ink">โน้ตของเรา</h3>
+        {userNote && <NoteBody note={userNote} className="text-sm text-content" />}
         {userPhotoUrl && (
           <button
             type="button"
@@ -137,7 +137,7 @@ export function PlaceDetailModal({
               alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ — กดเพื่อดูขนาดเต็ม"
               className="w-full rounded-lg object-cover"
             />
-            <span className="mt-1 block text-[11px] text-pine-dark">แตะเพื่อดูขนาดเต็ม</span>
+            <span className="mt-1 block text-[11px] text-panel-pine-ink">แตะเพื่อดูขนาดเต็ม</span>
           </button>
         )}
         {stopId && onUpdatePhoto && (
@@ -145,12 +145,12 @@ export function PlaceDetailModal({
             {userPhotoUrl ? (
               <button
                 onClick={handleRemovePhoto}
-                className="rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
+                className="rounded-lg px-2 py-1 text-xs text-panel-maple-ink hover:bg-panel-maple"
               >
                 ลบรูป
               </button>
             ) : (
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/70 px-3 py-1.5 text-xs font-medium text-pine-dark hover:bg-white">
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-surface-raised/70 px-3 py-1.5 text-xs font-medium text-panel-pine-ink hover:bg-surface-raised">
                 {uploadingPhoto ? "กำลังอัปโหลด..." : "📷 ถ่าย/แนบรูปป้าย"}
                 <input
                   type="file"
@@ -179,8 +179,8 @@ export function PlaceDetailModal({
     {details?.openingHours?.weekdayDescriptions &&
       details.openingHours.weekdayDescriptions.length > 0 && (
         <div className="mb-4">
-          <h3 className="mb-1.5 text-sm font-semibold text-ink">เวลาเปิด-ปิด</h3>
-          <ul className="space-y-0.5 text-xs text-ink-soft">
+          <h3 className="mb-1.5 text-sm font-semibold text-content">เวลาเปิด-ปิด</h3>
+          <ul className="space-y-0.5 text-xs text-content-soft">
             {details.openingHours.weekdayDescriptions.map((line) => (
               <li key={line}>{line}</li>
             ))}
@@ -188,23 +188,23 @@ export function PlaceDetailModal({
         </div>
       )}
     {details && !details.openingHours && (
-      <p className="mb-4 text-xs text-ink-soft">ไม่มีข้อมูลเวลาเปิด-ปิดจาก Google</p>
+      <p className="mb-4 text-xs text-content-soft">ไม่มีข้อมูลเวลาเปิด-ปิดจาก Google</p>
     )}
 
     {details?.reviews && details.reviews.length > 0 && (
       <div className="mb-4">
-        <h3 className="mb-1.5 text-sm font-semibold text-ink">รีวิว</h3>
+        <h3 className="mb-1.5 text-sm font-semibold text-content">รีวิว</h3>
         <div className="space-y-2">
           {details.reviews.map((review, i) => (
-            <div key={i} className="rounded-lg bg-cream-soft/60 p-2 text-xs">
-              <div className="mb-0.5 flex items-center gap-1.5 text-ink">
+            <div key={i} className="rounded-lg bg-surface-soft/60 p-2 text-xs">
+              <div className="mb-0.5 flex items-center gap-1.5 text-content">
                 <span className="font-medium">
                   {review.authorAttribution?.displayName ?? "ผู้ใช้ Google"}
                 </span>
                 {review.rating != null && <span>⭐ {review.rating}</span>}
               </div>
               {review.text?.text && (
-                <p className="line-clamp-3 text-ink-soft">{review.text.text}</p>
+                <p className="line-clamp-3 text-content-soft">{review.text.text}</p>
               )}
             </div>
           ))}
@@ -212,13 +212,13 @@ export function PlaceDetailModal({
       </div>
     )}
 
-    <h3 className="mb-2 text-sm font-semibold text-ink">รูปจาก Google</h3>
+    <h3 className="mb-2 text-sm font-semibold text-content">รูปจาก Google</h3>
     <PhotoGallery query={queryKey} />
 
-    <h3 className="mb-2 mt-4 text-sm font-semibold text-ink">แผนที่</h3>
+    <h3 className="mb-2 mt-4 text-sm font-semibold text-content">แผนที่</h3>
     <GoogleMapEmbed query={queryKey} />
 
-    <h3 className="mb-2 mt-4 text-sm font-semibold text-ink">คลิปวิดีโอ</h3>
+    <h3 className="mb-2 mt-4 text-sm font-semibold text-content">คลิปวิดีโอ</h3>
     <YouTubeEmbed query={place.youtubeQuery} />
     </Modal>
   );

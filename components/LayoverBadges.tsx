@@ -60,9 +60,12 @@ export function LayoverBadges({ layover, lang = "th" }: { layover: Layover; lang
         <span
           key={badge.text}
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-snug ${
+            // โทเคน panel-* ไม่ใช่ maple-soft/pine-soft — ป้ายพวกนี้ขึ้นบน /today กับ /summary
+            // ซึ่งรองรับธีมมืดแล้ว ถ้าใช้คู่ "พื้นจาง + ตัวอักษรเข้ม" ตรงๆ จะกลายเป็นชิปพาสเทลสว่างจ้า
+            // ลอยอยู่กลางจอมืด (เห็นชัดตอนดูช่วงต่อเครื่องที่ฮานอยตอนกลางคืน)
             badge.attention
-              ? "bg-maple-soft text-maple-dark"
-              : "bg-pine-soft text-pine-dark"
+              ? "bg-panel-maple text-panel-maple-ink"
+              : "bg-panel-pine text-panel-pine-ink"
           }`}
         >
           <span aria-hidden>{badge.icon}</span>
