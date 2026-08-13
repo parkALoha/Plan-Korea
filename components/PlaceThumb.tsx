@@ -23,7 +23,7 @@ export function PlaceThumb({
   const base = `${rounded} overflow-hidden ${className ?? ""}`;
 
   if (photos === null) {
-    return <div className={`${base} animate-pulse bg-cream-soft`} />;
+    return <div className={`${base} animate-pulse bg-surface-soft`} />;
   }
 
   if (photos.length === 0) {

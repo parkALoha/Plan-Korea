@@ -14,7 +14,7 @@ export function GoogleMapEmbed({ query }: { query: string }) {
         href={googleMapsPlaceUrl(query, parsePlaceIdKey(query))}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex h-56 w-full items-center justify-center rounded-lg bg-gray-100 text-sm text-gray-500 hover:bg-gray-200"
+        className="flex h-56 w-full items-center justify-center rounded-lg bg-surface-soft text-sm text-content-soft hover:brightness-95"
       >
         เปิดใน Google Maps ↗
       </a>

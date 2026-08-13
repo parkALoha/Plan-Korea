@@ -132,7 +132,7 @@ export function RouteSuggestionModal({
         <>
           <button
             onClick={onClose}
-            className="flex-1 rounded-xl border border-cream-soft py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft"
+            className="flex-1 rounded-xl border border-line py-3 text-sm font-medium text-content-soft hover:bg-surface-soft"
           >
             ยกเลิก
           </button>
@@ -142,14 +142,14 @@ export function RouteSuggestionModal({
               onApply(suggestion.orderedStops.map((s) => s.id));
               onClose();
             }}
-            className="flex-1 rounded-xl bg-maple py-3 text-sm font-semibold text-white hover:bg-maple-dark disabled:cursor-not-allowed disabled:bg-cream-soft disabled:text-ink-soft"
+            className="flex-1 rounded-xl bg-maple py-3 text-sm font-semibold text-white hover:bg-maple-dark disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-content-soft"
           >
             ใช้ลำดับนี้
           </button>
         </>
       }
     >
-      <label className="mb-3 flex items-center gap-2 text-xs text-ink">
+      <label className="mb-3 flex items-center gap-2 text-xs text-content">
         <input
           type="checkbox"
           checked={pinRestaurants}
@@ -160,7 +160,7 @@ export function RouteSuggestionModal({
       </label>
 
       {isSameOrder ? (
-        <div className="rounded-lg bg-cream-soft/60 px-3 py-3 text-sm text-ink-soft">
+        <div className="rounded-lg bg-surface-soft/60 px-3 py-3 text-sm text-content-soft">
           ลำดับที่วางไว้ตอนนี้ดีอยู่แล้ว — จัดใหม่แล้วไม่สั้นลงอย่างมีนัยสำคัญ
         </div>
       ) : (
@@ -174,16 +174,16 @@ export function RouteSuggestionModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
                 ลำดับปัจจุบัน
               </div>
               <ol className="space-y-1.5">
                 {before.stops.map((s, i) => (
-                  <li key={s.id} className="rounded-lg bg-cream-soft/50 px-2 py-1.5 text-xs">
-                    <div className="font-medium text-ink">
+                  <li key={s.id} className="rounded-lg bg-surface-soft/50 px-2 py-1.5 text-xs">
+                    <div className="font-medium text-content">
                       {i + 1}. {s.place ? `${CATEGORY_EMOJI[s.place.category]} ${s.place.nameTh}` : "—"}
                     </div>
-                    <div className="text-[11px] text-ink-soft">
+                    <div className="text-[11px] text-content-soft">
                       {s.arrival}–{s.departure}
                     </div>
                   </li>
@@ -205,10 +205,10 @@ export function RouteSuggestionModal({
                         closed ? "bg-maple-soft/70" : "bg-maple-soft/30"
                       }`}
                     >
-                      <div className="font-medium text-ink">
+                      <div className="font-medium text-content">
                         {i + 1}. {s.place ? `${CATEGORY_EMOJI[s.place.category]} ${s.place.nameTh}` : "—"}
                       </div>
-                      <div className={`text-[11px] ${closed ? "text-maple-dark" : "text-ink-soft"}`}>
+                      <div className={`text-[11px] ${closed ? "text-maple-dark" : "text-content-soft"}`}>
                         {s.arrival}–{s.departure}
                         {closed && " ⚠️ ปิด"}
                       </div>
@@ -226,7 +226,7 @@ export function RouteSuggestionModal({
               {newlyClosed.length > 0 && " — บางจุดเดิมยังเปิดอยู่ ลองเช็กก่อนกดใช้"}
             </div>
           )}
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-soft">
+          <p className="mt-3 text-[11px] leading-relaxed text-content-soft">
             * คำนวณจากระยะเส้นตรงระหว่างจุด ไม่ใช่เส้นทางจริง — เอาไว้เป็นไอเดีย ตัดสินใจเองอีกที
           </p>
         </>

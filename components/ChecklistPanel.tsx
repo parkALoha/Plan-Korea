@@ -36,7 +36,7 @@ export function ChecklistPanel({
   return (
     <section className="mb-5">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-content-soft">
           ✅ ของที่ต้องเตรียม
           {items.length > 0 ? ` (${checkedCount}/${items.length})` : ""}
         </h2>
@@ -50,7 +50,7 @@ export function ChecklistPanel({
             if (e.key === "Enter") handleAdd();
           }}
           placeholder="เช่น อะแดปเตอร์ปลั๊กไฟ"
-          className="min-w-0 flex-1 rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
         <button
           onClick={handleAdd}
@@ -69,7 +69,7 @@ export function ChecklistPanel({
             className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
               category === c
                 ? "bg-maple text-white"
-                : "bg-cream-soft text-ink-soft hover:bg-cream-soft/70"
+                : "bg-surface-soft text-content-soft hover:bg-surface-soft/70"
             }`}
           >
             {CATEGORY_LABEL[c]}
@@ -78,7 +78,7 @@ export function ChecklistPanel({
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-cream-soft px-3 py-3 text-center text-xs text-ink-soft">
+        <p className="rounded-xl border border-dashed border-line px-3 py-3 text-center text-xs text-content-soft">
           ยังไม่มีของที่ต้องเตรียม
         </p>
       ) : (
@@ -88,12 +88,12 @@ export function ChecklistPanel({
             if (groupItems.length === 0) return null;
             return (
               <div key={c}>
-                <div className="mb-1.5 text-[11px] font-semibold text-ink-soft">{CATEGORY_LABEL[c]}</div>
+                <div className="mb-1.5 text-[11px] font-semibold text-content-soft">{CATEGORY_LABEL[c]}</div>
                 <ul className="space-y-1">
                   {groupItems.map((item) => (
                     <li
                       key={item.id}
-                      className="flex items-center gap-2 rounded-xl border border-cream-soft bg-white px-3 py-2 shadow-sm shadow-ink/5"
+                      className="flex items-center gap-2 rounded-xl border border-line bg-surface-raised px-3 py-2 shadow-sm shadow-ink/5"
                     >
                       {/* role="checkbox" + aria-checked ไม่ใช่แค่ aria-label — ไม่งั้น screen reader
                           อ่านว่า "ปุ่ม ติ๊กว่าเตรียมแล้ว" ทุกแถวเหมือนกันหมด ไม่บอกว่าติ๊กไปแล้วหรือยัง
@@ -107,7 +107,7 @@ export function ChecklistPanel({
                         className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm before:absolute before:-inset-[10px] before:content-[''] ${
                           item.is_checked
                             ? "border-maple bg-maple text-white"
-                            : "border-cream-soft text-transparent hover:border-maple/60"
+                            : "border-line text-transparent hover:border-maple/60"
                         }`}
                         aria-label={item.text}
                       >
@@ -116,18 +116,18 @@ export function ChecklistPanel({
                       <div className="min-w-0 flex-1">
                         <div
                           className={`truncate text-sm ${
-                            item.is_checked ? "text-ink-soft line-through" : "text-ink"
+                            item.is_checked ? "text-content-soft line-through" : "text-content"
                           }`}
                         >
                           {item.text}
                         </div>
                         {item.is_checked && item.checked_by && (
-                          <div className="text-[11px] text-ink-soft">ติ๊กโดย {item.checked_by}</div>
+                          <div className="text-[11px] text-content-soft">ติ๊กโดย {item.checked_by}</div>
                         )}
                       </div>
                       <button
                         onClick={() => onRemove(item.id)}
-                        className="relative shrink-0 rounded-full p-1.5 text-ink-soft before:absolute before:-inset-2 before:content-[''] hover:bg-cream-soft"
+                        className="relative shrink-0 rounded-full p-1.5 text-content-soft before:absolute before:-inset-2 before:content-[''] hover:bg-surface-soft"
                         aria-label={`ลบ ${item.text}`}
                       >
                         ✕

@@ -74,7 +74,7 @@ export function BookingsPanel({
   return (
     <section className="mb-5">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-content-soft">
           🎫 ตั๋ว/booking
           {/* สามตัวเลขแยกกัน ไม่ใช่ป้าย "รอจอง N" อันเดียว — อันเดียวไม่บอกว่าที่เหลืออีกกี่ใบคืออะไร */}
           {counts.toBook > 0 && (
@@ -95,14 +95,14 @@ export function BookingsPanel({
         </h2>
         <button
           onClick={() => setEditing("new")}
-          className="rounded-lg px-2 py-1 text-xs font-medium text-pine hover:bg-cream-soft"
+          className="rounded-lg px-2 py-1 text-xs font-medium text-pine hover:bg-surface-soft"
         >
           + เพิ่ม
         </button>
       </div>
 
       {bookings.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-cream-soft px-3 py-3 text-center text-xs text-ink-soft">
+        <p className="rounded-xl border border-dashed border-line px-3 py-3 text-center text-xs text-content-soft">
           ยังไม่มีตั๋ว/booking เก็บไว้
         </p>
       ) : (
@@ -119,20 +119,20 @@ export function BookingsPanel({
               // ปุ่มการ์ดกับปุ่มรูปเป็นพี่น้องกัน ไม่ใช่ปุ่มซ้อนปุ่ม (HTML ห้าม และกดแล้วยิงสองเด้ง)
               <div
                 key={booking.id}
-                className="flex items-stretch rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40"
+                className="flex items-stretch rounded-xl border border-line bg-surface-raised shadow-sm shadow-ink/5 hover:border-maple/40"
               >
                 <div className="min-w-0 flex-1">
                 <button
                   onClick={() => setEditing(booking)}
                   className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cream-soft text-sm">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-sm">
                     {BOOKING_CATEGORY_ICON[booking.category]}
                   </span>
                   <div className="min-w-0">
                     {/* ป้ายสถานะอยู่บรรทัดบนสุดของทุกใบ ตำแหน่งเดียวกันเสมอ — กวาดตาลงมาทีเดียว
                         เห็นครบว่าใบไหนต้องรีบ ใบไหนจบแล้ว (ของเดิมอยู่ล่างสุดและมีเฉพาะบางใบ) */}
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-ink-soft">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-content-soft">
                       <span
                         className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${BOOKING_BADGE_CLASS[badge.tone]}`}
                       >
@@ -144,12 +144,12 @@ export function BookingsPanel({
                         {booking.time ? ` ${booking.time}` : ""}
                       </span>
                     </div>
-                    <div className="truncate text-sm font-medium text-ink">
+                    <div className="truncate text-sm font-medium text-content">
                       {booking.title}
                       {booking.file_url && !thumb ? " 📎" : ""}
                     </div>
                     {booking.note && (
-                      <div className="line-clamp-2 text-xs text-ink-soft">{booking.note}</div>
+                      <div className="line-clamp-2 text-xs text-content-soft">{booking.note}</div>
                     )}
                   </div>
                 </button>
@@ -159,7 +159,7 @@ export function BookingsPanel({
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="block truncate border-t border-cream-soft px-3 py-1.5 text-xs text-pine hover:underline"
+                    className="block truncate border-t border-line px-3 py-1.5 text-xs text-pine hover:underline"
                   >
                     🔗 เปิดลิงก์จอง
                   </a>
@@ -214,7 +214,7 @@ export function BookingsPanel({
             setEditing(null);
           }}
         >
-          <p className="text-sm text-ink">
+          <p className="text-sm text-content">
             ลบ <span className="font-semibold">“{deleting.title}”</span> ทิ้งเลยไหม
           </p>
           <p className="rounded-lg bg-maple-soft/50 px-3 py-2 text-xs text-maple-dark">

@@ -1,16 +1,4 @@
-/** วันที่ปฏิทิน **ตามเครื่องผู้ใช้** ในรูป YYYY-MM-DD
- *
- * ห้ามใช้ `toISOString().slice(0,10)` แทน — นั่นคือวันที่ **UTC** ซึ่งตามหลังไทย 7 ชม. และเกาหลี 9 ชม.
- * ผลของจริง: ยืนอยู่กรุงเทพตอน 06:00 ของวันที่ 17 ก.ย. `toISOString()` ยังบอกว่าเป็นวันที่ 16 อยู่
- * → ตั๋วที่ต้องจอง "วันนี้" ขึ้นป้ายว่า "จองภายใน 1 วัน" ทุกเช้าจนถึง 07:00 น. (ที่เกาหลีถึง 09:00 น.)
- * ประกอบเองทีละส่วนแทน `toLocaleDateString` เพื่อไม่ต้องพึ่งข้อมูล locale ของ runtime
- */
-function localDateIso(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+import { localDateIso } from "@/lib/localDate";
 
 /** ช่วงที่ยอมรับของ "จองล่วงหน้ากี่วัน" — 10 ปีพอเหลือเฟือสำหรับตั๋วทุกชนิด
  *  ต้องมีเพดานเพราะค่านี้มาจาก `<input type="number">` ที่ผู้ใช้พิมพ์อะไรก็ได้ (`min={0}` กันแค่ปุ่มลูกศร)

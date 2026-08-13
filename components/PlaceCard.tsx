@@ -42,9 +42,9 @@ export function PlaceCard({
   const hoursLabel = dayDate ? weekdayHoursLabel(details?.openingHours, dayDate) : null;
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-cream-soft bg-white shadow-sm shadow-ink/5 hover:border-maple/40">
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-line bg-surface-raised shadow-sm shadow-ink/5 hover:border-maple/40">
       <button onClick={onClick} className="flex flex-col text-left">
-        <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-cream-soft">
+        <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-surface-soft">
           {photoSrc ? (
             // การ์ดในคลังกว้างจริง ~130px (2 คอลัมน์ในไซด์บาร์) — 400px พอสำหรับจอ 3x (เฟส 19)
             // eslint-disable-next-line @next/next/no-img-element
@@ -69,8 +69,8 @@ export function PlaceCard({
           )}
         </div>
         <div className="px-2.5 py-2">
-          <div className="truncate text-sm font-semibold text-ink">{place.nameTh}</div>
-          <div className="truncate text-xs text-ink-soft">{place.nameEn}</div>
+          <div className="truncate text-sm font-semibold text-content">{place.nameTh}</div>
+          <div className="truncate text-xs text-content-soft">{place.nameEn}</div>
           {distanceLabel && (
             <div className="mt-0.5 truncate text-[11px] text-pine-dark">📍 {distanceLabel}</div>
           )}
@@ -82,7 +82,7 @@ export function PlaceCard({
             </div>
           )}
           {hoursLabel && (
-            <div className="mt-0.5 truncate text-[11px] text-ink-soft">🕐 {hoursLabel}</div>
+            <div className="mt-0.5 truncate text-[11px] text-content-soft">🕐 {hoursLabel}</div>
           )}
           {/* โน้ตที่ติดมาตอนลากกลับคลัง — ขึ้นให้เห็นตรงนี้ ไม่งั้นไม่มีทางรู้เลยว่าเคยจดอะไรไว้ */}
           {stashedNote?.note && (
@@ -110,7 +110,7 @@ export function PlaceCard({
             e.stopPropagation();
             onAdd();
           }}
-          className="flex items-center justify-center gap-1 border-t border-cream-soft bg-maple-soft/50 py-1.5 text-xs font-semibold text-maple-dark hover:bg-maple-soft"
+          className="flex items-center justify-center gap-1 border-t border-line bg-maple-soft/50 py-1.5 text-xs font-semibold text-maple-dark hover:bg-maple-soft"
         >
           + เพิ่มลงวันนี้
         </button>

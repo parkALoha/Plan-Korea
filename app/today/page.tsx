@@ -44,10 +44,8 @@ import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { showUndoToast } from "@/lib/toast";
 import NoteBody from "@/components/NoteBody";
+import { localDateIso } from "@/lib/localDate";
 
-function isoDateOf(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 /** ป้ายชื่อของแถวจุดแวะในลิสต์ "ถัดจากนี้" / "ผ่านมาแล้ว"
  *  แถวพิเศษไม่มีชื่อสถานที่ของตัวเองให้ใช้: ข้ามเมืองใช้ต้นทาง→ปลายทาง ส่วนแวะที่พักดึงชื่อจาก
@@ -168,7 +166,7 @@ export default function TodayPage() {
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
   }, []);
-  const todayIso = isoDateOf(now);
+  const todayIso = localDateIso(now);
   // คำนวณใหม่ทุกครั้งที่ now เดิน (ทุก 30 วิ) แทนที่จะ freeze ด้วย useState ครั้งเดียว
   // (เดิมเปิดค้างข้ามคืนแล้วยังโชว์วันเก่า — บั๊ก 7.5 เพราะมือถือมักอยู่ในกระเป๋าตอนเที่ยวจริง)
   const todayIndex = useMemo(() => findTodayIndex(ITINERARY, todayIso), [todayIso]);
@@ -663,7 +661,7 @@ export default function TodayPage() {
                   {endHotel && (
                     <button
                       onClick={() => copyHotelName(hotelNavigationName(endHotel))}
-                      className="mt-2 w-full rounded-xl bg-white/70 px-3 py-2 text-center text-sm font-medium text-panel-pine-ink hover:bg-white"
+                      className="mt-2 w-full rounded-xl bg-surface-raised/70 px-3 py-2 text-center text-sm font-medium text-panel-pine-ink hover:bg-surface-raised"
                     >
                       {copiedHotelName
                         ? "✓ คัดลอกชื่อที่พักแล้ว"
@@ -681,7 +679,7 @@ export default function TodayPage() {
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 ถัดจากนี้
               </h2>
-              <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
+              <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
                 {upcoming.map((s, i) => {
                   const sched = upcomingSched[i];
                   const label = stopRowLabel(s, sched?.place, endHotel, startHotel);
@@ -724,7 +722,7 @@ export default function TodayPage() {
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
                 ผ่านมาแล้ว ({done.length})
               </h2>
-              <div className="divide-y divide-cream-soft rounded-2xl border border-line bg-surface-raised">
+              <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
                 {done.map((s) => {
                   const sched = schedule.find((sc) => sc.id === s.id);
                   const label = stopRowLabel(s, sched?.place, endHotel, startHotel);

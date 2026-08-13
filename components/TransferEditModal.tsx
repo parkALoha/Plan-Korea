@@ -78,7 +78,7 @@ export function TransferEditModal({
       }
     >
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ไปที่ไหน</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ไปที่ไหน</label>
         {/* แยกกลุ่มสนามบิน/สถานี — รวมกันเป็นลิสต์เดียว 11 อันแล้วหาของที่ต้องการไม่เจอ
             เมืองของวันนี้ขึ้นก่อนในแต่ละกลุ่ม เพราะเกือบทุกครั้งคือที่ที่ต้องการ */}
         {GROUPS.map((group) => {
@@ -87,7 +87,7 @@ export function TransferEditModal({
           );
           return (
             <div key={group.kind} className="mb-3 last:mb-0">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-soft/70">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-content-soft/70">
                 {group.label}
               </div>
               <div className="space-y-1.5">
@@ -98,7 +98,7 @@ export function TransferEditModal({
                     className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
                       placeId === point.id
                         ? "border-maple bg-maple-soft text-maple-dark"
-                        : "border-cream-soft text-ink-soft hover:bg-cream-soft"
+                        : "border-line text-content-soft hover:bg-surface-soft"
                     }`}
                   >
                     <span>{group.icon}</span>
@@ -115,7 +115,7 @@ export function TransferEditModal({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">
+        <label className="mb-1 block text-xs font-medium text-content-soft">
           ต้องไปให้ทันอะไร (ไม่ใส่ก็ได้)
         </label>
         {flights.length > 0 && (
@@ -130,7 +130,7 @@ export function TransferEditModal({
                 className={`rounded-full border px-2.5 py-1 text-xs ${
                   targetTime === e.time
                     ? "border-maple bg-maple-soft text-maple-dark"
-                    : "border-cream-soft text-ink-soft hover:border-maple/40"
+                    : "border-line text-content-soft hover:border-maple/40"
                 }`}
               >
                 ✈️ {e.flight!.no} · {e.time}
@@ -143,19 +143,19 @@ export function TransferEditModal({
             type="time"
             value={targetTime}
             onChange={(e) => setTargetTime(e.target.value)}
-            className="w-32 rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-32 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
           <input
             value={targetLabel}
             onChange={(e) => setTargetLabel(e.target.value)}
             placeholder="เช่น VN409 อินชอน → โฮจิมินห์"
-            className="min-w-0 flex-1 rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
         </div>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">
+        <label className="mb-1 block text-xs font-medium text-content-soft">
           เผื่อเวลาที่สนามบิน/สถานีก่อนออกเดินทาง
         </label>
         <div className="flex flex-wrap gap-1.5">
@@ -166,27 +166,27 @@ export function TransferEditModal({
               className={`rounded-full border px-2.5 py-1.5 text-xs ${
                 checkinBuffer === m
                   ? "border-maple bg-maple-soft text-maple-dark"
-                  : "border-cream-soft text-ink-soft hover:border-maple/40"
+                  : "border-line text-content-soft hover:border-maple/40"
               }`}
             >
               {m % 60 === 0 ? `${m / 60} ชม.` : `${Math.floor(m / 60)} ชม. ${m % 60} น.`}
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-xs text-ink-soft">
+        <p className="mt-1.5 text-xs text-content-soft">
           เช็คอิน + ตม. + เดินไปเกต · ทริปนี้ยึด 3 ชม. สำหรับบินระหว่างประเทศ
         </p>
       </div>
 
       {options.length > 0 && (
-        <div className="rounded-xl bg-cream-soft/50 p-3">
-          <div className="mb-1.5 text-xs font-semibold text-ink-soft">
+        <div className="rounded-xl bg-surface-soft/50 p-3">
+          <div className="mb-1.5 text-xs font-semibold text-content-soft">
             ตัวเลือกการเดินทาง (เวลาตามตารางเดินรถของผู้ให้บริการ)
           </div>
-          <ul className="space-y-1 text-xs text-ink-soft">
+          <ul className="space-y-1 text-xs text-content-soft">
             {options.map((o) => (
               <li key={o.id}>
-                {o.icon} <span className="font-medium text-ink">{o.label}</span> ~{o.minutes} น. ·
+                {o.icon} <span className="font-medium text-content">{o.label}</span> ~{o.minutes} น. ·
                 ขึ้นจาก {o.from}
                 {o.note && <span className="block pl-5 opacity-80">{o.note}</span>}
               </li>
@@ -195,7 +195,7 @@ export function TransferEditModal({
         </div>
       )}
 
-      <p className="text-xs text-ink-soft">
+      <p className="text-xs text-content-soft">
         แถวนี้กินเวลาใน timeline จริง — เวลาเดินทางจากจุดก่อนหน้ามาจาก Google (เลือกโหมดเดินทางได้ที่แถว
         เหมือนจุดแวะปกติ) แล้วระบบจะบอกว่า “ควรออกจากจุดก่อนหน้าไม่เกินกี่โมง” ให้เอง
       </p>

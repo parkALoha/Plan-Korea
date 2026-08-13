@@ -106,21 +106,21 @@ function AccessOptions({
   const options = AIRPORT_ACCESS[airportId] ?? [];
   return (
     <div className="mt-1">
-      <button onClick={onToggle} className="py-1 text-[11px] text-ink-soft hover:text-ink">
+      <button onClick={onToggle} className="py-1 text-[11px] text-content-soft hover:text-content">
         {open ? "▾" : "▸"} เทียบตัวเลือกการเดินทาง ({options.length})
       </button>
       {open && (
-        <ul className="space-y-1 pb-1 text-[11px] text-ink-soft">
+        <ul className="space-y-1 pb-1 text-[11px] text-content-soft">
           {options.map((o) => {
             const leaveBy = latestDepartureFor(o.minutes);
             return (
-              <li key={o.id} className="rounded-lg bg-cream-soft/60 px-2.5 py-1.5">
+              <li key={o.id} className="rounded-lg bg-surface-soft/60 px-2.5 py-1.5">
                 <div>
-                  {o.icon} <span className="font-medium text-ink">{o.label}</span> ~{o.minutes} น.
+                  {o.icon} <span className="font-medium text-content">{o.label}</span> ~{o.minutes} น.
                   {leaveBy && (
                     <>
                       {" "}
-                      · ออกไม่เกิน <span className="font-semibold tabular-nums text-ink">{leaveBy}</span>
+                      · ออกไม่เกิน <span className="font-semibold tabular-nums text-content">{leaveBy}</span>
                     </>
                   )}
                 </div>
@@ -134,7 +134,7 @@ function AccessOptions({
         </ul>
       )}
       {open && (
-        <p className="pb-1 text-[10px] text-ink-soft/70">
+        <p className="pb-1 text-[10px] text-content-soft/70">
           ตัวเลขข้างบนเป็นเวลาตามตารางเดินรถของผู้ให้บริการ (คงที่) ส่วนเวลาในแถวเดินทางด้านบนเป็นของ Google
           ตามพิกัดจริงของจุดก่อนหน้า
         </p>

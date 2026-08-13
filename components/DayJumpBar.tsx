@@ -69,7 +69,7 @@ export function DayJumpBar({ itinerary }: { itinerary: Day[] }) {
   }
 
   return (
-    <div className="sticky top-0 z-30 -mx-4 mb-3 border-b border-cream-soft bg-cream/95 px-4 py-2 backdrop-blur print:hidden">
+    <div className="sticky top-0 z-30 -mx-4 mb-3 border-b border-line bg-surface/95 px-4 py-2 backdrop-blur print:hidden">
       <div
         ref={scrollerRef}
         onPointerDown={holdAutoScroll}
@@ -99,7 +99,7 @@ export function DayJumpBar({ itinerary }: { itinerary: Day[] }) {
               className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium ${
                 active
                   ? "bg-ink text-cream"
-                  : "bg-cream-soft text-ink-soft hover:bg-maple-soft"
+                  : "bg-surface-soft text-content-soft hover:bg-maple-soft"
               }`}
             >
               {CITY_META[day.city].icon} {label}

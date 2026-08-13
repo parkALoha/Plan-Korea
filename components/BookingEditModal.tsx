@@ -165,7 +165,7 @@ export function BookingEditModal({
           {onDelete && (
             <button
               onClick={onDelete}
-              className="rounded-xl px-4 py-3 text-sm text-ink-soft hover:bg-cream-soft"
+              className="rounded-xl px-4 py-3 text-sm text-content-soft hover:bg-surface-soft"
             >
               ลบ
             </button>
@@ -181,7 +181,7 @@ export function BookingEditModal({
       }
     >
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ประเภท</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ประเภท</label>
         <div className="grid grid-cols-3 gap-2">
           {CATEGORIES.map((c) => (
             <button
@@ -190,7 +190,7 @@ export function BookingEditModal({
               className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium ${
                 category === c
                   ? "border-maple bg-maple-soft text-maple-dark"
-                  : "border-cream-soft text-ink-soft hover:bg-cream-soft"
+                  : "border-line text-content-soft hover:bg-surface-soft"
               }`}
             >
               <span>{BOOKING_CATEGORY_ICON[c]}</span>
@@ -201,7 +201,7 @@ export function BookingEditModal({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">สถานะ</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">สถานะ</label>
         <div className="grid grid-cols-3 gap-2">
           {STATUSES.map((s) => (
             <button
@@ -210,7 +210,7 @@ export function BookingEditModal({
               className={`rounded-lg border px-2 py-2 text-xs font-medium ${
                 status === s.value
                   ? "border-maple bg-maple-soft text-maple-dark"
-                  : "border-cream-soft text-ink-soft hover:bg-cream-soft"
+                  : "border-line text-content-soft hover:bg-surface-soft"
               }`}
             >
               {s.label}
@@ -220,21 +220,21 @@ export function BookingEditModal({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ชื่อ/รายละเอียด</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ชื่อ/รายละเอียด</label>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="เช่น VN610 กรุงเทพ → ฮานอย"
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ผูกกับวัน (ไม่บังคับ)</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ผูกกับวัน (ไม่บังคับ)</label>
         <select
           value={dayId}
           onChange={(e) => handleDayChange(e.target.value)}
-          className="w-full rounded-lg border border-cream-soft bg-white px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         >
           <option value="">— ไม่ผูกวันไหน —</option>
           {ITINERARY.map((day) => (
@@ -247,21 +247,21 @@ export function BookingEditModal({
 
       <div className="flex gap-2">
         <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink-soft">วันที่</label>
+          <label className="mb-1 block text-xs font-medium text-content-soft">วันที่</label>
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
         </div>
         <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink-soft">เวลา</label>
+          <label className="mb-1 block text-xs font-medium text-content-soft">เวลา</label>
           <input
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
-            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
         </div>
       </div>
@@ -270,7 +270,7 @@ export function BookingEditModal({
           ซ่อนช่องนี้ไปเลยแทนที่จะปล่อยให้กรอกแล้วไม่มีผล (ค่าที่กรอกค้างไว้จะไม่ถูกเซฟด้วย ดู handleSave) */}
       {status === "pending" && (
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-soft">
+          <label className="mb-1 block text-xs font-medium text-content-soft">
             ต้องจองล่วงหน้ากี่วัน (ไม่บังคับ)
           </label>
           <input
@@ -279,12 +279,12 @@ export function BookingEditModal({
             value={bookByDaysBefore}
             onChange={(e) => setBookByDaysBefore(e.target.value)}
             placeholder="เช่น 30"
-            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
           {deadline ? (
-            <p className="mt-1 text-xs text-ink-soft">📅 ต้องจองภายใน {deadline}</p>
+            <p className="mt-1 text-xs text-content-soft">📅 ต้องจองภายใน {deadline}</p>
           ) : bookByDaysBefore.trim() && !date ? (
-            <p className="mt-1 text-xs text-ink-soft">
+            <p className="mt-1 text-xs text-content-soft">
               ยังคำนวณวันครบกำหนดไม่ได้ — ใส่วันที่ใช้ตั๋วก่อน
             </p>
           ) : null}
@@ -292,16 +292,16 @@ export function BookingEditModal({
       )}
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">เลขที่จอง</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">เลขที่จอง</label>
         <input
           value={confirmationNumber}
           onChange={(e) => setConfirmationNumber(e.target.value)}
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ลิงก์ (ไม่บังคับ)</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ลิงก์ (ไม่บังคับ)</label>
         <input
           value={link}
           onChange={(e) => {
@@ -309,25 +309,25 @@ export function BookingEditModal({
             setLinkError(null);
           }}
           placeholder="https://..."
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
         {linkError && <p className="mt-1 text-xs text-red-600">{linkError}</p>}
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">โน้ต</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">โน้ต</label>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ไฟล์แนบ (รูป/PDF)</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ไฟล์แนบ (รูป/PDF)</label>
         {fileUrl ? (
-          <div className="rounded-lg border border-cream-soft px-3 py-2">
+          <div className="rounded-lg border border-line px-3 py-2">
             {/* รูปตั๋วให้ดูได้ในแอปเลย ไม่ต้องเด้งออกแท็บใหม่ (บนมือถือที่ติดตั้งเป็น PWA = เสียบริบททั้งหมด)
                 PDF ยังเป็นลิงก์เหมือนเดิม เพราะ render ในหน้าไม่ได้ */}
             {isImageAttachment(fileName, fileUrl) && (
@@ -352,14 +352,14 @@ export function BookingEditModal({
               </a>
               <button
                 onClick={handleRemoveFile}
-                className="shrink-0 rounded-full p-1 text-ink-soft hover:bg-cream-soft"
+                className="shrink-0 rounded-full p-1 text-content-soft hover:bg-surface-soft"
               >
                 ✕
               </button>
             </div>
           </div>
         ) : (
-          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cream-soft px-3 py-3 text-xs text-ink-soft hover:bg-cream-soft">
+          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-line px-3 py-3 text-xs text-content-soft hover:bg-surface-soft">
             {uploading ? "กำลังอัปโหลด..." : "แตะเพื่อเลือกรูป/PDF (สูงสุด 10MB)"}
             <input
               type="file"

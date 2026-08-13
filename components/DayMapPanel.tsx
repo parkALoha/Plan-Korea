@@ -187,7 +187,7 @@ function SegmentChips({
         return (
           <span key={i} className="flex items-center gap-1">
             {i > 0 && (
-              <span aria-hidden className="text-[11px] text-ink-soft">
+              <span aria-hidden className="text-[11px] text-content-soft">
                 {hopIcon ? INTERCITY_MODE_ICON[hopIcon] : "→"}
               </span>
             )}
@@ -199,7 +199,7 @@ function SegmentChips({
               className={`rounded-full border px-2.5 py-1.5 text-[11px] leading-snug sm:py-1 ${
                 active
                   ? "border-pine bg-pine-soft font-semibold text-pine-dark"
-                  : "border-cream-soft text-ink-soft hover:border-pine/40"
+                  : "border-line text-content-soft hover:border-pine/40"
               }`}
             >
               {meta ? `${meta.icon} ` : "📍 "}
@@ -215,7 +215,7 @@ function SegmentChips({
         className={`rounded-full border px-2.5 py-1.5 text-[11px] leading-snug sm:py-1 ${
           selectedIndex === "all"
             ? "border-pine bg-pine-soft font-semibold text-pine-dark"
-            : "border-cream-soft text-ink-soft hover:border-pine/40"
+            : "border-line text-content-soft hover:border-pine/40"
         }`}
       >
         ทั้งวัน
@@ -227,7 +227,7 @@ function SegmentChips({
 function MapPlaceholder({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`flex h-full min-h-40 items-center justify-center rounded-lg bg-cream-soft/60 px-4 text-center text-xs text-ink-soft ${className ?? ""}`}
+      className={`flex h-full min-h-40 items-center justify-center rounded-lg bg-surface-soft/60 px-4 text-center text-xs text-content-soft ${className ?? ""}`}
     >
       {children}
     </div>
@@ -527,8 +527,8 @@ function HotelInfoWindow({
       headerDisabled
       onCloseClick={onClose}
     >
-      <div className="w-44 text-ink">
-        <div className="text-[10px] text-ink-soft">🏨 {label}</div>
+      <div className="w-44 text-content">
+        <div className="text-[10px] text-content-soft">🏨 {label}</div>
         <div className="line-clamp-3 text-xs font-semibold leading-snug">{hotel.hotel_name}</div>
       </div>
     </InfoWindow>
@@ -552,24 +552,24 @@ function StopCard({
   const mapsUrl = googleMapsPlaceUrl(place.mapsQuery, place.googlePlaceId);
   // การ์ดต้องแคบพอจะอยู่ในช่องแผนที่ข้างลิสต์ (~288px) โดยไม่ล้น — ตัวหนังสือเล็ก รูปเตี้ย
   return (
-    <div className="w-44 text-ink">
+    <div className="w-44 text-content">
       <PlaceThumb query={placeQueryKey(place)} category={place.category} className="mb-1.5 h-14 w-full" />
-      <div className="text-[10px] text-ink-soft">
+      <div className="text-[10px] text-content-soft">
         จุดที่ {index + 1} · {CATEGORY_LABEL[place.category]}
       </div>
       <div className="text-xs font-semibold leading-snug">
         {CATEGORY_EMOJI[place.category]} {place.nameTh}
       </div>
-      <div className="mt-0.5 text-[10px] text-ink-soft">
+      <div className="mt-0.5 text-[10px] text-content-soft">
         ⏰ {stop.arrival}–{stop.departure} · อยู่ {stop.resolvedDwellMinutes} น.
       </div>
       {stop.travelMinutesFromPrev != null && (
-        <div className="text-[10px] text-ink-soft">
+        <div className="text-[10px] text-content-soft">
           {TRAVEL_MODE_EMOJI[(stop.travelMode ?? "transit") as TravelMode]} จากจุดก่อนหน้า ~
           {stop.travelMinutesFromPrev} น.
         </div>
       )}
-      {note && <div className="mt-0.5 line-clamp-2 text-[10px] italic text-ink-soft">📝 {noteFirstLine(note)}</div>}
+      {note && <div className="mt-0.5 line-clamp-2 text-[10px] italic text-content-soft">📝 {noteFirstLine(note)}</div>}
       {isClosed && (
         <div className="mt-1 rounded bg-maple-soft/70 px-1.5 py-0.5 text-[10px] text-maple-dark">
           ⚠️ ช่วงนี้อาจปิดแล้ว

@@ -33,7 +33,7 @@ export function YouTubeEmbed({ query }: { query: string }) {
 
   if (videoId === undefined) {
     return (
-      <div className="flex aspect-video w-full items-center justify-center rounded-lg bg-gray-100 text-sm text-gray-400">
+      <div className="flex aspect-video w-full items-center justify-center rounded-lg bg-surface-soft text-sm text-content-soft">
         กำลังหาคลิป...
       </div>
     );
@@ -45,7 +45,7 @@ export function YouTubeEmbed({ query }: { query: string }) {
         href={`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex aspect-video w-full items-center justify-center rounded-lg bg-gray-100 text-sm text-gray-500 hover:bg-gray-200"
+        className="flex aspect-video w-full items-center justify-center rounded-lg bg-surface-soft text-sm text-content-soft hover:brightness-95"
       >
         ค้นหาใน YouTube ↗
       </a>

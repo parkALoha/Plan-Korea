@@ -53,7 +53,7 @@ function StationPicks({
           className={`rounded-full border px-2 py-1 text-[11px] ${
             value === s.nameTh
               ? "border-maple bg-maple-soft text-maple-dark"
-              : "border-cream-soft text-ink-soft hover:border-maple/40"
+              : "border-line text-content-soft hover:border-maple/40"
           }`}
         >
           {s.nameTh}
@@ -108,7 +108,7 @@ export function IntercityEditModal({
       }
     >
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">พาหนะ</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">พาหนะ</label>
         <div className="grid grid-cols-3 gap-2">
           {MODES.map((m) => (
             <button
@@ -117,7 +117,7 @@ export function IntercityEditModal({
               className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium ${
                 mode === m
                   ? "border-maple bg-maple-soft text-maple-dark"
-                  : "border-cream-soft text-ink-soft hover:bg-cream-soft"
+                  : "border-line text-content-soft hover:bg-surface-soft"
               }`}
             >
               <span>{INTERCITY_MODE_ICON[m]}</span>
@@ -130,45 +130,45 @@ export function IntercityEditModal({
       {/* มือถือซ้อนกันแนวตั้ง — ปุ่มเลือกสถานีกินที่แนวนอนเยอะ ถ้าวางคู่กันชื่อสถานีจะถูกตัดจนอ่านไม่ออก */}
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink-soft">จาก</label>
+          <label className="mb-1 block text-xs font-medium text-content-soft">จาก</label>
           <input
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
           <StationPicks city={fromCity} value={from} onPick={setFrom} />
         </div>
         <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink-soft">ไป</label>
+          <label className="mb-1 block text-xs font-medium text-content-soft">ไป</label>
           <input
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
           <StationPicks city={toCity} value={to} onPick={setTo} />
         </div>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-soft">ใช้เวลาเดินทางประมาณ</label>
+        <label className="mb-1 block text-xs font-medium text-content-soft">ใช้เวลาเดินทางประมาณ</label>
         <div className="flex items-center gap-2">
           <input
             type="number"
             min={0}
             value={hours}
             onChange={(e) => setHours(Math.max(0, Number(e.target.value) || 0))}
-            className="w-20 rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-20 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
-          <span className="text-sm text-ink-soft">ชม.</span>
+          <span className="text-sm text-content-soft">ชม.</span>
           <input
             type="number"
             min={0}
             max={59}
             value={minutes}
             onChange={(e) => setMinutes(Math.min(59, Math.max(0, Number(e.target.value) || 0)))}
-            className="w-20 rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-20 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           />
-          <span className="text-sm text-ink-soft">นาที</span>
+          <span className="text-sm text-content-soft">นาที</span>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {DURATION_PRESETS_MIN.map((m) => (
@@ -178,7 +178,7 @@ export function IntercityEditModal({
                 setHours(Math.floor(m / 60));
                 setMinutes(m % 60);
               }}
-              className="rounded-full border border-cream-soft bg-white px-2.5 py-1 text-xs text-ink-soft hover:border-maple/40"
+              className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-content-soft hover:border-maple/40"
             >
               {m / 60} ชม.
             </button>
@@ -186,7 +186,7 @@ export function IntercityEditModal({
         </div>
       </div>
 
-      <p className="text-xs text-ink-soft">
+      <p className="text-xs text-content-soft">
         ช่วงนี้จะกินเวลาใน timeline ของวันจริงๆ — จุดแวะก่อนหน้าคำนวณเวลาต่อกันตามปกติ ส่วนจุดแวะหลังจากนี้จะเริ่มนับเวลาใหม่ตอนถึงปลายทาง
       </p>
     </Modal>

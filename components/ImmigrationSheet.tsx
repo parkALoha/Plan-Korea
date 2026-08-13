@@ -114,10 +114,13 @@ export function ImmigrationSheet({
   }
 
   return (
-    <div className="mx-auto max-w-3xl bg-white px-4 py-5 text-ink print:px-0 print:py-0">
-      <header className="border-b-2 border-ink pb-2">
+    <div className="mx-auto max-w-3xl bg-surface-raised px-4 py-5 text-content print:px-0 print:py-0">
+      {/* border-content ไม่ใช่ border-line — เส้นคาดหัวเอกสารกับเส้นใต้หัวตารางในหน้านี้ตั้งใจให้เข้ม
+          เท่าตัวหนังสือ (`--line` เป็นครีมอ่อน #f7ead6 ไว้คั่นแถวในการ์ด พอมาอยู่บนกระดาษขาวจะหายไปเลย)
+          หน้านี้พิมพ์ยื่นเจ้าหน้าที่ ตม. จริง เส้นที่หายคือเส้นที่แบ่งส่วนของเอกสารให้อ่านออก */}
+      <header className="border-b-2 border-content pb-2">
         <h1 className="text-xl font-bold">Travel Itinerary — Republic of Korea</h1>
-        <p className="text-sm text-ink-soft">
+        <p className="text-sm text-content-soft">
           {formatDateEn(ITINERARY[0].date)} – {formatDateEn(ITINERARY[ITINERARY.length - 1].date)} ·
           Tourism · Round trip from Bangkok, Thailand
         </p>
@@ -132,7 +135,7 @@ export function ImmigrationSheet({
               onChange={(e) => saveNames(e.target.value)}
               rows={3}
               placeholder={"Full name as printed in passport\nOne name per line"}
-              className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm focus:border-maple focus:outline-none"
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:border-maple focus:outline-none"
             />
             <button
               onClick={() => setEditingNames(false)}
@@ -152,7 +155,7 @@ export function ImmigrationSheet({
             </ul>
             <button
               onClick={() => setEditingNames(true)}
-              className="shrink-0 text-xs text-ink-soft underline print:hidden"
+              className="shrink-0 text-xs text-content-soft underline print:hidden"
             >
               edit
             </button>
@@ -165,7 +168,7 @@ export function ImmigrationSheet({
             + Add names as printed in passport
           </button>
         )}
-        <p className="mt-1 text-[10px] text-ink-soft print:hidden">
+        <p className="mt-1 text-[10px] text-content-soft print:hidden">
           เก็บไว้ในเครื่องนี้เท่านั้น (localStorage) ไม่ได้ส่งขึ้นฐานข้อมูล — อีกเครื่องต้องกรอกเอง
         </p>
       </Section>
@@ -173,7 +176,7 @@ export function ImmigrationSheet({
       <Section title="Flights">
         <Table head={["Date", "Flight", "Route", "Dep", "Arr"]}>
           {flights.map(({ day, event }) => (
-            <tr key={event.flight!.no} className="border-b border-cream-soft last:border-0">
+            <tr key={event.flight!.no} className="border-b border-line last:border-0">
               <Td>{formatDateEn(day.date, event.dayOffset ?? 0)}</Td>
               <Td className="font-semibold">{event.flight!.no}</Td>
               <Td>
@@ -184,7 +187,7 @@ export function ImmigrationSheet({
             </tr>
           ))}
         </Table>
-        <p className="mt-1 text-[10px] text-ink-soft">
+        <p className="mt-1 text-[10px] text-content-soft">
           All times are local to the departure/arrival airport.
         </p>
       </Section>
@@ -194,7 +197,7 @@ export function ImmigrationSheet({
           {hotelLegs.map((leg) => {
             const hotel = hotels[leg.id];
             return (
-              <tr key={leg.id} className="border-b border-cream-soft last:border-0">
+              <tr key={leg.id} className="border-b border-line last:border-0">
                 <Td className="whitespace-nowrap">
                   {formatDateEn(leg.startDate)} – {formatDateEn(leg.endDate)}
                 </Td>
@@ -203,12 +206,12 @@ export function ImmigrationSheet({
                   <span className="font-medium">
                     {hotel?.name_en || hotel?.hotel_name || "— not booked —"}
                   </span>
-                  <span className="block text-[11px] text-ink-soft">{CITY_NAME_EN[leg.city]}</span>
+                  <span className="block text-[11px] text-content-soft">{CITY_NAME_EN[leg.city]}</span>
                 </Td>
                 <Td className="text-[11px]">
                   {hotel?.address_en || hotel?.formatted_address || "—"}
                   {hotel?.address_local && (
-                    <span className="block text-ink-soft">{hotel.address_local}</span>
+                    <span className="block text-content-soft">{hotel.address_local}</span>
                   )}
                 </Td>
                 <Td className="whitespace-nowrap text-[11px]">{hotel?.phone || "—"}</Td>
@@ -216,7 +219,7 @@ export function ImmigrationSheet({
             );
           })}
         </Table>
-        <p className="mt-1 text-[10px] text-ink-soft">
+        <p className="mt-1 text-[10px] text-content-soft">
           Blank English name/address/phone means the hotel was saved before this field existed —
           re-save it on the planner page to fill it in.
         </p>
@@ -227,7 +230,7 @@ export function ImmigrationSheet({
           {ITINERARY.map((day) => {
             const places = placesByDay[day.id].map(documentName);
             return (
-              <tr key={day.id} className="border-b border-cream-soft last:border-0">
+              <tr key={day.id} className="border-b border-line last:border-0">
                 <Td className="whitespace-nowrap">{formatDateEn(day.date)}</Td>
                 <Td className="text-[11px]">{day.weekdayEn}</Td>
                 <Td className="whitespace-nowrap font-medium">{day.cityEn}</Td>
@@ -244,7 +247,7 @@ export function ImmigrationSheet({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-4 print:break-inside-avoid">
-      <h2 className="mb-1 text-xs font-bold uppercase tracking-wider text-ink-soft">{title}</h2>
+      <h2 className="mb-1 text-xs font-bold uppercase tracking-wider text-content-soft">{title}</h2>
       {children}
     </section>
   );
@@ -255,7 +258,7 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-ink text-left text-[11px] uppercase text-ink-soft">
+          <tr className="border-b border-content text-left text-[11px] uppercase text-content-soft">
             {head.map((h) => (
               <th key={h} className="py-1 pr-3 font-semibold">
                 {h}

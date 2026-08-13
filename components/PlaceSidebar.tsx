@@ -200,7 +200,7 @@ function PlaceSidebarContent({
     // min-h-0 + flex-1 สำคัญ: ในชีตมือถือความสูงมาจาก flex ไม่ใช่ค่าตายตัว h-full เลยคำนวณไม่ได้
     // ก้อนนี้จะสูงตามเนื้อหา (3000px+) ทะลุออกนอกชีตแล้วโดน overflow-hidden ตัดทิ้ง = เลื่อนดูไม่ได้
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-cream-soft p-3">
+      <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-line p-3">
         {cities.map((city) => {
           const meta = CITY_META[city];
           const active = city === activeCity;
@@ -209,7 +209,7 @@ function PlaceSidebarContent({
               key={city}
               onClick={() => selectCity(city)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-                active ? "text-white" : "bg-cream-soft text-ink-soft hover:bg-maple-soft"
+                active ? "text-white" : "bg-surface-soft text-content-soft hover:bg-maple-soft"
               }`}
               style={active ? { backgroundColor: meta.color } : undefined}
             >
@@ -220,7 +220,7 @@ function PlaceSidebarContent({
       </div>
 
       {daysForCity.length > 1 && (
-        <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-cream-soft px-3 py-2">
+        <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-line px-3 py-2">
           {daysForCity.map((day) => (
             <button
               key={day.id}
@@ -228,7 +228,7 @@ function PlaceSidebarContent({
               className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                 day.id === focusedDayId
                   ? "bg-pine text-cream"
-                  : "bg-cream-soft text-ink-soft hover:bg-pine-soft"
+                  : "bg-surface-soft text-content-soft hover:bg-pine-soft"
               }`}
             >
               {new Date(day.date).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}
@@ -253,13 +253,13 @@ function PlaceSidebarContent({
           <div className="flex gap-2">
             <button
               onClick={() => setNearbyKind("place")}
-              className="flex-1 rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
+              className="flex-1 rounded-xl border border-dashed border-content-soft/30 py-2 text-sm text-content-soft hover:border-maple hover:text-maple"
             >
               สถานที่ท่องเที่ยว
             </button>
             <button
               onClick={() => setNearbyKind("restaurant")}
-              className="flex-1 rounded-xl border border-dashed border-ink-soft/30 py-2 text-sm text-ink-soft hover:border-maple hover:text-maple"
+              className="flex-1 rounded-xl border border-dashed border-content-soft/30 py-2 text-sm text-content-soft hover:border-maple hover:text-maple"
             >
               🍽️ ร้านใกล้ๆ
             </button>
@@ -267,13 +267,13 @@ function PlaceSidebarContent({
         </div>
 
         {visibleCards.length === 0 && (
-          <div className="py-6 text-center text-xs text-ink-soft">
+          <div className="py-6 text-center text-xs text-content-soft">
             เลือกครบทุกที่ในโซนนี้แล้ว 🎉
           </div>
         )}
         {groupedVisibleCards.map(({ category, cards }) => (
           <div key={category} className="mb-4">
-            <h3 className="mb-1.5 text-xs font-semibold text-ink-soft">
+            <h3 className="mb-1.5 text-xs font-semibold text-content-soft">
               {CATEGORY_EMOJI[category]} {CATEGORY_LABEL[category]}
             </h3>
             <div className="grid grid-cols-2 gap-2">
@@ -298,10 +298,10 @@ function PlaceSidebarContent({
         ))}
 
         {hiddenCards.length > 0 && (
-          <div className="mt-4 border-t border-cream-soft pt-3">
+          <div className="mt-4 border-t border-line pt-3">
             <button
               onClick={() => setHiddenOpen((v) => !v)}
-              className="flex w-full items-center justify-between text-xs font-medium text-ink-soft hover:text-ink"
+              className="flex w-full items-center justify-between text-xs font-medium text-content-soft hover:text-content"
             >
               <span>🙈 ซ่อนไว้ ({hiddenCards.length})</span>
               <span>{hiddenOpen ? "▲" : "▼"}</span>
@@ -311,9 +311,9 @@ function PlaceSidebarContent({
                 {hiddenCards.map(({ place }) => (
                   <div
                     key={place.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-cream-soft px-2.5 py-1.5 text-xs"
+                    className="flex items-center justify-between gap-2 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs"
                   >
-                    <span className="truncate text-ink-soft">{place.nameTh}</span>
+                    <span className="truncate text-content-soft">{place.nameTh}</span>
                     <button
                       onClick={() => onUnhidePlace(place.id)}
                       className="shrink-0 font-medium text-pine-dark hover:underline"
@@ -393,22 +393,22 @@ function BottomSheet({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="animate-sheet-up absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-2xl shadow-ink/30 outline-none"
+        className="animate-sheet-up absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-2xl bg-surface-raised shadow-2xl shadow-ink/30 outline-none"
       >
         <div className="flex justify-center pt-2">
-          <div className="h-1.5 w-10 rounded-full bg-cream-soft" />
+          <div className="h-1.5 w-10 rounded-full bg-surface-soft" />
         </div>
-        <div className="flex items-center justify-between border-b border-cream-soft px-4 pb-3 pt-2">
+        <div className="flex items-center justify-between border-b border-line px-4 pb-3 pt-2">
           <div className="min-w-0">
-            <h2 id={titleId} className="truncate text-sm font-bold text-ink">
+            <h2 id={titleId} className="truncate text-sm font-bold text-content">
               {title}
             </h2>
-            {subtitle && <p className="truncate text-xs text-ink-soft">{subtitle}</p>}
+            {subtitle && <p className="truncate text-xs text-content-soft">{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
             aria-label="ปิดคลังสถานที่"
-            className="shrink-0 rounded-full p-2 text-ink-soft hover:bg-cream-soft"
+            className="shrink-0 rounded-full p-2 text-content-soft hover:bg-surface-soft"
           >
             ✕
           </button>
@@ -443,7 +443,7 @@ export function PlaceSidebar({
   return (
     <>
       {isDesktop && (
-        <aside className="sticky top-4 h-[calc(100vh-2rem)] w-80 shrink-0 overflow-hidden rounded-2xl border border-cream-soft bg-white shadow-sm shadow-ink/5">
+        <aside className="sticky top-4 h-[calc(100vh-2rem)] w-80 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface-raised shadow-sm shadow-ink/5">
           <PlaceSidebarContent {...props} draggable />
         </aside>
       )}

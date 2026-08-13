@@ -145,7 +145,7 @@ export function SortableStopRow({
           onUpdateDwell(Math.max(MIN_DWELL_MINUTES, sched.resolvedDwellMinutes - DWELL_STEP_MINUTES))
         }
         aria-label="ลดเวลาที่อยู่"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-cream-soft text-base hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-soft text-base hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
       >
         −
       </button>
@@ -153,7 +153,7 @@ export function SortableStopRow({
       <button
         onClick={() => onUpdateDwell(sched.resolvedDwellMinutes + DWELL_STEP_MINUTES)}
         aria-label="เพิ่มเวลาที่อยู่"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-cream-soft text-base hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-soft text-base hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
       >
         +
       </button>
@@ -164,7 +164,7 @@ export function SortableStopRow({
     <button
       onClick={onRemoveStop}
       aria-label="เอาจุดแวะนี้ออก"
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-cream-soft sm:h-7 sm:w-7 sm:text-xs"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-content-soft hover:bg-surface-soft sm:h-7 sm:w-7 sm:text-xs"
     >
       ✕
     </button>
@@ -221,7 +221,7 @@ export function SortableStopRow({
         {locked ? (
           <span
             aria-label="วันนี้ล็อกอยู่ ลากจัดลำดับไม่ได้"
-            className="flex h-10 w-7 shrink-0 items-center justify-center text-xs text-ink-soft/40 sm:h-auto sm:w-auto sm:px-1 sm:py-2"
+            className="flex h-10 w-7 shrink-0 items-center justify-center text-xs text-content-soft/40 sm:h-auto sm:w-auto sm:px-1 sm:py-2"
           >
             🔒
           </span>
@@ -231,14 +231,14 @@ export function SortableStopRow({
             {...listeners}
             aria-label="ลากเพื่อจัดลำดับใหม่"
             style={{ touchAction: "none" }}
-            className="flex h-10 w-7 shrink-0 cursor-grab items-center justify-center rounded text-ink-soft/60 hover:bg-cream-soft hover:text-ink-soft active:cursor-grabbing sm:h-auto sm:w-auto sm:px-1 sm:py-2"
+            className="flex h-10 w-7 shrink-0 cursor-grab items-center justify-center rounded text-content-soft/60 hover:bg-surface-soft hover:text-content-soft active:cursor-grabbing sm:h-auto sm:w-auto sm:px-1 sm:py-2"
           >
             ⠿
           </button>
         )}
 
-        <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-ink-soft sm:w-14">
-          <div className="font-semibold text-ink">{sched.arrival}</div>
+        <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft sm:w-14">
+          <div className="font-semibold text-content">{sched.arrival}</div>
           <div>{sched.departure}</div>
         </div>
 
@@ -248,11 +248,11 @@ export function SortableStopRow({
               {INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-ink">
+              <span className="block truncate font-semibold text-content">
                 {INTERCITY_MODE_LABEL[(stop.intercity_mode as IntercityMode) ?? "other"]} ·{" "}
                 {stop.intercity_from} → {stop.intercity_to}
               </span>
-              <span className="block truncate text-xs text-ink-soft">
+              <span className="block truncate text-xs text-content-soft">
                 ใช้เวลาเดินทาง {sched.resolvedDwellMinutes} นาที
               </span>
             </span>
@@ -264,10 +264,10 @@ export function SortableStopRow({
             </span>
             <span className="min-w-0 flex-1">
               {/* ชื่อโรงแรมมาจาก trip_hotels สดๆ ไม่ใช่จาก place_id — เปลี่ยนโรงแรมแล้วแถวนี้เปลี่ยนตาม */}
-              <span className="block truncate font-semibold text-ink">
+              <span className="block truncate font-semibold text-content">
                 แวะที่พัก · {hotelName ?? "ยังไม่ได้ตั้งที่พักของช่วงนี้"}
               </span>
-              <span className="block truncate text-xs text-ink-soft">
+              <span className="block truncate text-xs text-content-soft">
                 อยู่ที่พัก {sched.resolvedDwellMinutes} นาที (เช็คอิน / ฝากกระเป๋า / พัก)
               </span>
             </span>
@@ -280,13 +280,13 @@ export function SortableStopRow({
                 : "✈️"}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-ink">
+              <span className="block truncate font-semibold text-content">
                 {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
                   ? "ไปสถานี"
                   : "ไปสนามบิน"}{" "}
                 · {sched.place?.nameTh ?? "ไม่พบข้อมูลปลายทาง"}
               </span>
-              <span className="block truncate text-xs text-ink-soft">
+              <span className="block truncate text-xs text-content-soft">
                 เผื่อเวลาที่นั่น {sched.resolvedDwellMinutes} นาที
                 {stop.transfer_target_label ? ` · ${stop.transfer_target_label}` : ""}
               </span>
@@ -306,11 +306,11 @@ export function SortableStopRow({
                   className="h-10 w-10 shrink-0"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold text-ink hover:underline">
+                  <span className="block truncate font-semibold text-content hover:underline">
                     {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
                   </span>
                   {stop.added_by && (
-                    <span className="block truncate text-xs text-ink-soft">เลือกโดย {stop.added_by}</span>
+                    <span className="block truncate text-xs text-content-soft">เลือกโดย {stop.added_by}</span>
                   )}
                 </span>
               </>
@@ -322,12 +322,12 @@ export function SortableStopRow({
 
         {/* ซ่อนช่วง lg ขึ้นไปด้วย เพราะแผนที่ข้างๆ แย่งพื้นที่แถวจนชื่อสถานที่เหลือไม่พอ (บั๊กเดียวกับที่แก้ไว้ฝั่งมือถือ) */}
         {locked ? (
-          <span className="hidden shrink-0 items-center text-xs tabular-nums text-ink-soft sm:flex lg:hidden">
+          <span className="hidden shrink-0 items-center text-xs tabular-nums text-content-soft sm:flex lg:hidden">
             {sched.resolvedDwellMinutes} น.
           </span>
         ) : (
           <>
-            <div className="hidden shrink-0 items-center gap-1 text-xs text-ink-soft sm:flex lg:hidden">
+            <div className="hidden shrink-0 items-center gap-1 text-xs text-content-soft sm:flex lg:hidden">
               {dwellControls}
             </div>
             <div className="hidden sm:block lg:hidden">{removeButton}</div>
@@ -343,7 +343,7 @@ export function SortableStopRow({
             <NoteBody
               note={stop.note}
               previewLines={2}
-              className="text-xs text-ink-soft"
+              className="text-xs text-content-soft"
             />
           ) : null
         ) : editingNote ? (
@@ -367,7 +367,7 @@ export function SortableStopRow({
                 }
               }}
               placeholder={"จดได้ยาวๆ ขึ้นบรรทัดใหม่ได้ เช่น\n- สั่งบิบิมบับหม้อหิน\n10:30 ต่อคิวหน้าร้าน"}
-              className="min-w-0 flex-1 basis-full resize-y rounded-lg border border-cream-soft px-2 py-1.5 text-sm leading-relaxed text-ink focus:border-maple focus:outline-none"
+              className="min-w-0 flex-1 basis-full resize-y rounded-lg border border-line px-2 py-1.5 text-sm leading-relaxed text-content focus:border-maple focus:outline-none"
             />
             <button
               onClick={() => {
@@ -383,7 +383,7 @@ export function SortableStopRow({
                 setNoteDraft(stop.note ?? "");
                 setEditingNote(false);
               }}
-              className="shrink-0 rounded-lg px-2 py-1 text-xs text-ink-soft hover:bg-cream-soft"
+              className="shrink-0 rounded-lg px-2 py-1 text-xs text-content-soft hover:bg-surface-soft"
             >
               ยกเลิก
             </button>
@@ -416,7 +416,7 @@ export function SortableStopRow({
                 setEditingNote(true);
               }
             }}
-            className="cursor-pointer rounded-lg border-l-2 border-pine-soft py-0.5 pl-2 text-left text-xs text-ink-soft hover:text-ink"
+            className="cursor-pointer rounded-lg border-l-2 border-pine-soft py-0.5 pl-2 text-left text-xs text-content-soft hover:text-content"
             title="แตะเพื่อแก้โน้ต"
           >
             <NoteBody note={stop.note} previewLines={2} />
@@ -424,7 +424,7 @@ export function SortableStopRow({
         ) : (
           <button
             onClick={() => setEditingNote(true)}
-            className="py-1.5 text-xs text-ink-soft/60 hover:text-ink-soft"
+            className="py-1.5 text-xs text-content-soft/60 hover:text-content-soft"
           >
             + โน้ต
           </button>
@@ -432,12 +432,12 @@ export function SortableStopRow({
         </div>
         {/* ปุ่มปรับเวลาที่อยู่ + ลบ — โชว์แถวนี้ตอนมือถือ และตอน lg ขึ้นไปที่มีแผนที่แย่งพื้นที่ด้วย (ดูคอมเมนต์บนแถวหลัก) — ซ่อนตอนกำลังพิมพ์โน้ตเพื่อไม่แย่งที่ช่องพิมพ์ */}
         {locked ? (
-          <span className="flex shrink-0 items-center text-xs tabular-nums text-ink-soft sm:hidden lg:flex">
+          <span className="flex shrink-0 items-center text-xs tabular-nums text-content-soft sm:hidden lg:flex">
             อยู่ {sched.resolvedDwellMinutes} น.
           </span>
         ) : (
           !editingNote && (
-            <div className="flex shrink-0 items-center gap-1 text-xs text-ink-soft sm:hidden lg:flex">
+            <div className="flex shrink-0 items-center gap-1 text-xs text-content-soft sm:hidden lg:flex">
               {dwellControls}
               {removeButton}
             </div>
@@ -484,7 +484,7 @@ export function SortableStopRow({
           ) : (
             !locked &&
             !isSpecialRow && (
-              <label className="inline-flex cursor-pointer items-center gap-1 py-1.5 text-xs text-ink-soft/60 hover:text-ink-soft">
+              <label className="inline-flex cursor-pointer items-center gap-1 py-1.5 text-xs text-content-soft/60 hover:text-content-soft">
                 {uploadingPhoto ? "กำลังอัปโหลด..." : "📷 + รูป"}
                 <input
                   type="file"

@@ -82,7 +82,7 @@ export function DaySummaryBar({
   const timeRange = `${dayStart}–${dayEnd}`;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-cream-soft bg-cream-soft/40 px-4 py-2.5 text-[11px] text-ink-soft">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line bg-surface-soft/40 px-4 py-2.5 text-[11px] text-content-soft">
       <span>📍 {places.length} จุด</span>
       <span>⏱️ เดินทางรวม ~{formatMinutes(travelMinutes)}</span>
       {timeRange && <span>🕘 {timeRange}</span>}

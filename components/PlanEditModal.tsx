@@ -50,7 +50,7 @@ export function PlanEditModal({
         <>
           <button
             onClick={onClose}
-            className="rounded-xl border border-cream-soft px-4 py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft"
+            className="rounded-xl border border-line px-4 py-3 text-sm font-medium text-content-soft hover:bg-surface-soft"
           >
             ยกเลิก
           </button>
@@ -68,7 +68,7 @@ export function PlanEditModal({
     >
       {mode === "delete" ? (
         <>
-          <p className="text-sm text-ink">
+          <p className="text-sm text-content">
             ลบแผน <span className="font-semibold">“{plan?.name}”</span> ทิ้งเลยไหม
           </p>
           <p className="rounded-lg bg-maple-soft/50 px-3 py-2 text-xs text-maple-dark">
@@ -80,7 +80,7 @@ export function PlanEditModal({
       ) : (
         <>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-soft">ชื่อแผน</label>
+            <label className="mb-1 block text-xs font-medium text-content-soft">ชื่อแผน</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, MAX_NAME_LENGTH))}
@@ -89,11 +89,11 @@ export function PlanEditModal({
               }}
               autoFocus
               placeholder="เช่น แผน B (เน้นคาเฟ่)"
-              className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
             />
           </div>
           {mode === "create" && (
-            <p className="text-xs text-ink-soft">
+            <p className="text-xs text-content-soft">
               {plan
                 ? `ก๊อปจุดแวะทั้งหมดจาก “${plan.name}” มาเป็นจุดตั้งต้น แล้วแก้ได้อิสระโดยไม่กระทบแผนเดิม`
                 : "เริ่มจากแผนเปล่าๆ"}

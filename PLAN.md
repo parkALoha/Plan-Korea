@@ -1416,6 +1416,35 @@ curl ตรงไปที่ Supabase แล้ว: `custom_places.name_ko` แ
   · route มีด่าน `CRON_SECRET` ของตัวเองแทน และไม่คืนข้อมูลทริปออกมาเลย (ตอบแค่ ok + เวลา)
 - [x] ยืนยันด้วย curl บน dev: `/api/keep-alive` = 200 `{"ok":true}` ส่วน `/api/weather` = 401 (ด่าน PIN ยังทำงาน)
 
+### เฟส 26 — ไล่ hardcode สีที่เหลือใน `components/` ให้ใช้ดีไซน์โทเคน ✅ เสร็จ (13 ส.ค. 2026)
+
+ต่อจากคอมมิต `d1778e4` ที่ย้าย `Modal`/`PlaceDetailModal`/`LayoverBadges`/`TransferAdvicePanel` จาก
+`bg-white`/`text-ink` ตายตัว ไปใช้โทเคน `surface-*`/`content-*`/`line` ที่รองรับธีมมืดใน `globals.css`
+รอบนี้ไล่ให้ครบอีก 33 ไฟล์ที่เหลือใน `components/`
+
+- [x] แทนที่ `bg-white`/`bg-gray-100`/`bg-gray-200`/`text-gray-400`/`text-gray-500`/`text-ink`/
+  `text-ink-soft`/`border-cream-soft`/`bg-cream-soft`/`bg-cream` ด้วยโทเคนคู่กันตาม pattern เดิม
+  รวมที่เจอเพิ่มระหว่างไล่ (ไม่อยู่ในสำรวจแรก): `border-ink`/`border-ink-soft` → `border-line`,
+  `ring-cream-soft` → `ring-line`, `divide-cream-soft` → `divide-line`
+- [x] **จงใจไม่แตะ 3 กลุ่มนี้** เพราะเป็นสไตล์ accent/overlay บนพื้นสีทึบอยู่แล้ว ไม่ใช่ card/surface ทั่วไป
+  รอ P1 ตัดสินใจว่าจะทำโทเคนใหม่รองรับหรือปล่อยไว้: `bg-white/10` `bg-white/15` `bg-white/20`
+  (ปุ่มบน header เขียว pine ใน `TripHeader.tsx`, `DayStopsSection.tsx`), `bg-black/40-90`
+  (overlay รูปถ่าย/lightbox), `bg-ink/NN` (skeleton shimmer, sidebar backdrop, badge บนรูป),
+  `shadow-ink/NN` (ยังไม่มีโทเคนเงาธีมมืด)
+- [x] `text-cream` คู่กับพื้นทึบ `bg-pine`/`bg-maple`/`bg-gold` **ไม่แตะ** ตามที่ `globals.css` ระบุไว้แล้วว่า
+  ตั้งใจให้คงเดิมข้ามธีม
+- [x] `npm run lint` ผ่าน · เช็คในเบราว์เซอร์จริงทั้ง light/dark (สลับ `data-theme` ชั่วคราวทาง JS
+  ไม่ได้แก้ localStorage ของผู้ใช้) — โมดัลที่แก้ (เช่น `HotelEditModal`) คอนทราสต์ถูกต้องทั้งสองธีม
+- [x] ไฟล์นอกขอบเขต (`app/page.tsx`, `app/unlock/page.tsx`, `app/today/page.tsx`) ยังมี hardcode เหลือ
+  — เป็นของทีมอื่น ไม่แตะ, แจ้ง P1 แยกไว้แล้ว
+- **หมายเหตุ:** เฟส 21.4 เคยตั้งใจให้หน้าแผน `/` ไม่รองรับธีมมืด เพราะตอนนั้น component ที่ใช้ร่วมกัน
+  (`SortableStopRow`, `DayStopsSection` ฯลฯ) ยัง hardcode สีอยู่ · ตอนนี้ component เหล่านั้นใช้โทเคนแล้ว
+  แต่ `/` เองไม่มีปุ่มสลับธีมและไม่ตั้ง `data-theme` เอง จึงยังคงแสดงผลเป็นค่าธีมสว่าง (`:root`) เหมือนเดิม
+  ไม่มีอะไรเปลี่ยนที่ตาเห็น — แค่ตอนนี้พร้อมกว่าเดิมถ้าจะต่อธีมมืดให้ `/` ทีหลัง
+- **พบระหว่างทำ:** `list_sessions` เจอเซสชันชื่อซ้ำ (`P1-Lead`/`P2-UI/UX`/`P4-QA-Attack-Simulation`)
+  กระจายอยู่ในหลายโปรเจกต์ที่ไม่เกี่ยวกัน (`plan-korea`, `mu-phone`, โฟลเดอร์ `Cluade` ที่ไม่คุ้นเคย)
+  — แจ้งผู้ใช้ให้ตรวจสอบแล้ว ยังไม่ได้คำตอบ
+
 ---
 
 ## 4. สิ่งที่ต้องให้ผู้ใช้ทำเอง (ผมทำแทนไม่ได้)
@@ -1439,13 +1468,12 @@ curl ตรงไปที่ Supabase แล้ว: `custom_places.name_ko` แ
 >
 > **3. ตั้ง env `TRIP_PIN` + `TRIP_PIN_SECRET` บน Vercel** — ผู้ใช้ตั้งแล้ว
 >
-> ### 🔴 ค้างอยู่ตอนนี้ (12 ส.ค. 2026)
+> **4. ✅ รัน migration `0031_bookings_walkup_status.sql` แล้ว** (ยืนยันด้วย curl 13 ส.ค. 2026)
+> ตั๋วทั้ง 8 ใบมี `status` ครบและแยก 3 กลุ่มถูกต้อง: `walk_up` 3 ใบ (กระเช้าซอรัคซาน · Intercity Bus
+> ซกโช→คังนึง · รถไฟโซล→ซูวอน) ที่เหลือ 5 ใบเป็น `pending` — **ยังไม่มีใบไหนเป็น `booked` เลยสักใบ**
+> ซึ่งตรงกับความจริง (ยังไม่ได้จองอะไร) · `trip_meta` ที่ keep-alive ยิงก็ตอบ 200 ปกติ
 >
-> **-2. รัน migration `0031_bookings_walkup_status.sql`** (เฟส 25 — สถานะ "ซื้อหน้างาน")
-> โปรเจกต์ `ejzibhgqhxdzkovsnpds` → `https://supabase.com/dashboard/project/ejzibhgqhxdzkovsnpds/sql/new`
-> ⚠️ ไฟล์นี้ **แก้ข้อมูล 3 แถวด้วย ไม่ใช่แค่เพิ่มคอลัมน์** (ย้าย 3 ใบที่ยัดเป็น `booked` ไปเป็น `walk_up`
-> แล้วตัดคำว่า "ซื้อหน้างาน — " ออกจากชื่อ) · โค้ดที่ทำไว้ทำงานได้ทั้งก่อนและหลังรัน — ก่อนรันแค่จะเห็น
-> 3 ใบนั้นขึ้น "✅ จองแล้ว" ผิดความจริงต่อไป · รันเสร็จบอกผม จะยืนยันด้วย curl ให้
+> ### 🔴 ค้างอยู่ตอนนี้ (13 ส.ค. 2026)
 >
 > **-3. ตั้ง env `CRON_SECRET` บน Vercel + deploy** (เฟส 25 — กัน Supabase หลับ)
 > ตั้งค่าอะไรก็ได้ที่เดายาก แล้ว Vercel จะแนบ `Authorization: Bearer <ค่านั้น>` มากับ cron ให้เอง

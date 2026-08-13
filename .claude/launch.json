@@ -18,8 +18,8 @@
     {
       "name": "korea-trip-plan-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3100"],
-      "port": 3100
+      "runtimeArgs": ["next", "start", "-p", "3101"],
+      "port": 3101
     }
   ]
 }

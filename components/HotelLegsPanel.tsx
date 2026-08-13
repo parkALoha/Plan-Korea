@@ -31,7 +31,7 @@ export function HotelLegsPanel({
 
   return (
     <section className="mb-5">
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
         🏨 ที่พักของทริป
       </h2>
       {/* grid ไม่ใช่ flex-wrap — flex item จะกว้างตามเนื้อหาทำให้ชื่อโรงแรมยาวๆ ดันหน้าเว็บล้นจอมือถือ
@@ -44,7 +44,7 @@ export function HotelLegsPanel({
             <button
               key={leg.id}
               onClick={() => setEditingLegId(leg.id)}
-              className="flex min-w-0 items-center gap-2 rounded-xl border border-cream-soft bg-white px-3 py-2 text-left shadow-sm shadow-ink/5 hover:border-maple/40"
+              className="flex min-w-0 items-center gap-2 rounded-xl border border-line bg-surface-raised px-3 py-2 text-left shadow-sm shadow-ink/5 hover:border-maple/40"
             >
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm"
@@ -53,10 +53,10 @@ export function HotelLegsPanel({
                 {meta.icon}
               </span>
               <div className="min-w-0">
-                <div className="text-xs text-ink-soft">
+                <div className="text-xs text-content-soft">
                   {CITY_NAME_TH[leg.city]} · {dateRangeLabel(leg)}
                 </div>
-                <div className="truncate text-sm font-medium text-ink">
+                <div className="truncate text-sm font-medium text-content">
                   {hotel ? hotel.hotel_name : "ยังไม่ได้ตั้ง"}
                 </div>
               </div>

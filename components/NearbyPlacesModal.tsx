@@ -246,12 +246,12 @@ export function NearbyPlacesModal({
     const inLibrary = libraryKeys.has(key);
     const busy = addingKey === key;
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-cream-soft p-2">
+      <div className="flex items-center gap-3 rounded-xl border border-line p-2">
         <button
           onClick={() => setPreviewResult(r)}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-cream-soft">
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface-soft">
             {r.photoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -262,7 +262,7 @@ export function NearbyPlacesModal({
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-ink hover:underline">
+            <div className="truncate text-sm font-semibold text-content hover:underline">
               {r.name}
             </div>
             {(r.rating != null || r.primaryType) && (
@@ -273,7 +273,7 @@ export function NearbyPlacesModal({
               </div>
             )}
             {r.formattedAddress && (
-              <div className="truncate text-xs text-ink-soft">
+              <div className="truncate text-xs text-content-soft">
                 {r.formattedAddress}
               </div>
             )}
@@ -324,13 +324,13 @@ export function NearbyPlacesModal({
                 }
               }}
               placeholder={config.searchPlaceholder}
-              className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
             />
             {searchQuery.trim() && (
               <button
                 onClick={clearSearch}
                 aria-label="ล้างคำค้นหา"
-                className="shrink-0 rounded-lg bg-cream-soft px-3 py-2 text-sm font-medium text-ink-soft hover:bg-maple-soft hover:text-maple-dark"
+                className="shrink-0 rounded-lg bg-surface-soft px-3 py-2 text-sm font-medium text-content-soft hover:bg-maple-soft hover:text-maple-dark"
               >
                 ✕
               </button>
@@ -341,18 +341,18 @@ export function NearbyPlacesModal({
       {searchResults != null && (
         <div className="mt-3">
           <div className="mb-1.5 flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-ink-soft">
+            <h3 className="text-xs font-semibold text-content-soft">
               ผลค้นหา &quot;{searchQuery}&quot;
             </h3>
             <button
               onClick={clearSearch}
-              className="text-xs text-ink-soft underline hover:text-ink"
+              className="text-xs text-content-soft underline hover:text-content"
             >
               ← กลับไปดูลิสต์แนะนำ
             </button>
           </div>
           {searchStatus === "error" && (
-            <p className="py-4 text-center text-sm text-ink-soft">
+            <p className="py-4 text-center text-sm text-content-soft">
               ไม่พบผลลัพธ์ ลองคำค้นอื่น
             </p>
           )}
@@ -366,16 +366,16 @@ export function NearbyPlacesModal({
 
       {searchResults == null && (
         <div className="mt-3">
-          <h3 className="mb-1.5 text-xs font-semibold text-ink-soft">
+          <h3 className="mb-1.5 text-xs font-semibold text-content-soft">
             {searchStatus === "loading" ? "กำลังค้นหา..." : config.nearbyHeading}
           </h3>
           {nearbyStatus === "loading" && (
-            <p className="py-6 text-center text-sm text-ink-soft">
+            <p className="py-6 text-center text-sm text-content-soft">
               กำลังค้นหา...
             </p>
           )}
           {nearbyStatus === "error" && (
-            <p className="py-6 text-center text-sm text-ink-soft">
+            <p className="py-6 text-center text-sm text-content-soft">
               {config.emptyText}
             </p>
           )}

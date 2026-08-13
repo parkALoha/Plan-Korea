@@ -188,7 +188,7 @@ export function HotelEditModal({
                 onClear();
                 onClose();
               }}
-              className="rounded-xl px-4 py-3 text-sm text-ink-soft hover:bg-cream-soft"
+              className="rounded-xl px-4 py-3 text-sm text-content-soft hover:bg-surface-soft"
             >
               ลบที่พัก
             </button>
@@ -203,7 +203,7 @@ export function HotelEditModal({
         </>
       }
     >
-    <label className="mb-1 block text-xs font-medium text-ink-soft">
+    <label className="mb-1 block text-xs font-medium text-content-soft">
       ชื่อ/ที่อยู่โรงแรม
     </label>
     <div className="relative">
@@ -229,7 +229,7 @@ export function HotelEditModal({
             }
           }}
           placeholder="เช่น Lotte Hotel Busan"
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
         <button
           onClick={handleGeocode}
@@ -241,7 +241,7 @@ export function HotelEditModal({
       </div>
 
       {suggestOpen && suggestions.length > 0 && (
-        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-cream-soft bg-white shadow-lg shadow-ink/10">
+        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-line bg-surface-raised shadow-lg shadow-ink/10">
           {suggestions.map((s) => (
             <li key={s.placeId}>
               <button
@@ -254,11 +254,11 @@ export function HotelEditModal({
                     s.secondaryText ? `${s.mainText}, ${s.secondaryText}` : s.mainText
                   );
                 }}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-cream-soft"
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-surface-soft"
               >
-                <div className="text-ink">{s.mainText}</div>
+                <div className="text-content">{s.mainText}</div>
                 {s.secondaryText && (
-                  <div className="text-xs text-ink-soft">{s.secondaryText}</div>
+                  <div className="text-xs text-content-soft">{s.secondaryText}</div>
                 )}
               </button>
             </li>
@@ -281,10 +281,10 @@ export function HotelEditModal({
         {/* ชื่อ/ที่อยู่ภาษาท้องถิ่น = สิ่งที่ปุ่มนำทาง Naver/Kakao จะส่งจริง โชว์ให้เห็นก่อนบันทึก
             (เฟส 14 ทำให้จุดแวะไปแล้ว ที่พักเพิ่งได้ในเฟส 16) · เบอร์โทรไว้กรอกเอกสาร ตม. */}
         {(resolved.localized?.nameLocal || resolved.localized?.phone) && (
-          <div className="mb-2 rounded-lg bg-cream-soft/60 px-2.5 py-1.5 text-xs text-ink-soft">
+          <div className="mb-2 rounded-lg bg-surface-soft/60 px-2.5 py-1.5 text-xs text-content-soft">
             {resolved.localized.nameLocal && (
               <div>
-                🗣️ <span className="font-medium text-ink">{resolved.localized.nameLocal}</span>
+                🗣️ <span className="font-medium text-content">{resolved.localized.nameLocal}</span>
                 {resolved.localized.addressLocal ? ` · ${resolved.localized.addressLocal}` : ""}
               </div>
             )}
@@ -297,7 +297,7 @@ export function HotelEditModal({
 
     <button
       onClick={() => setManualOpen((v) => !v)}
-      className="mt-3 text-xs text-ink-soft underline hover:text-ink"
+      className="mt-3 text-xs text-content-soft underline hover:text-content"
     >
       {manualOpen ? "ซ่อนช่องกรอกพิกัดเอง" : "กรอกพิกัดเอง (lat, lng)"}
     </button>
@@ -308,17 +308,17 @@ export function HotelEditModal({
           value={manualLat}
           onChange={(e) => setManualLat(e.target.value)}
           placeholder="lat เช่น 35.1587"
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
         <input
           value={manualLng}
           onChange={(e) => setManualLng(e.target.value)}
           placeholder="lng เช่น 129.0603"
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
         <button
           onClick={handleSaveManual}
-          className="shrink-0 rounded-lg bg-cream-soft px-3 py-2 text-sm text-ink hover:bg-maple-soft"
+          className="shrink-0 rounded-lg bg-surface-soft px-3 py-2 text-sm text-content hover:bg-maple-soft"
         >
           ใช้พิกัดนี้
         </button>

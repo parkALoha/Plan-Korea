@@ -208,8 +208,8 @@ export function DayStopsSection({
   return (
     <section
       id={dayCardElementId(day.id)}
-      className={`mb-5 overflow-hidden rounded-2xl border bg-white shadow-sm shadow-ink/5 ${
-        locked ? "border-pine/40 ring-1 ring-pine/25" : "border-cream-soft"
+      className={`mb-5 overflow-hidden rounded-2xl border bg-surface-raised shadow-sm shadow-ink/5 ${
+        locked ? "border-pine/40 ring-1 ring-pine/25" : "border-line"
       } scroll-mt-16`}
     >
       <div
@@ -232,7 +232,7 @@ export function DayStopsSection({
             onClick={onToggleLock}
             className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
               locked
-                ? "bg-white text-ink"
+                ? "bg-surface-raised text-content"
                 : "border border-white/30 bg-white/10 text-cream hover:bg-white/20"
             }`}
           >
@@ -258,7 +258,7 @@ export function DayStopsSection({
                   onClick={() => onOvernightCityChange(city)}
                   className={`rounded-full px-2.5 py-1.5 font-medium sm:py-1 ${
                     active
-                      ? "bg-white text-ink"
+                      ? "bg-surface-raised text-content"
                       : "border border-white/30 bg-white/10 text-cream hover:bg-white/20"
                   }`}
                 >
@@ -317,7 +317,7 @@ export function DayStopsSection({
       {collapsed && (
         <button
           onClick={() => setManuallyExpanded(true)}
-          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm text-ink-soft hover:bg-cream-soft/60"
+          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm text-content-soft hover:bg-surface-soft/60"
         >
           <span>
             📍 {stops.length} จุด · {effectiveStartTime}
@@ -332,11 +332,11 @@ export function DayStopsSection({
       )}
 
       {!collapsed && hasMapPoints && (
-        <div className="flex gap-1 border-b border-cream-soft bg-cream-soft/30 px-3 pt-2 lg:hidden">
+        <div className="flex gap-1 border-b border-line bg-surface-soft/30 px-3 pt-2 lg:hidden">
           <button
             onClick={() => setMobileView("list")}
             className={`rounded-t-lg px-3 py-1.5 text-xs font-medium ${
-              mobileView === "list" ? "bg-white text-ink" : "text-ink-soft"
+              mobileView === "list" ? "bg-surface-raised text-content" : "text-content-soft"
             }`}
           >
             📋 รายการ
@@ -344,7 +344,7 @@ export function DayStopsSection({
           <button
             onClick={() => setMobileView("map")}
             className={`rounded-t-lg px-3 py-1.5 text-xs font-medium ${
-              mobileView === "map" ? "bg-white text-ink" : "text-ink-soft"
+              mobileView === "map" ? "bg-surface-raised text-content" : "text-content-soft"
             }`}
           >
             🗺️ แผนที่
@@ -356,12 +356,12 @@ export function DayStopsSection({
       <div className="lg:flex lg:items-start lg:gap-3 lg:px-3 lg:py-3">
         <div
           ref={setDayDroppableRef}
-          className={`min-w-0 divide-y divide-cream-soft transition-colors lg:flex-1 ${
+          className={`min-w-0 divide-y divide-line transition-colors lg:flex-1 ${
             mobileView === "list" ? "block" : "hidden"
           } lg:block ${isOver ? "bg-maple-soft/40 ring-2 ring-inset ring-maple" : ""}`}
         >
           {stops.length === 0 && (
-            <div className="px-4 py-5 text-center text-sm text-ink-soft">
+            <div className="px-4 py-5 text-center text-sm text-content-soft">
               {locked
                 ? "วันนี้ล็อกไว้และยังไม่มีจุดแวะ — ปลดล็อกที่หัวการ์ดถ้าจะเพิ่ม"
                 : "ยังไม่มีจุดแวะ — กดปุ่ม “+ เพิ่มสถานที่ให้วันนี้” ด้านล่าง หรือลากจากคลังบนจอใหญ่ก็ได้"}
@@ -511,7 +511,7 @@ export function DayStopsSection({
           {locked ? (
             <button
               onClick={onToggleLock}
-              className="flex w-full items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft/60"
+              className="flex w-full items-center justify-center gap-1 px-4 py-3 text-sm font-medium text-content-soft hover:bg-surface-soft/60"
             >
               🔒 วันนี้ล็อกไว้ — แตะเพื่อปลดล็อกและแก้ไข
             </button>
@@ -529,13 +529,13 @@ export function DayStopsSection({
                 <button
                   onClick={() => setMoreOpen((v) => !v)}
                   aria-expanded={moreOpen}
-                  className="shrink-0 px-4 py-3 text-sm font-medium text-ink-soft hover:bg-cream-soft/60"
+                  className="shrink-0 px-4 py-3 text-sm font-medium text-content-soft hover:bg-surface-soft/60"
                 >
                   อื่นๆ {moreOpen ? "▲" : "▼"}
                 </button>
               </div>
               {moreOpen && (
-                <div className="flex flex-wrap items-center justify-center gap-1 border-t border-cream-soft bg-cream-soft/20">
+                <div className="flex flex-wrap items-center justify-center gap-1 border-t border-line bg-surface-soft/20">
                   {/* ไปสนามบินเป็นแถวท้ายวันเสมอในทางปฏิบัติ จึงวางปุ่มไว้ท้ายการ์ดที่เดียว
                       (ถ้าอยากได้กลางวันก็ลากขึ้นไปได้) */}
                   {/* แวะที่พักท้ายวัน = เอาของไปเก็บก่อนออกไปกินข้าวเย็นต่อ (ต่างจาก anchor "กลับถึงที่พัก"
@@ -578,7 +578,7 @@ export function DayStopsSection({
           >
             {!mapInView ? (
               // กล่องเปล่าขนาดเท่าของจริง — กันหน้ากระตุกตอนแผนที่โผล่มาแทนที่
-              <div className="h-full animate-pulse rounded-xl bg-cream-soft/60" />
+              <div className="h-full animate-pulse rounded-xl bg-surface-soft/60" />
             ) : (
             <DayMapPanel
               schedule={schedule}

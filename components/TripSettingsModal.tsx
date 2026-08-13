@@ -41,7 +41,7 @@ export function TripSettingsModal({
   return (
     <Modal onClose={onClose} title="ตั้งค่าทริป" size="md" bodyClassName="space-y-5">
       <div>
-        <label htmlFor="trip-who" className="mb-1 block text-xs font-medium text-ink-soft">
+        <label htmlFor="trip-who" className="mb-1 block text-xs font-medium text-content-soft">
           ชื่อคุณ
         </label>
         <input
@@ -49,23 +49,23 @@ export function TripSettingsModal({
           value={who}
           onChange={(e) => onWhoChange(e.target.value)}
           placeholder="เช่น เอ / บี"
-          className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
         />
-        <p className="mt-1 text-xs text-ink-soft">
+        <p className="mt-1 text-xs text-content-soft">
           ใช้แสดงว่า “เลือกโดยใคร” ที่จุดแวะ — อีกคนจะได้รู้ว่าใครเพิ่มอะไรไว้
         </p>
       </div>
 
       {plans.length > 0 && (
         <div>
-          <label htmlFor="trip-plan" className="mb-1 block text-xs font-medium text-ink-soft">
+          <label htmlFor="trip-plan" className="mb-1 block text-xs font-medium text-content-soft">
             แผนที่ใช้อยู่
           </label>
           <select
             id="trip-plan"
             value={activePlanId ?? ""}
             onChange={(e) => onSwitchPlan(e.target.value)}
-            className="w-full rounded-lg border border-cream-soft px-3 py-2 text-sm text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
           >
             {plans.map((p) => (
               <option key={p.id} value={p.id}>
@@ -76,13 +76,13 @@ export function TripSettingsModal({
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               onClick={onNewPlan}
-              className="rounded-lg bg-cream-soft px-3 py-2 text-xs font-medium text-ink hover:bg-maple-soft"
+              className="rounded-lg bg-surface-soft px-3 py-2 text-xs font-medium text-content hover:bg-maple-soft"
             >
               + แผนใหม่
             </button>
             <button
               onClick={onRenamePlan}
-              className="rounded-lg bg-cream-soft px-3 py-2 text-xs font-medium text-ink hover:bg-maple-soft"
+              className="rounded-lg bg-surface-soft px-3 py-2 text-xs font-medium text-content hover:bg-maple-soft"
             >
               เปลี่ยนชื่อ
             </button>
@@ -99,15 +99,15 @@ export function TripSettingsModal({
       )}
 
       <div>
-        <div className="mb-1 text-xs font-medium text-ink-soft">ล็อกทั้งทริป</div>
+        <div className="mb-1 text-xs font-medium text-content-soft">ล็อกทั้งทริป</div>
         <button
           onClick={onToggleLockAll}
-          className="w-full rounded-lg border border-cream-soft px-3 py-2.5 text-sm font-medium text-ink hover:bg-cream-soft"
+          className="w-full rounded-lg border border-line px-3 py-2.5 text-sm font-medium text-content hover:bg-surface-soft"
         >
           {allLocked ? "🔓 ปลดล็อกทุกวัน" : "🔒 ล็อกทุกวัน"}
           {lockedDayCount > 0 && !allLocked ? ` (ล็อกแล้ว ${lockedDayCount}/${totalDayCount})` : ""}
         </button>
-        <p className="mt-1 text-xs text-ink-soft">
+        <p className="mt-1 text-xs text-content-soft">
           ใช้ตอนแผนนิ่งแล้วก่อนออกเดินทาง — เปิดดูบนมือถือได้โดยไม่กลัวเผลอลากจุดแวะหลุด
         </p>
       </div>

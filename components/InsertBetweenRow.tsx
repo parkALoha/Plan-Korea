@@ -22,7 +22,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
   if (actions.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 bg-cream-soft/30 px-3 sm:px-4">
+    <div className="flex flex-wrap items-center gap-x-3 bg-surface-soft/30 px-3 sm:px-4">
       {open ? (
         <>
           {actions.map((action) => (
@@ -41,7 +41,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
           ))}
           <button
             onClick={() => setOpen(false)}
-            className="py-2 text-[11px] text-ink-soft hover:underline sm:py-1"
+            className="py-2 text-[11px] text-content-soft hover:underline sm:py-1"
           >
             ยกเลิก
           </button>
@@ -50,7 +50,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
         <button
           onClick={() => setOpen(true)}
           aria-label="แทรกจุดแวะตรงนี้"
-          className="my-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-cream-soft text-[11px] leading-none text-ink-soft/50 hover:border-maple hover:bg-white hover:text-maple"
+          className="my-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-line text-[11px] leading-none text-content-soft/50 hover:border-maple hover:bg-surface-raised hover:text-maple"
         >
           +
         </button>

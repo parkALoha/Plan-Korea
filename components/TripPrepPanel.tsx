@@ -53,19 +53,19 @@ export function TripPrepPanel({
         className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left ${
           hotelsIncomplete
             ? "border-maple/40 bg-maple-soft/40"
-            : "border-cream-soft bg-white shadow-sm shadow-ink/5"
+            : "border-line bg-surface-raised shadow-sm shadow-ink/5"
         }`}
       >
         <span className="shrink-0 text-base">🧳</span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-ink">เตรียมทริป</span>
-          <span className="block truncate text-xs text-ink-soft">
+          <span className="block text-sm font-semibold text-content">เตรียมทริป</span>
+          <span className="block truncate text-xs text-content-soft">
             ที่พัก {hotelsSetCount}/{hotelsTotal}
             {hotelsIncomplete ? " ⚠️" : ""} · ตั๋ว {bookingCount} · ของที่ต้องเตรียม{" "}
             {checklistCheckedCount}/{checklistTotal}
           </span>
         </span>
-        <span aria-hidden className="shrink-0 text-xs text-ink-soft">
+        <span aria-hidden className="shrink-0 text-xs text-content-soft">
           {open ? "▲" : "▼"}
         </span>
       </button>
