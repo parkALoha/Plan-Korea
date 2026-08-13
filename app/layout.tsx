@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
-import { MapsApiProvider } from "@/components/MapsApiProvider";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
@@ -36,9 +35,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ServiceWorkerRegistrar />
         <OfflineBanner />
         <ToastHost />
-        <MapsApiProvider>
-          <TripDataProvider>{children}</TripDataProvider>
-        </MapsApiProvider>
+        {/* MapsApiProvider **ไม่อยู่ตรงนี้แล้ว** — ย้ายไปครอบเฉพาะหน้าแผนที่ `app/page.tsx`
+            `APIProvider` โหลด Google Maps JS SDK ทันทีที่ mount ไม่ว่าจะมีแผนที่ให้วาดหรือไม่
+            พออยู่ใน layout ทุกหน้าจึงจ่ายค่านี้ ทั้งที่ `<Map>` มีที่เดียวคือ DayMapPanel ในหน้าแผน
+            (`/today` `/summary` ใช้แผนที่แบบ iframe ผ่าน GoogleMapEmbed ซึ่งไม่พึ่ง SDK เลย)
+            วัดจริงบน /today: 6 request ไป maps.googleapis.com ~840 KB ที่ไม่ได้ใช้สักไบต์
+            — หน้านั้นคือหน้าที่เปิดบ่อยที่สุดตอนอยู่เกาหลีจริงบนเน็ตโรมมิ่ง */}
+        <TripDataProvider>{children}</TripDataProvider>
       </body>
     </html>
   );

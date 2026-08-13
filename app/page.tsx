@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { MapsApiProvider } from "@/components/MapsApiProvider";
 import { DayStopsSection } from "@/components/DayStopsSection";
 import { HotelLegsPanel } from "@/components/HotelLegsPanel";
 import { BookingsPanel } from "@/components/BookingsPanel";
@@ -360,6 +361,11 @@ export default function Home() {
   const activePlan = plans.find((p) => p.id === activePlanId);
 
   return (
+    // MapsApiProvider ครอบเฉพาะหน้านี้ ไม่ได้อยู่ใน layout อีกแล้ว — หน้าแผนเป็นหน้าเดียวที่มี `<Map>`
+    // จริง (DayMapPanel ในแต่ละวัน) ส่วน /today กับ /summary ใช้แผนที่แบบ iframe ที่ไม่พึ่ง SDK
+    // เหตุผลเต็มอยู่ใน app/layout.tsx · แผนที่ยังคง lazy mount ตาม useInViewOnce เหมือนเดิม
+    // — provider โหลด SDK อย่างเดียว ไม่ได้สั่งวาดแผนที่
+    <MapsApiProvider>
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
@@ -608,5 +614,6 @@ export default function Home() {
         />
       )}
     </DndContext>
+    </MapsApiProvider>
   );
 }
