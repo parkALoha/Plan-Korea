@@ -1480,6 +1480,25 @@ P3 วัด production build แล้วรายงานว่า `/today` �
   ของ `GoogleMapEmbed` โหลดสำเร็จจริง (923ms / 962ms) โดย SDK ยังเป็น 0
 - [x] **`/unlock` เบาลงด้วย** — หน้าที่คนเจอก่อนใครเพื่อนตอนเปิดลิงก์ครั้งแรก ไม่เคยมีแผนที่อยู่แล้ว
 
+**ตารางผลวัดของ P3 — production build จริง (`npm run build && npm start`) จอ 375px** (ไม่ใช่ dev server)
+
+| หน้า | HEAD ที่วัด | resources รวม | API calls | maps.googleapis.com requests | decoded รวม |
+|---|---|---|---|---|---|
+| `/today` | ก่อนแก้ (`49a3322`) | 41 | 19 | 6 (~840KB) | 1,911KB |
+| `/today` | หลัง `dc62e81` | 35 | 14 | 0 | 1,071KB (**-44%**) |
+| `/today` | หลัง `a501607` (เฟส 28) | 34 | 13 | 0 | 1,051KB |
+| `/summary` | หลัง `dc62e81` | 87 | 65 (62 travel-time) | 0 | 1,430KB |
+| `/summary` | หลัง `a501607` | 96* | 65 (62 travel-time) | 0 | 1,431KB |
+| `/` (หน้าแผน) | หลัง `dc62e81` และ `a501607` | 102 | 77 | 6 (~821KB, ตั้งใจ ไม่เปลี่ยน) | 2,421KB |
+
+\* ตัวเลข resources ของ `/summary` ขยับ 87→96 ระหว่าง 2 รอบวัด แต่ decoded รวมแทบเท่าเดิม (1,430→1,431KB)
+และ API call/byte เท่ากันเป๊ะ — น่าจะเป็นความแปรปรวนของการนับ resource entry ระหว่างรอบทดสอบ ไม่ใช่การถดถอย
+
+**หลังเฟส 28 (`a501607`)**: console สะอาดทั้ง 3 หน้า (ไม่มี React error #418 อีกแล้ว) `/today` ลด API call
+ลงอีก 1 ครั้ง (14→13) และ decoded ลดอีก ~20KB — สอดคล้องกับที่คาดว่า hydration mismatch เดิมทำให้ React
+ทิ้ง subtree แล้ว render ใหม่ (อาจรวมถึงเอฟเฟกต์ที่ยิงซ้ำ) ส่วนเวลาที่เห็นการ์ด "จุดถัดไป" วัดจริงไม่ได้บน
+localhost เพราะ loopback เร็วเกินจริง (domContentLoaded ~13-40ms) ไม่ใช่ตัวเลขที่มีความหมายเทียบกับเน็ตโรมมิ่ง
+
 ### เฟส 28 — เอาค่าที่เกิดตอน build ออกจาก HTML ที่ prerender ✅ เสร็จ (13 ส.ค. 2026)
 
 P3 เจอ `Uncaught Minified React error #418` (hydration failed) บน **production build** ทั้ง `/` และ `/today`
