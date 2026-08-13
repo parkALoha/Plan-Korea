@@ -258,29 +258,40 @@ export function SortableStopRow({
             </span>
           </div>
         ) : stop.kind === "hotel" ? (
-          <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
+          // กดได้เหมือนแถวจุดแวะปกติ — แถวนี้มี `place` เหมือนกัน (schedule.ts resolve ให้ทุก kind)
+          // และ DayMapPanel ก็วาดหมุดให้ ถ้าไม่ผูก onView จะกดหมุดบนแผนที่ได้แต่กดในลิสต์ไม่ได้
+          <button
+            onClick={() => sched.place && onView()}
+            disabled={!sched.place}
+            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
+          >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
               🏨
             </span>
             <span className="min-w-0 flex-1">
               {/* ชื่อโรงแรมมาจาก trip_hotels สดๆ ไม่ใช่จาก place_id — เปลี่ยนโรงแรมแล้วแถวนี้เปลี่ยนตาม */}
-              <span className="block truncate font-semibold text-content">
+              <span className="block truncate font-semibold text-content hover:underline">
                 แวะที่พัก · {hotelName ?? "ยังไม่ได้ตั้งที่พักของช่วงนี้"}
               </span>
               <span className="block truncate text-xs text-content-soft">
                 อยู่ที่พัก {sched.resolvedDwellMinutes} นาที (เช็คอิน / ฝากกระเป๋า / พัก)
               </span>
             </span>
-          </div>
+          </button>
         ) : stop.kind === "transfer" ? (
-          <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
+          // เหตุผลเดียวกับ hotel ด้านบน — สถานี/สนามบินมีพิกัดจริงและมีหมุดบนแผนที่
+          <button
+            onClick={() => sched.place && onView()}
+            disabled={!sched.place}
+            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
+          >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
               {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
                 ? "🚉"
                 : "✈️"}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-content">
+              <span className="block truncate font-semibold text-content hover:underline">
                 {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
                   ? "ไปสถานี"
                   : "ไปสนามบิน"}{" "}
@@ -291,7 +302,7 @@ export function SortableStopRow({
                 {stop.transfer_target_label ? ` · ${stop.transfer_target_label}` : ""}
               </span>
             </span>
-          </div>
+          </button>
         ) : (
           <button
             onClick={() => sched.place && onView()}

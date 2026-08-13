@@ -1521,7 +1521,7 @@ P3 เจอ `Uncaught Minified React error #418` (hydration failed) บน **pr
   `/today` แสดง **09:51 น. = เวลาปัจจุบัน** การ์ด "จุดถัดไป" ขึ้นปกติ · **console สะอาดทั้ง `/` `/today`
   `/summary`** · `lint` + `tsc` + `build` + `npm test` (108/108) ผ่าน · commit `a501607`
 
-### สถานะ QA ของเฟส 24 (P4 รายงาน 13 ส.ค. 2026) — ยังยืนยันด้วยตาไม่ได้ รอบที่ 3
+### สถานะ QA ของเฟส 24 (P4 รายงาน 13 ส.ค. 2026) — ✅ **ปิดครบ 5/5 แล้ว**
 
 - [x] regression ของ `d1778e4` **ผ่าน 3 จาก 4**: พื้นที่แตะ 44px ของ checklist ไม่ทับปุ่มลบจริง (สแกน
   `elementFromPoint` ทีละพิกเซล — ห่างกัน 251px ที่จอ 375) · `aria-label` 3 ปุ่มบนหัว `/summary` อ่านชื่อออก
@@ -1538,9 +1538,59 @@ P3 เจอ `Uncaught Minified React error #418` (hydration failed) บน **pr
   อย่างมากคือตกบรรทัด และที่ 375px ชิป 2 อัน + "ทั้งวัน" กว้างรวม ~250px ในช่องที่มี ~351px = อยู่บรรทัดเดียวได้
   · เรื่องสระบนโดนตัด: ปุ่มใช้ `leading-snug` (ไม่ใช่ `leading-none`) + `py-1.5` และ **ไม่มี `overflow-hidden`
   หรือความสูงคงที่บนตัวปุ่มเลย** ซึ่งเป็นสองอย่างเดียวที่ตัดตัวอักษรได้จริง — ความเสี่ยงต่ำมาก
-- [ ] **เหลือ 3 ข้อที่ต้องกดจริงเท่านั้น**: กดชิปแล้วซูมเข้าช่วงถูก · กดจุดแวะข้ามช่วงแล้วชิปสลับเอง ·
-  clamp z15 แต่ยังซูมด้วยมือได้ · **ทางปลดบล็อกที่เร็วที่สุดคือผู้ใช้เปิด Browser pane ค้างไว้แล้วให้ P4 ยิงทันที**
-  (ทั้งสามข้อเป็นพฤติกรรมของแผนที่ ไม่ใช่หน้าตา จะเห็นทันทีที่กดได้)
+- [x] **กดชิปแล้วเฟรมเข้าช่วงที่ถูก — ผ่าน** (วัน 15 ต.ค. · ผู้ใช้ทดสอบเอง P4 อ่านภาพ 13 ส.ค.)
+  ชิปขึ้น 2 อันพอดี `🚌 ปูซาน 1` · `⭐ ซกโช 5` ตรงกับข้อมูลจริงทั้งชื่อเมืองและจำนวนจุด · **ไอคอนคั่นเป็น 🚌
+  ตรงกับ Express Bus ของวันนั้น** (ไม่ใช่ `→` ตัวสำรอง) = `intercityModeBeforeStopId` ส่งค่าถูก · กด `ซกโช 5`
+  แล้วเฟรมครอบซกโชจริง เห็น Abai Village 아바이마을 · Cheongchoho Lake Park · หมุด 4-7 + หมุดโรงแรม
+- [x] **ผู้ใช้ยังซูมด้วยมือได้ — ผ่าน** (วัน 13 ต.ค.) กด `+` ซูมลึกจนเห็นชื่อร้านรายตัว (Kyocha, 롯데백화점)
+  ไม่ตันที่ระดับไหนเลย + เลื่อนแผนที่ได้ → การตัดสินใจ **ไม่ใช้ prop `maxZoom`** ถูกต้อง ยืนยันบนของจริงแล้ว
+- [x] **ไฮไลต์สองทาง ลิสต์→แผนที่ — ผ่าน** กดชื่อจุดแวะปกติ แถวขึ้น ring ส้ม + ป๊อปอัพเด้งที่หมุดนั้นพอดี
+  เนื้อหาครบทุกส่วนของ `StopCard` (รูป · "จุดที่ 3 · ช้อปปิ้ง" · เวลา · `🚌 จากจุดก่อนหน้า ~24 น.` · โน้ต · 2 ปุ่ม)
+- [x] **วันเมืองเดียวไม่มีชิปโผล่ — ผ่าน 3 วันแล้ว** (12, 13 ต.ค. และวัน 12 ต.ค. รอบก่อน)
+- [x] **กดจุดแวะข้ามช่วงแล้วชิปสลับเอง — ผ่าน** (ข้อที่ยากที่สุด · ทิศ ปูซาน→ซกโช วัน 15 ต.ค.)
+  เริ่มที่ชิป `ปูซาน 1` แล้วกดชื่อ "หาดชกโช" ได้ครบ 4 สัญญาณพร้อมกัน: ชิปกระโดดไปไฮไลต์ `⭐ ซกโช 5` **เอง** ·
+  แถวขึ้น ring ส้ม · ป๊อปอัพเด้งที่หมุดถูกตัว (`จุดที่ 3 · ชายหาด` · `13:13–14:13` · `🚶 ~3 น.`) ·
+  แผนที่ย้ายไปซกโชเห็น Sokcho Beach 속초해변
+  → **ยืนยัน `selectSegment` + `stillVisible` ถูก** — ไม่ได้ล้าง `activeStopId` ทิ้งตอนสลับช่วง
+  (ถ้าพลาดเคสนี้ ป๊อปอัพจะหายไปเลย) · **ของแถม: เลขหมุดตรงกับลิสต์ข้ามช่วง** "จุดที่ 3" = หมุดเลข 3
+  ทั้งที่จุดที่ 1 อยู่คนละเมือง = ยืนยันหลักการ "วาดครบทั้งวันเสมอ เปลี่ยนแค่ viewport"
+- [x] **clamp z15 — ไม่มีเคสให้ยิงกับข้อมูลทริปนี้** (P4 คำนวณแทนการอ่าน `getZoom()`)
+  ช่องแผนที่ 288×420 หัก padding ของ `fitBounds` (28/24/28/24) เหลือ **240×364 px** ·
+  สูตร ม./พิกเซล = `156543.03 × cos(lat) / 2^z`
+
+  | ช่วง | ขนาดกรอบ | ต้องการ | z ที่ `fitBounds` เลือก |
+  |---|---|---|---|
+  | **คังนึง (d5) — แคบสุดในทริป** | 872 × 363 ม. | 2.40 ม./px | **z15** (z15 ครอบได้ 1,375 ม. ✅ · z16 ได้ 688 ม. ❌) |
+  | ซกโช (d4, 5 จุด) | 1,614 × 1,171 ม. | 4.88 ม./px | z14 |
+  | ปูซาน (d4, โรงแรม→โนโพ) | ~14.5 กม. | — | ~z11 |
+
+  → **แม้ช่วงแคบที่สุด `fitBounds` ก็เลือก z15 มาเอง เงื่อนไข `zoom > 15` ไม่เป็นจริงสักช่วง**
+  clamp เป็นตาข่ายที่ข้อมูลทริปจริงไม่มีทางไปแตะได้ · **P4 ไม่เคลมว่า "ผ่าน" เคลมได้แค่ "ไม่มีทางเกิด"**
+  📌 ถ้าจะยืนยันจริงต้องเป็น **เทสต์ยูนิต ไม่ใช่ QA ในเบราว์เซอร์** — ดึงการตัดสินใจ "zoom ที่ควรได้จาก
+  bounds + ขนาดช่อง" ออกมาเป็นฟังก์ชันแล้วเทสต์เคส 2 จุดห่าง 300 ม. · **ไม่ทำก็ไม่กระทบทริป**
+- [x] **ปิดข้อสังเกต: รูปในป๊อปอัพว่าง = แค่จังหวะ `PlaceThumb` โหลดไม่ทันตอนถ่าย ไม่ใช่บั๊ก**
+  ป๊อปอัพ "หาดชกโช" รูปขึ้นเต็มปกติ · ไม่ต้องตามต่อ
+- [ ] **เหลือข้อเดียว: วัด `AbortSignal.timeout(3000)` ซ้ำตอนแท็บ visible** — ยังทำไม่ได้เพราะ Chrome
+  ที่ P4 ขับ `hidden` ตลอด (ผู้ใช้ทดสอบในหน้าต่างของตัวเอง คนละแท็บกัน) · **ตัวเลข "3 วิ" จึงยังยืนยันไม่ได้**
+  ที่ยืนยันได้แล้วคือตรรกะถูกทั้งเส้น (แถบขึ้นห่างจาก abort 1 ms) · ดูกับดัก occlusion ในข้อ -4
+
+#### 🐛 บั๊กที่เจอระหว่าง QA รอบนี้ — ✅ แก้แล้ว (13 ส.ค. 2026)
+
+**แถว `transfer` กับ `hotel` ในลิสต์กดไม่ได้ ทั้งที่มีหมุดบนแผนที่** — [SortableStopRow.tsx](components/SortableStopRow.tsx:260)
+
+จุดแวะปกติเรนเดอร์เป็น `<button onClick={() => sched.place && onView()}>` แต่สองชนิดนี้เรนเดอร์เป็น
+`<div>` เปล่าไม่มี handler เลย ทั้งที่เลย์เอาต์/ไอคอน/ชื่อ/เวลาหน้าตาเหมือนกันทุกอย่าง
+· ยืนยันจากโค้ดแล้วว่าเป็นบั๊กจริง: [schedule.ts:153](lib/schedule.ts:153) resolve `place` จาก
+`placesById.get(stop.placeId)` **ให้ทุก kind เท่ากันหมด ไม่ได้แยกชนิด** และ
+[DayMapPanel](components/DayMapPanel.tsx:67) ก็ `filter(s => s.place != null)` ไม่ได้กรอง kind ออก
+→ **กดหมุดบนแผนที่ได้ปกติ แต่ ลิสต์→แผนที่ ตันทางเดียว ทั้งที่เป็นจุดเดียวกัน**
+
+ผลกระทบจริง: วัน 15 ต.ค. ช่วง "ปูซาน 1" **มีแถวเดียวและเป็น `transfer` พอดี** → ในลิสต์ไม่มีอะไรให้กดเลยสักแถว
+
+**แก้แล้ว** — ครอบทั้งสองชนิดด้วย `<button onClick={onView} disabled={!sched.place}>` ตัวเดียวกับแถวปกติ
++ ใส่ `hover:underline` ที่ชื่อให้ affordance ตรงกัน · `tsc --noEmit` และ `eslint` ผ่าน
+⚠️ **ยังไม่ได้ deploy** — P4 ทดสอบบน production จึงยังเห็นของเก่าอยู่
+· แถว `intercity` กดไม่ได้ **ถูกต้องแล้ว ไม่ต้องแก้** — เป็นช่วงเดินทาง ไม่มีพิกัดจุดเดียว
 
 ---
 
@@ -1565,27 +1615,94 @@ P3 เจอ `Uncaught Minified React error #418` (hydration failed) บน **pr
 >
 > **3. ตั้ง env `TRIP_PIN` + `TRIP_PIN_SECRET` บน Vercel** — ผู้ใช้ตั้งแล้ว
 >
+> **3.5 ✅ ตั้ง env `CRON_SECRET` บน Vercel แล้ว** (เฟส 25 — กัน Supabase หลับ · ยืนยัน 13 ส.ค. 2026)
+> ตั้งไว้ที่ scope Production + Preview และ deploy ติดแล้ว · ยืนยันด้วย curl ไปที่
+> `korea-trip-plan-one.vercel.app/api/keep-alive`: ไม่ใส่ header ได้ **401** และใส่ Bearer มั่วก็ได้ **401**
+> (ก่อนหน้านี้ตอบ 200 ให้ทุกคน) · cron ของ Vercel แนบ `Authorization: Bearer $CRON_SECRET` มาเองอยู่แล้ว
+> ⚠️ Vercel Hobby ให้ cron **วันละครั้ง** — ตาราง `0 3 * * *` = 10:00 น. ไทย ซึ่งพอสำหรับเพดาน 7 วันของ Supabase
+>
 > **4. ✅ รัน migration `0031_bookings_walkup_status.sql` แล้ว** (ยืนยันด้วย curl 13 ส.ค. 2026)
 > ตั๋วทั้ง 8 ใบมี `status` ครบและแยก 3 กลุ่มถูกต้อง: `walk_up` 3 ใบ (กระเช้าซอรัคซาน · Intercity Bus
 > ซกโช→คังนึง · รถไฟโซล→ซูวอน) ที่เหลือ 5 ใบเป็น `pending` — **ยังไม่มีใบไหนเป็น `booked` เลยสักใบ**
 > ซึ่งตรงกับความจริง (ยังไม่ได้จองอะไร) · `trip_meta` ที่ keep-alive ยิงก็ตอบ 200 ปกติ
 >
+> **-4. ✅ แยก Google Maps key เป็น 2 ใบ — เสร็จครบ 4 ขั้น ยืนยันแล้วทุกทาง (13 ส.ค. 2026)**
+>
+> **โปรเจกต์ Google Cloud ที่ถือ key ทั้งสองใบ:** `galvanized-pipe-427006-t6` (ชื่อที่แสดง "My First Project")
+>
+> **สิ่งที่เจอ:** เดิมมี API key ใน Cloud Console **ใบเดียว** ชื่อ `Maps Platform API Key` ถือ 7 APIs
+> และ env ทั้ง `GOOGLE_MAPS_API_KEY` กับ `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` **ถือค่าเดียวกัน**
+> · Application restrictions = None · ถ้าเผลอใส่ HTTP referrer restriction กับใบนี้ตรงๆ จะพังทันที 4 จุด
+> เพราะ server route ยิงออกไป **โดยไม่มี Referer header**: [googlePlaces.ts](lib/googlePlaces.ts) ·
+> [place-photo](app/api/place-photo/route.ts) · [travelProvider.ts](lib/travelProvider.ts) ·
+> [youtube-video](app/api/youtube-video/route.ts) — **นี่คือกับดักหลักของงานนี้**
+>
+> | API | ใครเรียก | อยู่ใบไหน |
+> |---|---|---|
+> | Maps Embed API · Maps JavaScript API | `GoogleMapEmbed` · `DayMapPanel` · `MapsApiProvider` | 🌐 browser |
+> | Places API (New) · Routes API · YouTube Data API v3 | server เท่านั้น | 🔒 server |
+> | Directions API · Geocoding API | **ไม่มีโค้ดเรียกเลย** (grep แล้ว) | ลบทิ้งได้ |
+>
+> ฝั่ง client ไม่มีที่ไหนโหลด Places/Geocoding ผ่าน JS library — browser key ต้องการแค่ 2 ตัวจริงๆ
+>
+> - [x] ขั้น 1 สร้าง key ใบใหม่สำหรับเบราว์เซอร์ + Websites restriction (`http://localhost:3000/*`,
+>       `https://korea-trip-plan-one.vercel.app/*`) + จำกัดเหลือ Maps Embed / Maps JavaScript
+> - [x] ขั้น 2 เปลี่ยนค่า `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` ทั้งบน Vercel และใน `.env.local`
+> - [x] ขั้น 3 redeploy — **ยืนยันบน production แล้ว** (P1 ขับ Chrome ผ่านแท็บที่ผู้ใช้ล็อกอินไว้ 13 ส.ค.)
+>       หน้า `/` เสิร์ฟ key ใบใหม่จริง และ **ไม่มีใบเดิมหลงเหลืออยู่ในหน้าเลย** (เช็คทั้ง HTML และ `script[src]`)
+>       · `window.google.maps` โหลดสำเร็จ · รูปสถานที่ในไซด์บาร์ขึ้นครบ = ใบเดิมฝั่งเซิร์ฟเวอร์ยังทำงานปกติ
+>       · ✅ **เห็น tile จริงแล้ว** — ผู้ใช้เลื่อนไปวัน 12 ต.ค. (ปูซาน) เอง แผนที่เรนเดอร์ครบ ถนน/ชื่อเกาหลี/
+>       หมุดเลข 2-5/ปุ่มซูม/แถบข้อกำหนด **ไม่มีกล่องเทาและไม่มี `RefererNotAllowedMapError`**
+>       = Maps JS API ยอมรับ referrer โดเมน Vercel ด้วยใบใหม่แล้ว
+>       ⚠️ หมายเหตุวิธีตรวจ: ขับผ่านสคริปต์ไม่เห็น เพราะ `DayMapPanel` mount ต่อเมื่อ IntersectionObserver
+>       เห็นกล่องเข้าจอจริง (`mapInView` ใน [DayStopsSection](components/DayStopsSection.tsx:578)) —
+>       `scrollIntoView()` ไม่ trigger · **ต้องให้คนเลื่อนดูเอง** ครั้งหน้าไม่ต้องเสียเวลาลองใหม่
+> - [x] **ขั้น 4 ✅ เก็บกวาดใบเดิมแล้ว** — ตัด API restrictions จาก 7 เหลือ **Places API (New) ·
+>       Routes API · YouTube Data API v3** · **Application restrictions = None (คงไว้ ถูกต้องแล้ว)**
+>       ⚠️ ห้ามใส่ Websites/IP กับใบเดิมเด็ดขาด (Vercel Hobby ไม่มี IP คงที่ + ไม่มี Referer)
+>       ⚠️ **แถบเหลือง "this key can currently be used with any application" จะค้างอยู่กับใบนี้ตลอดไป
+>       — ถูกต้องแล้ว ห้ามแก้ตาม** Google เตือนเหมารวมทุก key ที่ Application restrictions = None
+>       ใครมาเห็นรอบหน้าแล้วเผลอ "แก้ให้เรียบร้อย" คือทำเว็บพัง 4 จุดข้างบนซ้ำอีกรอบ
+>
+> **P4 วัดซ้ำบน production หลังตัดแล้ว — ผ่านครบ (13 ส.ค. 2026)**
+>
+> | API | วิธีวัด | ผล |
+> |---|---|---|
+> | Places API (New) | `/api/place-photos?queries=Gamcheon…` | 200 คืน URL รูปจริง · หน้าแผนยิง `/api/place-photo` 14 ครั้ง โหลดสำเร็จ 13 ใบ |
+> | Routes API | `/api/travel-time` (กัมชอน→จากัลชิ) | 200 `{durationMinutes:22, distanceMeters:2251, isReal:true}` · หน้าเว็บมีคำว่า "(จริง)" 32 ครั้ง |
+> | YouTube Data API v3 | `/api/youtube-video?query=Gamcheon…` | 200 `{videoId:"jOHUlaNld50"}` · **รอบแรกที่มีคนเทสต์ API นี้** |
+> | Maps JS (ใบใหม่) | อ่าน DOM ตรง | `.gm-style` ใน `day-card-d0` ขนาด 288×420 **มี tile image 28 ใบ** · console มีข้อความเดียวคือ `google.maps.Marker is deprecated` ซึ่งพ่นตอนสร้าง Marker **สำเร็จ** = วาดหมุดจริง |
+> | **Maps Embed (ใบใหม่)** | เห็น tile กับตาในโมดัล | `GoogleMapEmbed` ใน `PlaceDetailModal` ของ "ถนนสายคาเฟ่จอนโพ" ขึ้นแผนที่จริง — `Jeonpo Cafe Street 전포 카페거리` + หมุดแดง + ย่านรอบข้าง (JEONPO-DONG, Seomyeon) + โลโก้ Google + แถบ `ข้อมูลแผนที่ ©2026 TMap Mobility` |
+> | YouTube embed (ปลายทาง) | เห็น player บนจอ | คลิป `BUSAN, SOUTH KOREA [4K] Jeonpo Cafe…` ช่อง VioletVik มีปุ่ม play = ครบวงจรตั้งแต่ API ถึงตัวเล่น |
+> | Routes API (บนจอ) | อ่านแถบเวลาในการ์ดวัน | วัน 12 ต.ค. ขึ้น "(จริง)" ครบทุกช่วง — 21 · 38 · 31 นาที |
+>
+> key ที่เสิร์ฟจริงเป็นใบใหม่ทั้ง 2 ทาง: SDK `maps/api/js?key=AIzaSyD30aG2…` และ iframe
+> `google.com/maps/embed/v1/place?key=AIzaSyD30aG2…` · ไม่มี `RefererNotAllowedMapError` /
+> `ApiTargetBlockedMapError` / `ApiNotActivatedMapError` สักตัว
+>
+> ⚠️ **อย่าตกใจกับ "รูป 62 ใบ โหลด 13"** — P4 ไล่แล้ว 49 ใบที่เหลือเป็น `loading="lazy"` ทุกใบและอยู่นอกจอทุกใบ
+> เป็นผลของ environment ตอนวัด ไม่ใช่ผลของการตัด API
+>
+> ⚠️ **ตรวจ referrer restriction จากภายนอกแทนไม่ได้ ลองแล้ว** — ยิง Embed API ด้วย
+> `Referer: https://evil.example.com/` เทียบกับ `localhost` ได้ HTML **ขนาดเท่ากันเป๊ะ 2220 bytes ทั้งคู่**
+> เพราะ Embed API ตอบ shell เหมือนกันเสมอแล้วไปเช็ค referrer ตอน iframe รันจริงในเบราว์เซอร์ ·
+> Maps JS API ก็เสิร์ฟ bootstrap script ให้เสมอแล้วค่อยโยน `RefererNotAllowedMapError` ตอนรัน
+> · curl หน้าแรกก็อ่านไม่ได้เพราะด่าน PIN ตอบ 307 ก่อน — **ต้องเปิดดูในเบราว์เซอร์เท่านั้น**
+>
+> 🧪 **กับดักตอนขับ Chrome ผ่าน MCP (จดไว้ให้รอบหน้า)** — ถ้าหน้าต่าง Chrome ถูกหน้าต่างอื่นบัง **มิด 100%**
+> macOS จะมาร์กว่า occluded แล้ว Chrome หยุด render ทั้งหน้าต่าง: `visibilityState` เป็น `hidden`
+> และ `requestAnimationFrame` ไม่ยิง **ทั้งที่ `document.hasFocus()` เป็น `true`** (แท็บถูกเลือกอยู่จริง)
+> ผลคือ IntersectionObserver ไม่ทำงาน · `loading="lazy"` ไม่ปลุก · แผนที่ไม่ mount — **ดูเหมือนเว็บพัง
+> ทั้งที่ไม่พัง** · ต้องให้ผู้ใช้เอา Chrome ขึ้นหน้าสุดจริงๆ แค่เปิดค้างไว้ข้างหลังไม่พอ
+> · ข้อดีที่ใช้ประโยชน์ได้: `useInViewOnce` ไม่ย้อนกลับเป็น false พอผู้ใช้เลื่อนดูครั้งเดียว
+> `<Map>` จะค้างใน DOM ให้อ่านย้อนหลังได้
+>
+> 📌 **หนี้ทางเทคนิค ไม่ต้องแก้ก่อนทริป** — console เตือน `google.maps.Marker is deprecated`
+> (Google ประกาศ 21 ก.พ. 2024 ให้ย้ายไป `AdvancedMarkerElement`) · `DayMapPanel` ใช้ `<Marker>` ของ
+> `@vis.gl` ซึ่ง map ลงมาที่ตัวนี้ · ยังไม่มีกำหนดปิดและ Google สัญญาแจ้งล่วงหน้า 12 เดือน
+> ทริปเหลืออีก ~2 เดือนจึงไม่กระทบ · ถ้าจะย้ายต้องใส่ `mapId` เพิ่ม ซึ่งเปลี่ยนสไตล์แผนที่ทั้งใบ **ไม่คุ้มตอนนี้**
+>
 > ### 🔴 ค้างอยู่ตอนนี้ (13 ส.ค. 2026)
->
-> **-3. ตั้ง env `CRON_SECRET` บน Vercel + deploy** (เฟส 25 — กัน Supabase หลับ)
-> ตั้งค่าอะไรก็ได้ที่เดายาก แล้ว Vercel จะแนบ `Authorization: Bearer <ค่านั้น>` มากับ cron ให้เอง
-> · ไม่ตั้งก็ยังทำงาน (route ตั้งใจปล่อยผ่านเมื่อไม่มี env ด้วยเหตุผลเดียวกับด่าน PIN) แต่ endpoint
-> จะเปิดสาธารณะให้ใครก็ยิงได้ · ⚠️ Vercel Hobby ให้ cron **วันละครั้ง** ซึ่งพอสำหรับเพดาน 7 วันของ Supabase
->
-> **-4. เช็ค restriction ของ `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` ใน Google Cloud Console** (P4 ตั้งข้อสังเกต 13 ส.ค.)
-> key ตัวนี้อยู่ในโค้ดหน้าเว็บโดยธรรมชาติของมัน (ทั้ง `src` ของ iframe ใน `GoogleMapEmbed` และ
-> `maps/api/js?key=` บนหน้าแผน) — **ซ่อนไม่ได้และไม่ต้องพยายามซ่อน** ของแบบนี้กันได้ทางเดียวคือ
-> restriction ฝั่ง Google · ที่ต้องยืนยันคือ **HTTP referrer restriction** (โดเมน Vercel + `localhost`)
-> และ **จำกัด API เฉพาะ Maps Embed + Maps JavaScript** ไม่งั้นใครก๊อป key ไปใช้ก็กินโควตาบิลได้
-> ⚠️ **ตรวจจากภายนอกแทนไม่ได้ ลองแล้ว** — ยิง Embed API ด้วย `Referer: https://evil.example.com/`
-> เทียบกับ `localhost` ได้ HTML **ขนาดเท่ากันเป๊ะ 2220 bytes ทั้งคู่** เพราะ Embed API ตอบ shell
-> เหมือนกันเสมอแล้วไปเช็ค referrer ตอน iframe รันจริงในเบราว์เซอร์ · Maps JS API ก็เสิร์ฟ bootstrap
-> script ให้เสมอแล้วค่อยโยน `RefererNotAllowedMapError` ตอนรัน — **ต้องเปิดดูใน Console เท่านั้น**
 
 > **-1 / 0. ~~รัน migration `0027` / `0029` / `0030`~~ — ✅ รันครบแล้วทั้งหมด ลบรายการทิ้ง (13 ส.ค. 2026)**
 > P4 ไล่ curl ทีละตัวไปที่ `ejzibhgqhxdzkovsnpds` แล้วยืนยันว่า **`0019`-`0031` ลงครบ ไม่มี SQL ค้างสักตัว**
