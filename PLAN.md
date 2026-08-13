@@ -1470,6 +1470,37 @@ P3 วัด production build แล้วรายงานว่า `/today` �
 - [x] `lint` + `tsc --noEmit` + `build` + `npm test` (108/108) ผ่าน · commit `dc62e81`
 - ⚠️ **ระวังตอนแก้ `app/page.tsx`: อย่ารัน `npx prettier --write`** ไฟล์นี้ไม่ได้ถูก format ด้วย prettier
   สั่งครั้งเดียว reformat 635 บรรทัดกลบ diff จริงจนหมด (เจอเองรอบนี้ ย้อนกลับแล้วแก้ด้วยมือแทน)
+- [x] **P3 วัดซ้ำบน production build (จอ 375px) ยืนยันตรงกัน** — `/today` decoded รวม **1,911KB →
+  1,071KB (ลดลง 44%)** · resource 41 → 35 · JS+CSS ของเราเอง ~278KB → ~263KB gzip · `/summary` 0 request
+  · หน้าแผน 6 request / ~821KB ตามที่ตั้งใจ · `dnd-kit` กับ `@vis.gl` ไม่หลงเหลือใน chunk ที่ `/today` โหลดเลย
+- [x] **P4 ตรวจซ้ำอีกชั้นด้วยการอ่านกราฟ import** (จุดที่การย้าย provider จะพังคือคอมโพเนนต์ที่เรียก hook
+  ของ SDK นอกร่ม provider แล้ว throw) — มีแค่ 2 ไฟล์ที่ import จาก `@vis.gl`: ตัว provider เองกับ
+  `DayMapPanel` ซึ่งอยู่ใต้ `app/page.tsx` ทั้งกราฟ **ไม่มีใครหลุดออกไปอยู่นอกร่ม** · วัดต่อหน้าได้
+  `/today` `/summary` `/unlock` = **0 request ทุกหน้า** · `PlaceDetailModal` เปิดได้ทั้ง 2 หน้าและ iframe
+  ของ `GoogleMapEmbed` โหลดสำเร็จจริง (923ms / 962ms) โดย SDK ยังเป็น 0
+- [x] **`/unlock` เบาลงด้วย** — หน้าที่คนเจอก่อนใครเพื่อนตอนเปิดลิงก์ครั้งแรก ไม่เคยมีแผนที่อยู่แล้ว
+
+### เฟส 28 — เอาค่าที่เกิดตอน build ออกจาก HTML ที่ prerender ✅ เสร็จ (13 ส.ค. 2026)
+
+P3 เจอ `Uncaught Minified React error #418` (hydration failed) บน **production build** ทั้ง `/` และ `/today`
+ตั้งแต่โหลดหน้าแรกโดยไม่ต้องคลิกอะไร · เขาสงสัยว่าไม่ได้เกิดจาก `dc62e81` ซึ่งถูกต้อง — ต้นเหตุคนละเรื่องกัน
+
+- [x] **`next build` prerender หน้าพวกนี้เป็น HTML ตั้งแต่ตอน build** (ดูของจริงได้ที่
+  `.next/server/app/today.html`) อะไรที่เซิร์ฟเวอร์ render จึงถูกแช่แข็งไว้แล้วส่งให้ทุกคน
+- [x] **ค่าที่หลุดเข้าไป 2 ตัว** — `/today` ฝัง**นาฬิกา**ลง HTML (`grep` ไฟล์ที่ build แล้วเจอ `09:35 น.`
+  ซึ่งคือเวลาที่ build) · หน้าแผนฝัง**จุดแดงบนปุ่ม ⚙️** ที่ render เมื่อ `who` ว่าง — `who` มาจาก
+  `localStorage` ตอนตั้ง state ตั้งต้น เซิร์ฟเวอร์จึงเห็นว่างเสมอ ส่วนเครื่องที่เคยใส่ชื่อไม่วาด
+- [x] **นี่คือเหตุผลที่ dev ไม่มีใครเห็นปัญหา** — dev server render ตอนมี request พอดี เวลาสองฝั่งตรงกันเอง
+  · P4 เห็น console สะอาดบน dev ส่วน P3 เห็น error บน production ทั้งคู่รายงานถูกทั้งคู่
+  **บทเรียน: เรื่อง hydration ต้องวัดบน production build เท่านั้น**
+- [x] `hooks/useMounted.ts` (ใหม่) — ใช้ `useSyncExternalStore` แทน `useState` + `useEffect` จึงไม่ต้อง
+  setState ในเอฟเฟกต์เลย (เลี่ยง eslint `react-hooks/set-state-in-effect` หลักการเดียวกับ `useDarkTheme`)
+- [x] `/today` คืน skeleton จนกว่า hydrate เสร็จ — **ไม่เสียอะไรเลยเพราะ HTML ที่ prerender ก็เป็น skeleton
+  อยู่ก่อนแล้ว** (ข้อมูลมาจาก Supabase ฝั่ง client ทั้งหมด) ต่างกันแค่หัวเว็บที่เคยฝังเวลา build ลงไป
+  · ยังแก้เคสอนาคตให้ด้วย: ตอนไปเที่ยวจริง `findTodayIndex` จะคืนคนละวันกับตอน build ซึ่งจะ mismatch ซ้ำ
+- [x] ยืนยัน: `grep` ไฟล์ที่ build ใหม่ — เวลาหาย (1 → 0) จุดแดงหาย (1 → 0) · เปิด production build จริง
+  `/today` แสดง **09:51 น. = เวลาปัจจุบัน** การ์ด "จุดถัดไป" ขึ้นปกติ · **console สะอาดทั้ง `/` `/today`
+  `/summary`** · `lint` + `tsc` + `build` + `npm test` (108/108) ผ่าน · commit `a501607`
 
 ### สถานะ QA ของเฟส 24 (P4 รายงาน 13 ส.ค. 2026) — ยังยืนยันด้วยตาไม่ได้ รอบที่ 3
 
@@ -1527,6 +1558,15 @@ P3 วัด production build แล้วรายงานว่า `/today` �
 > · ไม่ตั้งก็ยังทำงาน (route ตั้งใจปล่อยผ่านเมื่อไม่มี env ด้วยเหตุผลเดียวกับด่าน PIN) แต่ endpoint
 > จะเปิดสาธารณะให้ใครก็ยิงได้ · ⚠️ Vercel Hobby ให้ cron **วันละครั้ง** ซึ่งพอสำหรับเพดาน 7 วันของ Supabase
 >
+> **-4. เช็ค restriction ของ `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` ใน Google Cloud Console** (P4 ตั้งข้อสังเกต 13 ส.ค.)
+> key ตัวนี้อยู่ในโค้ดหน้าเว็บโดยธรรมชาติของมัน (ทั้ง `src` ของ iframe ใน `GoogleMapEmbed` และ
+> `maps/api/js?key=` บนหน้าแผน) — **ซ่อนไม่ได้และไม่ต้องพยายามซ่อน** ของแบบนี้กันได้ทางเดียวคือ
+> restriction ฝั่ง Google · ที่ต้องยืนยันคือ **HTTP referrer restriction** (โดเมน Vercel + `localhost`)
+> และ **จำกัด API เฉพาะ Maps Embed + Maps JavaScript** ไม่งั้นใครก๊อป key ไปใช้ก็กินโควตาบิลได้
+> ⚠️ **ตรวจจากภายนอกแทนไม่ได้ ลองแล้ว** — ยิง Embed API ด้วย `Referer: https://evil.example.com/`
+> เทียบกับ `localhost` ได้ HTML **ขนาดเท่ากันเป๊ะ 2220 bytes ทั้งคู่** เพราะ Embed API ตอบ shell
+> เหมือนกันเสมอแล้วไปเช็ค referrer ตอน iframe รันจริงในเบราว์เซอร์ · Maps JS API ก็เสิร์ฟ bootstrap
+> script ให้เสมอแล้วค่อยโยน `RefererNotAllowedMapError` ตอนรัน — **ต้องเปิดดูใน Console เท่านั้น**
 
 > **-1 / 0. ~~รัน migration `0027` / `0029` / `0030`~~ — ✅ รันครบแล้วทั้งหมด ลบรายการทิ้ง (13 ส.ค. 2026)**
 > P4 ไล่ curl ทีละตัวไปที่ `ejzibhgqhxdzkovsnpds` แล้วยืนยันว่า **`0019`-`0031` ลงครบ ไม่มี SQL ค้างสักตัว**
