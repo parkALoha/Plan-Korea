@@ -16,11 +16,53 @@ import type { Place } from "@/data/places";
  * ถ้าจะเพิ่มที่ใหม่ ให้ยิง Places API เอาพิกัดจริงมา อย่าเดา
  */
 export type TransferPoint = Place & {
-  /** แยกกลุ่มในลิสต์ให้เลือกง่าย — สนามบินกับสถานีใช้คนละสถานการณ์กัน */
+  /** แยกกลุ่มในลิสต์ให้เลือกง่าย — สนามบินกับสถานีใช้คนละสถานการณ์กัน
+   *
+   *  📌 ที่พักของเราเองที่กรุงเทพ (จุดออก 11 ต.ค. / จุดกลับ 21 ต.ค.) **จงใจไม่อยู่ในไฟล์นี้** —
+   *  ไฟล์นี้ถูก commit ขึ้น git ส่วนนั่นเป็นที่อยู่จริงของเจ้าของทริป เก็บไว้ใน `custom_places`
+   *  ของ Supabase แทน (id `home-base`) แล้วให้ `DayEvent.placeId` อ้างถึง */
   transferKind: "airport" | "station";
+  /** true = ไม่ต้องโผล่ในลิสต์ให้เลือกของ modal "✈️ ไปสนามบิน/สถานี" — มีไว้ให้แถวตารางบิน
+   *  (`DayEvent.placeId`) อ้างถึงเท่านั้น เช่นสนามบินต้นทาง/ต่อเครื่องนอกเกาหลี ซึ่งไม่มีวันไหน
+   *  ในทริปนี้ต้องแทรกแถว "ไปสนามบิน" ไปหา */
+  pickerHidden?: boolean;
 };
 
 export const TRANSFER_POINTS: TransferPoint[] = [
+  {
+    id: "airport-bkk",
+    transferKind: "airport",
+    pickerHidden: true,
+    nameTh: "สนามบินสุวรรณภูมิ (BKK)",
+    nameEn: "Suvarnabhumi Airport",
+    nameLocal: "ท่าอากาศยานสุวรรณภูมิ",
+    addressLocal: "999 หมู่ที่ 1 หนองปรือ อำเภอบางพลี สมุทรปราการ 10540",
+    city: "bangkok",
+    category: "transport",
+    descriptionTh: "จุดเริ่มทริป — เช็คอิน VN610 ที่เคาน์เตอร์เวียดนามแอร์ไลน์ · และเป็นปลายทางขากลับ VN607 (ถึง 18:30 วันที่ 21)",
+    lat: 13.6818969,
+    lng: 100.7468694,
+    mapsQuery: "ท่าอากาศยานสุวรรณภูมิ",
+    googlePlaceId: "ChIJTydCFXdnHTERB3oVT1UZDRI",
+    youtubeQuery: "Suvarnabhumi airport international departure guide",
+  },
+  {
+    id: "airport-sgn",
+    transferKind: "airport",
+    pickerHidden: true,
+    nameTh: "สนามบินเตินเซินเญิ้ต (SGN)",
+    nameEn: "Tan Son Nhat International Airport",
+    nameLocal: "Cảng hàng không quốc tế Tân Sơn Nhất",
+    addressLocal: "Trường Sơn, Tân Sơn Hòa, Hồ Chí Minh 705000",
+    city: "hcmc",
+    category: "transport",
+    descriptionTh: "จุดต่อเครื่องขากลับ 21 ต.ค. (VN409 → VN607) — อยู่ในเขต transit ของอาคารระหว่างประเทศ T2 ไม่ต้องผ่าน ตม.",
+    lat: 10.8169828,
+    lng: 106.6565808,
+    mapsQuery: "Cảng hàng không quốc tế Tân Sơn Nhất",
+    googlePlaceId: "ChIJnZ-oGhEpdTER8ycbqsCc8Ng",
+    youtubeQuery: "Tan Son Nhat international terminal transit guide",
+  },
   {
     id: "airport-han",
     transferKind: "airport",

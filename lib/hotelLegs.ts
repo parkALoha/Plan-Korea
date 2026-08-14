@@ -1,4 +1,5 @@
 import type { City, Day } from "@/data/itinerary";
+import type { Place } from "@/data/places";
 import type { TripHotel } from "@/lib/supabase";
 
 /**
@@ -16,6 +17,32 @@ export function hotelAnchorId(hotel: Pick<TripHotel, "lat" | "lng">): string {
  *  มีไว้ให้ที่อื่นไม่ต้องเขียน `.startsWith("hotel@")` เอง เวลารูปแบบเปลี่ยนจะได้แก้ที่เดียว */
 export function isHotelAnchorId(placeId: string): boolean {
   return placeId.startsWith("hotel@");
+}
+
+/**
+ * แปลงที่พักที่บันทึกไว้ให้เป็น `Place` เต็มใบ — ใช้กับแถวตารางบินที่อ้าง `placeId: "@hotel"`
+ * (เช่นแถวเช็คเอาต์เช้าวันกลับ) ให้มีรูป/รายละเอียด/แผนที่เหมือนสถานที่อื่นทุกอย่าง
+ *
+ * ต่างจาก `resolvePlace(hotelAnchorId(...))` ที่คืนชื่อกลางๆ ว่า "ที่พัก" เพราะ id ฝังมาแค่พิกัด —
+ * ตัวนี้มี `trip_hotels` ทั้งแถวอยู่ในมือ จึงใส่ชื่อ/ที่อยู่จริงได้ และ `mapsQuery` ชี้ตัวโรงแรมจริง
+ * ไม่ใช่พิกัดเปล่าๆ ที่ Google หารูปให้ไม่ได้
+ */
+export function hotelToPlace(hotel: TripHotel, city: Place["city"]): Place {
+  const name = hotel.name_en || hotel.hotel_name;
+  return {
+    id: hotelAnchorId(hotel),
+    nameTh: hotel.hotel_name,
+    nameEn: name,
+    nameLocal: hotel.name_local ?? undefined,
+    addressLocal: hotel.address_local ?? undefined,
+    city,
+    category: "transport",
+    descriptionTh: hotel.formatted_address ?? "ที่พักที่บันทึกไว้สำหรับคืนนี้",
+    lat: hotel.lat,
+    lng: hotel.lng,
+    mapsQuery: name,
+    youtubeQuery: "",
+  };
 }
 
 export type HotelLeg = {

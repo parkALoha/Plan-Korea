@@ -139,9 +139,13 @@ export function buildDayCitySegments(input: {
       lat: stop.place.lat,
       lng: stop.place.lng,
       // แถว "แวะที่พัก" มี city ปลอมเป็น "seoul" เสมอ (ดูหัวไฟล์) — หาเมืองจากพิกัดจริงแทน
+      // ส่วน isCity กันเมืองที่อยู่นอกทริป (สนามบินกรุงเทพ/โฮจิมินห์ใน TRANSFER_POINTS) ไม่ให้
+      // กลายเป็นชื่อช่วงเมืองบนแผนที่ — ไม่มีวันไหนเที่ยวเมืองพวกนั้น
       city: isHotelAnchorId(stop.place.id)
         ? cityFromCoords(stop.place.lat, stop.place.lng)
-        : stop.place.city,
+        : isCity(stop.place.city)
+          ? stop.place.city
+          : null,
     });
   }
 

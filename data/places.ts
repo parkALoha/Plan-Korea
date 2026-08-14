@@ -23,7 +23,10 @@ export type Place = {
   nameLocal?: string;
   /** ที่อยู่ในภาษาท้องถิ่น — บนแท็กซี่เกาหลี ที่อยู่ใช้ได้ดีกว่าชื่อร้าน เพราะคนขับป้อนเข้านำทางได้ตรงๆ */
   addressLocal?: string;
-  city: "hanoi" | "busan" | "sokcho" | "gangneung" | "seoul" | "suwon";
+  /** เมืองที่สถานที่นี้อยู่ · `bangkok`/`hcmc` มีไว้ให้สนามบินต้นทาง/ต่อเครื่องใน `TRANSFER_POINTS`
+   *  เท่านั้น (ไม่มีวันไหนใน `ITINERARY` เป็นเมืองพวกนี้ — `Day["city"]` ยังเป็น 6 เมืองเดิม)
+   *  จึงไม่มีวันถูกส่งเข้า `cityCenter()` ที่หารด้วยจำนวนสถานที่ในเมืองนั้น */
+  city: "hanoi" | "busan" | "sokcho" | "gangneung" | "seoul" | "suwon" | "bangkok" | "hcmc";
   category: Category;
   descriptionTh: string;
   lat: number;
@@ -42,14 +45,20 @@ export type Place = {
  * ภาษาท้องถิ่นของแต่ละเมือง — ใช้ตอนขอชื่อจาก Places API (`languageCode`) และตอนเลือกแอปแผนที่ที่จะเปิด
  * ทริปนี้ไม่ได้มีแต่เกาหลี (แวะฮานอย 11 ต.ค.) จึงเก็บเป็น "ภาษาท้องถิ่น" ไม่ใช่ "ภาษาเกาหลี" ตายตัว
  */
-export const CITY_LOCALE: Record<Place["city"], "ko" | "vi"> = {
+// `as const satisfies` ไม่ใช่ `: Record<...>` โดยตั้งใจ — เขียนแบบหลัง ทุกการ index จะได้ union
+// เต็ม `"ko" | "vi" | "th"` กลับมาเสมอ แม้ index ด้วยเมืองของทริปที่เป็นไปไม่ได้ที่จะเป็นไทย
+// แล้ว `useDayOpeningHours(…, CITY_LOCALE[day.city])` ก็พังทั้งที่ค่าจริงเป็นไปไม่ได้
+export const CITY_LOCALE = {
   hanoi: "vi",
   busan: "ko",
   sokcho: "ko",
   gangneung: "ko",
   seoul: "ko",
   suwon: "ko",
-};
+  // สนามบินต้นทาง/ต่อเครื่องเท่านั้น ไม่มีวันไหนของทริปเป็นเมืองนี้
+  bangkok: "th",
+  hcmc: "vi",
+} as const satisfies Record<Place["city"], "ko" | "vi" | "th">;
 
 /** เมืองนี้อยู่ในเกาหลีไหม — Naver/Kakao มีประโยชน์เฉพาะในเกาหลี ที่ฮานอย Google ใช้ได้ดีกว่า */
 export function isKoreanCity(city: Place["city"]): boolean {

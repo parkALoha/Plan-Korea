@@ -30,7 +30,7 @@ export function LocalNameCard({
   if (!nameLocal && !addressLocal) return null;
 
   const locale = CITY_LOCALE[place.city];
-  const localeLabel = locale === "ko" ? "เกาหลี" : "เวียดนาม";
+  const localeLabel = { ko: "เกาหลี", vi: "เวียดนาม", th: "ไทย" }[locale];
 
   async function copy(text: string, which: "name" | "address") {
     try {

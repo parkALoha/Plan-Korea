@@ -11,7 +11,7 @@ import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
-import { hotelForStop } from "@/lib/hotelLegs";
+import { hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
 import type { DayWeather } from "@/lib/weather";
@@ -200,6 +200,13 @@ export function DayStopsSection({
   const mapInView = useInViewOnce(mapWrapRef);
   const hasMapPoints = schedule.some((s) => s.place != null);
 
+  // ที่พักที่ตื่นมาจากคืนก่อนหน้า ในรูป Place — ให้แถว `placeId: "@hotel"` ของตารางบิน
+  // (เช่น "เช็คเอาต์ + ออกจากโรงแรมโซล" เช้าวันกลับ) เปิดดูรายละเอียดได้เหมือนสถานที่อื่น
+  const startHotelPlace = useMemo(
+    () => (startHotel ? hotelToPlace(startHotel, day.city) : null),
+    [startHotel, day.city]
+  );
+
   useEffect(() => {
     if (!activeStopId) return;
     rowRefs.current.get(activeStopId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -328,7 +335,11 @@ export function DayStopsSection({
       )}
 
       {!collapsed && eventsBeforeStops && eventsBeforeStops.length > 0 && (
-        <DayEventsPanel events={eventsBeforeStops} />
+        <DayEventsPanel
+          events={eventsBeforeStops}
+          hotelPlace={startHotelPlace}
+          customPlaces={customPlaces}
+        />
       )}
 
       {!collapsed && hasMapPoints && (
@@ -619,7 +630,12 @@ export function DayStopsSection({
       )}
 
       {!collapsed && eventsAfterStops.length > 0 && (
-        <DayEventsPanel events={eventsAfterStops} heading="✈️ ต่อจากนั้น" />
+        <DayEventsPanel
+          events={eventsAfterStops}
+          heading="✈️ ต่อจากนั้น"
+          hotelPlace={startHotelPlace}
+          customPlaces={customPlaces}
+        />
       )}
 
       {suggestingRoute && (

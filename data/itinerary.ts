@@ -4,6 +4,8 @@
  * เก็บข้อมูลไว้เฉยๆ เพราะเป็นบันทึกว่า "ตอนวางแผนแรกคิดว่าวันไหนควรไปที่ไหนบ้าง" ซึ่งยังอ่านมีประโยชน์
  * ถ้าจะลบทิ้งจริงต้องเอา `Day.slots` ออกด้วยทั้งหมด
  */
+import type { Place } from "@/data/places";
+
 export type Slot = {
   id: string;
   label: string;
@@ -71,6 +73,17 @@ export type DayEvent = {
    *  เคสจริงคือ VN428 ที่ออกตี 1:15 = วันที่ 12 แต่แสดงอยู่ในการ์ดวันที่ 11 เพราะเป็นช่วงต่อเนื่องกัน
    *  — เอกสารที่ยื่นให้ ตม. ต้องขึ้นวันที่ให้ถูก ไม่งั้นวันบินเข้าประเทศคลาดไป 1 วัน */
   dayOffset?: number;
+  /** สถานที่จริงของแถวนี้ — id ใน `PLACES`, `TRANSFER_POINTS` หรือ `custom_places` ของ Supabase
+   *  (resolve ด้วย `lib/eventPlace.ts` ที่ส่ง customPlaces เข้าไปให้)
+   *  ใส่แล้วแถวในตารางบินจะมีรูปย่อ + กดเปิดดูรายละเอียด/แผนที่/นำทางได้เหมือนแถวจุดแวะปกติ
+   *  ค่าพิเศษ `"@hotel"` = ที่พักที่ตื่นมาจากคืนก่อนหน้า (พิกัดมาจาก `trip_hotels` ตอน render
+   *  ไม่ใช่ค่าคงที่ในไฟล์นี้) ใช้กับแถวเช็คเอาต์ของวันกลับ
+   *
+   *  📌 `"home-base"` = ที่พักของเราเองที่กรุงเทพ อยู่ใน `custom_places` **ไม่ใช่ในโค้ด** เพราะเป็น
+   *  ที่อยู่จริงของเจ้าของทริป · ชื่อ/พาดหัวในไฟล์นี้จึงเขียนกลางๆ ว่า "ที่พัก" ชื่อจริงมาจาก DB ตอน render
+   *
+   *  เที่ยวบินให้ผูกกับ**สนามบินปลายทาง** — คำถามที่ต้องการคำตอบตอนกดคือ "ลงที่ไหน ต่อยังไง" */
+  placeId?: string;
   /** มีค่าเมื่อ kind === "flight" */
   flight?: FlightInfo;
   /** มีค่าเมื่อ kind === "layover" */
@@ -114,8 +127,20 @@ export const ITINERARY: Day[] = [
     noHotel: true,
     events: [
       {
+        time: "07:30",
+        icon: "🏠",
+        placeId: "home-base",
+        title: "ออกจากที่พัก ไปสุวรรณภูมิ",
+        titleEn: "Leave home for Suvarnabhumi",
+        detail:
+          "เผื่อ ~1 ชม. 25 น. ให้ถึงสนามบิน 08:55 · เช้าวันอาทิตย์ถนนปกติโล่ง · วิธีเดินทางกับเวลาที่เผื่อไว้อยู่ในรายละเอียดของที่พัก (แตะแถวนี้) · เวลานี้เป็นคำแนะนำ ปรับเองได้",
+        kind: "transfer",
+        editable: true,
+      },
+      {
         time: "08:55",
         icon: "🛫",
+        placeId: "airport-bkk",
         title: "ถึงสุวรรณภูมิ (เช็คอิน VN610)",
         titleEn: "Arrive Suvarnabhumi — check in VN610",
         detail: "เผื่อ 3 ชม. ก่อนบิน — บินระหว่างประเทศช่วงเที่ยงคนแน่น",
@@ -126,6 +151,7 @@ export const ITINERARY: Day[] = [
         time: "11:55",
         endTime: "13:55",
         icon: "✈️",
+        placeId: "airport-han",
         title: "VN610 กรุงเทพ (สุวรรณภูมิ) → ฮานอย",
         titleEn: "VN610 Bangkok (BKK) → Hanoi (HAN)",
         detail: "เวียดนามแอร์ไลน์ · 2 ชม. · เวลาไทย = เวลาเวียดนาม (ไม่ต้องปรับนาฬิกา)",
@@ -142,6 +168,7 @@ export const ITINERARY: Day[] = [
         time: "13:55",
         endTime: "01:15",
         icon: "⏳",
+        placeId: "airport-han",
         title: "พักเครื่องที่ฮานอย 11 ชม. 20 น.",
         titleEn: "Layover in Hanoi — 11 h 20 m",
         detail: "ยาวพอออกไปเที่ยวเมืองเก่าได้สบายๆ แล้วกลับมาขึ้น VN428 ตี 1:15",
@@ -156,6 +183,7 @@ export const ITINERARY: Day[] = [
       {
         time: "15:30",
         icon: "🚕",
+        placeId: "hanoi-st-joseph",
         title: "ถึงย่านเมืองเก่า — เริ่มจากโบสถ์เซนต์โจเซฟ",
         titleEn: "Arrive Hanoi Old Quarter — start at St. Joseph's Cathedral",
         detail:
@@ -167,6 +195,7 @@ export const ITINERARY: Day[] = [
       {
         time: "21:00",
         icon: "🚕",
+        placeId: "airport-han",
         title: "ออกจากถนนคนเดินกลับสนามบิน Noi Bai (T2)",
         titleEn: "Leave the Walking Street for Noi Bai Airport (T2)",
         detail:
@@ -180,6 +209,7 @@ export const ITINERARY: Day[] = [
         time: "21:50",
         endTime: "00:30",
         icon: "🚿",
+        placeId: "airport-han",
         title: "อาบน้ำพักผ่อนที่ Sông Hồng Premium Lounge",
         titleEn: "Shower & rest at Song Hong Premium Lounge",
         detail:
@@ -189,6 +219,7 @@ export const ITINERARY: Day[] = [
         time: "01:15",
         endTime: "07:05",
         icon: "✈️",
+        placeId: "airport-pus",
         title: "VN428 ฮานอย → กิมแฮ (ปูซาน) — ออกตี 1:15 ของวันที่ 12",
         titleEn: "VN428 Hanoi (HAN) → Busan (PUS) — departs 01:15 on 12 Oct",
         detail: "3 ชม. 50 น. · นอนบนเครื่อง · เกาหลีเร็วกว่าไทย 2 ชม. (07:05 ที่เกาหลี = 05:05 ไทย)",
@@ -224,6 +255,7 @@ export const ITINERARY: Day[] = [
       {
         time: "07:05",
         icon: "🛬",
+        placeId: "airport-pus",
         title: "VN428 ลงที่กิมแฮ (ปูซาน)",
         titleEn: "VN428 arrives Busan (PUS)",
         detail: "ผ่าน ตม. + รับกระเป๋า ~1 ชม. · เข้าเมืองด้วยสาย BGL/รถไฟฟ้าสาย 2 หรือลิมูซีน ~45-60 น.",
@@ -239,6 +271,7 @@ export const ITINERARY: Day[] = [
       {
         time: "10:00",
         icon: "🚌",
+        placeId: "busan-seomyeon",
         title: "ถึงย่านซอมยอน (โดยประมาณ)",
         titleEn: "Arrive Seomyeon, Busan (approx.)",
         detail:
@@ -468,6 +501,7 @@ export const ITINERARY: Day[] = [
       {
         time: "05:45",
         icon: "🧳",
+        placeId: "@hotel",
         title: "เช็คเอาต์ + ออกจากโรงแรมโซล",
         titleEn: "Check out and leave the Seoul hotel",
         detail:
@@ -481,6 +515,7 @@ export const ITINERARY: Day[] = [
         time: "06:15",
         endTime: "07:15",
         icon: "🚆",
+        placeId: "station-seoul",
         title: "AREX โซล → อินชอน (ICN)",
         titleEn: "AREX Seoul → Incheon (ICN)",
         detail:
@@ -491,9 +526,14 @@ export const ITINERARY: Day[] = [
       {
         time: "07:35",
         icon: "🛂",
+        placeId: "airport-icn",
         title: "ถึง ICN — เช็คอิน VN409",
         titleEn: "Arrive ICN — check in VN409",
         detail: "เผื่อ 3 ชม. ก่อนบิน · เผื่อเวลาคืน T-money / ขอคืนภาษี (Tax refund) ก่อนเข้าเกต",
+        // เดดไลน์ของวันนี้ — วันนี้ยังไม่มีจุดแวะสักจุด แถบเตือนจึงยังไม่มีอะไรให้เตือน แต่พอเติม
+        // จุดแวะเมื่อไหร่ (เช่นแถว "✈️ ไปสนามบิน") จะได้เตือนทันทีถ้าตารางลากยาวเลยเวลาเช็คอิน
+        // — ก่อนหน้านี้ทั้งวันไม่มี anchor "after" เลย ต่างจากวัน 11 ที่มีเดดไลน์ 21:00 คุมอยู่
+        anchor: "after",
         kind: "checkin",
         editable: true,
       },
@@ -501,6 +541,7 @@ export const ITINERARY: Day[] = [
         time: "10:35",
         endTime: "13:45",
         icon: "✈️",
+        placeId: "airport-sgn",
         title: "VN409 อินชอน → โฮจิมินห์",
         titleEn: "VN409 Incheon (ICN) → Ho Chi Minh City (SGN)",
         detail: "5 ชม. 10 น. · เวียดนามช้ากว่าเกาหลี 2 ชม. (13:45 ที่เวียดนาม = 15:45 เกาหลี)",
@@ -517,6 +558,7 @@ export const ITINERARY: Day[] = [
         time: "13:45",
         endTime: "16:50",
         icon: "⏳",
+        placeId: "airport-sgn",
         title: "ต่อเครื่องที่โฮจิมินห์ 3 ชม. 5 น.",
         titleEn: "Layover in Ho Chi Minh City — 3 h 5 m",
         detail: "อยู่ในเขต transit ของอาคารระหว่างประเทศ ไม่ต้องออกไปไหน · เผื่อเวลาตรวจความปลอดภัยรอบสอง",
@@ -532,6 +574,7 @@ export const ITINERARY: Day[] = [
         time: "14:00",
         endTime: "16:00",
         icon: "🛋️",
+        placeId: "airport-sgn",
         title: "พักที่ Rose Business Lounge (SGN, Terminal 2)",
         titleEn: "Rest at Rose Business Lounge (SGN, Terminal 2)",
         detail:
@@ -541,9 +584,10 @@ export const ITINERARY: Day[] = [
         time: "16:50",
         endTime: "18:30",
         icon: "🛬",
+        placeId: "airport-bkk",
         title: "VN607 โฮจิมินห์ → กรุงเทพ (สุวรรณภูมิ)",
         titleEn: "VN607 Ho Chi Minh City (SGN) → Bangkok (BKK)",
-        detail: "1 ชม. 40 น. · ถึงไทย 18:30 — จบทริป",
+        detail: "1 ชม. 40 น. · ถึงไทย 18:30",
         kind: "flight",
         flight: {
           no: "VN607",
@@ -552,6 +596,17 @@ export const ITINERARY: Day[] = [
           fromEn: "Ho Chi Minh City (Tan Son Nhat)",
           toEn: "Bangkok (Suvarnabhumi)",
         },
+      },
+      {
+        time: "20:15",
+        icon: "🏠",
+        placeId: "home-base",
+        title: "กลับถึงที่พัก — จบทริป",
+        titleEn: "Home — end of trip",
+        detail:
+          "เผื่อ ~1 ชม. 45 น. จากล้อแตะ 18:30: ผ่าน ตม.ไทย + รอกระเป๋า ~45-60 น. แล้ว ARL/แท็กซี่เข้าเมืองอีก ~40-50 น. · เวลานี้เป็นคำแนะนำ ปรับเองได้",
+        kind: "transfer",
+        editable: true,
       },
     ],
     slots: [],
@@ -574,6 +629,19 @@ export const CITY_NAME_EN: Record<Day["city"], string> = {
   gangneung: "Gangneung",
   seoul: "Seoul",
   suwon: "Suwon",
+};
+
+/**
+ * ชื่อไทยของ**ทุกเมืองที่สถานที่หนึ่งอาจอยู่ได้** — กว้างกว่า `CITY_NAME_TH` ที่เป็นเมืองของทริปเท่านั้น
+ *
+ * แยกกันสองตัวโดยตั้งใจ: `lib/citySegments.ts` ใช้ `Object.keys(CITY_NAME_TH)` เป็นรายชื่อเมือง
+ * ของทริปไปหาว่าพิกัดหนึ่งอยู่เมืองไหน — เติมกรุงเทพ/โฮจิมินห์เข้าไปในนั้นจะทำให้ช่วงเมืองบนแผนที่
+ * รายวันเพี้ยน ส่วนตัวนี้ใช้เฉพาะตอนต้องเอ่ยชื่อเมืองของ `Place` ที่อาจเป็นสนามบินนอกเกาหลี
+ */
+export const PLACE_CITY_NAME_TH: Record<Place["city"], string> = {
+  ...CITY_NAME_TH,
+  bangkok: "กรุงเทพ",
+  hcmc: "โฮจิมินห์",
 };
 
 export const CITY_META: Record<

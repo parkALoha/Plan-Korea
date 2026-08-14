@@ -82,9 +82,9 @@ export function TransferEditModal({
         {/* แยกกลุ่มสนามบิน/สถานี — รวมกันเป็นลิสต์เดียว 11 อันแล้วหาของที่ต้องการไม่เจอ
             เมืองของวันนี้ขึ้นก่อนในแต่ละกลุ่ม เพราะเกือบทุกครั้งคือที่ที่ต้องการ */}
         {GROUPS.map((group) => {
-          const points = TRANSFER_POINTS.filter((p) => p.transferKind === group.kind).sort(
-            (a, b) => Number(b.city === day.city) - Number(a.city === day.city)
-          );
+          const points = TRANSFER_POINTS.filter(
+            (p) => p.transferKind === group.kind && !p.pickerHidden
+          ).sort((a, b) => Number(b.city === day.city) - Number(a.city === day.city));
           return (
             <div key={group.kind} className="mb-3 last:mb-0">
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-content-soft/70">

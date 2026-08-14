@@ -7,7 +7,8 @@ import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
-import { applyOvernightOverrides, hotelForStop } from "@/lib/hotelLegs";
+import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
+import { resolveEventPlace } from "@/lib/eventPlace";
 import {
   TRAVEL_MODE_EMOJI,
   TRAVEL_MODE_LABEL,
@@ -112,6 +113,8 @@ function SummaryDayCard({
   const meta = CITY_META[day.city];
   // แถวที่กดเปิดดูรายละเอียดอยู่ — หน้านี้ยังอ่านอย่างเดียวเหมือนเดิม โมดัลไม่มีปุ่มแก้อะไรเลย
   const [viewIndex, setViewIndex] = useState<number | null>(null);
+  // แถวตารางบินที่กดอยู่ — คนละสเตทกับ viewIndex เพราะไม่ได้อ้างดัชนีใน schedule (คนละลิสต์กัน)
+  const [viewEventPlace, setViewEventPlace] = useState<Place | null>(null);
   const {
     schedule,
     daySchedule,
@@ -139,6 +142,8 @@ function SummaryDayCard({
   );
 
   const allEvents = [...(eventsBeforeStops ?? []), ...eventsAfterStops];
+  // ที่พักคืนก่อนหน้าในรูป Place — ให้แถว `placeId: "@hotel"` (เช็คเอาต์เช้าวันกลับ) มีรูป/รายละเอียด
+  const startHotelPlace = startHotel ? hotelToPlace(startHotel, day.city) : null;
 
   return (
     <section className="mb-4 overflow-hidden rounded-2xl border border-line bg-surface-raised shadow-sm shadow-ink/5 print:break-inside-avoid print:shadow-none">
@@ -172,34 +177,86 @@ function SummaryDayCard({
         {day.noHotel && <div className="mt-1 text-xs opacity-90">{t("travelDayNoHotel")}</div>}
       </div>
 
+      {/* แถวตารางบินใช้โครงเดียวกับแถวจุดแวะด้านล่างเป๊ะๆ (เวลา w-12 · รูป h-12 · ชื่อ font-semibold)
+          — เดิมเป็นลิสต์ตัวหนังสือย่อส่วนคนละทรง ทำให้วันบิน 11/21 ต.ค. ดูเป็นคนละหน้ากับวันอื่น */}
       {allEvents.length > 0 && (
-        <div className="border-b border-line bg-surface-soft/60 px-4 py-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+        <div className="border-b border-line">
+          <div className="bg-surface-soft/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
             {t("fixedTimes")}
           </div>
-          <div className="mt-1 space-y-1">
-            {allEvents.map((event, i) => (
-              <div
-                key={i}
-                className={`flex items-start gap-2.5 rounded-lg px-2 py-1 text-xs ${
-                  event.alert ? "bg-panel-maple/70 text-panel-maple-ink" : "text-content"
-                }`}
-              >
-                <div className="w-[4.5rem] shrink-0 text-right font-semibold tabular-nums">
-                  {event.time}
-                  {event.endTime && <div className="font-normal text-content-soft">↓ {event.endTime}</div>}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium">
-                    {event.icon} {(en && event.titleEn) || event.title}
+          <div className="divide-y divide-line">
+            {allEvents.map((event, i) => {
+              const place = resolveEventPlace(event, startHotelPlace, customPlaces);
+              // แถวเตือน/เดดไลน์ใช้คู่สี panel-maple เหมือนเดิม — ในแถวนั้นปล่อยให้สีตัวอักษรไหลลงมา
+              // จากตัวแถว ไม่ทับด้วย text-content ไม่งั้นจะได้ครีมบนครีมตอนธีมมืด
+              const alert = event.alert === true;
+              const body = (
+                <div className="flex w-full items-start gap-2 text-left">
+                  <div
+                    className={`w-12 shrink-0 text-center text-[11px] leading-tight ${
+                      alert ? "opacity-80" : "text-content-soft"
+                    }`}
+                  >
+                    <div className={`font-semibold tabular-nums ${alert ? "" : "text-content"}`}>
+                      {event.time}
+                    </div>
+                    {event.endTime && <div className="tabular-nums">↓ {event.endTime}</div>}
                   </div>
-                  {event.detail && !en && (
-                    <div className="mt-0.5 leading-relaxed text-content-soft">{event.detail}</div>
+                  {place ? (
+                    <PlaceThumb
+                      query={placeQueryKey(place)}
+                      category={place.category}
+                      className="h-12 w-12 shrink-0"
+                    />
+                  ) : (
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-xl">
+                      {event.icon}
+                    </span>
                   )}
-                  {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={`font-semibold ${alert ? "" : "text-content"} ${
+                        place ? "hover:underline" : ""
+                      }`}
+                    >
+                      {place ? `${event.icon} ` : ""}
+                      {(en && event.titleEn) || event.title}
+                    </div>
+                    {place && (
+                      <div className={`text-xs ${alert ? "opacity-80" : "text-content-soft"}`}>
+                        📍 {en ? placeNameEn(place, namesEn) : place.nameTh}
+                      </div>
+                    )}
+                    {/* เรทติ้ง/เวลาเปิด-ปิดจาก Google ชุดเดียวกับแถวจุดแวะ — ไม่ยิง API เพิ่ม (แคชร่วมกัน) */}
+                    {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
+                    {event.detail && !en && (
+                      <div
+                        className={`mt-0.5 text-xs leading-relaxed ${
+                          alert ? "opacity-80" : "text-content-soft"
+                        }`}
+                      >
+                        {event.detail}
+                      </div>
+                    )}
+                    {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+              return (
+                <div
+                  key={i}
+                  className={`px-3 py-2.5 sm:px-4 ${alert ? "bg-panel-maple/70 text-panel-maple-ink" : ""}`}
+                >
+                  {place ? (
+                    <button onClick={() => setViewEventPlace(place)} className="w-full">
+                      {body}
+                    </button>
+                  ) : (
+                    body
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -365,6 +422,15 @@ function SummaryDayCard({
           userNote={stops[viewIndex]?.note}
           userPhotoUrl={stops[viewIndex]?.photo_url}
           onClose={() => setViewIndex(null)}
+        />
+      )}
+
+      {viewEventPlace && (
+        <PlaceDetailModal
+          place={viewEventPlace}
+          previousPlace={null}
+          hotel={hotel}
+          onClose={() => setViewEventPlace(null)}
         />
       )}
     </section>

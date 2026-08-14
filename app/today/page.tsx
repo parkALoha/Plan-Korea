@@ -7,7 +7,9 @@ import type { Place } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
-import { applyOvernightOverrides, hotelForStop } from "@/lib/hotelLegs";
+import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
+import { resolveEventPlace } from "@/lib/eventPlace";
+import { LayoverBadges } from "@/components/LayoverBadges";
 import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
@@ -200,8 +202,15 @@ export default function TodayPage() {
   const startHotel = hotelBeforeDay(day.id);
 
   // อ่านค่าเดียวกับหน้าแผนเป๊ะๆ (เวลาออกเดินทาง + โหมดขากลับที่พัก) ไม่งั้นเวลาสองหน้าจะไม่ตรงกัน
-  const { schedule, startAnchor, endAnchor, daySchedule, openingHoursByQuery, beforeAnchorEvent, afterAnchorEvent } =
-    useDaySchedule({
+  const {
+    schedule,
+    startAnchor,
+    endAnchor,
+    daySchedule,
+    openingHoursByQuery,
+    eventsBeforeStops,
+    eventsAfterStops,
+  } = useDaySchedule({
       day,
       stops: dayStops,
       customPlaces,
@@ -308,6 +317,13 @@ export default function TodayPage() {
   // ดูรายละเอียดสถานที่แบบเดียวกับหน้าแผน — เก็บแค่ id แล้วหา place/index สดจาก dayStops/schedule
   // ทุกครั้งที่ render กันข้อมูลค้างเวลาสลับวันหรือ schedule คำนวณใหม่ (delay เลื่อนเวลา ฯลฯ)
   const [detailStopId, setDetailStopId] = useState<string | null>(null);
+  // สถานที่ของแถวตารางบินที่กดอยู่ — คนละสเตทกับ detailStopId เพราะแถวพวกนี้ไม่ใช่ trip_stops
+  const [detailEventPlace, setDetailEventPlace] = useState<Place | null>(null);
+
+  // ตารางบิน/เวลาตายตัวทั้งวัน — เดิมหน้านี้โชว์แค่ 2 แถว (anchor หน้า/หลัง) ที่เหลือหายไปหมด
+  // วันกลับจึงไม่เห็น AREX / เช็คอิน ICN / เที่ยวบินสักแถว ทั้งที่เป็นวันที่ต้องพึ่งหน้านี้ที่สุด
+  const allEvents = [...(eventsBeforeStops ?? []), ...eventsAfterStops];
+  const startHotelPlace = startHotel ? hotelToPlace(startHotel, day.city) : null;
   const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const detailIndex = detailStopId ? dayStops.findIndex((s) => s.id === detailStopId) : -1;
 
@@ -448,15 +464,75 @@ export default function TodayPage() {
             </div>
           )}
 
-          {beforeAnchorEvent && (
-            <div className="mb-3 rounded-xl bg-surface-soft px-3 py-2 text-xs text-content">
-              {beforeAnchorEvent.icon} {beforeAnchorEvent.title} ({beforeAnchorEvent.time})
-            </div>
-          )}
-          {afterAnchorEvent && (
-            <div className="mb-3 rounded-xl bg-panel-maple/70 px-3 py-2 text-xs font-medium text-panel-maple-ink">
-              {afterAnchorEvent.icon} {afterAnchorEvent.title} ({afterAnchorEvent.time})
-            </div>
+          {/* ตารางบิน/เวลาตายตัว — โครงแถวเดียวกับลิสต์ "ถัดจากนี้" ด้านล่างเป๊ะๆ
+              (เวลา w-12 · ไอคอน/รูป h-9 · ชื่อ truncate · ลูกศร › ตอนกดได้) */}
+          {allEvents.length > 0 && (
+            <section className="mb-5">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
+                ✈️ เวลาตายตัวของวันนี้
+              </h2>
+              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface-raised">
+                {allEvents.map((event, i) => {
+                  const place = resolveEventPlace(event, startHotelPlace, customPlaces);
+                  const alert = event.alert === true;
+                  const row = (
+                    <>
+                      <span
+                        className={`w-12 shrink-0 text-center font-semibold tabular-nums ${
+                          alert ? "" : "text-content-soft"
+                        }`}
+                      >
+                        {event.time}
+                      </span>
+                      {place ? (
+                        <PlaceThumb
+                          query={placeQueryKey(place)}
+                          category={place.category}
+                          className="h-9 w-9 shrink-0"
+                        />
+                      ) : (
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-base">
+                          {event.icon}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate ${alert ? "font-medium" : "text-content"}`}>
+                          {place ? `${event.icon} ` : ""}
+                          {event.title}
+                        </span>
+                        <span
+                          className={`block truncate text-xs ${alert ? "opacity-80" : "text-content-soft"}`}
+                        >
+                          {event.endTime ? `ถึง ${event.endTime}` : null}
+                          {event.endTime && place ? " · " : null}
+                          {place ? `📍 ${place.nameTh}` : null}
+                        </span>
+                        {event.layover && <LayoverBadges layover={event.layover} />}
+                      </span>
+                      {place && <span className="shrink-0 text-content-soft/50">›</span>}
+                    </>
+                  );
+                  const tone = alert ? "bg-panel-maple/70 text-panel-maple-ink" : "";
+                  return place ? (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setDetailEventPlace(place)}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60 active:opacity-70 ${tone}`}
+                    >
+                      {row}
+                    </button>
+                  ) : (
+                    <div
+                      key={i}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm ${tone}`}
+                    >
+                      {row}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           )}
 
           {delayMinutes !== 0 && (
@@ -858,6 +934,14 @@ export default function TodayPage() {
           onUpdatePhoto={(url) => updatePhoto(detailStop.id, url)}
           warningMessage={detailWarningMessage}
           onClose={() => setDetailStopId(null)}
+        />
+      )}
+      {detailEventPlace && (
+        <PlaceDetailModal
+          place={detailEventPlace}
+          previousPlace={null}
+          hotel={endHotel}
+          onClose={() => setDetailEventPlace(null)}
         />
       )}
       {zoomed && (
