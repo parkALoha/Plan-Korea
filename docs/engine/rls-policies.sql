@@ -116,7 +116,23 @@ revoke usage on schema public from anon;
 
 -- authenticated ได้ GRANT ระดับตาราง แต่ยังต้องผ่าน RLS ทีละแถวอยู่ดี
 grant usage on schema public to authenticated;
-grant select, insert, update, delete on all tables in schema public to authenticated;
+grant select, insert, update on all tables in schema public to authenticated;
+
+-- 🔴 **ไม่ grant DELETE ให้ใครเลย ยกเว้น trip_members** (ข้อ ① ของ D18)
+-- soft delete รับหน้าที่ "ลบ" ไปแล้ว → `DELETE` จริงเหลือความหมายเดียวคือทำลายถาวรกู้ไม่ได้
+-- ซึ่งไม่มีหน้าไหนต้องใช้ · การ purge เป็นงานของ service role ที่ไม่อยู่ใต้ RLS อยู่แล้ว
+--
+-- ทำที่ชั้น GRANT **เพิ่มเติมจาก**การไม่มี DELETE policy ไม่ใช่แทนกัน:
+--   ไม่มี policy = RLS ปฏิเสธ (เพียงพอในทางเทคนิค)
+--   ไม่มี GRANT  = ปฏิเสธก่อนถึง RLS **และยังปฏิเสธอยู่ต่อให้วันหนึ่งมีคนเผลอเพิ่ม policy DELETE กลับมา**
+-- สองชั้นนี้ต้องพลาดพร้อมกันจึงจะเปิดช่องทำลายข้อมูลได้อีก — เทียบกับชั้นเดียวที่พลาดครั้งเดียวก็พอ
+revoke delete on all tables in schema public from authenticated;
+alter default privileges in schema public revoke delete on tables from authenticated;
+
+-- ข้อยกเว้นเดียว: การออกจากทริปเอง / owner ถอดสมาชิก — ไม่ใช่ soft delete
+-- (แถวสมาชิกที่ถูก soft delete ไว้จะทำให้ `app.trip_role()` ต้องกรอง `deleted_at` ทุกครั้ง
+--  ซึ่งเพิ่มโอกาสพลาดในจุดที่พลาดไม่ได้ที่สุดของทั้งไฟล์ — ยอมให้ลบจริงตรงนี้ปลอดภัยกว่า)
+grant delete on public.trip_members to authenticated;
 
 -- catalog: อ่านได้ทุกคนรวม anon (หน้า landing/สาธารณะต้องโชว์ชื่อประเทศ/เมืองได้ก่อนล็อกอิน)
 -- **ไม่ให้ insert/update/delete แม้แต่ authenticated** — ปิดช่อง "สมาชิกคนหนึ่งแก้ชื่อเมือง
@@ -360,10 +376,8 @@ create policy "trips: owner updates"
 -- เป็นเท็จในสายตาของ policy (เพราะยังตัดสินจาก trip_members ไม่ใช่จาก owner_id) จึงถูกปฏิเสธ
 -- ⚠️ การโอนสิทธิ์ owner ต้องทำผ่าน trip_members + ฟังก์ชันเฉพาะ ไม่ใช่ UPDATE คอลัมน์นี้ (ส่วนที่ 9)
 
-create policy "trips: owner deletes"
-  on public.trips for delete to authenticated
-  using (app.is_trip_owner(id));
--- ปิดช่อง: editor ลบทริปทั้งก้อน · วันนี้ใครก็ลบ trip_plans ได้ซึ่ง cascade ทิ้ง trip_stops ทั้งแผน
+-- ไม่มี DELETE policy — ข้อ ③ ของ D18: ลบทริปเป็น soft delete (UPDATE `deleted_at`) ผ่าน
+-- policy "trips: owner updates" ข้างบน · owner เท่านั้นที่ลบได้เหมือนเดิม แต่กู้คืนได้
 
 -- ── 4.3 trip_members — แหล่งความจริงเดียวของสิทธิ์ ─────────────────────────────────
 alter table public.trip_members enable row level security;
@@ -420,9 +434,6 @@ create policy "trip_days: editor updates"
 -- แล้วจุดแวะทั้งวันก็ไหลตามไปด้วย เพราะ trip_stops ผูกกับ trip_day_id ไม่ได้ผูก trip_id
 -- `with check` เป็นบรรทัดเดียวที่กันเรื่องนี้ · ตัดออกแล้วรูใหญ่กว่าที่เห็น
 
-create policy "trip_days: editor deletes"
-  on public.trip_days for delete to authenticated
-  using (app.can_write_trip(trip_id));
 
 -- คอลัมน์ is_locked (มาจาก trip_day_settings.is_locked วันนี้) บังคับด้วย trigger ไม่ใช่ policy
 -- เพราะต้องล็อกเฉพาะคอลัมน์เชิงโครงสร้าง แต่ยังให้ติ๊ก visited_at ได้ — ดูส่วนที่ 9
@@ -490,9 +501,6 @@ create policy "trip_hotels: editor updates"
 -- (hooks/useHotels.tsx:129 ใช้ upsert → ต้องมี UPDATE policy ครบ ไม่ใช่แค่ INSERT
 --  ดูบทเรียนจาก travel_time_cache ในส่วนที่ 7)
 
-create policy "trip_hotels: editor deletes"
-  on public.trip_hotels for delete to authenticated
-  using (app.can_write_trip(trip_id));
 
 -- ── 5.3 trip_plans — แผน A/B ต่อทริป ─────────────────────────────────────────────────
 alter table public.trip_plans enable row level security;
@@ -510,13 +518,12 @@ create policy "trip_plans: editor updates"
   using (app.can_write_trip(trip_id))
   with check (app.can_write_trip(trip_id));
 
-create policy "trip_plans: editor deletes"
-  on public.trip_plans for delete to authenticated
-  using (app.can_write_trip(trip_id));
--- ปิดช่อง: วันนี้ DELETE เป็น `using (true)` และ trip_stops.plan_id เป็น
+-- ไม่มี DELETE policy — 🔴 นี่คือจุดที่ D18 ปิด F6 **ที่รากของมัน**
+-- วันนี้ DELETE เป็น `using (true)` และ `trip_stops.plan_id` เป็น
 -- `references trip_plans(id) on delete cascade` (migration 0006:4)
--- → **ใครก็ลบแผนของใครก็ได้ แล้วจุดแวะทั้งแผนหายตามไปทั้งชุดในคำสั่งเดียว**
--- นี่คือช่องทำลายข้อมูลที่ถูกที่สุดในสคีมาวันนี้ ไม่ต้องรู้อะไรเลยนอกจาก plan id
+-- → ใครก็ลบแผนของใครก็ได้ แล้วจุดแวะทั้งแผนหายทั้งชุดในคำสั่งเดียว = ช่องทำลายข้อมูล
+-- ที่ถูกที่สุดในสคีมาวันนี้ · การไม่มี DELETE policy ทำให้ cascade ไม่มีทางถูกจุดจาก client เลย
+-- **แข็งกว่าการเขียน policy คุม DELETE** เพราะไม่ต้องหวังว่า policy เขียนถูก
 
 -- ── 5.4 trip_settings — แทน trip_meta (แถวเดียว id=1 ทั้งระบบ) ────────────────────────
 --
@@ -563,10 +570,6 @@ create policy "trip_places: editor updates"
   using (app.can_write_trip(trip_id))
   with check (app.can_write_trip(trip_id));
 
-create policy "trip_places: editor deletes"
-  on public.trip_places for delete to authenticated
-  using (app.can_write_trip(trip_id));
--- ปิดช่อง: viewer ลบสถานที่ในคลังของทริปทิ้ง (destructive ไม่ย้อนกลับ ไม่มี soft delete)
 
 -- ── 5.6 trip_stops — ผูกทริปผ่าน trip_day_id ─────────────────────────────────────────
 alter table public.trip_stops enable row level security;
@@ -592,9 +595,6 @@ create policy "trip_stops: editor updates"
 -- เพราะ Postgres ใช้ `using` แทน `with check` ให้เองเมื่อไม่เขียน จึง "ดูเหมือนผ่าน" ในเทสต์
 -- ที่ทดสอบแค่ขาอ่าน → ต้องมีเคสเทสต์ตรงๆ (security-review.md เคส T-07)
 
-create policy "trip_stops: editor deletes"
-  on public.trip_stops for delete to authenticated
-  using (app.can_write_day(trip_day_id));
 
 -- ── 5.7 hidden_places → trip_hidden_places ───────────────────────────────────────────
 alter table public.trip_hidden_places enable row level security;
@@ -607,9 +607,6 @@ create policy "trip_hidden_places: editor writes"
   on public.trip_hidden_places for insert to authenticated
   with check (app.can_write_trip(trip_id));
 
-create policy "trip_hidden_places: editor deletes"
-  on public.trip_hidden_places for delete to authenticated
-  using (app.can_write_trip(trip_id));
 
 -- ไม่มี UPDATE policy — **ตั้งใจ และตรงกับโค้ด** · hooks/useHiddenPlaces.ts ใช้แค่
 -- insert (บรรทัด 89) กับ delete (บรรทัด 100) ไม่มี update/upsert เลย
@@ -634,9 +631,6 @@ create policy "place_notes: editor updates"
   with check (app.can_write_trip(trip_id));
 -- ต้องมี UPDATE: hooks/usePlaceNotes.ts:113 ใช้ upsert
 
-create policy "place_notes: editor deletes"
-  on public.place_notes for delete to authenticated
-  using (app.can_write_trip(trip_id));
 
 -- ── 5.9 bookings — ตารางที่อ่อนไหวที่สุดในระบบ ────────────────────────────────────────
 --
@@ -659,9 +653,6 @@ create policy "bookings: editor updates"
   using (app.can_write_trip(trip_id))
   with check (app.can_write_trip(trip_id));
 
-create policy "bookings: editor deletes"
-  on public.bookings for delete to authenticated
-  using (app.can_write_trip(trip_id));
 
 -- ── 5.9.1 ข้อจำกัดที่ต้องพูดตรงๆ: RLS ซ่อน confirmation_number จาก viewer ไม่ได้ ─────
 --
@@ -694,9 +685,6 @@ create policy "bookings_secret: editor updates"
   using (app.can_write_trip((select b.trip_id from public.bookings b where b.id = booking_id)))
   with check (app.can_write_trip((select b.trip_id from public.bookings b where b.id = booking_id)));
 
-create policy "bookings_secret: editor deletes"
-  on public.bookings_secret for delete to authenticated
-  using (app.can_write_trip((select b.trip_id from public.bookings b where b.id = booking_id)));
 
 -- ── 5.10 checklist_items ─────────────────────────────────────────────────────────────
 alter table public.checklist_items enable row level security;
@@ -714,9 +702,6 @@ create policy "checklist_items: editor updates"
   using (app.can_write_trip(trip_id))
   with check (app.can_write_trip(trip_id));
 
-create policy "checklist_items: editor deletes"
-  on public.checklist_items for delete to authenticated
-  using (app.can_write_trip(trip_id));
 
 -- ── 5.11 RESTRICTIVE: ทริปที่ปิดแล้วห้ามเขียน ─────────────────────────────────────────
 --
@@ -726,23 +711,64 @@ create policy "checklist_items: editor deletes"
 -- ทำไมไม่ยัดเงื่อนไขนี้เข้าไปใน can_write_trip ให้จบ: เพราะแยกไว้แล้ว **อ่านออกจาก
 -- pg_policies ได้ว่ามีกฎนี้อยู่** และเวลาเพิ่มตารางใหม่ในเฟสหน้า การตกหล่นจะเห็นชัด
 -- ตรงข้ามกับการซ่อนไว้ในฟังก์ชันซึ่งไม่มีใครรู้ว่ามีจนกว่าจะไปอ่านตัว body
-create policy "bookings: no writes to archived trip"
-  on public.bookings as restrictive for all to authenticated
-  using (exists (select 1 from public.trips t where t.id = trip_id and t.status <> 'archived'))
-  with check (exists (select 1 from public.trips t where t.id = trip_id and t.status <> 'archived'));
+-- 🔴 อัปเดตหลัง D7/D18: เงื่อนไขต้องเป็น **`live_trip`** ไม่ใช่แค่ `<> 'archived'`
+-- เพราะ soft delete ทำให้ทริปที่ถูก "ลบ" ยังมีแถวอยู่ · `app.can_write_trip()` ตัดสินจาก
+-- `trip_members` เท่านั้น จึงยัง**คืน true สำหรับทริปที่ถูก soft delete ไปแล้ว**
+-- → ถ้าไม่เติม `deleted_at is null` ตรงนี้ สมาชิกยังแก้เนื้อหาของทริปที่ลบแล้วได้ทั้งทริป
+--   ซึ่งจะโผล่กลับมาเป็นข้อมูลที่เปลี่ยนไปเมื่อมีคนกดกู้คืน — พังเงียบและอธิบายยาก
+create or replace function app.trip_is_live(p_trip_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.trips t
+    where t.id = p_trip_id
+      and t.deleted_at is null
+      and t.status <> 'archived'
+  )
+$$;
 
-create policy "trip_stops: no writes to archived trip"
+create policy "bookings: no writes unless trip is live"
+  on public.bookings as restrictive for all to authenticated
+  using (app.trip_is_live(trip_id))
+  with check (app.trip_is_live(trip_id));
+
+create policy "trip_stops: no writes unless trip is live"
   on public.trip_stops as restrictive for all to authenticated
-  using (exists (
-    select 1 from public.trips t
-    where t.id = app.trip_id_of_day(trip_day_id) and t.status <> 'archived'
-  ))
-  with check (exists (
-    select 1 from public.trips t
-    where t.id = app.trip_id_of_day(trip_day_id) and t.status <> 'archived'
-  ));
+  using (app.trip_is_live(app.trip_id_of_day(trip_day_id)))
+  with check (app.trip_is_live(app.trip_id_of_day(trip_day_id)));
 -- ⚠️ ต้องเติมคู่แบบนี้ให้ทุกตารางเนื้อหาที่เหลือตอน E2 · ที่ยกมา 2 ตัวคือรูปแบบตัวอย่าง
 --    เคสเทสต์ T-12 ใน security-review.md ไล่เช็คว่าไม่มีตารางไหนตกหล่น
+--
+-- หมายเหตุว่าทำไมคราวนี้ยอมย้ายเข้าฟังก์ชัน ต่างจากที่ให้เหตุผลไว้ข้างบน:
+-- เงื่อนไขมี 2 ส่วน (`deleted_at` + `status`) และซ้ำในทุกตาราง → เขียนซ้ำมือ 13 ครั้ง
+-- คือ 13 โอกาสที่จะตกส่วนใดส่วนหนึ่ง · **แต่ยังเป็น policy แยกที่อ่านออกจาก `pg_policies` ได้**
+-- ว่าตารางไหนมีกฎนี้ ตารางไหนไม่มี ซึ่งเป็นข้อที่ผมยืนยันไว้แต่แรกและยังถืออยู่
+
+-- ── 5.12 🔴 partial unique index — ข้อ ② ของ D18 · ผูกกับ soft delete แยกกันไม่ได้
+--
+-- 3 ตารางใน public มี PK เป็น **คีย์ธรรมชาติ** (ไม่ใช่ surrogate id) → soft delete แถวหนึ่ง
+-- แล้วสร้างคีย์เดิมซ้ำ = **ชน PK ทันที** · ลำดับที่ผู้ใช้ทำได้ในไม่กี่วินาที:
+--   ซ่อนสถานที่ → เลิกซ่อน → ซ่อนอีกครั้ง = **พัง**
+-- ไม่ใช่เคสมุม เป็นสิ่งที่ผู้ใช้ทำแน่นอน → ต้องลง**พร้อมกับ** soft delete ไม่ใช่ตามหลัง
+alter table public.trip_hidden_places drop constraint if exists trip_hidden_places_pkey;
+create unique index trip_hidden_places_live_key
+  on public.trip_hidden_places (trip_id, place_id) where deleted_at is null;
+
+alter table public.place_notes drop constraint if exists place_notes_pkey;
+create unique index place_notes_live_key
+  on public.place_notes (trip_id, place_id) where deleted_at is null;
+
+alter table public.trip_settings drop constraint if exists trip_settings_pkey;
+create unique index trip_settings_live_key
+  on public.trip_settings (trip_id) where deleted_at is null;
+-- ⚠️ ตารางพวกนี้ต้องมี surrogate `id uuid primary key` มาแทน PK เดิม ไม่งั้นไม่มีอะไรให้ FK ชี้
+--    และ realtime ไม่มี PK ให้ส่งใน payload — เป็นงานของ P1 ตอนเขียน DDL จริง
+-- ⚠️ `travel_time_cache` มีคีย์ธรรมชาติเหมือนกัน แต่ย้ายไป schema `cache` แล้วและ
+--    **ไม่ควรมี soft delete เลย** (แคชล้างทิ้งได้ ไม่ใช่ข้อมูลผู้ใช้) — ดูส่วนที่ 7
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -1129,22 +1155,23 @@ order by tablename;
 -- `app.can_write_trip()` ตัวเดียวกัน → editor ลบได้เหมือนเดิม · **viewer ยังลบไม่ได้**
 -- เพราะเขียนไม่ได้อยู่แล้ว · การแยก tenant ไม่กระทบเลย
 --
--- 🟢 **แต่มันเปิดโอกาสให้แก้ข้อสรุปเดิมของผมให้ดีขึ้น — ขอแก้ตรงนี้:**
--- เดิมผมให้ทุกตารางเนื้อหามี DELETE policy สำหรับ `authenticated`
--- **ตอนนี้เสนอให้ถอด DELETE policy ของ client ออกทั้ง 13 ตาราง**
+-- 🟢 **แต่มันเปิดโอกาสให้แก้ข้อสรุปเดิมของผมให้ดีขึ้น — ✅ P1 เคาะแล้วเป็น D18 ข้อ ① และ
+-- ทำลงไฟล์นี้เรียบร้อย:** เดิมผมให้ทุกตารางเนื้อหามี DELETE policy สำหรับ `authenticated`
+-- **ตอนนี้ถอด DELETE policy ของ client ออกแล้ว 11 ตัว** (เหลือ `trip_members` + Storage)
 --   เหตุผล: เมื่อ soft delete รับหน้าที่ "ลบ" ไปแล้ว DELETE จริงเหลือความหมายเดียวคือ
 --   **ทำลายถาวรกู้ไม่ได้** ซึ่งไม่มี UI ไหนต้องใช้ และควรเป็นงานของ purge job (service role)
 --   ผลที่ได้: ความเสี่ยงลำดับ 4 ใน threat model (ทำลายข้อมูลข้าม tenant · ไม่มี backup)
 --   **เปลี่ยนจาก "ช่องที่ถูกที่สุด" เป็น "เข้าไม่ถึงจาก client เลย"**
 --   — และเป็นการปิดช่อง `trip_plans` DELETE cascade (F6) ที่รากของมันด้วย
 --
---   ทำได้โดยลบบล็อกเหล่านี้ทิ้ง (ตอน E2 — ไม่แก้ในไฟล์นี้เพื่อให้เห็นทั้ง 2 ทางเทียบกัน):
---     "trip_hotels: editor deletes" · "trip_plans: editor deletes" · "trip_places: editor deletes"
---     · "trip_stops: editor deletes" · "trip_hidden_places: editor deletes"
---     · "place_notes: editor deletes" · "bookings: editor deletes" · "checklist_items: editor deletes"
---     · "bookings_secret: editor deletes" · "trip_days: editor deletes"
---   คงไว้เฉพาะ: `trip_members` DELETE (การออกจากทริปไม่ใช่ soft delete) และ `trips` DELETE
---   (owner ลบทริปทั้งก้อน — ต้องคุยกับ P8 ว่าควรเป็น soft delete ด้วยไหม ผมเห็นว่าควร)
+--   ถอดออกแล้ว 11 ตัว: trips · trip_days · trip_hotels · trip_plans · trip_places · trip_stops
+--   · trip_hidden_places · place_notes · bookings · bookings_secret · checklist_items
+--   คงไว้ 2 ที่:
+--     · `trip_members` DELETE — การออกจากทริปไม่ใช่ soft delete · และถ้า soft delete แถวสมาชิก
+--       `app.trip_role()` จะต้องกรอง `deleted_at` ทุกครั้ง = เพิ่มโอกาสพลาดในจุดที่พลาดไม่ได้ที่สุด
+--     · `storage.objects` DELETE — ไฟล์ไม่มี soft delete · แต่ดูข้อ 12.6 เรื่องนโยบายเก็บรักษา
+--   ✅ ข้อ ③ ของ D18: `trips` เป็น soft delete ด้วย → ลบทริปทำผ่าน policy UPDATE ของ owner
+--   ✅ ชั้น GRANT รัดเพิ่มอีกชั้น: `revoke delete ... from authenticated` (ส่วนที่ 2)
 --
 -- ⚠️ ราคาที่ต้องรู้: ถ้าวันหน้าต้องการ "editor แก้ได้แต่ลบไม่ได้" **RLS ทำไม่ได้อีกแล้ว**
 --    เพราะทั้งสองอย่างเป็น UPDATE เหมือนกัน → ต้องใช้ trigger เทียบ OLD/NEW ของ `deleted_at`
