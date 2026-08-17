@@ -116,7 +116,39 @@ revoke usage on schema public from anon;
 
 -- authenticated ได้ GRANT ระดับตาราง แต่ยังต้องผ่าน RLS ทีละแถวอยู่ดี
 grant usage on schema public to authenticated;
-grant select, insert, update on all tables in schema public to authenticated;
+
+-- 🔴 **grant ทีละตาราง ไม่ใช่ `on all tables`** (กฎข้อ 5 ของ `README.md` ซึ่งมาจาก P-09 ของผมเอง)
+--
+-- ร่างแรกเขียน `grant select, insert, update on all tables in schema public to authenticated;`
+-- เก็บบันทึกไว้เพราะเหตุผลเดิมฟังดูดี: "ทุกตารางใน public เป็นข้อมูลผู้ใช้ที่กันด้วย RLS อยู่แล้ว"
+-- **สิ่งที่ผิดไม่ใช่ตรรกะ แต่คือสมมติฐานว่า "ทุกตารางใน public" เป็นเซตที่เรารู้จัก** —
+-- 8 เซสชันแชร์ tree เดียวกัน · P5 เพิ่ม `copilot_proposals` เข้า `public` โดยไม่แตะบรรทัดนี้เลย
+--
+-- ⚠️ ต่างจาก P-09 ตรงระดับความเสียหาย และต้องพูดให้ตรง ไม่ใช่เหมารวมว่าร้ายเท่ากัน:
+--   ฟังก์ชัน (P-09) — **ไม่มีอะไรอยู่ข้างหลัง GRANT เลย** grant หลุด = เรียกได้ทันที
+--   ตาราง (ตรงนี้)  — RLS default-deny อยู่ข้างหลัง · grant ที่ไม่มี policy คู่กันให้สิทธิ์เป็นศูนย์
+-- → **แต่ยังต้อง grant ทีละตัว** เพราะมีกรณีที่ RLS ไม่ได้อยู่ข้างหลัง:
+--   **ตารางที่ถูกเพิ่มโดยลืม `enable row level security`** · `on all` จะเปิดมันให้ทุกคนที่ล็อกอิน
+--   ในวินาทีที่ migration ผมรัน โดยไม่มีใครเขียนอะไรผิดเลย
+--   grant ทีละตัวเปลี่ยนความพลาดนั้นจาก **"เปิดโล่งเงียบๆ"** เป็น **"เรียกไม่ได้ตั้งแต่ dev"**
+--   ซึ่งเป็นความพลาดที่ส่งเสียง (กฎข้อ 3)
+--
+-- 📌 ผลข้างเคียงที่ตั้งใจ: ตารางของใครคนนั้น grant เอง → `copilot_proposals` ต้องมี grant
+--    ในไฟล์ของ P5 **การที่วันนี้ยังไม่มี คือสิ่งที่ควรเห็น ไม่ใช่สิ่งที่ควรกลบด้วย `on all`**
+grant select, insert, update on public.profiles             to authenticated;
+grant select, insert, update on public.trips                to authenticated;
+grant select, insert, update on public.trip_members         to authenticated;
+grant select, insert, update on public.trip_days            to authenticated;
+grant select, insert, update on public.trip_settings        to authenticated;
+grant select, insert, update on public.trip_hotels          to authenticated;
+grant select, insert, update on public.trip_plans           to authenticated;
+grant select, insert, update on public.trip_places          to authenticated;
+grant select, insert, update on public.trip_stops           to authenticated;
+grant select, insert, update on public.trip_hidden_places   to authenticated;
+grant select, insert, update on public.place_notes          to authenticated;
+grant select, insert, update on public.bookings             to authenticated;
+grant select, insert, update on public.bookings_secret      to authenticated;
+grant select, insert, update on public.checklist_items      to authenticated;
 
 -- 🔴 **ไม่ grant DELETE ให้ใครเลย ยกเว้น trip_members** (ข้อ ① ของ D18)
 -- soft delete รับหน้าที่ "ลบ" ไปแล้ว → `DELETE` จริงเหลือความหมายเดียวคือทำลายถาวรกู้ไม่ได้
@@ -139,12 +171,30 @@ grant delete on public.trip_members to authenticated;
 -- แล้วทุก tenant ในระบบเห็นค่าที่ถูกแก้" ซึ่งเป็น cross-tenant write ที่มองไม่ออกว่าเป็น
 -- cross-tenant เพราะตารางไม่มีคอลัมน์ tenant ให้เห็น
 grant usage on schema catalog to anon, authenticated;
-grant select on all tables in schema catalog to anon, authenticated;
-alter default privileges in schema catalog grant select on tables to anon, authenticated;
+
+-- 🔴 ที่นี่ `on all` + `alter default privileges ... grant` **อันตรายกว่าใน public** และร่างแรกผมเขียนไว้ทั้งคู่
+--    เพราะ grant ปลายทางคือ `anon` และ **ไม่มี RLS ที่มีความหมายอยู่ข้างหลัง** (policy เป็น `using (true)`
+--    โดยตั้งใจ — ส่วนที่ 6) → ตารางใหม่ใดๆ ที่ใครเพิ่มเข้า `catalog` จะ **อ่านได้สาธารณะทันทีที่สร้าง
+--    ก่อนที่จะมีใครรีวิวว่ามันผ่านเกณฑ์ 3 ข้อของ catalog หรือไม่**
+--    ส่วนที่ 6 เขียนเกณฑ์ไว้ว่า "ตารางไหนตอบไม่ครบ 3 ข้อ = ไม่ใช่ catalog" — `alter default privileges`
+--    ทำให้เกณฑ์นั้นถูกข้ามโดยอัตโนมัติ **คือป้ายที่พึ่งให้คนอ่าน แข่งกับด่านที่ทำงานเอง แล้วป้ายแพ้**
+-- → grant ทีละตาราง · **และไม่ตั้ง default privileges ให้ catalog เลย**
+grant select on catalog.countries          to anon, authenticated;
+grant select on catalog.cities             to anon, authenticated;
+grant select on catalog.places             to anon, authenticated;
+grant select on catalog.transfer_points    to anon, authenticated;
+grant select on catalog.emergency_contacts to anon, authenticated;
 
 -- cache: service role เท่านั้น · anon/authenticated ไม่ได้แม้แต่ usage บน schema
 grant usage on schema cache to service_role;
-grant select, insert, update, delete on all tables in schema cache to service_role;
+grant select, insert, update, delete on cache.place_photo   to service_role;
+grant select, insert, update, delete on cache.place_details to service_role;
+grant select, insert, update, delete on cache.travel_time   to service_role;
+
+-- 📌 `alter default privileges` ตัวนี้ **คงไว้อย่างตั้งใจ ต่างจาก catalog** — และนี่คือข้อยกเว้นเดียวในไฟล์
+--    เหตุผลที่ต่าง: ปลายทางคือ `service_role` ซึ่งมี BYPASSRLS อยู่แล้ว → grant ไม่ได้เพิ่มสิทธิ์ให้มันเลย
+--    (มันแตะได้อยู่แล้วไม่ว่าจะ grant หรือไม่) · และ schema นี้ไม่ถูก expose ให้ PostgREST
+--    → ไม่มีสิทธิ์ใหม่ถูกมอบให้ใคร ต่างจาก catalog ที่มอบสิทธิ์อ่านให้ `anon` จริงๆ
 alter default privileges in schema cache grant all on tables to service_role;
 
 -- app: helper ถูกเรียกจาก policy ซึ่งรันในบริบทของผู้ใช้ → ต้องมี usage + execute
