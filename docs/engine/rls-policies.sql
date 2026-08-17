@@ -312,10 +312,49 @@ as $$
   )
 $$;
 
--- helper ทุกตัวต้องเรียกได้จาก policy ที่รันในบริบทผู้ใช้
-grant execute on all functions in schema app to authenticated;
+-- ── สิทธิ์เรียกฟังก์ชันใน schema `app` ────────────────────────────────────────────────
+--
+-- 🔴 **ห้ามใช้ `grant execute on all functions in schema app` เด็ดขาด** (ผมเคยเขียนแบบนั้น
+--    ในร่างแรกของไฟล์นี้ และมันเป็นบั๊ก — ดูเหตุผลข้างล่าง เก็บไว้เป็นบันทึกไม่ใช่ลบทิ้ง)
+--
+-- เหตุผล: `app` ไม่ได้มีแต่ helper ของ policy · มันมีฟังก์ชัน **SECURITY DEFINER ที่เขียนข้อมูล**
+-- อยู่ด้วย (`app.decide_proposal` · `app.apply_proposal` ของ P5) และบางตัว
+-- **จงใจไม่ตรวจสมาชิกข้างในตัวเอง เพราะเชื่อว่าผู้เรียกตรวจมาแล้ว**
+--   → grant แบบเหมารวมจะเปิดให้ `authenticated` เรียก `app.apply_proposal(id)` ตรงๆ
+--     ซึ่ง**ข้ามทั้งด่านสมาชิกและด่าน `base_versions`** ที่ `decide_proposal` ถืออยู่
+--   → และมันจะ **ลบล้าง `revoke` ที่ P5 เขียนไว้ตั้งใจ** ถ้า migration ของผมรันหลังเขา
+--     ทั้งสองไฟล์อ่านแล้วดูถูกต้องแยกกัน · ผลลัพธ์ขึ้นกับลำดับการรัน ซึ่งไม่มีใครเห็นจาก
+--     การอ่านไฟล์ใดไฟล์เดียว — เป็นรูปแบบ "พังแล้วหน้าตาเหมือนสำเร็จ" ของ README ตรงๆ
+--
+-- → **grant ทีละตัว ตามสิ่งที่ต้องเรียกได้จริงเท่านั้น**
+--   ① helper ของ policy: policy ประเมินในบริบทผู้เรียก จึงต้อง execute ได้
+grant execute on function app.trip_role(uuid)            to authenticated;
+grant execute on function app.can_read_trip(uuid)        to authenticated;
+grant execute on function app.can_write_trip(uuid)       to authenticated;
+grant execute on function app.is_trip_owner(uuid)        to authenticated;
+grant execute on function app.trip_id_of_day(uuid)       to authenticated;
+grant execute on function app.can_read_day(uuid)         to authenticated;
+grant execute on function app.can_write_day(uuid)        to authenticated;
+grant execute on function app.my_trip_ids()              to authenticated;
+grant execute on function app.my_writable_trip_ids()     to authenticated;
+grant execute on function app.shares_trip_with(uuid)     to authenticated;
+grant execute on function app.trip_is_live(uuid)         to authenticated;
+
+--   ② ฟังก์ชันที่เป็น "จุดเข้า" ของการเขียน: ต้อง grant เพราะ Server Action เรียกในฐานะผู้ใช้
+--      (ดู P-07 ใน security-review.md §8 — P5 revoke ตัวนี้จาก authenticated ไว้ ซึ่งทำให้
+--       เรียกไม่ได้เลย เป็น P-01 กลับมาอีกชั้นหนึ่ง)
+grant execute on function app.decide_proposal(uuid, boolean) to authenticated;
+
+--   ③ ฟังก์ชันภายในที่ต้องเรียกได้**จากในฟังก์ชันอื่นเท่านั้น** — ห้าม grant ให้ใคร
+--      definer รันด้วยสิทธิ์ owner อยู่แล้ว จึงเรียกกันเองได้โดยไม่ต้องมี grant
+revoke all on function app.apply_proposal(uuid)         from public, anon, authenticated;
+revoke all on function app.base_versions_match(jsonb)   from public, anon, authenticated;
+
 -- anon ไม่ต้องเรียกอะไรเลย — ทุก policy ข้อมูลผู้ใช้เป็น `to authenticated`
 revoke execute on all functions in schema app from anon;
+-- และปิดค่าเริ่มต้นด้วย: ฟังก์ชันใหม่ใน `app` **ต้องถูก grant ทีละตัวโดยตั้งใจ**
+-- ไม่ใช่ได้สิทธิ์มาเองเพราะเผลอ (Postgres ให้ EXECUTE กับ `public` เป็นค่าเริ่มต้น)
+alter default privileges in schema app revoke execute on functions from public;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════
