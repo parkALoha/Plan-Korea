@@ -535,9 +535,22 @@ Web Push ต้องวิ่งผ่านเซิร์ฟเวอร์�
 ผมไล่ดูทั้ง 8 hooks แล้ว — **ปัญหานั้นไม่มีอยู่จริงในโค้ดเบสนี้**
 
 - `readCache` **8 จุด** · `writeCache` **13 จุด** รวม **21 จุดใน 8 hooks** (ไม่มีใน `components/` เลยสักจุด)
-  ⚠️ นับด้วย `grep -rn 'readCache\|writeCache' hooks/ lib/ app/ components/` ตรงๆ จะได้ **9 ไฟล์**
-  เพราะไปโดน `hooks/usePlaceNamesEn.ts:15` ที่มีฟังก์ชันชื่อ `readCached()` ของตัวเอง (in-memory `Map`
-  คนละเรื่องกับ `lib/localCache.ts`) — **ไฟล์นั้นไม่เกี่ยวและไม่ต้องแตะ**
+
+> 🔴 **ตัวเลขนี้ grep ตรงๆ ไม่ได้ — มีกับดัก 2 ชั้นที่ชี้คนละทาง และทั้งคู่ให้ผลที่ "ดูน่าเชื่อ"**
+> (ชั้นที่ 2 P1 เหยียบเข้าจริงตอนตรวจงานผม 17 ส.ค. 2026 · ผมรันซ้ำยืนยันแล้วทั้งคู่)
+>
+> | คำสั่ง | ได้ | ความจริง |
+> |---|---|---|
+> | `grep -rn 'readCache(' hooks/` | **0** | ผิด — **ทุก call site เขียน `readCache<TripStop[]>(` มี generic คั่นก่อนวงเล็บ** จึงไม่มีสตริง `readCache(` อยู่ในโค้ดเบสนี้เลยสักที่ |
+> | `grep -rn 'readCache' hooks/` | **10** | ผิด — เกินมา 2 เพราะไปโดน `hooks/usePlaceNamesEn.ts:15` ที่มีฟังก์ชันชื่อ `readCached()` ของตัวเอง (in-memory `Map` **คนละเรื่องกับ `lib/localCache.ts` ไม่ต้องแตะ**) |
+> | นับจาก call site จริง | **8** | ✅ |
+>
+> **ชั้นที่อันตรายที่สุดคือความไม่สมมาตร:** `grep 'writeCache('` คืน **13 ซึ่งถูก** เพราะ `writeCache`
+> ไม่มี generic → คนตรวจจะได้ผล "writeCache ใช้ 13 จุด · readCache ใช้ 0 จุด" ที่**ดูสอดคล้องกันพอจะเชื่อ**
+> แล้วสรุปว่า **"`readCache` เป็นโค้ดตาย ลบทิ้งได้"** ซึ่งผิดสนิทและเป็นการลบทาง hydrate ออฟไลน์ทั้งระบบทิ้ง
+>
+> **คนทำ E6 ต้องเปิดไฟล์ทั้ง 8 ดูเอง ไม่ใช่เชื่อเลขจาก grep** — และถ้าจะ grep ให้ใช้
+> `grep -rn 'readCache' hooks/ | grep -v readCached` แล้วยังต้องไล่ดูอยู่ดี
 - **ทุกจุดอยู่ใน `async function init()` หรือ async callback อยู่แล้ว** เช่น `hooks/useStops.ts:60`,
   `useBookings.tsx:50`, `useDaySettings.ts:29`, `useHotels.tsx:61`, `usePlans.ts:29`,
   `usePlaceNotes.ts:36`, `useOvernightOverrides.ts:28`, `useCustomPlaces.tsx:26`
