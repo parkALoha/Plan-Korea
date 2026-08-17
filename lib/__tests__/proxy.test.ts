@@ -36,7 +36,9 @@ afterEach(() => {
   saved.clear();
 });
 
-const PIN = "2539";
+// 🔴 ค่าสมมติล้วน — repo เป็น public · ห้ามใช้ค่าจริงของ production เป็น fixture
+// (ร่างแรกใช้ PIN จริง = ความพลาดที่ต้องหมุน PIN ทิ้ง ไม่ใช่แค่แก้ไฟล์ · security-review.md §9)
+const PIN = "fixture-pin";
 const SECRET = "test-secret";
 const VALID_TOKEN = createHmac("sha256", SECRET).update(PIN).digest("hex");
 
