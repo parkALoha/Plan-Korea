@@ -352,6 +352,12 @@ begin
   if not exists (select 1 from public.trips where id = old.trip_id) then
     return null;
   end if;
+  -- 🔴 P-23 (P4): deferred อย่างเดียวยังไม่สนิท
+  -- owner 2 คนลาออก **คนละแถว** → ไม่ชนล็อกกัน → ตอน commit ต่างฝ่ายต่างยังเห็นอีกคนอยู่ → นับได้ 1 ทั้งคู่
+  -- หน้าต่างแคบลงมาก (จาก "ทั้งทรานแซกชัน" เหลือ "ระหว่าง commit") **แต่ไม่ใช่ศูนย์**
+  -- ล็อกแถว trips ก่อนนับ = บังคับให้ทุกการเปลี่ยนสมาชิกของทริปเดียวกันเข้าคิว
+  perform 1 from public.trips where id = old.trip_id for update;
+
   select count(*) into n
     from public.trip_members
    where trip_id = old.trip_id and role = 'owner';
@@ -457,8 +463,49 @@ select tgname from pg_trigger
 select tgname from pg_trigger
  where tgrelid = 'public.trip_members'::regclass and tgname = 'trip_members_keep_owner';
 
+-- 7.10 🔴🔴 ต้องได้ 0 แถว — **เขียน policy ครบ แต่ลืมเปิด RLS**
+-- P-22 (P4): 7.1 จับ "RLS เปิด ไม่มี policy" · 7.4 จับ "RLS เปิด มี policy ไม่มี grant"
+-- **ไม่มีข้อไหนจับรูตรงกลาง: RLS *ปิด* แต่มี policy**
+--   → policy นอนอยู่เฉยๆ ไม่ทำงานสักตัว · grant มีครบ → **ตารางเปิดโล่งให้ทุกคนที่ล็อกอิน**
+--   → และ 7.2 ก็ไม่จับ เพราะ policy ไม่ได้เป็น `true` — มันแค่ไม่เคยถูกเรียกใช้
+-- 🔴 คือ B2 ของเว็บเดิมกลับมาในรูปใหม่ · **มีทุกอย่างยกเว้นสวิตช์** ซึ่งเป็น config ที่อันตรายที่สุดเท่าที่เป็นได้
+select c.relname as policies_but_rls_off
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+   and exists (select 1 from pg_policy p where p.polrelid = c.oid);
+
 -- 7.9 ต้อง > 0 — E1-AC2 วัดว่ามี auth.uid() จริงในนโยบาย
 select count(*) as policies_using_auth_uid
   from pg_policy
  where pg_get_expr(polqual, polrelid) like '%auth.uid%'
     or pg_get_expr(polwithcheck, polrelid) like '%auth.uid%';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 8. 🔴 พิสูจน์ว่าชุดเช็คข้างบน "คืนแถวได้จริง" — P-21 (P4)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ทุกข้อใน 7.x เป็น "ต้องได้ 0 แถว" · **และไม่มีข้อไหนพิสูจน์ว่าตัวมันเองไม่ได้พังเงียบ**
+-- query ที่เขียนผิดจนไม่ match อะไรเลย → 0 แถว → อ่านว่าผ่าน
+-- 🎯 นี่คือหลักที่เขียนกำกับหัวข้อ 7 ไว้เอง **แต่ยังไม่ได้ใช้กับตัวชุดเช็คเอง**
+--    (และเป็นหลักเดียวกับเคสด้านบวกของ P4 กับ P6 — คนละงาน วันเดียวกัน)
+
+-- 8.1 ต้องได้ 3 — ถ้าได้ 0 แปลว่า filter ของ 7.4 พัง ไม่ใช่ว่า grant ครบ
+select count(*) as tables_with_authenticated_grant
+  from (select distinct table_name
+          from information_schema.role_table_grants
+         where table_schema = 'public' and grantee = 'authenticated'
+           and table_name in ('profiles','trips','trip_members')) t;
+
+-- 8.2 ต้องเท่ากับจำนวน definer ทั้งหมดใน app — ถ้าได้ 0 แปลว่าสมมติฐานรูปแบบ proconfig ผิด
+--     ซึ่งจะทำให้ 7.6 เงียบตลอดกาล
+select
+  count(*) filter (where exists (
+    select 1 from unnest(coalesce(p.proconfig,'{}')) cfg where cfg like 'search_path=%')) as with_search_path,
+  count(*) as definers_total
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'app' and p.prosecdef;
+
+-- 8.3 ต้องได้แถว — พิสูจน์ว่า view + filter ของ 7.3 ทำงาน (service_role ต้องมีสิทธิ์อยู่แล้ว)
+select count(*) as service_role_grants
+  from information_schema.role_table_grants
+ where grantee = 'service_role' and table_schema = 'public'
+   and table_name in ('profiles','trips','trip_members');
