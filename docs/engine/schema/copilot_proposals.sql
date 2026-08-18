@@ -7,7 +7,9 @@
 -- 🔴 นี่ไม่ใช่ migration และห้ามรัน
 --    - ห้ามคัดลอกไฟล์นี้ไป supabase/migrations/ (README.md กติกาเหล็กข้อ 3)
 --    - ห้ามรันกับ Supabase `ejzibhgqhxdzkovsnpds` ซึ่งเป็น DB ทริปจริงของคน 2 คน
---    - ที่ทดลองคือ Supabase local ผ่าน Docker เท่านั้น และเริ่มได้ที่ E2 ไม่ใช่ตอนนี้
+--    - dev DB คือ **คลาวด์** org `Plan-trip-app` · project `engine-dev` · ref `pmvxwcimjebogjfimzqy`
+--      (แก้ 18 ส.ค. 2026 ตาม D14 — บรรทัดเดิมเขียนว่า "Supabase local ผ่าน Docker" ซึ่งหมดอายุแล้ว)
+--    - ตัวไฟล์เองยังเริ่มลงมือได้ที่ E2 เท่านั้น ไม่ใช่ตอนนี้
 --
 -- 🔴 policy/ฟังก์ชันในไฟล์นี้เป็น "รูปแบบที่ตั้งใจไว้" ไม่ใช่ของจริง
 --    P4-QA/Sec เป็นคนเขียนของจริงทั้งชุดที่ docs/engine/rls-policies.sql
