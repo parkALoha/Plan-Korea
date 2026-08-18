@@ -2,7 +2,8 @@
 -- ร่าง DDL: ที่เก็บ "ข้อเสนอ" ของ Travel Copilot
 -- เจ้าของ: P5-AI/Agent · P1 อนุมัติให้ร่างลงที่นี่ 17 ส.ค. 2026
 -- คู่กับ: docs/engine/copilot-spec.md §2.3 (tool เขียน) · §2.5 (rank key)
--- รอบแก้ที่ 2 — ตาม P4 `security-review.md §8.1–8.6` (P-01 … P-06) ทั้งหมด
+-- รอบแก้ที่ 3 — ตาม P4 `security-review.md` (P-01 … P-12) ทั้งหมด
+-- ทุกบรรทัดที่จะผิดถ้ามติเปลี่ยน อ้างเลข D กำกับไว้ตามกติกา D35 — `grep -rn 'D14'` เจอผู้พึ่งพาทันที
 --
 -- 🔴 นี่ไม่ใช่ migration และห้ามรัน
 --    - ห้ามคัดลอกไฟล์นี้ไป supabase/migrations/ (README.md กติกาเหล็กข้อ 3)
@@ -33,8 +34,12 @@ create table public.copilot_proposals (
 
   -- ขอบเขต -------------------------------------------------------------------
   trip_id       uuid not null references public.trips(id) on delete cascade,
-  -- ⚠️ plan_id รอข้อ 8.1 ใน copilot-spec.md — ผัง architecture.md §1.2 ยังไม่ระบุว่า
-  --    trip_stops ผูกกับ trip_plans ยังไง ถ้า E2 ตัดสินว่าไม่ผูก ให้ลบคอลัมน์นี้ทิ้ง
+  -- ✅ ตัดสินแล้ว (P1 · 18 ส.ค. 2026 · D-PENDING ขอเลขจาก P1):
+  --    `trip_stops` ผูกกับ `trip_days` เป็นหลัก และ `plan_id` อยู่เป็นคอลัมน์คู่กัน
+  --    (แผน A/B = "ชุดจุดแวะทางเลือกของวันเดียวกัน" ไม่ใช่ทริปคนละใบ)
+  --    → คอลัมน์นี้อยู่ต่อ · ของเดิมบรรทัดนี้เขียนว่า "รอข้อ 8.1 ถ้าไม่ผูกให้ลบทิ้ง" ซึ่งตกไปแล้ว
+  --  🔴 ข้อบังคับที่ตามมา: `planId` ต้องมาจากบริบทหน้าจอเสมอ ห้ามเดาจาก default ของทริป
+  --    การเดาให้คำตอบที่ถูกต้องทุกประการ — สำหรับแผนที่ผู้ใช้ไม่ได้เปิดอยู่ (copilot-spec §8.1)
   plan_id       uuid references public.trip_plans(id) on delete cascade,
 
   -- ⚠️ P-06: soft delete (D7) ทำให้ `on delete cascade` ของ day_id **ไม่เคยทำงาน**
