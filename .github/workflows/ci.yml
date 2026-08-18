@@ -38,50 +38,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── E0-AC10 (ด่านรอง) — .sql ของงานออกแบบต้องอยู่ใน docs/engine/schema/ เท่านั้น ──
-      # ⚠️ ลำดับที่ P4 เถียงชนะ: ด่านหลักคือ rls-policies.sql §11.2 (policy_count = 0)
-      #    AC10 คุ้มเพราะ **ทำงานได้ก่อนมี DB ให้ query** ไม่ใช่เพราะครอบคลุมกว่า
-      - name: AC10 — .sql ใน docs/engine/ ต้องอยู่ใน schema/
-        run: |
-          stray=$(find docs/engine -name '*.sql' -not -path 'docs/engine/schema/*')
-          if [ -n "$stray" ]; then
-            echo "🔴 เจอ .sql นอก docs/engine/schema/:"; echo "$stray"
-            echo "กติกาเหล็กข้อ 3 — SQL ของงานแพลตฟอร์มอยู่ได้ที่ docs/engine/schema/ ที่เดียว"
-            exit 1
-          fi
-          echo "ok — .sql ทุกไฟล์อยู่ใน schema/"
+      # ── ด่าน AC10 · ref · link — ตรรกะอยู่ใน .github/guards.sh ────────────────────
+      # 🔴 self-test ต้องรัน "ก่อน" ด่านจริงเสมอ
+      #    ถ้า guards.sh ถูกแก้จนไม่จับอะไรเลย ผลเขียวของ step ถัดไปจะไม่มีความหมาย
+      #    — เราต้องรู้ว่าด่านยังทำงาน ก่อนจะเชื่อว่าด่านบอกว่าไม่มีปัญหา
+      #    (กติกา P1 18 ส.ค. 2026: ทุก guard ต้องมีเทสต์ด้านลบ)
+      - name: guards self-test (พิสูจน์ว่าด่านยังจับของผิดได้)
+        run: .github/guards-selftest.sh
 
-      # ── ref ของ DB ทริปห้ามอยู่ใน "ไฟล์ที่เครื่องจักรอ่านแล้วทำตาม" ──────────────
-      # 🔴 ขอบเขตนี้มาจากมติ P1 เมื่อ 17 ส.ค. 2026 (ไม่ใช่ "ห้ามปรากฏในทุกไฟล์")
-      #    เหตุผล: ref รั่วผ่าน client bundle อยู่แล้ว (lib/supabase.ts:3 + proxy.ts ตัด _next)
-      #    การไล่ลบจากเอกสารเชิงบรรยายจึงไม่ปิดอะไร · ที่อันตรายจริงคือไฟล์ที่ "คำสั่งวิ่งตาม"
-      #    ดู docs/engine/devops.md §1.7
-      - name: ref ของ DB ทริปห้ามอยู่ในไฟล์ที่เครื่องทำตาม
-        run: |
-          TRIP_REF=$(printf 'ejzibhgqhxdz%s' 'kovsnpds')   # แยกสตริงกันไฟล์นี้ trip ตัวเอง
-          paths=""
-          for p in .github supabase-platform supabase/migrations package.json vercel.json; do
-            [ -e "$p" ] && paths="$paths $p"
-          done
-          if [ -n "$paths" ] && grep -rl "$TRIP_REF" $paths 2>/dev/null; then
-            echo "🔴 ref ของ DB ทริปอยู่ในไฟล์ที่เครื่องจักรอ่านแล้วทำตาม — คำสั่งอาจวิ่งไปผิดที่"
-            exit 1
-          fi
-          echo "ok — ไม่มี ref ทริปในไฟล์ที่เครื่องทำตาม"
-
-      # ── ถ้ามีการ link CLI ไว้ ต้อง link กับ engine-dev เท่านั้น (allowlist) ────────
-      # ยังไม่มี supabase-platform/ ในระยะนี้ → step นี้ข้ามไปเอง จะเริ่มมีผลตอน E2
-      - name: ถ้า link ไว้ ต้องเป็น engine-dev เท่านั้น
-        run: |
-          f=supabase-platform/.temp/project-ref
-          if [ ! -f "$f" ]; then echo "ยังไม่ได้ link — ข้าม"; exit 0; fi
-          if [ -z "${{ secrets.DEV_PROJECT_REF }}" ]; then
-            echo "🔴 มีการ link แล้วแต่ยังไม่ได้ตั้ง secret DEV_PROJECT_REF — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
-            exit 1
-          fi
-          [ "$(cat $f)" = "${{ secrets.DEV_PROJECT_REF }}" ] \
-            || { echo "🔴 link อยู่กับโปรเจกต์ที่ไม่ใช่ engine-dev — หยุด"; exit 1; }
-          echo "ok — link อยู่กับ engine-dev"
+      - name: guards (AC10 · ref · link) กับทรีจริง
+        run: .github/guards.sh .
+        env:
+          DEV_PROJECT_REF: ${{ secrets.DEV_PROJECT_REF }}
 
   verify:
     name: Lint · Test · Types · Build
