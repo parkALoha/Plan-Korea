@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+# pre-commit — จับ commit ที่แตะการต่อ Supabase/env ตั้งแต่บนเครื่อง ก่อนถึง CI
+#
+# ติดตั้ง (P1 รันครั้งเดียว ครอบทั้ง 2 worktree เพราะแชร์ .git/config):
+#     git config core.hooksPath .github/hooks
+#
+# 🔴 hook นี้ "ไม่ใช่ด่านของทีม" — CI คือด่านจริง · hook เป็นแค่ตัวจับก่อนให้รู้เร็ว
+#    ห้ามนับเป็นสองด่าน · เหตุผล:
+#      - ใครก็ตามที่ clone ใหม่ต้องตั้ง core.hooksPath เอง ไม่มีอะไรบังคับ
+#      - `git commit --no-verify` ข้ามได้เสมอ
+#
+# 🔴 ทำไมต้องเช็ค branch: core.hooksPath อยู่ใน .git/config ซึ่ง **worktree แชร์กับทรีหลัก**
+#    (ยืนยันแล้ว: git-common-dir ของ plan-korea-platform ชี้ไป /Users/park/plan-korea/.git)
+#    ถ้าไม่เช็ค hook จะไปมีผลกับ branch `main` ซึ่งเป็นเว็บทริปที่ freeze อยู่
+#    และ **ต้องแก้บั๊กได้ทันทีตลอดเวลาระหว่างอยู่เกาหลี**
+#    ด่านที่ขวางการแก้บั๊กหน้างาน แย่กว่าความเสี่ยงที่มันกัน — หลักเดียวกับ fail-open ใน proxy.ts:43
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+[ "$branch" = "platform" ] || exit 0
+
+root="$(git rev-parse --show-toplevel)"
+[ -x "$root/.github/diff-guard.sh" ] || exit 0
+
+git diff --cached --name-only | "$root/.github/diff-guard.sh" --stdin "$root" || {
+  echo ""
+  echo "🔴 commit ถูกหยุดโดย .github/hooks/pre-commit"
+  echo "   กติกา: ห้าม commit ที่แตะการต่อ Supabase/env ลง platform จนกว่าเรื่อง Vercel จะปิด"
+  echo "   ถ้าจำเป็นจริงและรู้ว่ากำลังทำอะไร: git commit --no-verify"
+  echo "   (แต่ CI จะจับซ้ำอยู่ดี — คุยกับ P1 ก่อนดีกว่า)"
+  exit 1
+}
