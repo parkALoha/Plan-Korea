@@ -101,3 +101,33 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY: placeholder-not-a-real-key
           GOOGLE_MAPS_API_KEY: placeholder-not-a-real-key
+
+  # ── E1: RLS matrix ของ P4 — ต้องรันจริงกับ engine-dev ───────────────────────────
+  # 🔴 แยกเป็น job ของตัวเองโดยตั้งใจ ไม่ยัดเข้า `verify`
+  #    เพราะ job นี้จะ **แดงจนกว่าผู้ใช้จะตั้ง secret ครบ** — ถ้าปนอยู่ใน verify
+  #    มันจะทำให้ lint/test/build แดงไปด้วย แล้วทุกคนจะเรียนรู้ที่จะข้าม CI ทั้งใบ
+  #    แยกไว้ = ความแดงมีเจ้าของชัดเจน และอ่านออกว่าค้างเพราะอะไร
+  #
+  # 🔴 `RLS_MATRIX_REQUIRED=1` คือหัวใจ — P4 เรียกชุดนี้ว่า "เทสต์ที่ผ่านได้ด้วยการไม่เคยรัน"
+  #    ไม่มี creds = vitest `skip` ซึ่ง **อ่านเป็นเขียวใน CI** (ยืนยันแล้ว: `npm test` วันนี้
+  #    สรุปว่า "18 passed" ทั้งที่มี 15 skipped ซ่อนอยู่) · flag นี้เปลี่ยน skip เป็น fail
+  #
+  # ⛔ ห้ามใส่ค่าของ Supabase ทริปจริงในสาม secret นี้ ไม่ว่ากรณีใด — ปลายทางคือ engine-dev เท่านั้น
+  rls:
+    name: RLS matrix (engine-dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.12.2'
+          cache: npm
+      - run: npm ci
+      - name: RLS matrix — skip ต้องกลายเป็น fail
+        run: npx vitest run lib/__tests__/rlsMatrix.test.ts
+        env:
+          RLS_MATRIX_REQUIRED: "1"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}

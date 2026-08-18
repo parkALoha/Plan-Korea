@@ -40,6 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# supabase CLI (workdir ของงานแพลตฟอร์ม) — เก็บ project-ref ที่ link ไว้และไฟล์ชั่วคราว
-supabase-platform/.temp/
-supabase-platform/.branches/
+# supabase CLI: ไม่ต้องเขียนที่นี่ — `supabase init` สร้าง supabase-platform/supabase/.gitignore
+# ให้เองแล้ว (ครอบ .temp และ .branches) · เคยเขียนไว้ที่นี่ด้วย path ที่ผิด จึงลบทิ้ง

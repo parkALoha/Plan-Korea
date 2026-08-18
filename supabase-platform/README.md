@@ -15,6 +15,15 @@
 
 **CLI resolve path เป็น `<workdir>/supabase/migrations` เปลี่ยนไม่ได้** → ต้องแยกที่ระดับ **workdir** ไม่ใช่โฟลเดอร์ย่อย
 
+## 🔴 migration อยู่ที่ `supabase-platform/supabase/migrations/` — ไม่ใช่ `supabase-platform/migrations/`
+
+`--workdir X` ทำให้ CLI หาไฟล์ที่ **`X/supabase/migrations/`** — **มันเติม `supabase/` ให้เสมอ**
+(ยืนยันด้วย `supabase migration new` จริงบน CLI 2.114.0 เมื่อ 18 ส.ค. 2026 ไม่ได้อ่านจากเอกสาร)
+
+⚠️ **พาธซ้อนอ่านแปลก แต่ต้องเป็นแบบนี้** · ตอนแรกผมเตรียม `supabase-platform/migrations/` ไว้ผิด
+**ถ้าปล่อยไว้จะได้อาการที่แย่ที่สุดแบบหนึ่ง: วางไฟล์แล้ว `db push` ขึ้นเขียวโดยไม่รันอะไรเลย**
+· `guards.sh` มีด่านจับข้อนี้แล้ว พร้อมเทสต์ด้านลบ
+
 ⚠️ **branch แยกกับโฟลเดอร์แยกแก้คนละปัญหา** — branch กันคนกับ CI สับสน · โฟลเดอร์กัน **CLI หยิบไฟล์ผิดชุด**
 ซึ่ง branch ไม่ช่วยเลย เพราะไฟล์ทริปติดมากับ branch อยู่แล้ว
 

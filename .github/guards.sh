@@ -49,8 +49,30 @@ if [ -n "$scoped" ]; then
   fi
 fi
 
+# ── .sql ของแพลตฟอร์มต้องอยู่ในโฟลเดอร์ที่ CLI ใช้จริง ──────────────────────────
+# 🔴 `supabase --workdir X` หา migration ที่ **`X/supabase/migrations/`** — มันเติม `supabase/` ให้เสมอ
+#    (ยืนยันด้วย `supabase migration new` จริงบน CLI 2.114.0 · 18 ส.ค. 2026)
+#    ถ้าใครวางไฟล์ที่ `supabase-platform/migrations/` **`db push` จะขึ้นเขียวโดยไม่รันอะไรเลย**
+#    = คำสั่งที่สำเร็จโดยไม่ได้ทำงาน · ชนิดเดียวกับบั๊ก no-op ที่เจอในด่านตัวเอง
+wrongdir="$ROOT/supabase-platform/migrations"
+if [ -d "$wrongdir" ]; then
+  wrongsql="$(find "$wrongdir" -name '*.sql' 2>/dev/null)"
+  if [ -n "$wrongsql" ]; then
+    echo "🔴 .sql อยู่ผิดโฟลเดอร์ — CLI จะไม่เห็นไฟล์พวกนี้เลย:"
+    echo "$wrongsql"
+    echo "   ที่ถูกคือ supabase-platform/supabase/migrations/"
+    fail=1
+  else
+    echo "🔴 มีโฟลเดอร์ supabase-platform/migrations/ ซึ่งไม่ใช่ที่ที่ CLI ใช้ — ลบทิ้ง"
+    echo "   ที่ถูกคือ supabase-platform/supabase/migrations/"
+    fail=1
+  fi
+else
+  echo "✅ migrations: ไม่มีโฟลเดอร์ที่ CLI มองไม่เห็น"
+fi
+
 # ── ถ้ามีการ link CLI ไว้ ต้องเป็น engine-dev เท่านั้น (allowlist) ─────────────────
-linkfile="$ROOT/supabase-platform/.temp/project-ref"
+linkfile="$ROOT/supabase-platform/supabase/.temp/project-ref"
 if [ -f "$linkfile" ]; then
   if [ -z "${DEV_PROJECT_REF:-}" ]; then
     echo "🔴 link แล้วแต่ไม่ได้ตั้ง DEV_PROJECT_REF — ตรวจไม่ได้ ถือว่าไม่ผ่าน (ตรวจไม่ได้ ≠ ปลอดภัย)"

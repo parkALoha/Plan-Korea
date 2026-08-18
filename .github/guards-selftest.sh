@@ -22,13 +22,16 @@ mk() {  # สร้างทรีจำลองที่ "สะอาด" แ
 check() {  # check <ชื่อเคส> <คาดหวัง pass|fail> <path>
   name="$1"; want="$2"; dir="$3"
   if "$G" "$dir" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  rm -rf "$dir"
   if [ "$got" = "$want" ]; then
     echo "✅ $name — ได้ $got ตามคาด"
-  else
-    echo "🔴 $name — คาด $want แต่ได้ $got · guards.sh ใช้การไม่ได้"
-    rc=1
+    return 0
   fi
-  rm -rf "$dir"
+  echo "🔴 $name — คาด $want แต่ได้ $got · guards.sh ใช้การไม่ได้"
+  rc=1
+  # 🔴 ต้อง return 1 ด้วย ไม่ใช่ตั้งแค่ $rc — เคสที่ห่อในซับเชลล์ `( ... ) || rc=1`
+  #    จะไม่เห็นการตั้ง rc ข้างใน ทำให้ self-test พิมพ์ 🔴 แต่ exit 0 (เจอจริง 18 ส.ค. 2026)
+  return 1
 }
 
 # ① ควบคุมด้านบวก: ทรีสะอาดต้องผ่าน — ถ้าข้อนี้ fail แปลว่าเคสด้านลบข้างล่างเชื่อไม่ได้
@@ -47,8 +50,22 @@ check "ref guard จับ ref ทริปใน .github/" fail "$d"
 d="$(mk)"; printf 'ref คือ %s\n' "$TRIP_REF" > "$d/docs/engine/README.md"
 check "ref ในเอกสารเชิงบรรยายต้องไม่โดนจับ" pass "$d"
 
-# ⑤ link guard: link ไว้แต่ไม่มี DEV_PROJECT_REF = ต้องไม่ผ่าน (ตรวจไม่ได้ ≠ ปลอดภัย)
-d="$(mk)"; mkdir -p "$d/supabase-platform/.temp"; echo "somerefvalue" > "$d/supabase-platform/.temp/project-ref"
-( unset DEV_PROJECT_REF; check "link แต่ไม่มี secret ต้องไม่ผ่าน" fail "$d" ) || rc=1
+# ⑥ ด่านโฟลเดอร์ migrations ผิดที่ — CLI ใช้ X/supabase/migrations/ ไม่ใช่ X/migrations/
+d="$(mk)"; mkdir -p "$d/supabase-platform/migrations"
+check "จับโฟลเดอร์ supabase-platform/migrations/ ที่ CLI มองไม่เห็น" fail "$d"
+
+d="$(mk)"; mkdir -p "$d/supabase-platform/migrations"; echo "create table t();" > "$d/supabase-platform/migrations/0001_x.sql"
+check "จับ .sql ที่วางผิดโฟลเดอร์" fail "$d"
+
+# ⑦ ล็อกขอบเขต: โฟลเดอร์ที่ถูกต้องตาม CLI ต้องไม่โดนจับ
+d="$(mk)"; mkdir -p "$d/supabase-platform/supabase/migrations"
+echo "create table t();" > "$d/supabase-platform/supabase/migrations/0001_x.sql"
+check "โฟลเดอร์ที่ถูกต้องของ CLI ต้องไม่โดนจับ" pass "$d"
+
+# ⑧ link guard ต้องอ่าน path ใหม่ของ CLI (supabase-platform/supabase/.temp/)
+#    เคยเขียน path ผิดไว้ ทำให้ด่านนี้ข้ามตัวเองเงียบๆ = no-op อีกตัว
+d="$(mk)"; mkdir -p "$d/supabase-platform/supabase/.temp"
+echo "someotherref" > "$d/supabase-platform/supabase/.temp/project-ref"
+( unset DEV_PROJECT_REF; check "link แต่ไม่มี secret ต้องไม่ผ่าน (path ใหม่)" fail "$d" ) || rc=1
 
 exit $rc
