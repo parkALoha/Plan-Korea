@@ -1,6 +1,7 @@
 # ทีมของโปรเจกต์นี้ — อ่านก่อนเริ่มงานทุกครั้ง
 
-โปรเจกต์ `plan-korea` ทำงานเป็นทีม **8 เซสชัน** ที่**แชร์ working tree เดียวกัน** ไม่ได้แยก branch
+โปรเจกต์ `plan-korea` ทำงานเป็นทีม **8 เซสชัน** ที่**แชร์ working tree เดียวกัน**
+🔴 **ตั้งแต่ 18 ส.ค. 2026 มี 2 ทรี:** ทรีหลักอยู่ที่ `main` (เว็บทริป · freeze) · งานแพลตฟอร์มอยู่ใน `git worktree` แยกบน branch `platform`
 ถ้าคุณกำลังอ่านไฟล์นี้ คุณเป็นหนึ่งใน 8 คนนี้ — **หน้าที่แรกของคุณคือรู้ว่าตัวเองคือใคร**
 
 > **ทีมขยายจาก 4 เป็น 8 เมื่อ 17 ส.ค. 2026** ตอนเริ่มงาน Dynamic Travel Platform Engine
@@ -46,15 +47,29 @@ mcp__ccd_session_mgmt__list_sessions
 | **P3-FE/Perf** — Dynamic Routing & Web Performance | routing · แคช · bundle · service worker/PWA | `app/` (routing) · `next.config.ts` · `public/sw.js` |
 | **P4-QA/Sec** — Attack Simulation & End-to-End QA | regression · e2e ในเบราว์เซอร์ · PIN gate · RLS · **หาและรายงาน ไม่แก้เอง** เว้นแต่ P1 สั่ง | `lib/__tests__/` · `proxy.ts` |
 | **P5-AI/Agent** — Travel Copilot & Logic Prompting | system prompt · tool/function schema · RAG · ตรรกะ optimize เส้นทาง/เวลา | `docs/engine/copilot-spec.md` |
-| **P6-DevOps** — CI/CD Pipeline & Cloud Deployment | GitHub Actions · Supabase local (Docker) · env · monitoring · rate limit | `docs/engine/devops.md` · `.github/` |
+| **P6-DevOps** — CI/CD Pipeline & Cloud Deployment | GitHub Actions · Supabase คลาวด์ org ใหม่ (D14) · env · monitoring · rate limit | `docs/engine/devops.md` · `.github/` |
 | **P7-Mobile** — Cross-Platform App Development | Expo/React Native · offline sync + conflict model · push | `docs/engine/mobile-arch.md` |
 | **P8-PM/BA** — Project Management & Requirement Analyst | user story · acceptance criteria · release roadmap | `docs/engine/backlog.md` |
 
-**P1 เป็นหัวหน้า** — ตัดสินใจเรื่องที่คร่อมหลายโซน รวมผลจากทุกคน และเป็นคนเดียวที่สรุปให้ผู้ใช้
+**P1 เป็นหัวหน้า** — ตัดสินใจเรื่องที่คร่อมหลายโซน รวมผลจากทุกคน
 คนอื่นเจอของนอกโซนตัวเอง **ให้รายงานกลับ P1 ไม่แก้ข้ามโซนเอง**
 
-⚠️ **P5–P8 อยู่ในระยะออกแบบ (17 ส.ค. – 21 ต.ค. 2026)** — โซนของทั้ง 4 คนคือไฟล์เอกสารใน `docs/engine/`
-เท่านั้น **ยังไม่มีสิทธิ์แตะโค้ดแอป** จนกว่าทริปจะจบและผู้ใช้สั่งเริ่มระยะ 2 · ดู `docs/engine/README.md`
+🔴 **เส้นแบ่งการคุยกับผู้ใช้ (ชัดเจนเมื่อ 18 ส.ค. 2026 — P5 แย้งว่าฉบับเดิมกว้างเกิน และถูก):**
+
+| เรื่อง | ใครพูดกับผู้ใช้ |
+|---|---|
+| **งานในโซนตัวเอง** · ผู้ใช้ถามตรง | **เจ้าของโซนตอบเอง** — เป็นหน้าที่พื้นฐาน มอบต่อไม่ได้ |
+| **สถานะรวมของทีม** · เรื่องข้ามโซน · สรุปที่อ้างงานคนอื่น | **ผ่าน P1 เท่านั้น** |
+
+**เหตุผลของฝั่งขวา:** P1 เป็นคนเดียวที่รู้ว่าผู้ใช้**ได้รับอะไรไปแล้วบ้าง** — ไม่ใช่เรื่องอำนาจ
+· พลาดมาแล้ว 2 ครั้งใน 1 วัน (17–18 ส.ค.): ผู้ใช้ได้รายการที่ล้าสมัย 1 ครั้ง และได้ข้อความซ้ำเรื่องเดียวกันจาก 2 คน 1 ครั้ง
+⚠️ **ฉบับเดิมเขียนแค่ "P1 เป็นคนเดียวที่สรุปให้ผู้ใช้" ซึ่งถูกอ่านได้ว่าห้ามคนอื่นพูดกับผู้ใช้เลย** — ไม่ใช่เจตนา และเป็นตัวอย่างของ `D34`
+
+🔴 **แก้ 18 ส.ค. 2026 — ระยะออกแบบจบแล้ว ผู้ใช้สั่งเริ่มสร้างทันที ไม่รอหลังทริป**
+โซนในตารางด้านบนใช้กับ **branch `platform` ใน worktree แยก** ได้เต็มที่แล้ว เขียนโค้ดจริงได้
+· **แต่บน `main` ทุกคนยังแตะโค้ดแอปไม่ได้เหมือนเดิม** เว้นบั๊กที่ทำให้ใช้งานไม่ได้ + เนื้อหาทริป
+· ⚠️ **ประโยคเดิมที่เขียนว่า "P5–P8 ยังไม่มีสิทธิ์แตะโค้ดแอปจนกว่าทริปจะจบ" หมดอายุแล้ว ห้ามอ้างอิง**
+· ดู `docs/engine/README.md` กติกาเหล็กฉบับระยะสร้าง
 
 ---
 
