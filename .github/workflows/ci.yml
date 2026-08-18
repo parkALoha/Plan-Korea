@@ -1,0 +1,127 @@
+# CI ของงานแพลตฟอร์ม (E0) — เจ้าของ: P6-DevOps
+#
+# 🔴 branch นี้คือ `platform` เท่านั้น · `main` เป็นเว็บทริปที่ freeze อยู่จนกลับจากเกาหลี
+#    workflow นี้ตั้ง `branches: [platform]` ไว้โดยตั้งใจ ห้ามเพิ่ม `main` จนกว่าผู้ใช้จะสั่ง
+#    ไม่งั้น push เข้า main ระหว่างแก้บั๊กหน้างานจะไปสะดุด CI ที่ยังไม่เคยรันกับ main มาก่อน
+name: CI
+
+on:
+  pull_request:
+    branches: [platform]
+  push:
+    branches: [platform]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ด่านเร็ว — ล้มใน ~30 วินาทีโดยไม่ต้องรอ npm ci
+  guards:
+    name: Guards (AC9 · AC10 · ref)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks ต้องเห็นประวัติทั้งหมด ไม่ใช่แค่ commit ล่าสุด
+
+      # ── E0-AC9 (บังคับ) — หา secret ที่หลุดเข้า git ──────────────────────────
+      # 🔴 เป็นด่าน ไม่ใช่ป้าย: ทำงานแม้ไม่มีใครอ่านกติกา
+      # ⚠️ gitleaks-action ฟรีสำหรับ repo ของบัญชีส่วนตัว (parkALoha = type User)
+      #    ถ้าวันหนึ่งย้าย repo ไปอยู่ใต้ GitHub organization จะต้องมี GITLEAKS_LICENSE
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── E0-AC10 (ด่านรอง) — .sql ของงานออกแบบต้องอยู่ใน docs/engine/schema/ เท่านั้น ──
+      # ⚠️ ลำดับที่ P4 เถียงชนะ: ด่านหลักคือ rls-policies.sql §11.2 (policy_count = 0)
+      #    AC10 คุ้มเพราะ **ทำงานได้ก่อนมี DB ให้ query** ไม่ใช่เพราะครอบคลุมกว่า
+      - name: AC10 — .sql ใน docs/engine/ ต้องอยู่ใน schema/
+        run: |
+          stray=$(find docs/engine -name '*.sql' -not -path 'docs/engine/schema/*')
+          if [ -n "$stray" ]; then
+            echo "🔴 เจอ .sql นอก docs/engine/schema/:"; echo "$stray"
+            echo "กติกาเหล็กข้อ 3 — SQL ของงานแพลตฟอร์มอยู่ได้ที่ docs/engine/schema/ ที่เดียว"
+            exit 1
+          fi
+          echo "ok — .sql ทุกไฟล์อยู่ใน schema/"
+
+      # ── ref ของ DB ทริปห้ามอยู่ใน "ไฟล์ที่เครื่องจักรอ่านแล้วทำตาม" ──────────────
+      # 🔴 ขอบเขตนี้มาจากมติ P1 เมื่อ 17 ส.ค. 2026 (ไม่ใช่ "ห้ามปรากฏในทุกไฟล์")
+      #    เหตุผล: ref รั่วผ่าน client bundle อยู่แล้ว (lib/supabase.ts:3 + proxy.ts ตัด _next)
+      #    การไล่ลบจากเอกสารเชิงบรรยายจึงไม่ปิดอะไร · ที่อันตรายจริงคือไฟล์ที่ "คำสั่งวิ่งตาม"
+      #    ดู docs/engine/devops.md §1.7
+      - name: ref ของ DB ทริปห้ามอยู่ในไฟล์ที่เครื่องทำตาม
+        run: |
+          TRIP_REF=$(printf 'ejzibhgqhxdz%s' 'kovsnpds')   # แยกสตริงกันไฟล์นี้ trip ตัวเอง
+          paths=""
+          for p in .github supabase-platform supabase/migrations package.json vercel.json; do
+            [ -e "$p" ] && paths="$paths $p"
+          done
+          if [ -n "$paths" ] && grep -rl "$TRIP_REF" $paths 2>/dev/null; then
+            echo "🔴 ref ของ DB ทริปอยู่ในไฟล์ที่เครื่องจักรอ่านแล้วทำตาม — คำสั่งอาจวิ่งไปผิดที่"
+            exit 1
+          fi
+          echo "ok — ไม่มี ref ทริปในไฟล์ที่เครื่องทำตาม"
+
+      # ── ถ้ามีการ link CLI ไว้ ต้อง link กับ engine-dev เท่านั้น (allowlist) ────────
+      # ยังไม่มี supabase-platform/ ในระยะนี้ → step นี้ข้ามไปเอง จะเริ่มมีผลตอน E2
+      - name: ถ้า link ไว้ ต้องเป็น engine-dev เท่านั้น
+        run: |
+          f=supabase-platform/.temp/project-ref
+          if [ ! -f "$f" ]; then echo "ยังไม่ได้ link — ข้าม"; exit 0; fi
+          if [ -z "${{ secrets.DEV_PROJECT_REF }}" ]; then
+            echo "🔴 มีการ link แล้วแต่ยังไม่ได้ตั้ง secret DEV_PROJECT_REF — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+            exit 1
+          fi
+          [ "$(cat $f)" = "${{ secrets.DEV_PROJECT_REF }}" ] \
+            || { echo "🔴 link อยู่กับโปรเจกต์ที่ไม่ใช่ engine-dev — หยุด"; exit 1; }
+          echo "ok — link อยู่กับ engine-dev"
+
+  verify:
+    name: Lint · Test · Types · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # ตรึงให้ตรงกับเครื่องผู้ใช้ (v20.12.2) — ยังไม่ใช้ .nvmrc เพราะเป็นไฟล์ใหม่ที่ root
+          # 🔴 Node 20 หมดอายุ (EOL เม.ย. 2026) แล้ว · แผนขยับเป็น 22 อยู่ใน devops.md §2.3
+          #    ห้ามขยับก่อน 21 ต.ค. — next dev พังตอนอยู่เกาหลีคือความเสี่ยงที่รับไม่ได้
+          node-version: '20.12.2'
+          cache: npm
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm test
+
+      # 🔴 ต้องมาก่อน tsc เสมอ — Next 16 สร้าง global type (`LayoutProps`/`PageProps`/`RouteContext`)
+      #    ตอน build/dev · worktree ที่เพิ่ง clone ยังไม่มีไฟล์พวกนี้ `tsc --noEmit` จะล้มทันทีด้วย
+      #    `app/layout.tsx(31,50): TS2304: Cannot find name 'LayoutProps'`
+      #    ยืนยันของจริงแล้วในทรี platform (18 ส.ค. 2026) — ล้มก่อน typegen · ผ่านหลัง typegen
+      #    ดู node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md:297
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+
+      - name: Cache .next
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.[jt]s?(x)') }}
+          restore-keys: next-${{ hashFiles('package-lock.json') }}-
+
+      - run: npm run build
+        env:
+          # 🔴 ค่าปลอมล้วน · ห้ามใส่ key จริงของ Google หรือ Supabase ที่นี่ ไม่ว่ากรณีใด
+          #    next build ต้องการแค่ "ตัวแปรมีค่า" — ทั้ง 4 หน้าเป็น "use client" (B8)
+          #    จึงไม่มี fetch จริงตอน build · ถ้า P3 พลิกเป็น Server Component ต้องรื้อ step นี้ใหม่
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY: placeholder-not-a-real-key
+          GOOGLE_MAPS_API_KEY: placeholder-not-a-real-key
