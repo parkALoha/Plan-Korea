@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# supabase CLI (workdir ของงานแพลตฟอร์ม) — เก็บ project-ref ที่ link ไว้และไฟล์ชั่วคราว
+supabase-platform/.temp/
+supabase-platform/.branches/
