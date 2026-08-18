@@ -40,6 +40,27 @@ function jwtRole(key: string): string | null {
   }
 }
 
+/**
+ * ตัดคอมเมนต์ SQL ออกก่อน match
+ *
+ * ทำไมต้องมี: ไฟล์ schema อธิบายไว้เองว่า `using (true)` คือบั๊กที่ต้องห้าม (บทเรียน B2)
+ * → matcher ที่อ่านทั้งไฟล์จะ **แดงใส่ไฟล์ที่อธิบายว่าทำไมสิ่งนั้นถึงต้องห้าม**
+ * แรงกดดันที่มันสร้างคือ "ลบคอมเมนต์ทิ้งให้เทสต์เขียว" = **ลบความรู้เพื่อให้ตัวเลขสวย**
+ * ซึ่งแย่กว่าไม่มีเทสต์ (P6 ชนโจทย์เดียวกันกับกฎ gitleaks ที่จับ `.md` ที่แค่พูดถึงชื่อ env)
+ *
+ * ⚠️ ข้อจำกัดที่รู้อยู่: `--` ที่อยู่ **ข้างในสตริง** จะถูกตัดตามไปด้วย → บรรทัดนั้นสั้นลง
+ * ปัจจุบันไฟล์ไม่มีเคสแบบนั้น · ถ้าวันหนึ่งมี อาการคือ **จับของจริงไม่เจอ ไม่ใช่จับผิด**
+ * ซึ่งเป็นทิศที่แย่กว่า → เคส "matcher แยกได้" ข้างล่างมีไว้ให้แดงถ้าตัดจนไม่เหลืออะไร
+ */
+function stripComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
+
+/** หา policy ที่ปล่อยผ่าน — ใช้ตัวเดียวกันทั้งกับไฟล์จริงและกับเคสล็อกขอบเขต */
+function permissiveIn(sql: string): string[] {
+  return stripComments(sql).match(/(?:using|with check)\s*\(\s*true\s*\)/gi) ?? [];
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // ส่วนที่รันได้เสมอ ไม่ต้องมี DB
 // ───────────────────────────────────────────────────────────────────────────
@@ -50,7 +71,7 @@ describe("E1-AC2 — migration ต้องอ้าง identity จริง", 
   //    เพราะ self-check ของ P1 **มีสตริง `using (true)` กับ `force row level security`
   //    อยู่ในตัว query ที่ใช้ตรวจหาของพวกนั้น** → สแกนทั้งไฟล์จะจับตัวตรวจแทนที่จะจับของจริง
   //    (เจอตอนรันจริง เพราะเทสต์แดง — ไม่ใช่เพราะไปนั่งอ่านเจอ)
-  const sql = whole.split(/^commit;/m)[0];
+  const sql = stripComments(whole.split(/^commit;/m)[0]);
 
   it("ตัดบล็อก self-check ออกได้จริง — ไม่งั้นเคสข้างล่างวัดผิดไฟล์", () => {
     expect(sql.length).toBeGreaterThan(1000);
@@ -58,13 +79,31 @@ describe("E1-AC2 — migration ต้องอ้าง identity จริง", 
     expect(sql).not.toContain("self-check");
   });
 
+  // 🔴 เคสล็อกขอบเขตของตัว matcher เอง — ต้องแยก "ใช้จริง" ออกจาก "พูดถึง" ได้
+  //    ถ้าไม่มีคู่นี้ การตัดคอมเมนต์อาจกลายเป็นการตัดจนไม่เหลืออะไรให้จับ แล้วเงียบตลอดกาล
+  //    ⚠️ ทั้งสองเคสวิ่งผ่าน `stripComments` + regex **ตัวเดียวกับที่ใช้กับไฟล์จริง**
+  //       ไม่ใช่ตรรกะคู่ขนาน ไม่งั้นมันจะพิสูจน์คนละอย่างกับที่รันจริง
+  it("matcher แยก 'พูดถึงในคอมเมนต์' ออกจาก 'เขียนใน SQL จริง' ได้", () => {
+    const mentionOnly = [
+      "-- ⚠️ ห้ามเขียน using (true) เด็ดขาด (บทเรียน B2)",
+      "/* ฉบับเก่าเคยเป็น with check (true) ทั้งไฟล์ */",
+      "create policy p on public.t for select to authenticated using (app.can_read_trip(id));",
+    ].join("\n");
+    expect(permissiveIn(mentionOnly), "คอมเมนต์ที่พูดถึงกลับถูกจับ = เทสต์ลงโทษการอธิบายเหตุผล").toEqual([]);
+
+    const forReal = "create policy p on public.t for select to authenticated using (true);";
+    expect(permissiveIn(forReal), "SQL จริงหลุด = matcher ตัดมากเกินไป").not.toEqual([]);
+
+    // `--` ท้ายบรรทัดที่มี SQL จริงอยู่ข้างหน้า ต้องยังจับได้
+    expect(permissiveIn("... using (true); -- ตั้งใจไว้ชั่วคราว")).not.toEqual([]);
+  });
+
   it("มี auth.uid() มากกว่า 0 จุด (31 migration เดิมได้ 0)", () => {
     expect((sql.match(/auth\.uid\(\)/g) ?? []).length).toBeGreaterThan(0);
   });
 
   it("🔴 ไม่มี policy ไหนเป็น using (true) / with check (true)", () => {
-    const permissive = sql.match(/(?:using|with check)\s*\(\s*true\s*\)/gi) ?? [];
-    expect(permissive).toEqual([]);
+    expect(permissiveIn(sql)).toEqual([]);
   });
 
   it("ไม่มี grant แบบเหมารวม (กฎข้อ 5)", () => {
@@ -80,7 +119,9 @@ describe("E1-AC2 — migration ต้องอ้าง identity จริง", 
   //    ถ้าเคสนี้ไม่เจอ แปลว่าตัวตรวจเสีย ไม่ใช่ว่าไฟล์ใหม่สะอาด — และเคสข้างบนก็เชื่อไม่ได้ตามไปด้วย
   it("ตัวตรวจจับได้จริง — migration เดิมต้องโดนจับว่าเป็น using (true) และไม่มี auth.uid()", () => {
     const legacy = readFileSync(resolve(process.cwd(), "supabase/migrations/0001_init.sql"), "utf8");
-    expect((legacy.match(/(?:using|with check)\s*\(\s*true\s*\)/gi) ?? []).length).toBeGreaterThan(0);
+    // ใช้ permissiveIn ตัวเดียวกับที่ตรวจไฟล์จริง — ถ้าเขียน regex ซ้ำตรงนี้ เคสนี้จะยังเขียว
+    // แม้ stripComments จะตัดจนไม่เหลืออะไรให้จับ = พิสูจน์คนละอย่างกับที่รันจริง
+    expect(permissiveIn(legacy).length).toBeGreaterThan(0);
     expect((legacy.match(/auth\.uid\(\)/g) ?? []).length).toBe(0);
   });
 });
