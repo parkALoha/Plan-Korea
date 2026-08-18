@@ -19,6 +19,17 @@
 begin;
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- 🔴 P-18 (P4): ต้องอยู่**บนสุด** ก่อน create table ทุกตัว
+-- `alter default privileges` มีผลกับ object ที่สร้าง **หลัง** มันเท่านั้น ไม่ย้อนหลัง
+-- ฉบับแรกวางไว้บรรทัด 161 = ตาราง 3 ตัวถูกสร้างไปแล้วภายใต้ default ของโปรเจกต์
+-- ซึ่ง Supabase bootstrap คือ `grant all on tables to anon, authenticated, service_role`
+-- → คอมเมนต์ที่ผมเขียนว่า "anon ไม่ได้อะไรเลย" **อาจไม่จริง** และ AC4 จะผ่านด้วย RLS ชั้นเดียว
+-- 🎯 ปัญหาที่แท้จริงไม่ใช่ลำดับ แต่คือ **ไฟล์ไปพึ่งค่าที่มองไม่เห็น**
+-- ───────────────────────────────────────────────────────────────────────────
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema app    revoke execute on functions from public;
+
+-- ───────────────────────────────────────────────────────────────────────────
 -- 0. schema app — ที่อยู่ของ helper
 -- ───────────────────────────────────────────────────────────────────────────
 -- ทำไมไม่วางใน public: PostgREST เปิด schema public เป็น REST อัตโนมัติ
@@ -73,6 +84,12 @@ create table public.trip_members (
 );
 
 create index trip_members_user_idx on public.trip_members(user_id);
+
+-- 🔴 P-18: revoke แบบระบุชื่อ — แก้ของที่ **มีอยู่แล้ว** ส่วน ADP ข้างบนกันของ **ใหม่**
+-- ต้องมีทั้งคู่ · อย่างใดอย่างหนึ่งไม่พอ
+revoke all on public.profiles     from anon;
+revoke all on public.trips        from anon;
+revoke all on public.trip_members from anon;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 2. helper — SECURITY DEFINER เพื่อ "ตัดวงจร" ไม่ใช่เพื่อ "ได้สิทธิ์เพิ่ม"
@@ -132,33 +149,20 @@ as $$
    where trip_id = t and role = 'owner'
 $$;
 
-create or replace function app.can_write_trip(t uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select app.trip_role(t) in ('owner','editor')
-$$;
-
 -- grant ทีละตัวพร้อมลายเซ็น ห้าม "grant execute on all functions in schema app"
 -- (กฎร่วมข้อ 5 — P4 เจอว่า grant แบบเหมาลบล้าง revoke ของคนอื่นตามลำดับการรัน)
 revoke all on function app.trip_role(uuid)        from public;
 revoke all on function app.shares_trip_with(uuid) from public;
 revoke all on function app.trip_owner_count(uuid) from public;
 revoke all on function app.can_read_trip(uuid) from public;
-revoke all on function app.can_write_trip(uuid) from public;
 
 grant execute on function app.trip_role(uuid)         to authenticated;
 grant execute on function app.shares_trip_with(uuid)  to authenticated;
 grant execute on function app.trip_owner_count(uuid)  to authenticated;
+-- 🔴 P4: `can_write_trip` ถอดออกแล้ว — E1 ยังไม่มี policy ไหนเรียกใช้
+-- "อย่า grant สิ่งที่ยังไม่ต้องใช้" · จะกลับมาใน E2 ตอนมีตารางเนื้อหาที่ editor เขียนจริง
 grant execute on function app.can_read_trip(uuid)  to authenticated;
-grant execute on function app.can_write_trip(uuid) to authenticated;
 
--- ห้ามให้ตารางใหม่ในอนาคตได้สิทธิ์อัตโนมัติ
-alter default privileges in schema app  revoke execute on functions from public;
-alter default privileges in schema public revoke all on tables from anon, authenticated;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 3. RLS
@@ -326,6 +330,44 @@ create trigger trips_freeze_created_by
   for each row execute function app.freeze_created_by();
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- 5.7 🔴 P-19 (P4): หลักประกันว่าทริปมี owner เสมอ — ต้องตรวจตอน commit ไม่ใช่ตอนตัดสินใจ
+-- ───────────────────────────────────────────────────────────────────────────
+-- `app.trip_owner_count` ใน RLS predicate **แพ้ race**:
+--   Tx1 อ่านได้ 2 → ผ่าน → ลบ A     Tx2 อ่านได้ 2 (snapshot เดิม) → ผ่าน → ลบ B
+--   ทั้งคู่ commit → owner เหลือ 0 → 🔴 ทริปกำพร้าถาวร กู้จาก client ไม่ได้
+--   (ไม่มี policy DELETE บน trips · เพิ่มสมาชิกก็ไม่ได้เพราะต้องมี owner อยู่ก่อน)
+-- RLS predicate ไม่ล็อกแถว และ stable function อ่าน snapshot → สองฝั่งเห็นเลขเดียวกัน
+-- 🎯 "ตรวจตอนตัดสินใจ" กับ "ตรวจตอน commit" ต่างกันเฉพาะตอนมีคนสองคน
+-- helper ยังอยู่เพื่อบอกผู้ใช้ล่วงหน้าว่าออกไม่ได้ (UX) — แต่**หลักประกันคือ trigger ตัวนี้**
+
+create or replace function app.assert_trip_has_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare n integer;
+begin
+  -- ทริปถูกลบทั้งใบ → cascade ลบสมาชิกหมด → ไม่ต้องบ่น
+  if not exists (select 1 from public.trips where id = old.trip_id) then
+    return null;
+  end if;
+  select count(*) into n
+    from public.trip_members
+   where trip_id = old.trip_id and role = 'owner';
+  if n = 0 then
+    raise exception 'ทริปต้องมี owner อย่างน้อย 1 คนเสมอ (P-19)';
+  end if;
+  return null;
+end;
+$$;
+
+create constraint trigger trip_members_keep_owner
+  after delete or update on public.trip_members
+  deferrable initially deferred
+  for each row execute function app.assert_trip_has_owner();
+
+-- ───────────────────────────────────────────────────────────────────────────
 -- 6. updated_at ให้เซิร์ฟเวอร์เขียน (D7 — ห้ามเชื่อนาฬิกาเครื่อง client)
 -- ───────────────────────────────────────────────────────────────────────────
 create or replace function app.touch_updated_at()
@@ -350,6 +392,9 @@ commit;
 -- 7. self-check — รันหลัง commit แล้วต้องได้ผลตามที่เขียนไว้
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ⚠️ ชุดนี้ P4 ตรวจแล้วและชี้ช่อง 5 จุด — แก้ครบทั้ง 5 · ที่มาอยู่ในคอมเมนต์แต่ละข้อ
+-- 🔴 หลักที่ใช้: เช็คที่ยืนยันว่า "ไม่มีของผิด" เชื่อไม่ได้ ถ้าไม่มีเช็คที่ยืนยันว่า "ของที่ต้องมี มีอยู่"
+
 -- 7.1 ต้องได้ 0 แถว — ตารางที่เปิด RLS แต่ไม่มี policy สักตัว
 select c.relname as table_without_policy
   from pg_class c
@@ -357,24 +402,62 @@ select c.relname as table_without_policy
  where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
    and not exists (select 1 from pg_policy p where p.polrelid = c.oid);
 
--- 7.2 ต้องได้ 0 แถว — policy ที่ปล่อยผ่านทุกกรณี (บั๊ก B2 ของเว็บเดิม)
-select polrelid::regclass as tbl, polname
+-- 7.2 ต้องได้ 0 แถว — policy ที่เปิดโล่ง (บั๊ก B2 ของเว็บเดิม)
+-- 🔴 P-20: ฉบับแรกใช้ `and` → policy ที่ using(true) แต่ with check เข้ม **หลุดเช็ค**
+--    ทั้งที่ครึ่งอ่านเปิดโล่ง · ต้องเป็น `or` จับได้ทั้งกรณีที่ครึ่งใดครึ่งหนึ่งเป็น true
+select polrelid::regclass as tbl, polname, polcmd
   from pg_policy
  where polrelid in ('public.profiles'::regclass,'public.trips'::regclass,'public.trip_members'::regclass)
-   and coalesce(pg_get_expr(polqual, polrelid), 'true') = 'true'
-   and coalesce(pg_get_expr(polwithcheck, polrelid), 'true') = 'true';
+   and ( coalesce(pg_get_expr(polqual, polrelid), 'true') = 'true'
+      or coalesce(pg_get_expr(polwithcheck, polrelid), 'true') = 'true' );
 
--- 7.3 ต้องได้ 0 แถว — สิทธิ์ที่หลุดไปถึง anon
-select table_name, privilege_type
+-- 7.3 ต้องได้ 0 แถว — สิทธิ์ที่หลุดไปถึงคนไม่ล็อกอิน
+-- 🔴 P4 (c): ฉบับแรกเช็คแค่ grantee='anon' → **grant ให้ PUBLIC ไม่โผล่** ทั้งที่ให้ผลถึง anon เหมือนกัน
+select table_name, grantee, privilege_type
   from information_schema.role_table_grants
- where grantee = 'anon' and table_schema = 'public'
+ where grantee in ('anon','PUBLIC') and table_schema = 'public'
    and table_name in ('profiles','trips','trip_members');
 
--- 7.4 🔴 ต้องได้ 1 แถว — trigger ที่กัน P-13 · ถ้าหายไปคือทริปกำพร้ากลับมา
+-- 7.4 🔴 ต้องได้ 0 แถว — **ตารางที่มี policy แต่ลืม grant ให้ authenticated**
+-- P4 (a) เรียกข้อนี้ว่าช่องที่แพงที่สุด และเหตุผลคือ:
+--   `alter default privileges ... revoke` ที่เพิ่มเข้ามา ทำให้ "ลืม grant" กลายเป็น
+--   **ค่าเริ่มต้นของทุกตารางใหม่ใน E2** ไม่ใช่อุบัติเหตุ
+--   7.1 จับ "RLS เปิดแต่ไม่มี policy" · **ไม่จับ "มี policy แต่ลืม grant"** ซึ่งอาการคือแอปพังเงียบ
+-- 🎯 ถ้าไม่มีข้อนี้ คนที่เจอ permission denied คนแรกคือผู้ใช้ ไม่ใช่ CI
+select c.relname as has_policy_but_no_grant
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
+   and exists (select 1 from pg_policy p where p.polrelid = c.oid)
+   and not exists (
+     select 1 from information_schema.role_table_grants g
+      where g.table_schema = 'public' and g.table_name = c.relname
+        and g.grantee = 'authenticated');
+
+-- 7.5 ต้องได้ 0 แถว — `force row level security` ที่ไหนก็ตาม
+-- P4 (d): ถ้ามีใครเปิดบน trip_members **กลไก definer พังทั้งชุด**
+--         และ error จะโผล่ตอน runtime ไม่ใช่ตอน migrate
+select c.relname as forced_rls
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relforcerowsecurity;
+
+-- 7.6 ต้องได้ 0 แถว — definer ที่ไม่ได้ตรึง search_path
+-- P4 (e): ฟังก์ชันใหม่ใน E2 ที่ลืมตั้ง = ช่องยกระดับสิทธิ์ · ตรวจจาก pg_proc.proconfig ได้ตรงๆ
+select p.proname as definer_without_search_path
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'app' and p.prosecdef
+   and not exists (
+     select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%');
+
+-- 7.7 🔴 ต้องได้ 1 แถว — trigger ที่กัน P-13 (ทริปกำพร้าตอนสร้าง)
 select tgname from pg_trigger
  where tgrelid = 'public.trips'::regclass and tgname = 'trips_bootstrap_owner';
 
--- 7.5 ต้อง > 0 — E1-AC2 วัดว่ามี auth.uid() จริงในนโยบาย
+-- 7.8 🔴 ต้องได้ 1 แถว — trigger ที่กัน P-19 (ทริปกำพร้าตอน owner ออกพร้อมกัน)
+select tgname from pg_trigger
+ where tgrelid = 'public.trip_members'::regclass and tgname = 'trip_members_keep_owner';
+
+-- 7.9 ต้อง > 0 — E1-AC2 วัดว่ามี auth.uid() จริงในนโยบาย
 select count(*) as policies_using_auth_uid
   from pg_policy
  where pg_get_expr(polqual, polrelid) like '%auth.uid%'
