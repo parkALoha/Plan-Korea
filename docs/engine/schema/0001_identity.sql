@@ -45,7 +45,7 @@ create table public.profiles (
 
 create table public.trips (
   id             uuid primary key default gen_random_uuid(),
-  owner_id       uuid not null references public.profiles(id) on delete restrict,
+  created_by     uuid not null references public.profiles(id) on delete restrict,
   title          text not null check (length(trim(title)) between 1 and 120),
   start_date     date not null,
   end_date       date not null,
@@ -57,9 +57,11 @@ create table public.trips (
   constraint trips_dates_ordered check (end_date >= start_date)
 );
 
--- owner_id เป็น restrict ไม่ใช่ cascade โดยตั้งใจ:
--- ลบ profile แล้วทริปหายทั้งใบ = ข้อมูลของสมาชิกคนอื่นหายไปด้วย
--- ต้องบังคับให้ย้าย owner ก่อน ไม่ใช่ปล่อยให้หายเงียบ
+-- 🔴 P-15 (P4): เดิมชื่อ `owner_id` แล้ว policy ครึ่งหนึ่งเชื่อคอลัมน์นี้ อีกครึ่งเชื่อ `trip_members.role`
+-- สองแหล่งไม่มีอะไรบังคับให้ตรงกัน → พอโอน owner ผ่าน trip_members คนใหม่จะแก้ทริปไม่ได้
+-- แก้ที่ต้นเหตุ: เปลี่ยนชื่อเป็น `created_by` ให้ชัดว่า **ไม่ใช่แหล่งสิทธิ์**
+-- 🎯 แหล่งความจริงของสิทธิ์คือ `trip_members` ที่เดียว ตลอดทั้งไฟล์
+-- restrict ไม่ใช่ cascade: ลบ profile แล้วทริปหายทั้งใบ = ข้อมูลสมาชิกคนอื่นหายด้วย
 
 create table public.trip_members (
   trip_id    uuid not null references public.trips(id) on delete cascade,
@@ -85,7 +87,7 @@ returns text
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
   select role from public.trip_members
    where trip_id = t and user_id = (select auth.uid())
@@ -96,9 +98,38 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
   select app.trip_role(t) is not null
+$$;
+
+-- P4 P-17: policy ต้องผ่าน app.* **ทุกที่** ไม่ใช่เฉพาะ trip_members
+-- ถ้า profiles_select ยิง trip_members ตรงๆ มันจะไปพึ่ง RLS ของอีกตารางอีกชั้น = policy ผูกกัน
+create or replace function app.shares_trip_with(other uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+      from public.trip_members me
+      join public.trip_members them on them.trip_id = me.trip_id
+     where me.user_id = (select auth.uid()) and them.user_id = other
+  )
+$$;
+
+-- P4 P-14: ต้องนับ owner ได้ ถึงจะให้คนลาออกเองได้โดยไม่ทำให้ทริปกำพร้า
+create or replace function app.trip_owner_count(t uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select count(*)::int from public.trip_members
+   where trip_id = t and role = 'owner'
 $$;
 
 create or replace function app.can_write_trip(t uuid)
@@ -106,18 +137,22 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
   select app.trip_role(t) in ('owner','editor')
 $$;
 
 -- grant ทีละตัวพร้อมลายเซ็น ห้าม "grant execute on all functions in schema app"
 -- (กฎร่วมข้อ 5 — P4 เจอว่า grant แบบเหมาลบล้าง revoke ของคนอื่นตามลำดับการรัน)
-revoke all on function app.trip_role(uuid)     from public;
+revoke all on function app.trip_role(uuid)        from public;
+revoke all on function app.shares_trip_with(uuid) from public;
+revoke all on function app.trip_owner_count(uuid) from public;
 revoke all on function app.can_read_trip(uuid) from public;
 revoke all on function app.can_write_trip(uuid) from public;
 
-grant execute on function app.trip_role(uuid)      to authenticated;
+grant execute on function app.trip_role(uuid)         to authenticated;
+grant execute on function app.shares_trip_with(uuid)  to authenticated;
+grant execute on function app.trip_owner_count(uuid)  to authenticated;
 grant execute on function app.can_read_trip(uuid)  to authenticated;
 grant execute on function app.can_write_trip(uuid) to authenticated;
 
@@ -138,13 +173,7 @@ create policy profiles_select on public.profiles
   for select to authenticated
   using (
     id = (select auth.uid())
-    or exists (
-      select 1
-        from public.trip_members me
-        join public.trip_members them on them.trip_id = me.trip_id
-       where me.user_id = (select auth.uid())
-         and them.user_id = profiles.id
-    )
+    or app.shares_trip_with(id)          -- P-17: ผ่าน app.* ไม่ยิงตารางอื่นตรงๆ
   );
 
 create policy profiles_insert on public.profiles
@@ -166,12 +195,13 @@ create policy trips_select on public.trips
 
 create policy trips_insert on public.trips
   for insert to authenticated
-  with check (owner_id = (select auth.uid()));
+  with check (created_by = (select auth.uid()));
 
+-- P-15: ทั้งสองครึ่งเชื่อ trip_members เหมือนกัน ไม่มีแหล่งที่สอง
 create policy trips_update on public.trips
   for update to authenticated
   using      (app.trip_role(id) = 'owner')
-  with check (owner_id = (select auth.uid()));
+  with check (app.trip_role(id) = 'owner');
 
 -- 🔴 ไม่มี policy DELETE — ลบทริปคือลบจุดแวะทั้งทริปแบบย้อนไม่ได้
 --    ต้องผ่านทางที่ตั้งใจ (E2 soft delete) ไม่ใช่ DELETE ตรงจาก client
@@ -192,11 +222,17 @@ create policy trip_members_update on public.trip_members
   using      (app.trip_role(trip_id) = 'owner')
   with check (app.trip_role(trip_id) = 'owner');
 
+-- P4 P-14: ฉบับเดิมทำให้ viewer/editor **ติดอยู่ในทริปถาวร** ออกเองไม่ได้เลย
 create policy trip_members_delete on public.trip_members
   for delete to authenticated
   using (
-    app.trip_role(trip_id) = 'owner'
-    and user_id <> (select auth.uid())   -- owner ถอดตัวเองไม่ได้ → ทริปไร้เจ้าของ
+    -- owner ถอดคนอื่นออก
+    (app.trip_role(trip_id) = 'owner' and user_id <> (select auth.uid()))
+    -- หรือใครก็ได้ลาออกเอง · owner ลาออกได้ต่อเมื่อยังมี owner คนอื่นเหลือ
+    or (
+      user_id = (select auth.uid())
+      and (role <> 'owner' or app.trip_owner_count(trip_id) > 1)
+    )
   );
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -216,7 +252,7 @@ create or replace function app.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 begin
   insert into public.profiles (id, display_name)
@@ -237,12 +273,65 @@ create trigger on_auth_user_created
   for each row execute function app.handle_new_user();
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- 5.5 🔴 สร้างแถว owner ทันทีที่สร้างทริป — P-13 (P4 จับได้ · เป็นตัวบล็อก)
+-- ───────────────────────────────────────────────────────────────────────────
+-- ถ้าไม่มี trigger นี้ ลำดับที่เกิดจริงคือ:
+--   1. insert into trips ผ่าน (trips_insert ตรวจแค่ created_by = auth.uid())
+--   2. ไม่มีใครสร้างแถวใน trip_members → app.trip_role(id) คืน null
+--   3. trips_select = can_read_trip = "role is not null" → เท็จ → **อ่านทริปที่เพิ่งสร้างไม่เห็น**
+--   4. จะเติมเองก็ไม่ได้ — trip_members_insert ต้องการ role = 'owner' ซึ่งยังว่าง
+--      และ null = 'owner' คืน null ไม่ใช่ true → ถูกปฏิเสธ
+-- 🔴 ผลคือ **ทุกทริปที่สร้างจากเว็บกลายเป็นทริปกำพร้าที่มองไม่เห็น กู้จากฝั่ง client ไม่ได้เลย**
+--
+-- ⚠️ ห้ามแก้ด้วยการเปิด trip_members_insert ให้กว้างขึ้น (P4 เตือน)
+--    นั่นคือช่อง self-join — ใครก็เขียนแถวตัวเองเข้าทริปคนแปลกหน้าได้
+--    ซึ่งเป็นช่องที่ร้ายที่สุดของตารางนี้ · ต้องแก้ด้วย definer ฝั่งเซิร์ฟเวอร์เท่านั้น
+
+create or replace function app.bootstrap_trip_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.trip_members (trip_id, user_id, role, invited_by)
+  values (new.id, new.created_by, 'owner', new.created_by)
+  on conflict (trip_id, user_id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger trips_bootstrap_owner
+  after insert on public.trips
+  for each row execute function app.bootstrap_trip_owner();
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 5.6 created_by แก้ไม่ได้ — กันไม่ให้มีแหล่งความจริงที่สองย้อนกลับมา (P-15)
+-- ───────────────────────────────────────────────────────────────────────────
+create or replace function app.freeze_created_by()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.created_by is distinct from old.created_by then
+    raise exception 'created_by แก้ไม่ได้ — สิทธิ์มาจาก trip_members เท่านั้น (D38/P-15)';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trips_freeze_created_by
+  before update on public.trips
+  for each row execute function app.freeze_created_by();
+
+-- ───────────────────────────────────────────────────────────────────────────
 -- 6. updated_at ให้เซิร์ฟเวอร์เขียน (D7 — ห้ามเชื่อนาฬิกาเครื่อง client)
 -- ───────────────────────────────────────────────────────────────────────────
 create or replace function app.touch_updated_at()
 returns trigger
 language plpgsql
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 begin
   new.updated_at := now();
@@ -281,7 +370,11 @@ select table_name, privilege_type
  where grantee = 'anon' and table_schema = 'public'
    and table_name in ('profiles','trips','trip_members');
 
--- 7.4 ต้อง > 0 — E1-AC2 วัดว่ามี auth.uid() จริงในนโยบาย
+-- 7.4 🔴 ต้องได้ 1 แถว — trigger ที่กัน P-13 · ถ้าหายไปคือทริปกำพร้ากลับมา
+select tgname from pg_trigger
+ where tgrelid = 'public.trips'::regclass and tgname = 'trips_bootstrap_owner';
+
+-- 7.5 ต้อง > 0 — E1-AC2 วัดว่ามี auth.uid() จริงในนโยบาย
 select count(*) as policies_using_auth_uid
   from pg_policy
  where pg_get_expr(polqual, polrelid) like '%auth.uid%'
