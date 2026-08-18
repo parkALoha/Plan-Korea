@@ -44,7 +44,19 @@ function jwtRole(key: string): string | null {
 // ส่วนที่รันได้เสมอ ไม่ต้องมี DB
 // ───────────────────────────────────────────────────────────────────────────
 describe("E1-AC2 — migration ต้องอ้าง identity จริง", () => {
-  const sql = readFileSync(IDENTITY_SQL, "utf8");
+  const whole = readFileSync(IDENTITY_SQL, "utf8");
+
+  // 🔴 สแกนเฉพาะส่วน DDL (ก่อน `commit;`) ไม่รวมบล็อก self-check ท้ายไฟล์
+  //    เพราะ self-check ของ P1 **มีสตริง `using (true)` กับ `force row level security`
+  //    อยู่ในตัว query ที่ใช้ตรวจหาของพวกนั้น** → สแกนทั้งไฟล์จะจับตัวตรวจแทนที่จะจับของจริง
+  //    (เจอตอนรันจริง เพราะเทสต์แดง — ไม่ใช่เพราะไปนั่งอ่านเจอ)
+  const sql = whole.split(/^commit;/m)[0];
+
+  it("ตัดบล็อก self-check ออกได้จริง — ไม่งั้นเคสข้างล่างวัดผิดไฟล์", () => {
+    expect(sql.length).toBeGreaterThan(1000);
+    expect(sql.length).toBeLessThan(whole.length);
+    expect(sql).not.toContain("self-check");
+  });
 
   it("มี auth.uid() มากกว่า 0 จุด (31 migration เดิมได้ 0)", () => {
     expect((sql.match(/auth\.uid\(\)/g) ?? []).length).toBeGreaterThan(0);
@@ -264,6 +276,64 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       await D.from("trips").update({ title: `anon-hijack-${stamp}` }).eq("id", tripA);
       const { data } = await A.from("trips").select("title").eq("id", tripA).single();
       expect(data?.title).not.toBe(`anon-hijack-${stamp}`);
+    });
+
+    // P-18: `trip_members` เป็นตารางเดียวที่ authenticated ได้ grant DELETE
+    // → เป็นที่เดียวที่ "anon ไม่มี grant" กับ "RLS บล็อก" แยกผลกันไม่ออกถ้าไม่ยิง
+    it("anon DELETE trip_members ไม่ได้", async () => {
+      await D.from("trip_members").delete().eq("trip_id", tripA);
+      const { data } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(data).toHaveLength(1);
+    });
+  });
+
+  // ── P-14 / P-19: ลาออกจากทริป และการกันทริปกำพร้า ──────────────────────
+  describe("P-19 — ทริปต้องมี owner เสมอ และคนอื่นต้องลาออกได้", () => {
+    it("🔴 owner คนเดียวลาออกไม่ได้ — ยืนยันด้วยการอ่านซ้ำ", async () => {
+      // deferred constraint trigger ยิงตอน commit → error อาจมาในรูป 'ทริปต้องมี owner'
+      // แต่ถ้ามันเงียบ แถวจะหายจริง → ต้องอ่านซ้ำ ไม่เชื่อว่าไม่มี error
+      await A.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.a);
+      const { data } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(data, "owner คนสุดท้ายลาออกได้ = ทริปกำพร้า กู้จาก client ไม่ได้เลย").toHaveLength(1);
+    });
+
+    it("viewer ลาออกเองได้ (P-14 — ฉบับเดิมทำให้ติดอยู่ในทริปถาวร)", async () => {
+      const { error: invErr } = await A.from("trip_members").insert({
+        trip_id: tripA,
+        user_id: ids.c,
+        role: "viewer",
+      });
+      expect(invErr, "owner เชิญ viewer ไม่ได้").toBeNull();
+
+      const { error } = await C.from("trip_members")
+        .delete()
+        .eq("trip_id", tripA)
+        .eq("user_id", ids.c);
+      expect(error).toBeNull();
+      const { data } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(data?.map((r) => r.user_id)).not.toContain(ids.c);
+    });
+
+    it("owner คนที่ 2 ลาออกได้ แล้วคนสุดท้ายลาออกไม่ได้", async () => {
+      await A.from("trip_members").insert({ trip_id: tripA, user_id: ids.b, role: "owner" });
+      // B ลาออกได้ เพราะยังเหลือ A เป็น owner
+      await B.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.b);
+      const { data: afterB } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(afterB?.map((r) => r.user_id)).not.toContain(ids.b);
+      // แล้ว A ก็กลับไปเป็น owner คนเดียว → ลาออกไม่ได้อีก
+      await A.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.a);
+      const { data: afterA } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(afterA).toHaveLength(1);
+    });
+
+    it("owner ลดตัวเองเป็น editor ไม่ได้ถ้าเป็น owner คนเดียว (เส้นทาง UPDATE)", async () => {
+      // trigger ครอบ `after delete or update` → เส้นทางนี้ต้องถูกกันด้วย ไม่ใช่แค่ DELETE
+      await A.from("trip_members")
+        .update({ role: "editor" })
+        .eq("trip_id", tripA)
+        .eq("user_id", ids.a);
+      const { data } = await A.from("trip_members").select("role").eq("trip_id", tripA).single();
+      expect(data?.role, "ลดตัวเองเป็น editor สำเร็จ = ทริปไม่มี owner").toBe("owner");
     });
   });
 });
