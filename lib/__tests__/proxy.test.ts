@@ -16,7 +16,14 @@ import { config, proxy } from "../../proxy";
  *            → ดู `docs/engine/security-review.md §2.5` และเคส F3
  */
 
-const ENV_KEYS = ["TRIP_PIN", "TRIP_PIN_SECRET"] as const;
+const ENV_KEYS = [
+  "TRIP_PIN",
+  "TRIP_PIN_SECRET",
+  // 🔴 เพิ่มเมื่อ 24 ส.ค. 2026 (P4) — ต้องอยู่ในลิสต์นี้ **ถึงจะถูกล้างระหว่างเคส**
+  //    ไม่งั้นเคสที่ตั้ง Supabase env จะทิ้งค่าค้างไว้ให้เคสถัดไปโดยไม่มีใครเห็น
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+] as const;
 const saved = new Map<string, string | undefined>();
 
 function setEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>) {
@@ -47,6 +54,21 @@ function withPin() {
 }
 function withoutPin() {
   setEnv({ TRIP_PIN: undefined, TRIP_PIN_SECRET: undefined });
+}
+
+// โดเมน `.invalid` สงวนไว้ตาม RFC 2606 → **ไม่มีวัน resolve** ได้จริง
+// เลือกแบบนี้เพื่อให้ `getUser()` ล้มที่ DNS ทันที ไม่ยิงออกเน็ตจริงและไม่แกว่งตามเครือข่าย
+const FAKE_SUPABASE_URL = "https://fake-project.supabase.invalid";
+const FAKE_SUPABASE_KEY = "sb_publishable_FakeKeyForProxyTests";
+
+/** ตั้ง env ครบทั้ง 2 ชุด = สภาพที่เว็บจะเจอจริงหลังผู้ใช้ตั้งค่าเสร็จ */
+function withPinAndSupabase() {
+  setEnv({
+    TRIP_PIN: PIN,
+    TRIP_PIN_SECRET: SECRET,
+    NEXT_PUBLIC_SUPABASE_URL: FAKE_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: FAKE_SUPABASE_KEY,
+  });
 }
 
 function request(path: string, cookie?: string): NextRequest {
@@ -234,5 +256,63 @@ describe("config.matcher", () => {
 
   it("matcher มีเส้นเดียว — ถ้าเพิ่มเส้นที่ 2 ต้องมาทบทวนเทสต์ชุดนี้", async () => {
     expect(config.matcher).toHaveLength(1);
+  });
+});
+
+/**
+ * ด่าน PIN ทำงานเมื่อ **Supabase env ถูกตั้งด้วย** — เจ้าของ: P4-QA/Sec (24 ส.ค. 2026)
+ *
+ * 🔴 **ช่องที่ชุดนี้ปิด และเหตุผลที่มันเปิดอยู่ได้นานขนาดนี้:**
+ * ทุกเคสข้างบนรันโดย `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` **ว่าง**
+ * → `refreshSession()` ออกที่ `if (!url || !key)` **ทุกครั้ง ไม่เคยไปถึง `createServerClient()` เลย**
+ * → เคสทั้ง 26 ข้างบน **ไม่เคยรัน `proxy()` ในสภาพที่เว็บจะเจอจริงสักครั้งเดียว**
+ *
+ * นี่คือรูปเดียวกับ `S1` เป๊ะ: `authRuntime.test.ts` ทดสอบ `refreshSession` เดี่ยว ๆ ·
+ * ไฟล์นี้ทดสอบด่าน PIN เดี่ยว ๆ · **ไม่มีใครทดสอบสองอย่างต่อกัน** ซึ่งเป็นสิ่งเดียวที่รันจริงบนเว็บ
+ *
+ * > เทสต์ 2 ชุดที่เขียวทั้งคู่ ไม่ได้แปลว่าทางที่วิ่งผ่านทั้งสองชุดจะเขียว
+ *
+ * ⚠️ `getUser()` ที่นี่จะล้มที่ DNS เสมอ (โดเมน `.invalid`) → `user` เป็น `null` ตลอด
+ *    ชุดนี้จึงพิสูจน์ **ว่าด่านยังทำงานเมื่อชั้น session ถูกต่อเข้ามา** ไม่ได้พิสูจน์ตรรกะ session
+ *    · การพิสูจน์ session จริงต้องใช้ `engine-dev` และยังติด credentials ของผู้ใช้
+ */
+describe("PIN + Supabase env ตั้งพร้อมกัน — สภาพจริงหลังผู้ใช้ตั้งค่าเสร็จ", () => {
+  it("🔴 public path ยังผ่านได้ เมื่อ refreshSession ทำงานเต็มเส้นทาง", async () => {
+    // ถ้า `createServerClient` โยน (เช่น S1 กลับมา) เคสนี้แดงก่อนใครเพื่อน
+    // และแดงที่ `/login` ซึ่งเป็นเส้นที่ผู้ใช้ต้องใช้เพื่อกลับเข้าเว็บ
+    withPinAndSupabase();
+    for (const path of ["/login", "/auth/callback", "/unlock"]) {
+      expect(await outcome(proxy(request(path))), `${path} ต้องผ่าน`).toBe("pass");
+    }
+  });
+
+  it("🔴 หน้าเว็บที่ไม่ใช่ public path ยังถูกบล็อก — ด่านไม่ได้หลุดเพราะ session เข้ามา", async () => {
+    // เคสด้านลบคู่กับข้างบน (P1 ขอ) — ถ้าไม่มี เคสบวกจะเขียวได้ทั้งที่ด่านพังทั้งด่าน
+    withPinAndSupabase();
+    const res = await proxy(request("/today"));
+    expect(res.status).toBe(307);
+    expect(new URL(res.headers.get("location") ?? "").pathname).toBe("/unlock");
+  });
+
+  it("/api/* ยังตอบ 401 JSON", async () => {
+    withPinAndSupabase();
+    const res = await proxy(request("/api/place-details?query=x"));
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({ error: "locked" });
+  });
+
+  it("cookie ที่ถูกต้องยังผ่านได้", async () => {
+    withPinAndSupabase();
+    expect(await outcome(proxy(request("/today", `trip_pin=${VALID_TOKEN}`)))).toBe("pass");
+  });
+
+  it("🔴 ไม่มี TRIP_PIN แต่มี Supabase env → ยัง fail-open เหมือนเดิม", async () => {
+    // สภาพของ Vercel วันที่ตั้ง Supabase เสร็จแต่ยังไม่ได้ตั้ง PIN
+    // ต้องไม่กลายเป็น "บล็อกทั้งเว็บ" เพราะ fail-open เป็นการตัดสินใจที่ตั้งใจ (proxy.ts:52-56)
+    setEnv({
+      NEXT_PUBLIC_SUPABASE_URL: FAKE_SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: FAKE_SUPABASE_KEY,
+    });
+    expect(await outcome(proxy(request("/today")))).toBe("pass");
   });
 });
