@@ -186,3 +186,32 @@ select (select count(*) from auth.users)     as auth_users,
        (select count(*) from auth.users u
           where not exists (select 1 from public.profiles p where p.id = u.id)) as users_without_profile;
 -- ✅ auth_users = profiles · users_without_profile = 0 · และ auth_users ต้อง > 0
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 10. 🔴 P-26 — ทริปที่เพิ่งสร้างต้องมองเห็นได้ใน `returning` ของคำสั่งเดียวกัน
+-- ═══════════════════════════════════════════════════════════════════════════
+-- เจอ 24 ส.ค. 2026 ตอนเมทริกซ์ RLS รันจริงเป็นครั้งแรก · แก้ที่ migration 20260824144235
+-- 🎯 ทั้งชุด 7.x/8.x เขียวหมดตอนที่บั๊กนี้ยังอยู่ — **เพราะไม่มีข้อไหนลองสร้างทริปจริง**
+--    ทุกข้อตรวจ *รูปร่างของสคีมา* · ไม่มีข้อไหนตรวจ *ว่าใช้งานได้ไหม*
+
+-- 10.1 ต้องได้ 1 แถว และ is_before = true
+select tgname, (tgtype & 2 = 2) as is_before
+  from pg_trigger
+ where tgrelid = 'public.trips'::regclass and tgname = 'trips_bootstrap_owner';
+
+-- 10.2 ต้องได้ 1 แถว · condeferrable และ condeferred เป็น true ทั้งคู่
+--      (ถ้าไม่ deferred แล้ว BEFORE trigger จะล้มเพราะแถว trips ยังไม่มีตอน FK ถูกตรวจ)
+select conname, condeferrable, condeferred
+  from pg_constraint
+ where conrelid = 'public.trip_members'::regclass and contype = 'f'
+   and confrelid = 'public.trips'::regclass;
+
+-- 10.3 🔴 เคสที่พิสูจน์ว่าใช้งานได้จริง — **ต้องคืน 1 แถว ไม่ใช่ error**
+--      แทน <uuid> ด้วย id ของผู้ใช้ที่มีแถวใน profiles จริง · จบด้วย rollback ไม่ทิ้งอะไรไว้
+-- begin;
+--   set local role authenticated;
+--   select set_config('request.jwt.claims', '{"sub":"<uuid>","role":"authenticated"}', true);
+--   insert into public.trips (created_by, title, start_date, end_date)
+--   values ('<uuid>', 'p26-check', '2026-10-11', '2026-10-21')
+--   returning id;
+-- rollback;
