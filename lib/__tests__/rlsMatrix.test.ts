@@ -403,13 +403,32 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     B = await makeUser("b");
     C = await makeUser("c");
 
+    /**
+     * 🔴 สร้างทริปผ่าน RPC ไม่ใช่ `insert().select()` — `P-26`
+     *
+     * ทางเดิมคือทางที่ **ตายที่ `beforeAll`** ทุกครั้ง: `returning` บังคับให้แถวที่เพิ่งสร้าง
+     * ผ่าน `trips_select` → `app.can_read_trip` → หาใน `trip_members` ซึ่งยังว่าง
+     * เพราะ trigger เป็น `AFTER INSERT` · `create_trip()` คืนแถวจากในฟังก์ชัน `security definer`
+     * จึงไม่มี policy ฝั่งอ่านตัวไหนต้องผ่าน (`D49` — ทางที่ถูกไม่ว่าคำตอบเรื่อง snapshot จะเป็นอะไร)
+     *
+     * ⚠️ **ทางเดิมยังต้องถูกทดสอบต่อไป ไม่ใช่ถูกลืม** — เคส `E1-AC4` ยังยิง insert ตรงอยู่
+     * และมันยังต้องถูกปฏิเสธ · ที่เปลี่ยนคือ **วิธีสร้าง fixture** ไม่ใช่สิ่งที่เมทริกซ์วัด
+     */
     const mk = async (client: SupabaseClient, owner: string, title: string) => {
-      const { data, error } = await client
-        .from("trips")
-        .insert({ created_by: ids[owner], title, start_date: "2026-10-11", end_date: "2026-10-21" })
-        .select("id")
-        .single();
+      const { data, error } = await client.rpc("create_trip", {
+        p_title: title,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
       if (error) throw new Error(`สร้างทริป ${title} ไม่ได้: ${error.message}`);
+      // `owner` ไม่ได้ถูกส่งเข้า RPC โดยตั้งใจ — ฟังก์ชันอ่าน `auth.uid()` เอง
+      // จึงใช้มันเป็น **การตรวจ** แทน: ถ้า client กับ persona ที่เราคิดไม่ตรงกัน
+      // fixture ทั้งชุดจะผิดเงียบ ๆ แล้วเคสด้านลบจะเขียวด้วยเหตุผลที่ผิด
+      if (data.created_by !== ids[owner]) {
+        throw new Error(
+          `ทริป ${title} ถูกสร้างในนาม ${data.created_by} แต่คาดว่าเป็น ${owner} (${ids[owner]})`,
+        );
+      }
       return data.id as string;
     };
     tripA = await mk(A, "a", `matrix-A-${stamp}`);
