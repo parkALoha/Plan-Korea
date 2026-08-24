@@ -101,6 +101,15 @@ mcp__ccd_session_mgmt__list_sessions
   · **ข้อยกเว้นที่ให้ไปแล้ว 1 ครั้ง (17 ส.ค. 2026):** P1 อนุมัติให้ P4 เพิ่ม `lib/__tests__/{proxy,pinAuth,rateLimit}.test.ts`
     (เทสต์อย่างเดียว ไม่ขึ้น build · 108 → 170 เคส) · **บันทึกไว้เพราะ P1 อนุมัติแล้วยังรายงานผู้ใช้ซ้ำๆ ว่า "ไม่มีโค้ดแอปถูกแตะเลย"**
     🔴 **ข้อยกเว้นที่ไม่ได้จดลงกติกา จะหายไปจากความจำของคนที่อนุมัติมันเอง** — ให้ข้อยกเว้นครั้งหน้า จดที่นี่ทันที
+  · **ข้อยกเว้นที่ 2 (24 ส.ค. 2026 · branch `platform` เท่านั้น):** P1 อนุมัติ `grant select, delete on public.trips to service_role`
+    — เป็นข้อยกเว้นของ **`D38`** (*"Server Action ไม่ใช่สิทธิ์พิเศษ"*) ที่บังคับด้วย `lib/__tests__/authNoServiceRole.test.ts`
+    **ขอบเขต: ให้ชุดทดสอบเก็บกวาด fixture ของตัวเองได้เท่านั้น ไม่ใช่ให้โค้ดแอปใช้**
+    · เหตุผล: `afterAll` ของเมทริกซ์ RLS ลบ fixture ไม่ได้เลย — `deleteUser` → `profiles` cascade → ชน
+      `trips.created_by … on delete restrict` และไม่มี `trips_delete` policy · ไม่มีทางลบทริปจากทางไหน (`P-28`)
+    · 🔴 **โค้ดที่เสิร์ฟผู้ใช้ยังห้ามแตะ service role key เหมือนเดิมทุกตัวอักษร** — `authNoServiceRole.test.ts` ยังบังคับ `lib/auth` + `app/` อยู่
+    · ⚠️ `service_role` มี **BYPASSRLS** โดยนิยาม → grant คือด่านสุดท้ายที่เหลือของตารางนั้น **ไม่มี policy มาช่วยอีกชั้น**
+      **ขยาย grant นี้ต้องผ่าน P1 และจดที่นี่ทุกครั้ง ห้าม `grant all` เด็ดขาด**
+    · ไฟล์: `supabase-platform/supabase/migrations/20260824222206_service_role_test_cleanup_grant.sql`
 
 ## 4. คุยกันข้ามเซสชันยังไง
 
