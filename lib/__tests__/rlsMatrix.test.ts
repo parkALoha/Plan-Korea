@@ -805,4 +805,93 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 trip_members — กิ่งที่ไม่มีใครเดินไปถึง (นับกิ่ง แล้วนับเคส)", () => {
+    /**
+     * ไล่ `trip_members` ทั้ง 4 policy ด้วยวิธีเดียวกับ `P-44`:
+     *
+     * | policy | เงื่อนไข | เคสที่มีอยู่ก่อนหน้านี้ |
+     * |---|---|---|
+     * | `_select` | `can_read_trip(trip_id)` | **owner อ่านเท่านั้น** — สมาชิกที่ไม่ใช่ owner ไม่เคยลอง |
+     * | `_insert` | `trip_role = 'owner'` | owner เชิญ ✅ · คนนอกเชิญ ✅ · **สมาชิกที่ไม่ใช่ owner เชิญ — ไม่เคยลอง** |
+     * | `_update` | `trip_role = 'owner'` | **ไม่มีเคสด้านบวกเลย** และ **ไม่มีใครลองเลื่อนขั้นตัวเอง** |
+     * | `_delete` | 2 กิ่ง | ลาออกเอง ✅ · **owner ถอดคนอื่น — ไม่มีเคสด้านบวก** |
+     *
+     * 🔴 **ช่องที่แพงที่สุดคือ `_update`**: ไม่มีเคสไหนถามว่า *"viewer เลื่อนตัวเองเป็น owner ได้ไหม"*
+     * ถ้า policy เขียนเป็น `can_read_trip` แทน `trip_role = 'owner'` **ใครที่ถูกเชิญเข้าทริป
+     * ก็ยึดทริปได้ทันที** และเมทริกซ์ 54 เคสจะยังเขียวครบ เพราะทุกเคสถามแต่ว่า *คนนอก* ทำอะไรไม่ได้
+     */
+    beforeAll(async () => {
+      const { error } = await A.from("trip_members").insert({
+        trip_id: tripA,
+        user_id: ids.c,
+        role: "viewer",
+      });
+      if (error) throw new Error(`เชิญ C เป็น viewer ไม่ได้: ${error.message}`);
+    });
+
+    afterAll(async () => {
+      await A.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.c);
+    });
+
+    it("ด้านบวก: viewer เห็นรายชื่อสมาชิกของทริปที่ตัวเองอยู่", async () => {
+      const { data, error } = await C.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(error).toBeNull();
+      expect(data, "สมาชิกมองไม่เห็นว่าใครอยู่ในทริปด้วยกัน").not.toHaveLength(0);
+    });
+
+    it("🔴 viewer เลื่อนตัวเองเป็น owner ไม่ได้ — ทางยึดทริปที่ไม่เคยมีใครทดสอบ", async () => {
+      // UPDATE ที่ถูก RLS กรองคืน 200 ไม่มี error → ต้องอ่านซ้ำในฐานะ A ถึงจะรู้ผลจริง
+      await C.from("trip_members")
+        .update({ role: "owner" })
+        .eq("trip_id", tripA)
+        .eq("user_id", ids.c);
+      const { data } = await A.from("trip_members")
+        .select("role")
+        .eq("trip_id", tripA)
+        .eq("user_id", ids.c)
+        .single();
+      expect(data?.role, "viewer เลื่อนตัวเองเป็น owner สำเร็จ = ใครถูกเชิญก็ยึดทริปได้").toBe(
+        "viewer",
+      );
+    });
+
+    it("🔴 viewer เชิญคนอื่นเข้าทริปไม่ได้ — สมาชิกภาพไม่ใช่สิทธิ์เชิญ", async () => {
+      const { error } = await C.from("trip_members").insert({
+        trip_id: tripA,
+        user_id: ids.b,
+        role: "viewer",
+      });
+      expect(error?.code, `viewer เชิญคนอื่นได้: ${error?.message ?? "ไม่มี error เลย"}`).toBe(
+        "42501",
+      );
+    });
+
+    it("🔴 viewer ถอด owner ออกไม่ได้", async () => {
+      await C.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.a);
+      const { data } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(data?.map((r) => r.user_id), "viewer ถอด owner ออกได้ = ทริปถูกยึด").toContain(ids.a);
+    });
+
+    it("ด้านบวก: owner เปลี่ยนบทบาทสมาชิกคนอื่นได้ (ไม่มีเคสนี้มาก่อนเลย)", async () => {
+      const { error } = await A.from("trip_members")
+        .update({ role: "editor" })
+        .eq("trip_id", tripA)
+        .eq("user_id", ids.c);
+      expect(error).toBeNull();
+      const { data } = await A.from("trip_members")
+        .select("role")
+        .eq("trip_id", tripA)
+        .eq("user_id", ids.c)
+        .single();
+      expect(data?.role, "owner เปลี่ยนบทบาทคนอื่นไม่ได้ = ฟีเจอร์จัดการทีมพังเงียบ").toBe("editor");
+    });
+
+    it("ด้านบวก: owner ถอดสมาชิกคนอื่นออกได้ (กิ่งแรกของ _delete ที่ไม่เคยถูกเดิน)", async () => {
+      await A.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.c);
+      const { data } = await A.from("trip_members").select("user_id").eq("trip_id", tripA);
+      expect(data?.map((r) => r.user_id), "owner ถอดคนอื่นออกไม่ได้").not.toContain(ids.c);
+    });
+  });
+
 });
