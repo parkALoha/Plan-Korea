@@ -55,7 +55,7 @@ check_target() {
   echo "✅ ปลายทาง: $link (ตรงกับ $ALLOWED_FILE)"
 }
 
-# 🔴 `P-35` (P4) — ฉบับแรก `exec … "$@"` ส่งอาร์กิวเมนต์ของผู้ใช้ต่อไปทั้งหมด
+# 🔴 `P-36` (P4) — ฉบับแรก `exec … "$@"` ส่งอาร์กิวเมนต์ของผู้ใช้ต่อไปทั้งหมด
 #   และ `supabase db push` รับ flag ที่ **เปลี่ยนปลายทางทิ้งทั้งหมด** หลังด่านผ่านไปแล้ว:
 #     --project-ref <ref>   --db-url <conn>   --local
 #   `npm run db:push -- --project-ref <ref ของ a-gleam>` จะ:
