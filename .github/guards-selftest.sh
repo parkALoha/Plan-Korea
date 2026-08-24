@@ -96,4 +96,27 @@ check "anchor ไม่นับลิงก์ใน code fence" pass "$d"
 d="$(mk)"; printf '# ซ้ำ\n\n# ซ้ำ\n\n[ตัวสอง](#ซ้ำ-1)\n' > "$d/docs/engine/toc.md"
 check "anchor รู้จักหัวข้อซ้ำที่ลงท้าย -1" pass "$d"
 
+# ── ด่าน "link อยู่ถูกที่ไหม" ────────────────────────────────────────────────────
+# 🔴 เคสนี้เคยหลุดจริง — ก่อน 24 ส.ค. 2026 ด่านตรวจแค่ ref ไม่ตรวจตำแหน่ง
+#    ทรีที่รากถูก link กับ engine-dev ผ่านฉลุย exit=0 (ยืนยันด้วยมือก่อนแก้)
+# ⑮ รากถูก link -> ต้องโดนจับ (นี่คือฉากที่ error message ของ CLI ชวนให้ทำ)
+d="$(mk)"; mkdir -p "$d/supabase/.temp"; echo "pmvxwcimjebogjfimzqy" > "$d/supabase/.temp/project-ref"
+( DEV_PROJECT_REF=pmvxwcimjebogjfimzqy; export DEV_PROJECT_REF
+  check "จับ link ที่ราก แม้ ref จะเป็น engine-dev ที่ถูกต้อง" fail "$d" ) || rc=1
+
+# ⑯ link ที่ราก แม้ยังไม่มีไฟล์ project-ref (เพิ่งสร้าง .temp) ก็ต้องโดนจับ
+d="$(mk)"; mkdir -p "$d/supabase/.temp"
+check "จับโฟลเดอร์ .temp ที่รากแม้ยังไม่มี project-ref" fail "$d"
+
+# ⑰ workdir แปลกปลอมอื่นก็ต้องโดนจับ ไม่ใช่ hardcode เฉพาะราก
+d="$(mk)"; mkdir -p "$d/somewhere/supabase/.temp"
+check "จับ link ใน workdir แปลกปลอมที่ไม่ใช่ราก" fail "$d"
+
+# ⑱ ล็อกขอบเขต: link ที่ supabase-platform/ (ที่เดียวที่อนุญาต) + ref ถูก ต้องผ่าน
+#    ถ้าเคสนี้ fail แปลว่าด่านใหม่กว้างเกินจนบล็อกทางที่ถูกต้อง = ใช้งานจริงไม่ได้
+d="$(mk)"; mkdir -p "$d/supabase-platform/supabase/.temp"
+echo "pmvxwcimjebogjfimzqy" > "$d/supabase-platform/supabase/.temp/project-ref"
+( DEV_PROJECT_REF=pmvxwcimjebogjfimzqy; export DEV_PROJECT_REF
+  check "link ที่ supabase-platform/ พร้อม ref ที่ถูก ต้องผ่าน" pass "$d" ) || rc=1
+
 exit $rc

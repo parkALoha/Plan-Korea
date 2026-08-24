@@ -71,6 +71,39 @@ else
   echo "✅ migrations: ไม่มีโฟลเดอร์ที่ CLI มองไม่เห็น"
 fi
 
+# ── link ต้องอยู่ "ถูกที่" ไม่ใช่แค่ "ชี้ถูก ref" ──────────────────────────────────
+# 🔴 สถานะ link ผูกกับ **workdir** ไม่ใช่กับ repo — ราก link แยกจาก supabase-platform/ ได้
+#    ด่านข้างล่างถามว่า "ชี้ไปโปรเจกต์ไหน" แต่ไม่เคยถามว่า "ยืนอยู่ตรงไหนตอนถาม" (P1 ชี้ 24 ส.ค. 2026)
+#
+#    ลำดับที่ทำให้มันเกิด อ่านเป็นเหตุเป็นผลทุกขั้น และจบแบบไม่มี error สักบรรทัด:
+#      1. พิมพ์ `supabase db push` จากรากตามความเคยชิน
+#      2. CLI ตอบ "Cannot find project ref. Have you run supabase link?"
+#         🔴 **ข้อความ error ชี้ไปที่คำสั่งที่จะติดตั้งกับดักพอดี**
+#      3. ทำตามที่ error บอก -> `supabase link` **จากราก** -> รากกลายเป็น workdir ที่ link แล้ว
+#      4. push อีกครั้ง -> **31 migration ของทริปลง DB ที่ link ไว้ เงียบสนิท**
+#    ผลไม่ใช่หายนะแต่หลอกตา: DB ได้สคีมาทริป ดูใช้งานได้ · identity ไม่ได้ลงเพราะคนละ workdir
+#    -> P4 รันเมทริกซ์แล้วแดง แล้วจะไปไล่หาสาเหตุที่ RLS ทั้งที่ปัญหาคือสคีมาผิดใบ
+#
+# ⚠️ ข้อจำกัดที่ต้องรู้: `.temp/` ถูก gitignore ไว้ **ด่านนี้จึงไม่มีวันแดงบน CI**
+#    มันกัดตอนรัน guards.sh บนเครื่องเท่านั้น · ไม่ใช่เหตุผลให้ตัดทิ้ง แต่อย่านับว่า CI คุ้มให้
+ALLOWED_TEMP="$ROOT/supabase-platform/supabase/.temp"
+strays=""
+while IFS= read -r d; do
+  [ -z "$d" ] && continue
+  [ "$d" = "$ALLOWED_TEMP" ] && continue
+  strays="$strays  $d
+"
+done < <(find "$ROOT" -type d -path '*/supabase/.temp' -not -path '*/node_modules/*' 2>/dev/null | sort)
+if [ -n "$strays" ]; then
+  echo "🔴 link อยู่ผิดที่ — workdir เดียวที่ link ได้คือ supabase-platform/"
+  printf '%s' "$strays"
+  echo "   ที่นี่ถูก link = \`supabase db push\` จากตรงนั้นจะรัน migration ของทริปใส่ DB ที่ link ไว้"
+  echo "   ลบโฟลเดอร์ .temp/ นั้นทิ้ง แล้วใส่ --workdir supabase-platform เสมอ"
+  fail=1
+else
+  echo "✅ link: ไม่มี link นอก supabase-platform/"
+fi
+
 # ── ถ้ามีการ link CLI ไว้ ต้องเป็น engine-dev เท่านั้น (allowlist) ─────────────────
 linkfile="$ROOT/supabase-platform/supabase/.temp/project-ref"
 if [ -f "$linkfile" ]; then
