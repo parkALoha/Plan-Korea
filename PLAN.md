@@ -2229,6 +2229,52 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 
 ---
 
+
+### 🟢 คืน 24 ส.ค. 2026 — `E1` ค้างที่ผู้ใช้ ทีมจึงเปิด `E2` ซึ่งเขียนได้โดยไม่ต้องมีฐาน
+
+**`E2` ถูกล็อกไว้เองด้วยเงื่อนไขใน [`column-map.md`](docs/engine/column-map.md): มี 3 คำถามที่ *"ต้องปิดก่อนเขียน DDL ของ E2"***
+🔴 **นี่คือเหตุผลที่คืนนี้ไม่มีใครเขียน DDL ออกมา — ไม่ใช่เพราะไม่มีเวลา แต่เพราะลำดับถูกเขียนไว้แล้วและมันห้ามไว้**
+
+| # | คำถาม | สถานะ |
+|---|---|---|
+| 1 | `trip_hotels.leg_id` — "leg" ไม่มีนิยามบนโมเดลใหม่ | ✅ **ปิดแล้ว → `D51`** |
+| 3 | `trips.active_plan_id` ↔ `trip_plans.trip_id` FK วน | ✅ **ปิดแล้ว → `D52`** |
+| 2 | `catalog.cities` / `catalog.places` / `place_names` ยังไม่มี DDL | 🔴 **เหลือข้อเดียว — กระจายให้ 4 เซสชันแล้ว** |
+
+**`D51`** — `leg` ยังเป็นค่าคำนวณจาก `trip_days` เหมือนเดิม · **`trip_hotels` เก็บ `check_in`/`check_out` ของตัวเอง**
+เพราะวันนี้ `leg_id` เป็น **primary key ที่เป็นค่าคำนวณ** และตารางไม่มีวันที่เลย → **แก้แผนแล้วใบจองที่จ่ายเงินไปแล้วขยับตามอย่างเงียบ ๆ**
+**`D52`** — ไม่มีคอลัมน์ `active_plan_id` · ใช้ `trip_plans.is_active` + partial unique index → ไม่มี FK วน ไม่ต้องใช้ `deferrable`
+
+**กระจายงานคืนนี้ (ทุกข้อไม่ต้องรอ token):**
+
+| เซสชัน | ได้อะไรไป |
+|---|---|
+| **P5-AI/Agent** | คลังต้องตอบ**คำถามอะไร**ของ copilot · ต้องมี `pgvector` ตั้งแต่ `E2` ไหม (เป็นการตัดสินระดับสคีมา) |
+| **P3-FE/Perf** | วัดว่า `data/places.ts` 71 KB อยู่ในบันเดิลจริงไหม · รูปแบบแคช/ISR · **คลังลงฐานแล้วตอนเน็ตหลุดจะเหลืออะไร** |
+| **P7-Mobile** | กฎร่วม 3 ข้อ (`updated_at` trigger · `deleted_at` · rank key) คือพื้นของ conflict model · **`updated_at` จะเป็นเวลา sync ไม่ใช่เวลาแก้** |
+| **P2-UI/UX** | สถานะหน้าจอใหม่ที่ `D51` สร้างขึ้น — **"จองไว้แต่ไม่ตรงกับแผนแล้ว"** ห้ามซ่อน ห้ามลบอัตโนมัติ |
+| **P4-QA/Sec** | `P-29`/`P-30`/`P-31`/`P-32` ตัวเต็ม · เคส 2 ทิศของ RPC · `E2-AC11` ตัวหารเมทริกซ์ |
+| **P6-DevOps** | ด่าน CI · `check-env-keys.py` (ปิดช่องคนรัน `vitest` บนเครื่อง) |
+| **P8-PM/BA** | กล่อง "5 ที่ที่ยังถือค่าเก่า" · กำลังเดินเรื่อง token กับผู้ใช้ |
+
+---
+
+### 📋 ของที่ทำเสร็จคืนนี้แต่ **ยังไม่เคยรันกับฐานใด ๆ เลยสักตัว**
+
+> 🔴 **ทั้งหมดนี้ผ่านแค่ `tsc`/`eslint`/`guards.sh` ซึ่งพิสูจน์ได้แค่ว่ามันคอมไพล์ได้**
+> **หลักฐานแดง-แล้ว-เขียวที่โปรเจกต์นี้เรียกร้อง ยังไม่มีสำหรับของพวกนี้สักชิ้น**
+
+| ไฟล์ | คืออะไร | รอ |
+|---|---|---|
+| `…220618_project_identity_guard.sql` | marker `app.project_identity` (`D48`·`P-31`) | token |
+| `…221550_create_trip_rpc.sql` | `create_trip()` — ทางแก้ `P-26` ตัวจริง (`D49`) + แก้ `P-32` | token |
+| `…222206_service_role_test_cleanup_grant.sql` | grant ให้เทสต์เก็บกวาดได้ (`P-28`) | token **+ `diag2.mjs` ตอบเรื่อง `sb_secret_` ก่อน** |
+| `supabase-platform/db-push.sh` | ด่านปลายทางที่ตัวยิงคำสั่ง (`D50`) | self-test 5/5 ผ่านแล้ว · ยังไม่เคยยิงจริง |
+| `pending-review/…144235_fix_trip_visible_on_create.sql` | 🛑 **จอด ไม่ผ่าน** — `P-27`+`P-29` | ไม่กลับมา เว้นมีเหตุผลใหม่ |
+| `lib/__tests__/rlsMatrix.test.ts` `afterAll` (P4) | ลบทริปด้วย `created_by` | token |
+
+---
+
 **ระยะสร้าง — บน branch `platform` ที่ `/Users/park/plan-korea-platform`**
 - [x] **`E0` ตั้งราง** — CI 3 job · `.github/guards.sh` + self-test · `supabase-platform/` workdir · `migration-template.sql`
 - [x] Supabase CLI 2.114.0 ลงเครื่องแล้ว · `supabase init` แล้ว
