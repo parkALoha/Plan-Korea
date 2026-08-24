@@ -207,6 +207,63 @@ else
   echo "✅ allowlist: $allowed"
 fi
 
+# ── ทุก migration ต้อง assert app.project_identity + ref (D48 · P1 สั่ง 24 ส.ค. 2026) ──
+# 🔴 `P-30` (P4): ด่านที่อยู่ใน **สิ่งที่ถูกยิง** กันได้แค่ลำดับหลังของตัวเอง ตัวแรกไม่มีอะไรกัน
+#    ด่านนี้จึงไม่ได้แทนด่านใน SQL — มันตรวจว่า **ไฟล์ที่ควรมีด่าน มีจริงหรือเปล่า**
+#    เป็นคนละคำถามกัน: SQL ถามว่า "ฐานนี้ใช่ไหม" · ตรงนี้ถามว่า "ยังมีคนใส่ด่านอยู่ไหม"
+#
+# 🎯 ref ที่ต้องปรากฏ อ่านจาก `allowed-project-ref` ตัวเดียวกับด่าน allowlist
+#    → **ไม่มีแหล่งความจริงที่สอง** · เปลี่ยน ref ที่เดียว ด่านทั้งหมดขยับตาม
+MIGDIR="$ROOT/supabase-platform/supabase/migrations"
+# 🔴 รายชื่อยกเว้นต้องผูกกับ **ทรีที่กำลังตรวจ** ไม่ใช่กับที่อยู่ของสคริปต์
+#    (ต่างจาก `allowed-project-ref` ซึ่งเป็น config ที่เดินทางไปกับด่าน)
+#    เพราะข้อยกเว้นพูดถึง **ไฟล์ของทรีนั้น** — ผูกกับสคริปต์แล้วเคสด้านบวกใน self-test พังทันที
+#    (เจอตอนเขียนเทสต์ด้านบวก 24 ส.ค. 2026 · **เคสด้านลบทั้ง 5 ผ่านหมดโดยที่ด่านยังผิดอยู่**)
+EXEMPTFILE="${MIGRATION_EXEMPT_FILE:-$ROOT/.github/migration-guard-exempt}"
+if [ -d "$MIGDIR" ] && [ -n "$allowed" ]; then
+  if [ ! -f "$EXEMPTFILE" ]; then
+    echo "🔴 migration-guard: ไม่มีไฟล์รายชื่อยกเว้น ($EXEMPTFILE) — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+    fail=1
+  else
+    exempt="$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$EXEMPTFILE" | grep -v '^$' || true)"
+    migbad=""
+    for f in "$MIGDIR"/*.sql; do
+      [ -e "$f" ] || continue
+      b="$(basename "$f")"
+      printf '%s\n' "$exempt" | grep -qxF "$b" && continue
+      if ! grep -qF 'app.project_identity' "$f"; then
+        migbad="$migbad  $b — ไม่มี app.project_identity
+"
+      elif ! grep -qF "$allowed" "$f"; then
+        migbad="$migbad  $b — มี marker แต่ไม่ได้เช็ค ref $allowed (เล็งไปฐานอื่น?)
+"
+      fi
+    done
+    # ยกเว้นที่ไม่มีไฟล์จริงแล้ว = ของค้างเงียบ ต้องเก็บกวาด
+    staleex=""
+    while IFS= read -r e; do
+      [ -z "$e" ] && continue
+      [ -e "$MIGDIR/$e" ] || staleex="$staleex  $e
+"
+    done <<EOF
+$exempt
+EOF
+    if [ -n "$migbad" ]; then
+      echo "🔴 migration-guard: มี migration ที่ไม่ได้ assert ตัวตนของฐาน"
+      printf '%s' "$migbad"
+      echo "   คัดลอกบล็อกด่านจาก supabase-platform/migration-template.sql"
+      echo "   ถ้าเป็นไฟล์ bootstrap จริงๆ ให้เพิ่มชื่อใน .github/migration-guard-exempt พร้อมเหตุผล"
+      fail=1
+    elif [ -n "$staleex" ]; then
+      echo "🔴 migration-guard: มีชื่อในรายการยกเว้นที่ไม่มีไฟล์แล้ว — ลบทิ้ง"
+      printf '%s' "$staleex"
+      fail=1
+    else
+      echo "✅ migration-guard: ทุก migration ที่ไม่ได้ยกเว้น assert ตัวตนของฐานครบ"
+    fi
+  fi
+fi
+
 # ── ถ้ามีการ link CLI ไว้ ต้องตรงกับ allowlist เท่านั้น ────────────────────────────
 linkfile="$ROOT/supabase-platform/supabase/.temp/project-ref"
 if [ -f "$linkfile" ] && [ -n "$allowed" ]; then

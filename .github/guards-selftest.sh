@@ -58,8 +58,13 @@ d="$(mk)"; mkdir -p "$d/supabase-platform/migrations"; echo "create table t();" 
 check "จับ .sql ที่วางผิดโฟลเดอร์" fail "$d"
 
 # ⑦ ล็อกขอบเขต: โฟลเดอร์ที่ถูกต้องตาม CLI ต้องไม่โดนจับ
+# 🔴 แก้ fixture 24 ส.ค. 2026: เดิมใส่ `create table t();` เปล่าๆ ซึ่ง **ตอนนี้ผิดจริง**
+#    เพราะด่าน migration-guard (D48) บังคับให้ทุก migration assert ตัวตนของฐาน
+#    → แก้ fixture ให้สมจริง ไม่ใช่ผ่อนด่านให้ fixture เก่ารอด
 d="$(mk)"; mkdir -p "$d/supabase-platform/supabase/migrations"
-echo "create table t();" > "$d/supabase-platform/supabase/migrations/0001_x.sql"
+printf "do \$guard\$ begin perform 1 from app.project_identity where ref = 'pmvxwcimjebogjfimzqy'; end \$guard\$;\n" \
+  > "$d/supabase-platform/supabase/migrations/0001_x.sql"
+printf '# ไม่ยกเว้นอะไร\n' > "$d/.github/migration-guard-exempt"
 check "โฟลเดอร์ที่ถูกต้องของ CLI ต้องไม่โดนจับ" pass "$d"
 
 # ⑧ link guard ต้องอ่าน path ใหม่ของ CLI (supabase-platform/supabase/.temp/)
@@ -235,5 +240,43 @@ check "pending-review ผ่านเมื่อมีคนจดว่าร�
 d="$(mk)"; mkdir -p "$d/supabase-platform/pending-review"
 echo "select 1;" > "$d/supabase-platform/pending-review/0009_parked.sql"
 check "pending-review จับกรณีไม่มี README เลย" fail "$d"
+
+# ── ด่าน migration-guard (D48) ──────────────────────────────────────────────────
+# 🔴 P-30: ด่านที่อยู่ใน *สิ่งที่ถูกยิง* กันตัวแรกไม่ได้ · ด่านนี้ตอบคนละคำถาม
+#    SQL ถามว่า "ฐานนี้ใช่ไหม" · ด่านนี้ถามว่า "ยังมีคนใส่ด่านลงไฟล์อยู่ไหม"
+mkmig() {  # mkmig <dir> <ชื่อไฟล์> <เนื้อ> — สร้าง migration + ไฟล์ยกเว้นเปล่าในทรีจำลอง
+  mkdir -p "$1/supabase-platform/supabase/migrations"
+  printf '%s\n' "$3" > "$1/supabase-platform/supabase/migrations/$2"
+  [ -f "$1/.github/migration-guard-exempt" ] || printf '# ไม่ยกเว้นอะไร\n' > "$1/.github/migration-guard-exempt"
+}
+GOOD="do \$guard\$ begin perform 1 from app.project_identity where ref = 'pmvxwcimjebogjfimzqy'; end \$guard\$;"
+
+# ㉕ migration ที่ไม่มี marker เลย -> ต้องโดนจับ
+d="$(mk)"; mkmig "$d" "20990101000000_no_guard.sql" "create table t();"
+check "migration-guard จับไฟล์ที่ไม่ได้ assert app.project_identity" fail "$d"
+
+# ㉖ มี marker + ref ถูก -> ต้องผ่าน
+d="$(mk)"; mkmig "$d" "20990101000000_ok.sql" "$GOOD"
+check "migration-guard ผ่านเมื่อ assert marker + ref ครบ" pass "$d"
+
+# ㉗ มี marker แต่ ref เป็นของฐานอื่น -> ต้องโดนจับ (เล็งไปฐานอื่นโดยตั้งใจหรือคัดลอกมาผิด)
+d="$(mk)"; mkmig "$d" "20990101000000_wrongref.sql" \
+  "do \$guard\$ begin perform 1 from app.project_identity where ref = 'aaaaaaaaaaaaaaaaaaaa'; end \$guard\$;"
+check "migration-guard จับ marker ที่เช็ค ref ของฐานอื่น" fail "$d"
+
+# ㉘ ไฟล์ที่อยู่ในรายการยกเว้น ต้องผ่านแม้ไม่มี marker
+d="$(mk)"; mkmig "$d" "20990101000000_bootstrap.sql" "create schema app;"
+printf '# เหตุผล\n20990101000000_bootstrap.sql\n' > "$d/.github/migration-guard-exempt"
+check "migration-guard ยกเว้นไฟล์ bootstrap ตามรายชื่อในไฟล์" pass "$d"
+
+# ㉙ ชื่อในรายการยกเว้นที่ไม่มีไฟล์จริงแล้ว -> ต้องโดนจับ (ยกเว้นที่อายุยืนกว่าไฟล์)
+d="$(mk)"; mkmig "$d" "20990101000000_ok.sql" "$GOOD"
+printf 'ไฟล์ที่ถูกลบไปแล้ว.sql\n' > "$d/.github/migration-guard-exempt"
+check "migration-guard จับรายการยกเว้นที่ไม่มีไฟล์แล้ว" fail "$d"
+
+# ㉚ ไม่มีไฟล์รายชื่อยกเว้นเลย -> ต้องโดนจับ (ตรวจไม่ได้ ≠ ปลอดภัย)
+d="$(mk)"; mkmig "$d" "20990101000000_ok.sql" "$GOOD"
+( MIGRATION_EXEMPT_FILE="/ไม่มีไฟล์นี้จริง"; export MIGRATION_EXEMPT_FILE
+  check "migration-guard ไม่มีไฟล์รายชื่อยกเว้น ต้องไม่ผ่าน" fail "$d" ) || rc=1
 
 exit $rc
