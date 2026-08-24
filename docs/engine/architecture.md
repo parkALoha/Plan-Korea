@@ -75,7 +75,7 @@ auth.users ──> profiles
 |---|---|---|
 | `countries` | `EMERGENCY_BY_COUNTRY` key + `countryOfCity()` | `code` ISO-3166-1 alpha-2 · `default_locale` · `map_provider` |
 | `cities` | `City` union + `CITY_NAME_TH/EN` + `CITY_LOCALE` | FK `country_code` · `center_lat/lng` (แทน `cityCenter()` ที่เฉลี่ยพิกัดจาก `PLACES`) |
-| `places` | `data/places.ts` (1,207 บรรทัด ~71 KB) | ยุบรวมกับ `custom_places` — ดู §1.4 |
+| `places` | `data/places.ts` (1,207 บรรทัด ~71 KB · **วัดแล้ว: 164,524 B / 47,229 B gzip ถึง client จริง** — P3) | → `catalog.places` · 🔴 **ไม่ยุบรวมกับ `custom_places`** (`D53` กลับคำ §1.4) |
 | `transfer_points` | `data/transferPoints.ts` | `transfer_kind: airport\|station` |
 | `emergency_contacts` | `data/emergency.ts` | FK `country_code` |
 | `airport_access_options` | `data/airportAccess.ts` | FK `transfer_point_id` |
@@ -85,13 +85,25 @@ auth.users ──> profiles
 ⚠️ `data/places.ts` = **1,207 บรรทัด / 71,149 bytes ของซอร์ส** — **ไม่ใช่ขนาดที่ขึ้น bundle**
 ยังไม่ผ่าน minify/tree-shake/gzip · **ห้ามเอาไปอ้างเป็นตัวเลข bundle** ตัวเลขที่ใช้ตัดสิน E6 ต้องมาจาก analyzer
 
-### 1.4 `places` กับ `custom_places` ต้องยุบเป็นตารางเดียว
+### 1.4 ~~`places` กับ `custom_places` ต้องยุบเป็นตารางเดียว~~ 🔴 **กลับคำแล้ว 24 ส.ค. 2026 → `D53`**
+
+> 🔴 **ห้ามอ้างหัวข้อนี้เป็นข้อสรุป — ข้อเสนอในนี้ถูกปฏิเสธแล้ว** (`README.md` หัวข้อ `D53`)
+> **ตัดสินว่า: แยกตารางเหมือนเดิม** · เหตุผลที่ชี้ขาดคือ**การแคช** ซึ่งตอนเขียนหัวข้อนี้ยังไม่มีใครวัด:
+> คลังต้องแคชแบบ public (`use cache` + `catalog_meta(version)`) · `custom_places` sync สดและห้ามหลุดเข้าแคชสาธารณะ
+> **ตารางเดียวมี cache policy สองแบบไม่ได้** · และ RLS จะมี 2 รูปทรงในตารางเดียว ซึ่งเป็นรูปแบบที่ทีมเจ็บมาแล้ว
+> ⚠️ **ปัญหาที่หัวข้อนี้ชี้ (`resolvePlace` ไล่หา 4 ชั้น) ยังจริงอยู่** — แก้ด้วย `placeRef = {source, id}` ที่ `copilot-spec §2.3` มีอยู่แล้ว **ไม่ใช่ด้วยการยุบตาราง**
+> 📌 **P5 เป็นคนจับได้ว่าหัวข้อนี้ขัดกับ `column-map.md`** · ผมเขียนทั้งสองไฟล์เอง และไม่เห็นความขัดแย้งจนมีคนที่ต้องเขียนโค้ดตามทั้งสองไฟล์มาชี้
+
+<details><summary>ข้อเสนอเดิม (เก็บไว้เพราะปัญหาที่มันชี้ยังจริง)</summary>
+
 
 วันนี้แยกกัน 2 ที่ และ `lib/resolvePlace.ts` ต้องไล่หา 4 ชั้น (`PLACES` → `TRANSFER_POINTS`
 → `hotel@lat,lng` → `custom_places`) เพราะแหล่งข้อมูลกระจาย
 
 **เสนอ:** ตาราง `places` เดียว มีคอลัมน์ `source: curated | user | transfer`
 · `owner_trip_id` (null = catalog สาธารณะ, มีค่า = ของทริปนั้น)
+
+</details>
 → `resolvePlace()` เหลือ query เดียว และคลังสถานที่ต่อประเทศโตได้โดยไม่แตะโค้ด
 
 ⚠️ **`hotel@lat,lng` เป็น place id สังเคราะห์** (`lib/hotelLegs.ts` `hotelAnchorId()`) ที่ฝังพิกัดไว้ในตัว id
