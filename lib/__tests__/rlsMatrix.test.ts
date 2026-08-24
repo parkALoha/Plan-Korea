@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -24,7 +24,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *      → เคสด้านบวกรันเป็น **precondition** ถ้าแดง ทั้งชุดถือว่า inconclusive ไม่ใช่ pass
  */
 
-const IDENTITY_SQL = resolve(process.cwd(), "docs/engine/schema/0001_identity.sql");
+/**
+ * 🔴 ต้องอ่าน **ไฟล์ที่รันจริง** ไม่ใช่เอกสารออกแบบ
+ *
+ * ฉบับแรกอ่าน `docs/engine/schema/0001_identity.sql` ซึ่งเป็นเอกสาร · ของที่ `db push` เอาไปรัน
+ * คือไฟล์ใน `supabase-platform/supabase/migrations/` — สองไฟล์นี้ **ต่างกัน 69 บรรทัดแล้ว**
+ * (self-check ถูกย้ายออก + guard กันรันผิดฐานถูกเพิ่มเข้า) และจะต่างขึ้นเรื่อยๆ ทุกครั้งที่แปลง
+ * → AC2 ที่อ่านเอกสารคือ **การรับรองสิ่งที่ไม่ได้รัน** ซึ่งเป็นรูปแบบเดียวกับที่ทีมเจอมาแล้ว
+ *   ตอนไฟล์ SQL วางอยู่นอกโฟลเดอร์ที่ pipeline อ่าน
+ *
+ * สแกน **ทุกไฟล์** ในโฟลเดอร์ ไม่ใช่ระบุชื่อ — migration ของ E2 จะถูกครอบเองโดยไม่ต้องแก้เทสต์
+ */
+const MIGRATIONS_DIR = resolve(process.cwd(), "supabase-platform/supabase/migrations");
+const migrationFiles = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .map((f) => join(MIGRATIONS_DIR, f));
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -65,7 +79,12 @@ function permissiveIn(sql: string): string[] {
 // ส่วนที่รันได้เสมอ ไม่ต้องมี DB
 // ───────────────────────────────────────────────────────────────────────────
 describe("E1-AC2 — migration ต้องอ้าง identity จริง", () => {
-  const whole = readFileSync(IDENTITY_SQL, "utf8");
+  // 🔴 กันกรณี glob ไม่ match อะไรเลย → เคสข้างล่างจะเขียวจากไฟล์ศูนย์ไฟล์
+  it("มีไฟล์ migration ให้ตรวจจริง", () => {
+    expect(migrationFiles.length).toBeGreaterThan(0);
+  });
+
+  const whole = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
 
   // 🔴 สแกนเฉพาะส่วน DDL (ก่อน `commit;`) ไม่รวมบล็อก self-check ท้ายไฟล์
   //    เพราะ self-check ของ P1 **มีสตริง `using (true)` กับ `force row level security`
@@ -250,6 +269,27 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     it("A อ่านโปรไฟล์ตัวเองได้", async () => {
       const { data } = await A.from("profiles").select("id").eq("id", ids.a);
       expect(data).toHaveLength(1);
+    });
+
+    it("A แก้โปรไฟล์ตัวเองได้", async () => {
+      const { error } = await A.from("profiles")
+        .update({ display_name: `A-${stamp}` })
+        .eq("id", ids.a);
+      expect(error).toBeNull();
+      const { data } = await A.from("profiles").select("display_name").eq("id", ids.a).single();
+      expect(data?.display_name).toBe(`A-${stamp}`);
+    });
+
+    // 🔴 หลักผูกของ C — ถ้าไม่มีข้อนี้ เคสด้านลบของ C ทั้ง 6 ข้อ (E1-AC3) จะผ่านได้
+    //    จาก session ที่ล็อกอินไม่สำเร็จหรือ profile ไม่ถูกสร้าง = ความจริงบนเซตว่างอีกครั้ง
+    //    B มีหลักผูกอยู่แล้ว (เห็นทริปตัวเอง) แต่ C เดิมถูกใช้เฉพาะด้านลบล้วน
+    it("🔴 C ล็อกอินได้จริงและอ่านโปรไฟล์ตัวเองได้ (หลักผูกของเคสด้านลบทั้งหมดของ C)", async () => {
+      const { data, error } = await C.from("profiles").select("id").eq("id", ids.c);
+      expect(error).toBeNull();
+      expect(
+        data,
+        "C อ่านโปรไฟล์ตัวเองไม่ได้ = session ของ C ใช้ไม่ได้ → เคส AC3 ทุกข้อไม่ได้พิสูจน์อะไร",
+      ).toHaveLength(1);
     });
   });
 
