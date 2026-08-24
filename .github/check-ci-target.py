@@ -15,8 +15,6 @@
 
 ⛔ ห้ามพิมพ์เนื้อคีย์ออกมาไม่ว่ากรณีใด — พิมพ์ได้แค่ project ref ซึ่งเป็นค่าสาธารณะ
 """
-import base64
-import json
 import os
 import re
 import sys
@@ -27,22 +25,8 @@ ALLOWFILE = os.environ.get("ALLOWED_REF_FILE") or os.path.join(HERE, "allowed-pr
 REF_RE = re.compile(r"^[a-z]{20}$")
 
 
-def jwt_ref(token: str):
-    """ดึง claim `ref` ออกจาก payload ของ JWT
-
-    🔴 **ไม่ได้ verify ลายเซ็น และไม่ตั้งใจจะ verify** — นี่คือด่านกัน "ตั้งผิดใบ"
-       ไม่ใช่ด่านกัน "คนปลอมคีย์" · คีย์ปลอมที่ประกอบ payload เองจะผ่านด่านนี้
-       ซึ่งรับได้ เพราะภัยที่กันอยู่คืออุบัติเหตุ ไม่ใช่การโจมตี
-    คืน None ถ้าไม่ใช่ JWT (คีย์รูปแบบใหม่ `sb_secret_…` ไม่ได้พก ref มาด้วย)
-    """
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    try:
-        pad = parts[1] + "=" * (-len(parts[1]) % 4)
-        return json.loads(base64.urlsafe_b64decode(pad)).get("ref")
-    except Exception:
-        return None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _jwtref import ref_of as jwt_ref  # noqa: E402
 
 
 def main() -> int:
@@ -56,6 +40,7 @@ def main() -> int:
         return 1
 
     bad = 0
+    verified = 0
 
     # ── URL: บังคับ ตรวจได้เสมอ ────────────────────────────────────────────────
     # 🔴 ต้องเทียบ **host ที่ parse แล้ว** ห้ามใช้ substring เด็ดขาด
@@ -83,6 +68,7 @@ def main() -> int:
         bad += 1
     else:
         print(f"✅ ci-target: URL ชี้ {allowed} (host ตรงเป๊ะ)")
+        verified += 1
 
     # ── คีย์: ตรวจ claim `ref` ใน JWT · best-effort ────────────────────────────
     for name in ("NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
@@ -102,7 +88,12 @@ def main() -> int:
             bad += 1
         else:
             print(f"✅ ci-target: {name} เป็นคีย์ของ {allowed}")
+            verified += 1
 
+    # 🔴 P1 ขอ 24 ส.ค. 2026: ตอนตรวจไม่ได้ ข้อความต้องอ่านออกว่า "ตรวจไม่ได้" ไม่ใช่ "ผ่าน"
+    #    บรรทัดนี้ทำให้ผลเขียว **พกขอบเขตของตัวเองมาด้วย** — คนอ่านจะไม่นับ 2/3 เป็น 3/3
+    print(f"📋 ci-target: ยืนยันได้ {verified}/3 ค่า (URL + anon + service_role)"
+          + ("" if verified == 3 else " — ที่เหลือคือ 'ตรวจไม่ได้' ไม่ใช่ 'ผ่าน'"))
     return 1 if bad else 0
 
 

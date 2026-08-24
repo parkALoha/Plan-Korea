@@ -9,6 +9,11 @@ set -uo pipefail
 # GUARDS_SH override ไว้เพื่อทดสอบตัว self-test เอง (ดูท้ายไฟล์) — ปกติไม่ต้องตั้ง
 G="${GUARDS_SH:-$(cd "$(dirname "$0")" && pwd)/guards.sh}"
 TRIP_REF="$(printf 'ejzibhgqhxdz%s' 'kovsnpds')"
+DEVREF=pmvxwcimjebogjfimzqy
+mkjwt() { python3 -c "
+import base64,json,sys
+p=base64.urlsafe_b64encode(json.dumps({'ref':sys.argv[1],'role':'service_role'}).encode()).decode().rstrip('=')
+print('eyJhbGciOiJIUzI1NiJ9.'+p+'.sig')" "$1"; }
 rc=0
 
 mk() {  # สร้างทรีจำลองที่ "สะอาด" แล้วคืน path
@@ -159,6 +164,27 @@ check ".env จับไฟล์ที่ก๊อปมาจากทรี�
 d="$(mk)"; printf 'NEXT_PUBLIC_SUPABASE_URL=https://pmvxwcimjebogjfimzqy.supabase.co\n' > "$d/.env.local"
 check ".env ที่ชี้ engine-dev ต้องผ่าน" pass "$d"
 
+# ㉑b 🔴 เคสที่ด่าน .env **เคยผ่านพร้อมข้อความ ✅ ทั้งที่ผิด** (เจอ 24 ส.ค. 2026)
+#     URL เป็น engine-dev แต่ service_role เป็นคีย์ของ DB ทริป
+#     ref ใน JWT ถูก base64 ไว้ → `grep` หา ref ไม่มีทางเจอ
+#     🔴 ไม่ใช่ช่องที่ยังไม่ได้ปิด แต่เป็นด่านที่รายงานตรงข้ามกับความจริง
+d="$(mk)"
+{ echo "NEXT_PUBLIC_SUPABASE_URL=https://pmvxwcimjebogjfimzqy.supabase.co"
+  echo "SUPABASE_SERVICE_ROLE_KEY=$(mkjwt "$TRIP_REF")"; } > "$d/.env.local"
+check ".env จับ service_role ของ DB ทริปที่ซ่อนอยู่ใน JWT" fail "$d"
+
+# ㉑c คีย์ของ engine-dev ต้องไม่โดนจับ — กันด่านกว้างเกินจนบล็อกทางที่ถูก
+d="$(mk)"
+{ echo "NEXT_PUBLIC_SUPABASE_URL=https://pmvxwcimjebogjfimzqy.supabase.co"
+  echo "SUPABASE_SERVICE_ROLE_KEY=$(mkjwt pmvxwcimjebogjfimzqy)"; } > "$d/.env.local"
+check ".env ที่มีคีย์ของ engine-dev ต้องผ่าน" pass "$d"
+
+# ㉑d คีย์รูปแบบใหม่ที่ไม่ใช่ JWT ต้องไม่ทำให้แดง (ไม่มี ref ให้ตรวจ ≠ ผิด)
+d="$(mk)"
+{ echo "NEXT_PUBLIC_SUPABASE_URL=https://pmvxwcimjebogjfimzqy.supabase.co"
+  echo "SUPABASE_SERVICE_ROLE_KEY=sb_secret_AbCdEfGhIjKlMnOpQrSt"; } > "$d/.env.local"
+check ".env ที่ใช้คีย์รูปแบบใหม่ ต้องไม่แดงเพราะตรวจ ref ไม่ได้" pass "$d"
+
 # ㉑ ชื่อไฟล์อื่นในตระกูล .env ก็ต้องโดนจับ ไม่ใช่ hardcode เฉพาะ .env.local
 d="$(mk)"; printf 'URL=https://%s.supabase.co\n' "$TRIP_REF" > "$d/.env.development.local"
 check ".env จับไฟล์อื่นในตระกูลเดียวกันด้วย" fail "$d"
@@ -167,11 +193,6 @@ check ".env จับไฟล์อื่นในตระกูลเดี�
 # 🔴 ด่านนี้ไม่ได้อยู่ใน guards.sh เพราะมันตรวจ **env ของ CI** ไม่ใช่ไฟล์ในทรี
 #    แต่ต้องมีเทสต์ด้านลบเหมือนกันตามกฎ E0 ข้อ 1
 CIT="$(cd "$(dirname "$0")" && pwd)/check-ci-target.py"
-mkjwt() { python3 -c "
-import base64,json,sys
-p=base64.urlsafe_b64encode(json.dumps({'ref':sys.argv[1]}).encode()).decode().rstrip('=')
-print('eyJhbGciOiJIUzI1NiJ9.'+p+'.sig')" "$1"; }
-DEVREF=pmvxwcimjebogjfimzqy
 
 citcheck() {  # citcheck <ชื่อ> <pass|fail> <url-ref> <anon-ref> <svc-ref>
   name="$1"; want="$2"

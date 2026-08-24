@@ -71,36 +71,6 @@ else
   echo "✅ migrations: ไม่มีโฟลเดอร์ที่ CLI มองไม่เห็น"
 fi
 
-# ── .env* ในทรีนี้ ต้องไม่ชี้ไป DB ทริป ──────────────────────────────────────────
-# 🔴 ช่องที่ด่านอื่น **ทั้งหมด** มองไม่เห็น (P1 เจอ 24 ส.ค. 2026):
-#    คนที่อยากทดสอบล็อกอินในเบราว์เซอร์ต้องมี `.env.local` ในทรีนี้ก่อน
-#    **ที่ที่หาง่ายที่สุดคือก๊อปจากทรีหลัก — ซึ่งชี้ไป DB ทริปจริง**
-#    ผล: dev server ของ platform ต่อ **DB ทริป** · refreshSession() ยิงไปที่นั่นทุก request
-#    และวันที่ใครรันโค้ดที่เขียนข้อมูล **มันเขียนลงของจริง** โดยไม่มีอะไรทัก
-#
-# 🔴 ทำไมด่านอื่นไม่เห็นสักตัว: `.gitignore` มี `.env*` → **ไฟล์ไม่เคยขึ้น git**
-#    gitleaks กับ CI จึงไม่มีทางเห็นมันได้เลย · ด่าน ref ข้างบนก็ไม่ได้สแกน `.env`
-#    **ด่านทุกตัวของเราเฝ้าไฟล์ที่ commit — ช่องนี้อยู่ในไฟล์ที่ "ห้าม" commit โดยตั้งใจ**
-#
-# ⚠️ เหมือนด่าน `.temp/`: **บน CI ไม่มีไฟล์ให้สแกน = ไม่มีวันแดงที่นั่น**
-#    กัดตอนรัน guards.sh บนเครื่องเท่านั้น · **อย่านับว่า CI คุ้มให้**
-# ⚠️ ด่านนี้ตั้งอยู่บนสมมติฐานว่า ROOT คือทรี `platform` — ทรีหลักมี `.env.local` ที่ชี้ DB ทริป
-#    **โดยถูกต้อง** ถ้าเอา guards.sh ไปรันใส่ทรีหลัก มันจะฟ้องของที่ไม่ผิด
-envhits=""
-while IFS= read -r f; do
-  [ -z "$f" ] && continue
-  grep -q "$TRIP_REF" "$f" 2>/dev/null && envhits="$envhits  $f
-"
-done < <(find "$ROOT" -type f -name '.env*' -not -path '*/node_modules/*' 2>/dev/null | sort)
-if [ -n "$envhits" ]; then
-  echo "🔴 .env ในทรีนี้ชี้ไป DB ทริป — dev server จะต่อของจริง ไม่ใช่ engine-dev"
-  printf '%s' "$envhits"
-  echo "   🔴 ห้ามก๊อป .env.local จากทรีหลัก — ต้องใช้ URL/key ของ engine-dev เท่านั้น"
-  fail=1
-else
-  echo "✅ .env: ไม่มีไฟล์ .env ที่ชี้ไป DB ทริป"
-fi
-
 # ── ทุก .sql ที่จอดใน pending-review/ ต้องมีชื่ออยู่ใน README ของโฟลเดอร์นั้น ──────
 # 🔴 `pending-review/` ถูกออกแบบให้ **CLI มองไม่เห็นโดยตั้งใจ** (P1 · 24 ส.ค. 2026)
 #    ซึ่งแปลว่ามันเป็นที่ที่ **ของหายเงียบได้ดีที่สุดในรีโป** — ไม่มีเครื่องมือไหนเดินผ่านมันเลย
@@ -205,6 +175,56 @@ elif [ -n "${DEV_PROJECT_REF:-}" ] && [ "$DEV_PROJECT_REF" != "$allowed" ]; then
   fail=1
 else
   echo "✅ allowlist: $allowed"
+fi
+
+# ── .env* ในทรีนี้ ต้องไม่ชี้ไป DB ทริป ──────────────────────────────────────────
+# 🔴 ช่องที่ด่านอื่น **ทั้งหมด** มองไม่เห็น (P1 เจอ 24 ส.ค. 2026):
+#    คนที่อยากทดสอบล็อกอินในเบราว์เซอร์ต้องมี `.env.local` ในทรีนี้ก่อน
+#    **ที่ที่หาง่ายที่สุดคือก๊อปจากทรีหลัก — ซึ่งชี้ไป DB ทริปจริง**
+#    ผล: dev server ของ platform ต่อ **DB ทริป** · refreshSession() ยิงไปที่นั่นทุก request
+#    และวันที่ใครรันโค้ดที่เขียนข้อมูล **มันเขียนลงของจริง** โดยไม่มีอะไรทัก
+#
+# 🔴 ทำไมด่านอื่นไม่เห็นสักตัว: `.gitignore` มี `.env*` → **ไฟล์ไม่เคยขึ้น git**
+#    gitleaks กับ CI จึงไม่มีทางเห็นมันได้เลย · ด่าน ref ข้างบนก็ไม่ได้สแกน `.env`
+#    **ด่านทุกตัวของเราเฝ้าไฟล์ที่ commit — ช่องนี้อยู่ในไฟล์ที่ "ห้าม" commit โดยตั้งใจ**
+#
+# ⚠️ เหมือนด่าน `.temp/`: **บน CI ไม่มีไฟล์ให้สแกน = ไม่มีวันแดงที่นั่น**
+#    กัดตอนรัน guards.sh บนเครื่องเท่านั้น · **อย่านับว่า CI คุ้มให้**
+# ⚠️ ด่านนี้ตั้งอยู่บนสมมติฐานว่า ROOT คือทรี `platform` — ทรีหลักมี `.env.local` ที่ชี้ DB ทริป
+#    **โดยถูกต้อง** ถ้าเอา guards.sh ไปรันใส่ทรีหลัก มันจะฟ้องของที่ไม่ผิด
+envhits=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  grep -q "$TRIP_REF" "$f" 2>/dev/null && envhits="$envhits  $f
+"
+done < <(find "$ROOT" -type f -name '.env*' -not -path '*/node_modules/*' 2>/dev/null | sort)
+if [ -n "$envhits" ]; then
+  echo "🔴 .env ในทรีนี้ชี้ไป DB ทริป — dev server จะต่อของจริง ไม่ใช่ engine-dev"
+  printf '%s' "$envhits"
+  echo "   🔴 ห้ามก๊อป .env.local จากทรีหลัก — ต้องใช้ URL/key ของ engine-dev เท่านั้น"
+  fail=1
+else
+  echo "✅ .env: ไม่มี ref ทริปเป็นสตริงในไฟล์ .env"
+fi
+# 🔴 ด่านข้างบน grep หา ref แบบ "สตริงตรงๆ" ซึ่ง **มองไม่เห็น ref ที่อยู่ใน JWT**
+#    (payload ถูก base64 ไว้) · ยืนยันแล้ว 24 ส.ค. 2026 ว่า .env ที่มี URL ของ engine-dev
+#    แต่ service_role เป็นคีย์ของ DB ทริป **ผ่านด่านเดิมพร้อมข้อความ ✅**
+#    → ต้องถอด JWT มาดู ref จริง · ตรรกะอยู่ใน .github/check-env-keys.py
+ENVKEYS="$(cd "$(dirname "$0")" && pwd)/check-env-keys.py"
+envfiles=""
+while IFS= read -r f; do
+  [ -n "$f" ] && envfiles="$envfiles $f"
+done < <(find "$ROOT" -type f -name '.env*' -not -path '*/node_modules/*' 2>/dev/null | sort)
+if [ -n "$envfiles" ]; then
+  if [ ! -f "$ENVKEYS" ]; then
+    echo "🔴 .env: หา check-env-keys.py ไม่เจอ — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+    fail=1
+  # shellcheck disable=SC2086
+  elif ! python3 "$ENVKEYS" "$allowed" $envfiles; then
+    fail=1
+  else
+    echo "✅ .env: คีย์ใน .env ทุกไฟล์เป็นของ $allowed"
+  fi
 fi
 
 # ── ทุก migration ต้อง assert app.project_identity + ref (D48 · P1 สั่ง 24 ส.ค. 2026) ──
