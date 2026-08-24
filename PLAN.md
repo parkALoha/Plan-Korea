@@ -2120,7 +2120,7 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 **ระยะออกแบบ — จบแล้ว**
 - [x] สำรวจฐานรหัสทั้งโปรเจกต์ · [x] `TEAM.md` 4 → 8 บทบาท · [x] `docs/engine/README.md`
 - [x] `docs/engine/architecture.md` (P1) · [x] ส่งบรีฟเข้าครบ 7 เซสชัน
-- [x] เอกสารกลับมาครบทั้ง 8 บทบาท (~1 MB · ข้อตัดสิน `D1`–`D43`)
+- [x] เอกสารกลับมาครบทั้ง 8 บทบาท (~1 MB · ข้อตัดสิน `D1`–`D48`)
 
 ### 🔴 สถานะสด ณ สิ้นวัน 24 ส.ค. 2026 — อ่านข้อนี้ก่อนถ้าเพิ่งกลับมา
 
@@ -2132,39 +2132,49 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 - ✅ self-check 14/14 · ผู้ใช้ตั้ง `.env.local` ของทรี `platform` แล้ว (ชี้ `engine-dev`)
 - ✅ `E2-AC6` แมป 111 คอลัมน์ครบ → [`docs/engine/column-map.md`](docs/engine/column-map.md)
 
-**🔴 ค้างอยู่ตรงนี้เป๊ะ — เมทริกซ์ RLS รันครั้งแรกแล้วแดง:**
-1. **`P-26` เจอสาเหตุแล้ว** — `insert … returning` ถูกปฏิเสธเพราะ trigger `trips_bootstrap_owner`
-   เป็น `AFTER INSERT` จึงทำงานหลัง `returning` ประเมิน · migration แก้เขียนแล้ว
-   (`20260824144235_fix_trip_visible_on_create.sql`) **แต่ยังไม่ `db push` — รอ P4 ตรวจ**
-2. **`service_role` ไม่มีสิทธิ์ DML บนทั้ง 3 ตาราง** — P1 ลืม grant · **จงใจยังไม่แก้**
-   เพื่อไม่ให้เปลี่ยน 2 อย่างพร้อมกันแล้วแยกไม่ออกว่าอะไรแก้อะไร · เมทริกซ์จะยังตายที่ `afterAll`
+### 🔴🔴 ตัวขวางที่ใหญ่ที่สุด — **CLI เข้า `engine-dev` ไม่ได้แล้ว** (P1 เจอ 24 ส.ค. หลังหมุนความลับ)
+
+`supabase migration list` → **403** · `supabase projects list` คืนมาแค่ **2 โปรเจกต์** และ **ไม่มี `engine-dev` อยู่ในนั้น**
+
+| ref | ชื่อ | หมายเหตุ |
+|---|---|---|
+| `ejzibhgqhxdzkovsnpds` | `Korea-Trip` | 🔴 DB ทริปจริง — ห้ามแตะ |
+| `pceaovdyjuvwnytlatsw` | `a-gleam` | 🔴 โปรเจกต์ของร้าน — ห้ามแตะ |
+| `pmvxwcimjebogjfimzqy` | `engine-dev` | ⛔️ **ไม่อยู่ในลิสต์** — token ใหม่ scope ไม่ครอบ org `Plan-trip-app` |
+
+→ **`db push` · เมทริกซ์ RLS · `E1-AC2`–`AC7` ทุกข้อ เดินต่อไม่ได้จนกว่าผู้ใช้จะแก้ token**
+🔴 **และห้าม "แก้ให้มันเดินได้" ด้วยการ re-link ไปโปรเจกต์ที่ token เห็นเด็ดขาด** — เหลือให้เลือกแค่ 2 ใบที่ห้ามแตะทั้งคู่
+· ⚠️ ด่าน `$guard$` ในทุก migration จับได้แค่ `Korea-Trip` (ดูตาราง `trip_meta`) · **`a-gleam` ผ่านด่านฉลุย** → `D48`
+
+### 🔴 ค้างอยู่ตรงนี้เป๊ะ — เมทริกซ์ RLS รันครั้งแรกแล้วแดง *(แก้คำวินิจฉัย 24 ส.ค. — P1 รีวิวซ้ำก่อน push)*
+
+1. **`P-26` migration เขียนแล้ว แต่ 🔴 อย่าเพิ่ง push — P1 เชื่อว่ามันยังไม่พอ (`P-27`)**
+   ไฟล์ `20260824144235_fix_trip_visible_on_create.sql` ย้าย trigger เป็น `BEFORE INSERT` ซึ่งแก้ **ลำดับการทำงาน**
+   แต่ที่ทำให้ policy ไม่ผ่านคือ **snapshot มองไม่เห็นแถว** ไม่ใช่แถวยังไม่มี — `app.can_read_trip`/`app.trip_role` เป็น `stable`
+   จึงใช้ snapshot ของคำสั่งที่เรียก ซึ่งมองไม่เห็นแถวที่ trigger เพิ่งเขียนในคำสั่งเดียวกัน
+   · **คาดว่า push แล้วได้ error เดิมเป๊ะ แถมทิ้ง FK `deferrable` ไว้ถาวรโดยไม่ได้อะไร**
+   · ทางที่เสนอแทน: `public.create_trip()` `security definer` → ไม่มี `RETURNING` ที่ต้องผ่าน RLS เลย · ไม่ต้องใช้ FK deferrable · `P-15` ไม่ถูกแตะ
+   · **สถานะ: สมมติฐานมั่นใจสูง ยังพิสูจน์บนฐานจริงไม่ได้** (ไม่มี psql/docker + token 403) · **ส่งให้ P4 รีวิวแล้ว**
+
+2. ~~`service_role` ไม่มีสิทธิ์ DML — P1 ลืม grant~~ 🔴 **วินิจฉัยผิด (`P-28`)**
+   `afterAll` เรียกแค่ `auth.admin.deleteUser` **ไม่แตะ DML สักบรรทัด** · ที่บล็อกจริงคือ **FK ไม่ใช่สิทธิ์**:
+   `deleteUser` → `profiles` cascade → ชน `trips.created_by … on delete restrict`
+   · และ **ไม่มีทางลบทริปจากทางไหนเลย** (ไม่มี `trips_delete` policy · `authenticated` ไม่มี DELETE บน `trips`)
+   · → **grant เฉยๆ ไม่แก้อะไร** · ต้องแก้ 2 ส่วน: `afterAll` ลบทริปก่อนลบ user + `service_role` มี DELETE บน `trips`
+   · 📌 **ยังไม่ยืนยัน:** `service_role` อาจมีสิทธิ์อยู่แล้วจาก ADP ของ Supabase (เรา revoke เฉพาะ `anon, authenticated`) — **ตรวจก่อนแก้**
+
 3. **`E1-AC7` ยังวัดไม่ได้** — ต้องออกจากระบบแล้วเข้าใหม่ด้วย magic link อีเมลเดิม
    แล้วเทียบ `user id` · **ค่าอ้างอิง `b56d0964-d160-4442-add7-a5a94348f137`** (ดูที่ `/account`)
+
 4. **`E1-AC6` ถอด PIN — ยังไม่เริ่ม** เหลือ 4 ไฟล์ · P4 รอเมทริกซ์เขียวก่อนตามลำดับที่ล็อกไว้
 
-**🔴 ของที่ผู้ใช้ต้องทำ:**
-- **push ยังไม่ได้ทำ** — `platform` ค้าง 52 commit · `main` ค้าง 7 (มีการแก้ open redirect ที่ `/unlock` ซึ่ง**ยังไม่มีผลบน production จนกว่าจะ push**)
-- ✅ **หมุนความลับครบ 4 อย่างแล้ว** — Supabase access token · รหัส DB `engine-dev` · Google client secret · service role key
-  · *ผู้ใช้ยืนยันกับ P8 เมื่อ 24 ส.ค. 2026* · **ค่าจริงไม่ถูกเขียนลงไฟล์ไหนทั้งสิ้นตามกติกาเดิม**
-- ✅ **ลบ OAuth client ที่เผลอสร้างในโปรเจกต์ Google Cloud ของร้าน `A GLEAM` แล้ว** — Maps key ไม่ถูกแตะ
-  · *ผู้ใช้ยืนยันกับ P8 เมื่อ 24 ส.ค. 2026*
-
-**🔴 แต่การหมุนคีย์ยังไม่จบที่การหมุน — 5 ที่ที่ยังถือค่าเก่า (P8 ไล่เช็คไฟล์จริง 24 ส.ค. 2026 หลังผู้ใช้แจ้งว่าหมุนแล้ว)**
-
-> ทุกข้อล้วนพังแบบ**ไม่มีสัญญาณว่าสาเหตุคือการหมุนคีย์** — ซึ่งคือรูปแบบของ `R9` เป๊ะ ๆ
-
-1. 🔴 **Google client secret อยู่ที่ Supabase ไม่ใช่ที่ Google** — provider config ใน Supabase Auth dashboard
-   **ถ้าหมุนที่ Google Cloud แล้วไม่ไปแก้ที่ Supabase ด้วย `E1-AC1` ที่เพิ่งผ่านเมื่อวานจะพังทันที**
-   · ไม่มีไฟล์ไหนในรีโปถือค่านี้ จึง `grep` ไม่เจอ และ CI ไม่จับ
-2. 🔴 **`.github/workflows/ci.yml:138` ใช้ `secrets.DEV_SERVICE_ROLE_KEY`** — เป็น GitHub Actions secret ที่ยังเป็นค่าเก่า
-   · job เมทริกซ์จะแดง **ด้วยเหตุที่ไม่ใช่บั๊กของโค้ด** ซึ่งเป็นเวลาที่เสียไปเปล่าที่หาสาเหตุยากที่สุด
-3. 🔴 **`/Users/park/mu-phone/.env.local` ถือ `SUPABASE_SERVICE_ROLE_KEY` และ mtime ยังเป็น 13 ส.ค. 19:28**
-   · ยังไม่ถูกแก้หลังหมุน · **ถ้าคีย์ที่หมุนคือของ mu-phone แปลว่า mu-phone พังอยู่ตอนนี้** และไม่มีใครในทีมนี้ดูโปรเจกต์นั้น
-4. 🟡 **เมทริกซ์ RLS จะรันไม่ได้จนกว่าจะมีคีย์ใหม่** — `lib/__tests__/rlsMatrix.test.ts:99` อ่าน `SUPABASE_SERVICE_ROLE_KEY`
-   แต่ `/Users/park/plan-korea-platform/.env.local` มีแค่ `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   · ⚠️ **ใส่ในไฟล์ `.env.local` เท่านั้น อย่าพิมพ์บนบรรทัดคำสั่งหรือวางในแชท** — นี่คือของที่เพิ่งต้องหมุนเพราะมันหลุดออกมา
-5. 🟡 **supabase CLI ต้อง `supabase login` ใหม่ด้วย access token ใหม่** ก่อน `db push` ครั้งต่อไป
-   · `~/.supabase/` ไม่มีไฟล์ token (macOS เก็บใน keychain) จึงดูจากไฟล์ไม่ออกว่าค้างค่าเก่าอยู่ไหม
+**🔴 ของที่ผู้ใช้ต้องทำ — เรียงตามที่ขวางงานมากที่สุด:**
+1. 🔑 **ให้ CLI กลับเข้า `engine-dev` ได้** — ออก access token ใบใหม่ที่**ครอบ org `Plan-trip-app`** (ไม่ใช่ org ของ `a-gleam`/`Korea-Trip`) แล้ว `supabase login`
+   · **ทุกอย่างของ `E1` ค้างอยู่ที่ข้อนี้ข้อเดียว**
+2. **push ยังไม่ได้ทำ** — `platform` ค้าง 52 commit · `main` ค้าง 6 (มีการแก้ open redirect ที่ `/unlock` ซึ่ง**ยังไม่มีผลบน production จนกว่าจะ push**)
+3. 🔑 **หมุนความลับที่เหลือ:** รหัส DB `engine-dev` · Google client secret · **service role key** (หลุดทางภาพหน้าจอ และแตะโปรเจกต์ mu-phone ได้ด้วย)
+   · *(Supabase access token หมุนไปแล้ว — และนั่นคือสิ่งที่ทำให้ข้อ 1 เกิด)*
+4. ลบ OAuth client ที่เผลอสร้างในโปรเจกต์ Google Cloud ของร้าน `A GLEAM` (⚠️ ห้ามแตะ Maps key · ห้ามทำช่วง 11–21 ต.ค.)
 
 ---
 
