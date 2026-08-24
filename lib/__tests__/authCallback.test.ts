@@ -11,7 +11,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const exchangeCodeForSession = vi.fn();
 
-vi.mock("@/lib/auth/server", () => ({
+// ⚠️ mock **เฉพาะ `createServerSupabase`** ปล่อย export อื่นเป็นของจริง (P4 พบ · S6)
+// 🔴 ฉบับแรกแทนที่ทั้งโมดูล → `getUser` และ **`requireUser` หายไปแล้ววันนี้ ไม่ใช่จะหายวันหน้า**
+//
+// 🎯 ทำไมตัวนี้อันตรายกว่ากรณีเดียวกันใน `proxySession.test.ts`: `requireUser` **เป็นตัวบังคับสิทธิ์**
+//    ลำดับที่จะเกิดคือลำดับที่เป็นธรรมชาติที่สุด ไม่ใช่ลำดับที่ต้องซวย —
+//    ① วันหนึ่งมี route ใช้ `requireUser()` แล้วก๊อป mock นี้ไปใช้
+//    ② เทสต์แดงว่า "ไม่มี export ชื่อ requireUser" · **ข้อความชี้ไปที่ route ไม่ได้ชี้ว่า mock คือต้นเหตุ**
+//    ③ ทางแก้ที่ดูสมเหตุสมผลที่สุดตอนนั้นคือเติม `requireUser: async () => fakeUser` ลงใน mock
+//    ④ → เทสต์เขียว · route "ผ่าน" · **แต่ด่านตรวจสิทธิ์จริงไม่เคยถูกรันเลยสักครั้ง**
+//    ปลายทางคือ **เทสต์ที่รับรอง route ซึ่งไม่มีการตรวจสิทธิ์ โดยไม่มีใครตั้งใจให้เป็นแบบนั้น**
+vi.mock("@/lib/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/server")>()),
   createServerSupabase: async () => ({ auth: { exchangeCodeForSession } }),
 }));
 
