@@ -45,10 +45,35 @@ const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const hasCreds = Boolean(URL_ && ANON && SERVICE);
 
-/** อ่าน claim `role` จาก JWT โดยไม่ตรวจลายเซ็น — พอสำหรับกันหยิบ key ผิดใบ */
-function jwtRole(key: string): string | null {
+/**
+ * บอกว่าคีย์ใบนี้เป็นคีย์ **ระดับไหน** — กันความผิดพลาดที่แพงที่สุดของชุดนี้:
+ * หยิบ service key มาใส่ช่อง anon แล้วเมทริกซ์เขียวทั้งแผงโดยไม่ได้ทดสอบ RLS เลยสักเคส
+ * (service role ข้าม RLS โดยนิยาม — ทุกเคส "ถูกปฏิเสธ" จะกลายเป็น "ทำได้" เงียบ ๆ)
+ *
+ * 🔴 ต้องรองรับ **2 รูปแบบพร้อมกัน** เพราะโปรเจกต์นี้ใช้ทั้งคู่อยู่จริงวันนี้:
+ *   · `engine-dev` (แพลตฟอร์ม) ใช้คีย์รุ่นใหม่ `sb_publishable_…` / `sb_secret_…` — **ไม่ใช่ JWT**
+ *   · DB ทริป (`main`) ยังใช้ JWT รุ่นเก่า `eyJ…` ที่ถอด claim `role` ได้
+ * ฉบับเดิมรองรับแค่ JWT → คืน `null` กับคีย์ใหม่ทั้งสองใบ → เคสด้านล่างล้มแน่นอน
+ * แม้ตั้ง secret ถูกทุกช่อง (P6 จำลองยืนยัน · P1 ตรวจซ้ำ 24 ส.ค. 2026)
+ *
+ * ⚠️ **ด่านนี้ไม่ได้แข็งเท่ากันทั้งสองทาง และต้องรู้ว่าอ่อนลงตรงไหน:**
+ *   JWT → `role` เป็น **claim ที่เซิร์ฟเวอร์เซ็นไว้** · คีย์ใหม่ → prefix เป็นแค่ **ป้ายชื่อในสตริง**
+ *   ใครตั้งชื่อตัวแปรว่า `sb_publishable_…` แล้วยัดค่า secret ลงไป ด่านนี้จับไม่ได้
+ *   → มันกัน "หยิบผิดใบ" (ซึ่งเป็นสิ่งที่เกิดจริง) **ไม่ได้กัน "ตั้งใจปลอม"**
+ *
+ * 🔴 รูปแบบที่ไม่รู้จัก → คืน `null` = **ล้ม ไม่ใช่ผ่าน** (ตรวจไม่ได้ ≠ ปลอดภัย)
+ */
+function keyRole(key: string): string | null {
+  // คีย์รุ่นใหม่ — ไม่มีจุด ไม่มี payload ให้ถอด แยกได้จาก prefix เท่านั้น
+  if (key.startsWith("sb_publishable_")) return "anon";
+  if (key.startsWith("sb_secret_")) return "service_role";
+
+  // คีย์รุ่นเก่า — JWT · base64url ไม่ใช่ base64 ธรรมดา (payload มี `-`/`_` ได้)
+  const payload = key.split(".")[1];
+  if (!payload) return null;
   try {
-    return JSON.parse(Buffer.from(key.split(".")[1], "base64").toString()).role ?? null;
+    const role: unknown = JSON.parse(Buffer.from(payload, "base64url").toString()).role;
+    return typeof role === "string" ? role : null;
   } catch {
     return null;
   }
@@ -161,6 +186,50 @@ describe("ความครบของ matrix — ตรวจตัวรา�
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// ตัวด่านเอง — `keyRole` ต้องถูกพิสูจน์ก่อน เพราะทั้งชุดสดพึ่งมันในบรรทัดแรก
+//
+// 🔴 กฎ E0 ข้อ 1–2: ด่านต้องมีเทสต์ **ทั้งด้านลบและด้านบวก**
+//    ด้านลบอย่างเดียวไม่พอ — ฟังก์ชันที่คืน null ให้ทุกอย่างจะทำให้ด้านลบเขียวหมดทั้งชุด
+// 🔴 กฎ E0 ข้อ 5: เคสพวกนี้เรียก `keyRole` **ตัวเดียวกับที่ beforeAll ใช้** ไม่ใช่สำเนา
+//    (ถ้าเขียนตรรกะซ้ำไว้ในเทสต์ ตัวจริงพังแล้วเทสต์ยังเขียว = พิสูจน์คนละอย่างกับที่รันจริง)
+// ───────────────────────────────────────────────────────────────────────────
+describe("keyRole — ด่านกันหยิบคีย์ผิดใบ ต้องทำงานกับคีย์ทั้ง 2 รุ่น", () => {
+  /** JWT ปลอมที่ถอดได้จริง — ไม่ต้องเซ็น เพราะ keyRole ไม่ตรวจลายเซ็นอยู่แล้ว */
+  const jwt = (role: string) =>
+    `hdr.${Buffer.from(JSON.stringify({ role, iss: "supabase" })).toString("base64url")}.sig`;
+
+  describe("ด้านบวก — คีย์ถูกใบต้องอ่านออกทั้ง 2 รุ่น", () => {
+    it("JWT รุ่นเก่า (DB ทริปยังใช้อยู่)", () => {
+      expect(keyRole(jwt("anon"))).toBe("anon");
+      expect(keyRole(jwt("service_role"))).toBe("service_role");
+    });
+
+    it("🔴 คีย์รุ่นใหม่ของ engine-dev — เคสที่ฉบับเดิมล้ม", () => {
+      expect(keyRole("sb_publishable_AbCdEf123456")).toBe("anon");
+      expect(keyRole("sb_secret_ZyXwVu987654")).toBe("service_role");
+    });
+  });
+
+  describe("ด้านลบ — หยิบผิดใบต้องจับได้ ทั้ง 2 รุ่น", () => {
+    it("🔴 เอา service key ใส่ช่อง anon — เคสที่ทำให้เมทริกซ์เขียวหลอกทั้งแผง", () => {
+      expect(keyRole("sb_secret_ZyXwVu987654")).not.toBe("anon");
+      expect(keyRole(jwt("service_role"))).not.toBe("anon");
+    });
+
+    it("เอา anon key ใส่ช่อง service — อีกทิศหนึ่งของความผิดพลาดเดียวกัน", () => {
+      expect(keyRole("sb_publishable_AbCdEf123456")).not.toBe("service_role");
+      expect(keyRole(jwt("anon"))).not.toBe("service_role");
+    });
+
+    it("🔴 รูปแบบที่ไม่รู้จักต้องคืน null = ล้ม ไม่ใช่ผ่าน (ตรวจไม่ได้ ≠ ปลอดภัย)", () => {
+      for (const junk of ["", "not-a-key", "sb_", "eyJhbGciOiJIUzI1NiJ9", "a.b.c"]) {
+        expect(keyRole(junk), `"${junk}" ไม่ควรอ่านเป็น role ใดๆ`).toBeNull();
+      }
+    });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // ส่วนที่ต้องมี Supabase จริง
 //
 // 🔴 ไม่มี creds = **skip ไม่ใช่ pass** · และ "skip" อ่านเป็นเขียวได้ใน CI
@@ -216,8 +285,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     D = createClient(URL_, ANON, { auth: { persistSession: false } });
 
     // กับดักที่ 1 — key ที่ client ทดสอบถือ ต้องเป็น anon เท่านั้น
-    expect(jwtRole(ANON), "NEXT_PUBLIC_SUPABASE_ANON_KEY ไม่ใช่ anon key").toBe("anon");
-    expect(jwtRole(SERVICE), "SUPABASE_SERVICE_ROLE_KEY ไม่ใช่ service_role key").toBe("service_role");
+    expect(keyRole(ANON), "NEXT_PUBLIC_SUPABASE_ANON_KEY ไม่ใช่ anon key").toBe("anon");
+    expect(keyRole(SERVICE), "SUPABASE_SERVICE_ROLE_KEY ไม่ใช่ service_role key").toBe("service_role");
 
     A = await makeUser("a");
     B = await makeUser("b");
@@ -226,7 +295,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     const mk = async (client: SupabaseClient, owner: string, title: string) => {
       const { data, error } = await client
         .from("trips")
-        .insert({ owner_id: ids[owner], title, start_date: "2026-10-11", end_date: "2026-10-21" })
+        .insert({ created_by: ids[owner], title, start_date: "2026-10-11", end_date: "2026-10-21" })
         .select("id")
         .single();
       if (error) throw new Error(`สร้างทริป ${title} ไม่ได้: ${error.message}`);
@@ -343,14 +412,20 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       else expect(data).toEqual([]);
     });
 
-    it("anon INSERT trips ไม่ได้", async () => {
+    // 🔴 ฉบับเดิมเช็คแค่ `error !== null` ซึ่ง **ผ่านได้ด้วยเหตุผลที่ผิด**:
+    //    ชื่อคอลัมน์ผิดก็คืน error เหมือนกัน (และมันผิดอยู่จริง — `owner_id` ที่ P-15 เปลี่ยนเป็น
+    //    `created_by` ไปแล้ว) → เคสนี้เคยเขียวโดยไม่เคยแตะ RLS สักครั้ง
+    //    ต้องยืนยันว่า **ถูกปฏิเสธเพราะสิทธิ์** ไม่ใช่เพราะ schema ไม่รู้จักสิ่งที่เราส่งไป
+    it("anon INSERT trips ไม่ได้ — และต้องถูกปฏิเสธเพราะสิทธิ์ ไม่ใช่เพราะคอลัมน์ผิด", async () => {
       const { error } = await D.from("trips").insert({
-        owner_id: ids.a,
+        created_by: ids.a,
         title: `anon-${stamp}`,
         start_date: "2026-10-11",
         end_date: "2026-10-21",
       });
       expect(error).not.toBeNull();
+      expect(["42501", "PGRST301"], `ถูกปฏิเสธด้วยรหัสอื่น: ${error?.code} ${error?.message}`)
+        .toContain(error!.code);
     });
 
     it("anon UPDATE ทริปของ A ไม่ได้ — ยืนยันด้วยการอ่านซ้ำในฐานะ A", async () => {
