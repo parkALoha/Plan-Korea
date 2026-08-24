@@ -1,33 +1,35 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- D48 — ด่านกันรันผิดโปรเจกต์ เปลี่ยนจาก denylist เป็น allowlist
--- เจ้าของ: P1-Lead · 24 ส.ค. 2026
+-- เจ้าของ: P1-Lead · แก้ตาม `P-30` + `P-31` ที่ P4 ตีกลับ · 24 ส.ค. 2026
 -- ═══════════════════════════════════════════════════════════════════════════
 --
--- 🔴 ทำไมต้องมี migration นี้ก่อนทุกตัวที่เหลือ:
---   ด่าน `$guard$` ที่เราใช้อยู่ล้มเมื่อ **เจอตาราง `trip_meta`** = รู้จักฐานเดียวที่ห้ามแตะ
---   ปลอดภัยเฉพาะกับฐานที่คนเขียนด่านนึกออก ณ วันที่เขียน
+-- 🔴🔴 **อ่านก่อน: ด่านในไฟล์นี้ กัน `a-gleam` ไม่ได้ และไม่เคยกันได้ (`P-30` · P4)**
+--   `supabase db push` ใส่โปรเจกต์ที่ไม่เคยรัน migration ของเรา จะรัน**ทุกไฟล์ตามลำดับ**:
+--     ① `20260824043822_identity.sql` → ด่านมันเช็คแค่ `trip_meta` → `a-gleam` ผ่าน
+--        **แล้วมันสร้าง schema `app` + ตาราง + trigger ให้เลย**
+--     ② ไฟล์นี้ → เช็คว่ามี `app.project_identity` ไหม → **มีแล้ว เพราะ ① เพิ่งสร้างให้**
+--   🎯 **เงื่อนไขที่ด่านนี้ตรวจ ถูกสร้างโดย migration ที่วิ่งก่อนมัน** → ผ่านเสมอ
 --
---   24 ส.ค. 2026 `supabase projects list` ด้วย token ที่เครื่องถืออยู่ คืนมา **2 โปรเจกต์**
---     · `Korea-Trip` = DB ทริปจริง               → ด่านเดิมจับได้ ✅
---     · `a-gleam`    = ฐาน production ของร้าน    → **ด่านเดิมจับไม่ได้** 🔴
---   และ **`engine-dev` ไม่อยู่ในลิสต์** — token ใหม่ scope ไม่ครอบ org `Plan-trip-app`
---   (ref ของแต่ละใบอยู่ที่ `docs/engine/README.md` หัวข้อ `D48` — ตั้งใจไม่เขียนลงไฟล์นี้
---    เพราะด่านของ `.github/guards.sh` ห้าม ref ของ DB ทริปอยู่ในไฟล์ที่เครื่องจักรอ่านแล้วทำตาม
---    🎯 ด่านนั้นจับไฟล์นี้ได้จริงตอนเขียนฉบับแรก — ซึ่งเป็นสิ่งที่มันควรทำเป๊ะ)
+--   **ความเสียหายที่ ① ทำกับ production ของร้าน ไม่ใช่ "ไม่มีอะไรพัง" อย่างที่ผมเคยเขียน:**
+--   · `alter default privileges … revoke all on tables from anon, authenticated`
+--     → **ทุกตารางที่ร้านสร้างหลังจากนั้น `anon`/`authenticated` เข้าไม่ได้** พังทีละนิดในอนาคต
+--       โดยไม่มีใครโยงกลับมาถึงวันนี้ได้
+--   · `create trigger on_auth_user_created after insert on auth.users`
+--     → **แทรกตัวเองเข้าไปในเส้นทางสมัครสมาชิกของร้าน**
 --
---   🎯 อันตรายที่เป็นรูปธรรม: ทางที่ดูเหมือนทางแก้ที่สุดคือ re-link ไปโปรเจกต์ที่ token *เห็น*
---      ซึ่งเหลือให้เลือกแค่ 2 ใบ และใบที่ด่านจับไม่ได้ คือฐาน production ของร้าน
+--   → **ด่านในไฟล์นี้กันได้เฉพาะ migration ตัวที่ 3 เป็นต้นไป** · ตัวที่ 1 คือตัวที่ทำลาย
+--     ทางกันของตัวที่ 1 อยู่ **นอก SQL**: `supabase-platform/db-push.sh` (และด่านใน `0001` เอง)
+--     🔴 **ห้ามอ่านไฟล์นี้แล้วสรุปว่าเรื่องนี้ถูกปิดแล้ว**
 --
--- 📌 **ของชิ้นนี้ถูกเขียนไว้แล้วใน `migration-template.sql` ตั้งแต่ `E0` — เป็นคอมเมนต์**
---    (*"migration ตัวที่ 2 เป็นต้นไป: เปลี่ยนมา assert ตาราง `_project_identity` แทน"*)
---    แล้ว migration ตัวที่ 2 จริง ๆ ก็ **คัดลอกบล็อกแรกไปแทน** · ไม่มีอะไรผิดพลาดเลยสักขั้น
---    🔴 **แผนที่ถูกทิ้งไว้เป็นคอมเมนต์ ไม่ใช่แผน** — migration นี้คือการทำให้มันมีอยู่จริง
+-- 📌 `P-31` (P4): marker เดิมเก็บแค่ `name` = บอก**ผลิตภัณฑ์** ไม่ได้บอก**สภาพแวดล้อม**
+--   วันที่แพลตฟอร์มขึ้น prod ฐาน prod ก็ชื่อ `plan-korea-platform` เหมือนกัน → allowlist รับทั้งคู่
+--   **คู่ dev/prod อันตรายกว่า `a-gleam` ด้วยซ้ำ เพราะสองใบนั้นจะหน้าตาเหมือนกันทุกอย่าง**
+--   → เก็บ `ref` และ `environment` ด้วย · ref ของ `engine-dev` เขียนลงไฟล์ได้
+--     (`.github/allowed-project-ref` ถือค่าเดียวกันอยู่แล้ว · ที่ `guards.sh` ห้ามคือ ref ของ DB ทริป)
 --
--- ⚠️ **ขอบเขตที่ด่านนี้ทำไม่ได้ — เขียนไว้เพราะการเข้าใจว่ามันครอบกว้างกว่าจริง อันตรายกว่าไม่มีด่าน:**
---    มันแยก "ฐานที่มีของอื่นอยู่แล้ว" ออกจาก engine-dev ได้
---    **มันแยกฐานเปล่าใบหนึ่ง ออกจากฐานเปล่าอีกใบไม่ได้** — `db push` ใส่โปรเจกต์เปล่าใบใหม่
---    จะรัน `0001` (สร้าง schema `app`) แล้วผ่านด่านนี้ไปได้ · รับได้เพราะฐานเปล่าไม่มีอะไรให้พัง
---    🔴 แต่ **ห้ามอ้างด่านนี้เป็นเหตุผลว่า "ลิงก์ผิดก็ไม่เป็นไร"** · การตรวจ ref ก่อน push ยังต้องทำเหมือนเดิม
+-- 📌 ของชิ้นนี้เคยถูกเขียนไว้แล้วใน `migration-template.sql` ตั้งแต่ `E0` — **เป็นคอมเมนต์**
+--    แล้ว migration ตัวที่ 2 ก็คัดลอกบล็อกที่ทำงานอยู่ไปแทน ซึ่งถูกต้องที่จะทำ
+--    🔴 **แผนที่ถูกทิ้งไว้เป็นคอมเมนต์ ไม่ใช่แผน**
 --
 -- ── rollback ──────────────────────────────────────────────────────────────
 --   drop table if exists app.project_identity;
@@ -36,12 +38,10 @@
 
 begin;
 
--- ── ด่านกันรันผิดโปรเจกต์ · ต้องเป็นบล็อกแรกเสมอ ก่อน DDL ทุกบรรทัด ──────────
--- ตัวนี้เป็น migration **ตัวสุดท้ายที่ยังใช้ denylist** เพราะตารางที่จะ assert
--- ยังไม่มีอยู่ในฐานไหนเลย · ตัวถัดไปเป็นต้นไปใช้บล็อก allowlist ใน template
+-- ── ด่าน · ตัวนี้ยังต้องใช้ denylist เพราะตารางที่จะ assert ยังไม่มีในฐานไหนเลย ──────
 do $guard$
+declare n int;
 begin
-  -- ① เดิม — ฐานทริปจริงมี `trip_meta`
   if exists (
     select 1 from information_schema.tables
     where table_schema = 'public' and table_name = 'trip_meta'
@@ -49,19 +49,22 @@ begin
     raise exception 'ผิดโปรเจกต์: ฐานนี้มีตาราง trip_meta = นี่คือ DB ทริปจริง ไม่ใช่ engine-dev';
   end if;
 
-  -- ② ใหม่ — ข้อที่ `a-gleam` ตกม้าตาย · ฐานนี้ต้องเคยรัน `0001_identity` มาแล้ว
-  if not exists (
-    select 1 from information_schema.schemata where schema_name = 'app'
-  ) then
-    raise exception 'ผิดโปรเจกต์: ไม่มี schema app → 0001_identity ไม่เคยรันที่ฐานนี้ = ไม่ใช่ engine-dev';
-  end if;
-
+  -- ฐานนี้ต้องเคยรัน `0001_identity` มาแล้ว
+  -- ⚠️ ข้อนี้ **ไม่ได้** กัน `a-gleam` (ดู `P-30` ข้างบน) — `0001` สร้างเงื่อนไขนี้ให้เอง
+  --    เก็บไว้เพราะมันยังกัน "รันไฟล์นี้เดี่ยวๆ ใส่ฐานที่ไม่เกี่ยวข้อง" ได้ **แค่นั้น**
   if not exists (
     select 1 from information_schema.tables
     where table_schema = 'public' and table_name = 'trip_members'
   ) then
-    raise exception 'ผิดโปรเจกต์: ไม่มี public.trip_members → ไม่ใช่ engine-dev';
+    raise exception 'ผิดลำดับ: ไม่มี public.trip_members → 0001_identity ยังไม่เคยรันที่ฐานนี้';
   end if;
+
+  select count(*) into n from app.project_identity;
+  if n > 0 then
+    raise exception 'ฐานนี้มี app.project_identity อยู่แล้ว — ไฟล์นี้ไม่ควรรันซ้ำ';
+  end if;
+exception
+  when undefined_table then null;   -- ยังไม่มีตาราง = ปกติ นี่คือไฟล์ที่สร้างมัน
 end $guard$;
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -69,14 +72,17 @@ end $guard$;
 -- ───────────────────────────────────────────────────────────────────────────
 -- 🔴 ต่างจากที่ template ร่างไว้ (`public._project_identity`) โดยตั้งใจ ด้วยเหตุผลเดียวกับ
 --    ที่ helper ทุกตัวอยู่ใน `app`: **PostgREST เปิด `public` เป็น REST อัตโนมัติ**
---    ตารางนี้ใน `public` = ปลายทางให้ยิงถามว่า "ฐานนี้คือฐานอะไร" ได้จากภายนอก
---    ใน `app` ไม่มี usage ให้ `anon` เลย และ PostgREST ไม่เห็น schema นี้ตั้งแต่แรก
+--    ตารางนี้ใน `public` = ปลายทางให้ยิงถามจากข้างนอกว่า "ฐานนี้คือฐานอะไร"
 create table app.project_identity (
-  name       text primary key,
-  created_at timestamptz not null default now()
+  name        text primary key,
+  ref         text not null,
+  environment text not null check (environment in ('dev','staging','prod')),
+  created_at  timestamptz not null default now()
 );
 
-insert into app.project_identity (name) values ('plan-korea-platform');
+-- 🔴 `ref` + `environment` คือ `P-31` — `name` อย่างเดียวแยก dev ออกจาก prod ไม่ได้
+insert into app.project_identity (name, ref, environment)
+values ('plan-korea-platform', 'pmvxwcimjebogjfimzqy', 'dev');
 
 -- ไม่มี policy โดยตั้งใจ (`D18`: ไม่มี policy = เข้าไม่ถึงจาก client เลย ไม่ใช่แค่ซ่อน)
 alter table app.project_identity enable row level security;

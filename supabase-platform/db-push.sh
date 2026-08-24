@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+# ทางเดียวที่ควรใช้ push migration ของแพลตฟอร์ม — `P-30` (P4 · 24 ส.ค. 2026)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 🔴 ทำไมต้องมีสคริปต์นี้ ทั้งที่ทุก migration มีด่าน `do $guard$` อยู่แล้ว:
+#   `db push` ใส่โปรเจกต์ที่ไม่เคยรัน migration ของเรา จะรัน **`0001` เป็นตัวแรก**
+#   แล้วด่าน allowlist ของไฟล์ถัดๆ ไปจะผ่านเสมอ **เพราะ `0001` เพิ่งสร้างเงื่อนไขที่มันตรวจให้**
+#   → ปัญหาไก่กับไข่ที่ **แก้ใน SQL ไม่ได้**: อะไรก็ตามที่ `0001` ตรวจได้ `0001` เองก็สร้างได้
+#
+#   🎯 **ตัวตรวจจึงต้องอยู่ที่ตัวยิงคำสั่ง ไม่ใช่ในสิ่งที่ถูกยิง**
+#
+# ⚠️ **สิ่งที่สคริปต์นี้ทำไม่ได้ และต้องพูดออกมา:** มันห้ามใครพิมพ์ `supabase db push` ตรงๆ ไม่ได้
+#   ทางกันชั้นสุดท้ายคือด่านใน `0001` เอง (public ต้องยังไม่มีตาราง)
+#   🔴 **สคริปต์นี้ไม่ใช่ด่านเดียว และห้ามอ่านว่าเรื่องนี้ถูกปิดแล้ว**
+#
+# ใช้:  ./supabase-platform/db-push.sh            (หรือ `npm run db:push`)
+#       ./supabase-platform/db-push.sh --self-test
+# ═══════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+die() { echo "🔴 $*" >&2; exit 1; }
+
+check_target() {
+  # 🔴 พาธต้องคำนวณ **ในฟังก์ชัน** ไม่ใช่ตอนโหลดสคริปต์
+  #   ฉบับแรกคำนวณไว้ข้างนอก → self-test ตั้ง env ทีหลังแล้วไม่มีผล
+  #   **ทุกเคสจึงชี้ไปไฟล์จริงของรีโปซึ่งตรงกันพอดี และเขียวทั้งแผงโดยไม่ได้ทดสอบอะไรเลย**
+  #   🎯 self-test จับข้อนี้ได้ตั้งแต่รันครั้งแรก — เคสด้านลบ 4 ใน 5 ขึ้นแดงทันที
+  #     เป็นตัวอย่างของสิ่งที่ทีมนี้ไล่ปิดกันมาทั้งวัน: **เขียวที่แปลว่า "ไม่ได้ตรวจ" ไม่ใช่ "ตรวจแล้วผ่าน"**
+  local ROOT ALLOWED_FILE LINK_FILE
+  ROOT="${DB_PUSH_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  ALLOWED_FILE="${ALLOWED_REF_FILE:-$ROOT/.github/allowed-project-ref}"
+  LINK_FILE="${LINK_REF_FILE:-$ROOT/supabase-platform/supabase/.temp/project-ref}"
+  # 🔴 ไม่มีไฟล์ = **ล้ม** ไม่ใช่ผ่าน · ด่านที่ข้ามตัวเองเมื่อขาดข้อมูล ไม่ใช่ด่าน
+  [ -f "$ALLOWED_FILE" ] || die "ไม่มี $ALLOWED_FILE — ไม่รู้ว่าปลายทางที่อนุญาตคือใบไหน จึง push ไม่ได้"
+
+  local allowed link
+  allowed="$(tr -d '[:space:]' < "$ALLOWED_FILE")"
+  [ -n "$allowed" ] || die "$ALLOWED_FILE ว่างเปล่า — ไม่รู้ว่าปลายทางที่อนุญาตคือใบไหน"
+
+  [ -f "$LINK_FILE" ] || die "ยังไม่ได้ link — ไม่มี $LINK_FILE
+   รัน: supabase link --project-ref $allowed --workdir supabase-platform"
+
+  link="$(tr -d '[:space:]' < "$LINK_FILE")"
+
+  if [ "$link" != "$allowed" ]; then
+    die "ปลายทางไม่ตรงกับที่อนุญาต — **ยกเลิกแล้ว ไม่มีอะไรถูกรัน**
+   link อยู่กับ : $link
+   อนุญาตเฉพาะ : $allowed
+   ⚠️ ถ้าคุณกำลังจะ 'แก้ให้มันเดินได้' ด้วยการ re-link — หยุดก่อน
+      โปรเจกต์อื่นที่ token มองเห็นเป็น production ของคนอื่นทั้งนั้น
+      และ migration ตัวแรกจะสร้างตาราง + trigger บน auth.users ให้ฐานนั้นทันที"
+  fi
+
+  echo "✅ ปลายทาง: $link (ตรงกับ $ALLOWED_FILE)"
+}
+
+self_test() {
+  local tmp pass=0 fail=0
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/.github" "$tmp/supabase-platform/supabase/.temp"
+
+  t() { # ชื่อเคส · ต้องผ่าน(0)/ต้องล้ม(1)
+    local name="$1" want="$2"; shift 2
+    if ( DB_PUSH_ROOT="$tmp" ALLOWED_REF_FILE="$tmp/.github/allowed-project-ref" \
+         LINK_REF_FILE="$tmp/supabase-platform/supabase/.temp/project-ref" \
+         check_target >/dev/null 2>&1 ); then local got=0; else local got=1; fi
+    if [ "$got" = "$want" ]; then echo "  ✅ $name"; pass=$((pass+1))
+    else echo "  ❌ $name (ต้องการ exit=$want ได้ $got)"; fail=$((fail+1)); fi
+  }
+
+  echo "self-test ของ db-push.sh:"
+  t "ไม่มีไฟล์ allowlist เลย → ต้องล้ม" 1
+  printf 'aaaaaaaaaaaaaaaaaaaa' > "$tmp/.github/allowed-project-ref"
+  t "มี allowlist แต่ยังไม่ได้ link → ต้องล้ม" 1
+  printf 'bbbbbbbbbbbbbbbbbbbb' > "$tmp/supabase-platform/supabase/.temp/project-ref"
+  t "🔴 link ไปคนละใบกับ allowlist → ต้องล้ม" 1
+  printf 'aaaaaaaaaaaaaaaaaaaa\n' > "$tmp/supabase-platform/supabase/.temp/project-ref"
+  t "link ตรงกับ allowlist (มี \\n ต่อท้าย) → ต้องผ่าน" 0
+  : > "$tmp/.github/allowed-project-ref"
+  t "allowlist ว่างเปล่า → ต้องล้ม ไม่ใช่ผ่านเพราะ '' = ''" 1
+
+  echo "  → ผ่าน $pass · ล้ม $fail"
+  [ "$fail" -eq 0 ]
+}
+
+if [ "${1:-}" = "--self-test" ]; then self_test; exit $?; fi
+
+check_target
+echo "→ supabase db push --workdir supabase-platform ${*}"
+exec supabase db push --workdir supabase-platform "$@"

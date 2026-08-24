@@ -50,10 +50,16 @@ begin
     raise exception 'ผิดโปรเจกต์: ไม่มี app.project_identity → ฐานนี้ไม่ใช่ engine-dev ของแพลตฟอร์ม';
   end if;
 
+  -- 🔴 `P-31`: ต้องเช็ค `ref` + `environment` ด้วย · `name` อย่างเดียวแยก dev ออกจาก prod ไม่ได้
+  --    วันที่มี prod มันจะชื่อ `plan-korea-platform` เหมือนกันเป๊ะ
+  --    ⚠️ **เปลี่ยน ref ตรงนี้ = เจตนาเล็งไปฐานอื่น** ต้องเป็นการตัดสินใจ ไม่ใช่การคัดลอก
   if not exists (
-    select 1 from app.project_identity where name = 'plan-korea-platform'
+    select 1 from app.project_identity
+     where name = 'plan-korea-platform'
+       and ref  = 'pmvxwcimjebogjfimzqy'
+       and environment = 'dev'
   ) then
-    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ใช่ของ plan-korea-platform';
+    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ใช่ engine-dev (ตรวจ name+ref+environment)';
   end if;
 end $guard$;
 
