@@ -623,4 +623,78 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(data?.role, "ลดตัวเองเป็น editor สำเร็จ = ทริปไม่มี owner").toBe("owner");
     });
   });
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("P-26 — public.create_trip() แทนการ insert ตรงแล้วหวังให้ RETURNING ผ่าน RLS", () => {
+    /**
+     * 🔴 **ชุดนี้ยังไม่เคยรันเลยสักครั้งตอนที่เขียน** (24 ส.ค. 2026) — token เข้า engine-dev ไม่ได้
+     * เขียนไว้ล่วงหน้าเพื่อให้รันได้ทันทีที่ token ใช้ได้ · **อย่านับว่าผ่านจนกว่าจะเห็นผลจริง**
+     *
+     * ทริปที่ชุดนี้สร้างถูกเก็บกวาดโดย `afterAll` อยู่แล้ว เพราะมันลบตาม `created_by`
+     * ของผู้ใช้ในรอบนี้ ไม่ใช่ตาม id ที่จำไว้ — จึงไม่ต้องเก็บกวาดเพิ่มตรงนี้
+     */
+    const mkArgs = (tag: string) => ({
+      p_title: `rpc-${tag}-${stamp}`,
+      p_start_date: "2026-10-11",
+      p_end_date: "2026-10-21",
+    });
+
+    describe("ด้านบวก — ทางที่ถูกต้องยังต้องเดินได้", () => {
+      it("🔴 A สร้างทริปผ่าน RPC แล้วได้แถวกลับมา — เคสที่ P-26 ทั้งข้อเป็น", async () => {
+        // insert ตรง + `.select()` คือสิ่งที่ล้มด้วย 42501 · RPC คืนแถวจากในฟังก์ชัน definer
+        // จึงไม่มี policy ฝั่งอ่านตัวไหนต้องผ่าน และไม่มี snapshot ไหนต้องมองเห็นอะไรทัน
+        const { data, error } = await A.rpc("create_trip", mkArgs("a"));
+        expect(error, `RPC ล้ม: ${error?.code} ${error?.message}`).toBeNull();
+        expect(data?.id, "RPC สำเร็จแต่ไม่คืนแถว = ยังแก้ P-26 ไม่ได้").toBeTruthy();
+        expect(data?.created_by, "created_by ต้องมาจาก auth.uid() ข้างในฟังก์ชัน").toBe(ids.a);
+      });
+
+      it("แถว owner ใน trip_members ถูกสร้าง — P-13 ต้องไม่กลับมาผ่านทาง RPC", async () => {
+        const { data: trip } = await A.rpc("create_trip", mkArgs("a2"));
+        const { data } = await A.from("trip_members").select("role").eq("trip_id", trip!.id);
+        expect(data, "ไม่มีแถวสมาชิก = ทริปกำพร้าที่กู้จากฝั่ง client ไม่ได้ (P-13)").toHaveLength(1);
+        expect(data?.[0]?.role).toBe("owner");
+      });
+
+      it("🔴 อ่านทริปที่สร้างผ่าน RPC กลับได้จริง — ไม่ใช่แค่ค่าที่ฟังก์ชันคืนมา", async () => {
+        // ฟังก์ชัน definer คืนอะไรก็ได้โดยไม่ผ่าน RLS · เคสนี้จึงอ่านซ้ำด้วย client ปกติ
+        // ถ้าเคสบนเขียวแต่เคสนี้แดง = ทริปถูกสร้างแต่มองไม่เห็น ซึ่งคือ P-13 ในรูปที่เนียนกว่าเดิม
+        const { data: trip } = await A.rpc("create_trip", mkArgs("a3"));
+        const { data } = await A.from("trips").select("id").eq("id", trip!.id);
+        expect(data).toHaveLength(1);
+      });
+    });
+
+    describe("ด้านลบ — ทางที่ผิดต้องเดินไม่ได้", () => {
+      it("🔴 P-32 — anon ต้องถูกปฏิเสธที่ **ชั้นสิทธิ์** ไม่ใช่แค่ที่ด่านในฟังก์ชัน", async () => {
+        // ฟังก์ชันนี้เป็น security definer = ข้าม RLS โดยนิยาม · จึงมี 2 ชั้นที่ควรกัน anon:
+        //   ⑤ สิทธิ์ EXECUTE — `revoke … from public, anon`
+        //   ④ ด่านในตัวฟังก์ชัน — `if auth.uid() is null then raise`
+        // 🔴 **ทั้งสองชั้นคืน 42501 เหมือนกัน** → เช็คแค่รหัสจะแยกไม่ออกว่าชั้นไหนทำงาน
+        //    ซึ่งเป็นสภาพที่เราอยู่มาทั้งวัน · แยกด้วย **ข้อความ** เท่านั้น
+        const { error } = await D.rpc("create_trip", mkArgs("anon"));
+        expect(error, "anon เรียก create_trip สำเร็จ = ฟังก์ชันข้าม RLS เปิดให้คนไม่ล็อกอิน").not.toBeNull();
+        expect(
+          error?.message ?? "",
+          "ไปถึงด่าน ④ ได้ = ชั้นสิทธิ์ ⑤ ไม่ทำงาน · anon ยัง EXECUTE ได้อยู่ " +
+            "(revoke from public ไม่ถอนสิทธิ์ที่ให้ตามชื่อ role)",
+        ).not.toContain("ต้องล็อกอินก่อนสร้างทริป");
+      });
+
+      it("เรียก RPC แล้วต้องไม่ได้สิทธิ์ในทริปที่ตัวเองไม่ได้สร้าง", async () => {
+        // กันเคสที่ฟังก์ชัน definer เผลอสร้างแถวสมาชิกให้ทริปอื่น (รูปหนึ่งของ P-29)
+        await C.rpc("create_trip", mkArgs("c"));
+        const { data } = await C.from("trips").select("id").eq("id", tripA);
+        expect(data, "สร้างทริปตัวเองแล้วเห็นทริปคนอื่น = สิทธิ์รั่วข้ามทริป").toEqual([]);
+      });
+
+      it("ส่ง created_by หรือ id เข้าไปไม่ได้ — ลายเซ็นไม่รับ", async () => {
+        // ② กับ ③ ของข้อบังคับ: ถ้าวันหนึ่งมีคนเติมพารามิเตอร์เข้าไป เคสนี้จะแดง
+        for (const extra of [{ p_created_by: ids.b }, { p_id: tripA }]) {
+          const { error } = await A.rpc("create_trip", { ...mkArgs("x"), ...extra });
+          expect(error, `ฟังก์ชันรับ ${Object.keys(extra)[0]} เข้าไปได้`).not.toBeNull();
+        }
+      });
+    });
+  });
+
 });
