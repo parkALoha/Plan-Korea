@@ -1209,9 +1209,8 @@ SUPABASE_ACCESS_TOKEN=<วาง token ตรงนี้> supabase projects lis
 ⚠️ **ส่วนที่ทดสอบแล้ว vs ยังไม่ได้ทดสอบ (กติกา D3) — ขั้นนี้เป็นด่านกั้น จึงต้องบอกให้ชัด:**
 · ✅ **เคสด้านลบทดสอบจริงแล้ว** 24 ส.ค. 2026 — `SUPABASE_ACCESS_TOKEN= supabase projects list` (ค่าว่าง)
   คืน `a-gleam` + `Korea-Trip` **ไม่มี `engine-dev`** ตามตารางเป๊ะ
-· ⚠️ **เคสด้านบวกยังไม่ได้ทดสอบ** — ไม่มี token ของบัญชีที่เข้า `Plan-trip-app` ได้ จึงพิสูจน์ไม่ได้ว่า
-  `engine-dev` จะโผล่จริง · **ถ้าคุณมั่นใจว่า token ถูกแล้วแต่ยังไม่เห็น `engine-dev` อย่าเพิ่งสรุปว่า token ผิด**
-  ให้ทักทีมก่อน — อาจเป็นข้อจำกัดของคำสั่งนี้ที่เรายังไม่รู้ ไม่ใช่ความผิดของคุณ
+· ✅ **เคสด้านบวกทดสอบแล้วเช่นกัน 24 ส.ค. 2026** — ผู้ใช้รันด้วย token จริง **`engine-dev` โผล่จริง**
+  (ตอนเขียนครั้งแรกยังพิสูจน์ไม่ได้ เพราะไม่มี token ของบัญชีที่เข้า `Plan-trip-app` — **ตอนนี้ครบทั้งสองด้านแล้ว**)
 
 **ขั้น 3 — เอา DB password ของ engine-dev**
 `https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/settings/database`
@@ -1420,10 +1419,13 @@ cd /Users/park/plan-korea-platform && SUPABASE_ACCESS_TOKEN=<TOKEN> supabase lin
 
 ### 12.4 ยืนยัน Vercel (คำถามเดียว ตอบ 1 บรรทัด)
 
-`https://vercel.com` → project **korea-trip-plan** → **Settings → Git**
-**ยืนยันว่า 2 อย่างนี้ยังตั้งอยู่:**
-1. **Ignored Build Step** ยังเป็นเงื่อนไขที่ให้ build เฉพาะ `main`
-2. **Vercel Authentication (Standard Protection)** ยัง **เปิด** อยู่
+`https://vercel.com` → project **korea-trip-plan** → **Settings**
+🔴 **แก้ 24 ส.ค. 2026 — ฉบับเดิมเขียนว่า `Settings → Git` ซึ่งผิด ทั้งสองอย่างไม่ได้อยู่ในหน้านั้น**
+(ผู้ใช้เปิดตามแล้วหาไม่เจอ · เป็นข้อที่ `§12.7` เตือนไว้เองว่าชื่อเมนูเขียนจากความจำ ยืนยันไม่ได้)
+
+**ยืนยันว่า 2 อย่างนี้ยังตั้งอยู่ — คนละหน้ากัน:**
+1. **Ignored Build Step** → **Settings → Build and Deployment** · ยังเป็นเงื่อนไขที่ให้ build เฉพาะ `main`
+2. **Vercel Authentication (Standard Protection)** → **Settings → Deployment Protection** · ยัง **เปิด** อยู่
 
 → ตอบกลับแค่ *"ยังอยู่ทั้งคู่"* หรือ *"อันไหนหาย"*
 
@@ -1459,7 +1461,37 @@ ERROR: ผิดโปรเจกต์: ฐานนี้มีตารา�
 
 ---
 
-### 12.6 ⚠️ ส่วนที่ผมยืนยันไม่ได้ — บอกไว้ตรงๆ ตามกติกา D3
+### 12.6 สร้าง `.env.local` ของทรี `platform` (ต้องมีก่อนทดสอบล็อกอินในเบราว์เซอร์)
+
+> # 🔴 ห้ามก๊อป `.env.local` จากทรีหลัก เด็ดขาด
+> `/Users/park/plan-korea/.env.local` **ชี้ไป `ejzibhgqhxdzkovsnpds` = DB ทริปจริง**
+> ก๊อปมา = **dev server ของ `platform` ต่อ DB ทริป** · `refreshSession()` ยิงไปที่นั่น**ทุก request**
+> และวันที่ใครรันโค้ดที่เขียนข้อมูล **มันเขียนลงของจริง**
+>
+> 🔴 **เขียนไว้บนสุดเพราะมันคือสิ่งที่คนจะทำเป็นอันดับแรก** — ทรี `platform` ไม่มี `.env*` เลยสักไฟล์
+> พอเปิดหน้าแล้วเจอ 500 `ไม่ได้ตั้ง env NEXT_PUBLIC_SUPABASE_URL` **ที่ที่หาง่ายที่สุดคือทรีข้างๆ**
+
+**สร้างใหม่ที่ `/Users/park/plan-korea-platform/.env.local` — เอาค่าจาก `engine-dev` เท่านั้น**
+`https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/settings/api-keys` → คัดลอก **Project URL** + **anon public**
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://pmvxwcimjebogjfimzqy.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key ของ engine-dev>
+```
+
+**ยืนยันด้วยวิธีเดียวกับที่ใช้ทั้งวัน — อ่านค่าที่อยู่ในไฟล์ ไม่ใช่เชื่อว่าก๊อปถูก:**
+```bash
+grep SUPABASE_URL /Users/park/plan-korea-platform/.env.local
+```
+· ขึ้นต้นด้วย `https://pmvxwcimjebogjfimzqy.` → ✅ · เป็น ref ทริป → 🔴 **ลบทิ้งแล้วสร้างใหม่**
+
+✅ **ด่านที่กันให้แล้ว:** `.github/guards.sh` แดงทันทีถ้าเจอ `.env*` ในทรีที่ถือ ref ทริป
+⚠️ **แต่ `.gitignore` กัน `.env*` ไม่ให้ขึ้น git → ด่านนี้ไม่มีวันแดงบน CI** กัดตอนรัน `guards.sh` บนเครื่องเท่านั้น
+🔴 **ห้ามเขียน anon key จริงลงเอกสารนี้** — บันทึกแค่ว่าตั้งแล้วพอ
+
+---
+
+### 12.7 ⚠️ ส่วนที่ผมยืนยันไม่ได้ — บอกไว้ตรงๆ ตามกติกา D3
 
 | ยืนยันแล้วจากอะไร | รายการ |
 |---|---|

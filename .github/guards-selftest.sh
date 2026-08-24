@@ -119,4 +119,19 @@ echo "pmvxwcimjebogjfimzqy" > "$d/supabase-platform/supabase/.temp/project-ref"
 ( DEV_PROJECT_REF=pmvxwcimjebogjfimzqy; export DEV_PROJECT_REF
   check "link ที่ supabase-platform/ พร้อม ref ที่ถูก ต้องผ่าน" pass "$d" ) || rc=1
 
+# ── ด่าน .env ชี้ DB ทริป ────────────────────────────────────────────────────────
+# 🔴 ช่องนี้ไม่มีด่านไหนเห็นเลยก่อน 24 ส.ค. 2026 เพราะ .gitignore กัน .env* ไม่ให้ขึ้น git
+#    ทำให้ทั้ง gitleaks และ CI ตาบอดถาวร · ด่านนี้จึงมีค่าเฉพาะตอนรันบนเครื่อง
+# ⑲ .env.local ที่ถือ ref ทริป -> ต้องโดนจับ (เคสก๊อปจากทรีหลัก)
+d="$(mk)"; printf 'NEXT_PUBLIC_SUPABASE_URL=https://%s.supabase.co\n' "$TRIP_REF" > "$d/.env.local"
+check ".env จับไฟล์ที่ก๊อปมาจากทรีหลัก (ชี้ DB ทริป)" fail "$d"
+
+# ⑳ .env.local ที่ถือ ref engine-dev **ต้องไม่โดนจับ** — กันด่านกว้างเกินจนบล็อกทางที่ถูก
+d="$(mk)"; printf 'NEXT_PUBLIC_SUPABASE_URL=https://pmvxwcimjebogjfimzqy.supabase.co\n' > "$d/.env.local"
+check ".env ที่ชี้ engine-dev ต้องผ่าน" pass "$d"
+
+# ㉑ ชื่อไฟล์อื่นในตระกูล .env ก็ต้องโดนจับ ไม่ใช่ hardcode เฉพาะ .env.local
+d="$(mk)"; printf 'URL=https://%s.supabase.co\n' "$TRIP_REF" > "$d/.env.development.local"
+check ".env จับไฟล์อื่นในตระกูลเดียวกันด้วย" fail "$d"
+
 exit $rc
