@@ -2143,9 +2143,28 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 4. **`E1-AC6` ถอด PIN — ยังไม่เริ่ม** เหลือ 4 ไฟล์ · P4 รอเมทริกซ์เขียวก่อนตามลำดับที่ล็อกไว้
 
 **🔴 ของที่ผู้ใช้ต้องทำ:**
-- **push ยังไม่ได้ทำ** — `platform` ค้าง 52 commit · `main` ค้าง 6 (มีการแก้ open redirect ที่ `/unlock` ซึ่ง**ยังไม่มีผลบน production จนกว่าจะ push**)
-- 🔑 **หมุนความลับ 4 อย่างที่หลุดเข้าแชท/ภาพหน้าจอวันนี้:** Supabase access token · รหัส DB `engine-dev` · Google client secret · **service role key** (ตัวหลังหลุดทางภาพหน้าจอ และแตะโปรเจกต์ mu-phone ได้ด้วย)
-- ลบ OAuth client ที่เผลอสร้างในโปรเจกต์ Google Cloud ของร้าน `A GLEAM` (⚠️ ห้ามแตะ Maps key · ห้ามทำช่วง 11–21 ต.ค.)
+- **push ยังไม่ได้ทำ** — `platform` ค้าง 52 commit · `main` ค้าง 7 (มีการแก้ open redirect ที่ `/unlock` ซึ่ง**ยังไม่มีผลบน production จนกว่าจะ push**)
+- ✅ **หมุนความลับครบ 4 อย่างแล้ว** — Supabase access token · รหัส DB `engine-dev` · Google client secret · service role key
+  · *ผู้ใช้ยืนยันกับ P8 เมื่อ 24 ส.ค. 2026* · **ค่าจริงไม่ถูกเขียนลงไฟล์ไหนทั้งสิ้นตามกติกาเดิม**
+- ✅ **ลบ OAuth client ที่เผลอสร้างในโปรเจกต์ Google Cloud ของร้าน `A GLEAM` แล้ว** — Maps key ไม่ถูกแตะ
+  · *ผู้ใช้ยืนยันกับ P8 เมื่อ 24 ส.ค. 2026*
+
+**🔴 แต่การหมุนคีย์ยังไม่จบที่การหมุน — 5 ที่ที่ยังถือค่าเก่า (P8 ไล่เช็คไฟล์จริง 24 ส.ค. 2026 หลังผู้ใช้แจ้งว่าหมุนแล้ว)**
+
+> ทุกข้อล้วนพังแบบ**ไม่มีสัญญาณว่าสาเหตุคือการหมุนคีย์** — ซึ่งคือรูปแบบของ `R9` เป๊ะ ๆ
+
+1. 🔴 **Google client secret อยู่ที่ Supabase ไม่ใช่ที่ Google** — provider config ใน Supabase Auth dashboard
+   **ถ้าหมุนที่ Google Cloud แล้วไม่ไปแก้ที่ Supabase ด้วย `E1-AC1` ที่เพิ่งผ่านเมื่อวานจะพังทันที**
+   · ไม่มีไฟล์ไหนในรีโปถือค่านี้ จึง `grep` ไม่เจอ และ CI ไม่จับ
+2. 🔴 **`.github/workflows/ci.yml:138` ใช้ `secrets.DEV_SERVICE_ROLE_KEY`** — เป็น GitHub Actions secret ที่ยังเป็นค่าเก่า
+   · job เมทริกซ์จะแดง **ด้วยเหตุที่ไม่ใช่บั๊กของโค้ด** ซึ่งเป็นเวลาที่เสียไปเปล่าที่หาสาเหตุยากที่สุด
+3. 🔴 **`/Users/park/mu-phone/.env.local` ถือ `SUPABASE_SERVICE_ROLE_KEY` และ mtime ยังเป็น 13 ส.ค. 19:28**
+   · ยังไม่ถูกแก้หลังหมุน · **ถ้าคีย์ที่หมุนคือของ mu-phone แปลว่า mu-phone พังอยู่ตอนนี้** และไม่มีใครในทีมนี้ดูโปรเจกต์นั้น
+4. 🟡 **เมทริกซ์ RLS จะรันไม่ได้จนกว่าจะมีคีย์ใหม่** — `lib/__tests__/rlsMatrix.test.ts:99` อ่าน `SUPABASE_SERVICE_ROLE_KEY`
+   แต่ `/Users/park/plan-korea-platform/.env.local` มีแค่ `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   · ⚠️ **ใส่ในไฟล์ `.env.local` เท่านั้น อย่าพิมพ์บนบรรทัดคำสั่งหรือวางในแชท** — นี่คือของที่เพิ่งต้องหมุนเพราะมันหลุดออกมา
+5. 🟡 **supabase CLI ต้อง `supabase login` ใหม่ด้วย access token ใหม่** ก่อน `db push` ครั้งต่อไป
+   · `~/.supabase/` ไม่มีไฟล์ token (macOS เก็บใน keychain) จึงดูจากไฟล์ไม่ออกว่าค้างค่าเก่าอยู่ไหม
 
 ---
 
