@@ -64,9 +64,33 @@ check "โฟลเดอร์ที่ถูกต้องของ CLI ต�
 
 # ⑧ link guard ต้องอ่าน path ใหม่ของ CLI (supabase-platform/supabase/.temp/)
 #    เคยเขียน path ผิดไว้ ทำให้ด่านนี้ข้ามตัวเองเงียบๆ = no-op อีกตัว
+# 🔴 แก้ 24 ส.ค. 2026: เดิมเคสนี้พิสูจน์ว่า "ไม่มี env = แดง" ซึ่ง**เลิกใช้แล้ว** (มติ P1)
+#    ตอนนี้พิสูจน์ของที่แรงกว่า: **link ไปที่ ref อื่นต้องแดง แม้ไม่มี env เลยก็ตาม**
 d="$(mk)"; mkdir -p "$d/supabase-platform/supabase/.temp"
 echo "someotherref" > "$d/supabase-platform/supabase/.temp/project-ref"
-( unset DEV_PROJECT_REF; check "link แต่ไม่มี secret ต้องไม่ผ่าน (path ใหม่)" fail "$d" ) || rc=1
+( unset DEV_PROJECT_REF; check "link ไป ref อื่นต้องแดง แม้ไม่มี DEV_PROJECT_REF" fail "$d" ) || rc=1
+
+# ⑧b เคสที่เป็นเหตุผลของการเปลี่ยนทั้งหมด: link ถูก + **ไม่ตั้ง env** -> ต้องเขียว
+#    ถ้าเคสนี้ fail แปลว่าเรากลับไปสร้างแรงกดดันให้คนเลิกรัน guards.sh บนเครื่องอีก
+d="$(mk)"; mkdir -p "$d/supabase-platform/supabase/.temp"
+echo "pmvxwcimjebogjfimzqy" > "$d/supabase-platform/supabase/.temp/project-ref"
+( unset DEV_PROJECT_REF; check "link ถูกและไม่ตั้ง env ต้องเขียว (ไม่ฝืนคนรันบนเครื่อง)" pass "$d" ) || rc=1
+
+# ⑧c DEV_PROJECT_REF ที่ขัดกับไฟล์ allowlist -> ต้องแดง
+#    นี่คือส่วนเดียวของด่านนี้ที่ทำงานบน CI ได้จริง (CI ไม่มี .temp/ ให้ตรวจ)
+d="$(mk)"
+( DEV_PROJECT_REF=aaaaaaaaaaaaaaaaaaaa; export DEV_PROJECT_REF
+  check "DEV_PROJECT_REF ที่ขัดกับไฟล์ allowlist ต้องแดง" fail "$d" ) || rc=1
+
+# ⑧d ไฟล์ allowlist เพี้ยน/ถูกตัด ต้องไม่กลายเป็น allowlist เงียบๆ
+d="$(mk)"; bad="$(mktemp)"; echo "ตัดมาครึ่งเดียว" > "$bad"
+( ALLOWED_REF_FILE="$bad"; export ALLOWED_REF_FILE
+  check "ไฟล์ allowlist ที่ไม่ใช่รูปแบบ ref ต้องแดง" fail "$d" ) || rc=1
+rm -f "$bad"
+
+# ⑧e interlock: ref ทริปในไฟล์ allowlist ต้องโดน **ด่าน ref** จับ ไม่ต้องพึ่งด่านนี้ตรวจตัวเอง
+d="$(mk)"; printf '%s\n' "$TRIP_REF" > "$d/.github/allowed-project-ref"
+check "ref ทริปในไฟล์ allowlist โดนด่าน ref จับ (interlock)" fail "$d"
 
 # ── ด่าน anchor (ลิงก์ภายในเอกสาร) ───────────────────────────────────────────────
 # ⑨ ลิงก์ชี้ไปหัวข้อที่ไม่มีอยู่ ต้องโดนจับ

@@ -21,7 +21,7 @@ permissions:
 jobs:
   # ด่านเร็ว — ล้มใน ~30 วินาทีโดยไม่ต้องรอ npm ci
   guards:
-    name: Guards (AC9 · AC10 · ref · anchor)
+    name: Guards (AC9 · AC10 · ref · link · .env · anchor)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -46,9 +46,14 @@ jobs:
       - name: guards self-test (พิสูจน์ว่าด่านยังจับของผิดได้)
         run: .github/guards-selftest.sh
 
-      - name: guards (AC10 · ref · link · anchor) กับทรีจริง
+      - name: guards (AC10 · ref · link · .env · anchor) กับทรีจริง
         run: .github/guards.sh .
         env:
+          # 🔴 allowlist ของจริงอยู่ที่ `.github/allowed-project-ref` (ไฟล์ที่ commit) ตั้งแต่ 24 ส.ค. 2026
+          #    secret ตัวนี้ **ไม่ใช่แหล่งความจริงอีกแล้ว** — เหลือหน้าที่เดียวคือ
+          #    "ถ้าตั้งไว้ ต้องตรงกับไฟล์" = จับกรณี secret ของ CI กับ repo เพี้ยนออกจากกัน
+          #    ⚠️ ไม่ตั้งก็ได้ ไม่แดง · และด่าน link ตัวจริงไม่เคยรันบน CI อยู่แล้ว
+          #       เพราะ `.temp/` ถูก gitignore ไม่มีไฟล์ให้ตรวจที่นี่
           DEV_PROJECT_REF: ${{ secrets.DEV_PROJECT_REF }}
 
       # ── ด่านชั่วคราว diff-guard ถูกปลดแล้ว 18 ส.ค. 2026 ────────────────────────────

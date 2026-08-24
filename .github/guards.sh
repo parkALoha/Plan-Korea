@@ -134,14 +134,49 @@ else
   echo "✅ link: ไม่มี link นอก supabase-platform/"
 fi
 
-# ── ถ้ามีการ link CLI ไว้ ต้องเป็น engine-dev เท่านั้น (allowlist) ─────────────────
+# ── allowlist ของ ref ที่อนุญาต — อ่านจากไฟล์ที่ commit ไม่ใช่จาก env ──────────────
+# 🔴 เปลี่ยน 24 ส.ค. 2026 (มติ P1) · เดิมบังคับต้องมี DEV_PROJECT_REF ไม่งั้นแดง
+#    ปัญหา: ด่าน `.temp/` กับ `.env` **มีค่าเฉพาะตอนรันบนเครื่อง** (ทั้งคู่ไม่มีวันแดงบน CI)
+#    การทำให้ "รันเปล่าๆ แล้วแดงเสมอ" จึงกดดันให้คนเลิกรัน หรือเรียนรู้ที่จะข้ามมัน
+#    → วันที่มันแดงเพราะของจริง จะไม่มีใครเหลืออ่านมันแล้ว
+#
+# 🔴 และ ref ของ engine-dev **ไม่ใช่ความลับ ไม่เคยเป็น** — อยู่ในไฟล์ที่ commit แล้ว 8 ไฟล์ 30 จุด
+#    (ตรวจด้วย `git grep -c pmvxwcimjebogjfimzqy`) · การบังคับให้ตั้ง env เพื่อรู้ค่าสาธารณะ
+#    **ไม่ได้เพิ่มความปลอดภัยเลย เพิ่มแต่ความฝืด** · ต่างจาก SUPABASE_ACCESS_TOKEN ซึ่งลับจริง
+#
+# ⚠️ ข้อแลกที่ต้องรู้: allowlist ย้ายจาก "ค่าที่คนตั้ง CI คุม" ไปเป็น "ค่าที่ commit ในรีโป"
+#    → **ใครแก้ไฟล์นี้ก็ย้าย allowlist ได้** · รับได้เพราะ **มันเห็นใน diff และผ่านรีวิว**
+#    ต่างจาก env var ที่เปลี่ยนเงียบๆ ได้โดยไม่มีร่องรอย
+# 🎯 และมี interlock: ไฟล์นี้อยู่ใน `.github/` ซึ่ง **ด่าน ref ข้างบนสแกนอยู่แล้ว**
+#    → ถ้าใครเอา ref ทริปมาใส่เป็น allowlist **ด่านคนละตัวจะจับได้** ไม่ต้องพึ่งด่านนี้ตรวจตัวเอง
+ALLOWFILE="${ALLOWED_REF_FILE:-$(cd "$(dirname "$0")" && pwd)/allowed-project-ref}"
+allowed=""
+[ -f "$ALLOWFILE" ] && allowed="$(tr -d ' \t\r\n' < "$ALLOWFILE")"
+
+if [ -z "$allowed" ]; then
+  echo "🔴 allowlist: ไม่มีไฟล์หรือไฟล์ว่าง ($ALLOWFILE) — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+  fail=1
+elif ! printf '%s' "$allowed" | grep -Eq '^[a-z]{20}$'; then
+  # ไฟล์เพี้ยน/ถูกตัด ต้องไม่กลายเป็น allowlist เงียบๆ
+  echo "🔴 allowlist: ค่าในไฟล์ไม่ใช่รูปแบบ project ref (ต้องเป็น a-z 20 ตัว) — ได้ '$allowed'"
+  fail=1
+elif [ -n "${DEV_PROJECT_REF:-}" ] && [ "$DEV_PROJECT_REF" != "$allowed" ]; then
+  # 🔴 ข้อนี้คือส่วนเดียวของด่าน link ที่ทำงานบน CI ได้จริง
+  #    เพราะ CI ไม่มี .temp/ เลย (gitignore) ด่านข้างล่างจึงไม่เคยรันที่นั่น
+  #    ที่นี่ตอบคำถาม "secret ที่ตั้งใน CI ตรงกับ repo ไหม" ซึ่งยังคุ้มที่จะถาม
+  echo "🔴 allowlist: DEV_PROJECT_REF ขัดกับไฟล์ที่ commit ไว้ — อย่าเดาว่าอันไหนถูก"
+  echo "   env=$DEV_PROJECT_REF · ไฟล์=$allowed"
+  fail=1
+else
+  echo "✅ allowlist: $allowed"
+fi
+
+# ── ถ้ามีการ link CLI ไว้ ต้องตรงกับ allowlist เท่านั้น ────────────────────────────
 linkfile="$ROOT/supabase-platform/supabase/.temp/project-ref"
-if [ -f "$linkfile" ]; then
-  if [ -z "${DEV_PROJECT_REF:-}" ]; then
-    echo "🔴 link แล้วแต่ไม่ได้ตั้ง DEV_PROJECT_REF — ตรวจไม่ได้ ถือว่าไม่ผ่าน (ตรวจไม่ได้ ≠ ปลอดภัย)"
-    fail=1
-  elif [ "$(cat "$linkfile")" != "$DEV_PROJECT_REF" ]; then
+if [ -f "$linkfile" ] && [ -n "$allowed" ]; then
+  if [ "$(tr -d ' \t\r\n' < "$linkfile")" != "$allowed" ]; then
     echo "🔴 link อยู่กับโปรเจกต์ที่ไม่ใช่ engine-dev — หยุด"
+    echo "   link=$(tr -d ' \t\r\n' < "$linkfile") · อนุญาต=$allowed"
     fail=1
   else
     echo "✅ link: อยู่กับ engine-dev"
