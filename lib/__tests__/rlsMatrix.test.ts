@@ -268,6 +268,27 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     expect(PERSONAS).toContain("C_no_trip");
   });
 
+  /** verb ที่แต่ละตารางมี policy จริง — อ่านจากไฟล์ที่รันจริง ไม่ใช่จากความจำ */
+  function policiedVerbs(table: string): string[] {
+    const re = new RegExp(`^create policy \\S+ on public\\.${table}\\s*\\n\\s*for (\\w+)`, "gm");
+    const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
+    return [...src.matchAll(re)].map((m) => m[1]).sort();
+  }
+
+  it("🔴 ตารางที่ **จงใจไม่มี** policy DELETE ต้องไม่มีต่อไป — เพิ่มเมื่อไหร่ต้องเป็นการตัดสินใจ", () => {
+    // `D18`: ไม่มี policy = เข้าไม่ถึงจาก client เลย ไม่ใช่แค่ซ่อนปุ่ม
+    // `profiles` ลบผ่าน auth.users แล้ว cascade · `trips` รอ soft delete ที่ E2
+    // 🔴 เคสนี้จะแดงถ้ามีคนเติม DELETE เข้ามา — ซึ่งคือสิ่งที่ควรเกิด ไม่ใช่สิ่งที่ต้องแก้ให้ผ่าน
+    for (const t of TABLES) {
+      const verbs = policiedVerbs(t);
+      expect(verbs.length, `อ่าน policy ของ ${t} ไม่เจอเลย — regex หรือชื่อตารางเปลี่ยน`).toBeGreaterThan(0);
+      expect(verbs.every((v) => (VERBS as readonly string[]).includes(v)), `${t} มี verb นอกลิสต์: ${verbs}`).toBe(true);
+      if (t !== "trip_members") {
+        expect(verbs, `${t} มี policy DELETE แล้ว — ตั้งใจหรือเปล่า`).not.toContain("delete");
+      }
+    }
+  });
+
   it("🔴 จำนวน policy ต้องตรงกับที่เมทริกซ์นี้เคยไล่กิ่งไว้ — เพิ่ม policy ต้องมาทบทวนที่นี่", () => {
     // 🎯 `P-48`: รายการกิ่งหมดอายุทุกครั้งที่มีคนเปลี่ยนทางที่โค้ดเดิน
     //    เอกสารบังคับตัวเองไม่ได้ · เลขที่ตรึงไว้บังคับได้
