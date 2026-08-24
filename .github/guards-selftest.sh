@@ -192,4 +192,22 @@ else
   echo "✅ ci-target: ไม่ตั้ง env ต้องไม่ผ่าน — ได้ fail ตามคาด"
 fi
 
+# ── ด่าน pending-review ─────────────────────────────────────────────────────────
+# ㉒ .sql จอดอยู่แต่ไม่มีชื่อใน README -> ต้องโดนจับ (เคส "จอดแล้วหาย")
+d="$(mk)"; mkdir -p "$d/supabase-platform/pending-review"
+echo "select 1;" > "$d/supabase-platform/pending-review/0009_parked.sql"
+echo "# ว่างเปล่า ไม่ได้จดอะไร" > "$d/supabase-platform/pending-review/README.md"
+check "pending-review จับไฟล์ที่จอดแล้วไม่มีใครจด" fail "$d"
+
+# ㉓ จดไว้ใน README แล้ว -> ต้องผ่าน
+d="$(mk)"; mkdir -p "$d/supabase-platform/pending-review"
+echo "select 1;" > "$d/supabase-platform/pending-review/0009_parked.sql"
+printf '| `0009_parked.sql` | รอ P4 ตัดสิน |\n' > "$d/supabase-platform/pending-review/README.md"
+check "pending-review ผ่านเมื่อมีคนจดว่ารออะไร" pass "$d"
+
+# ㉔ มี .sql จอดแต่ไม่มี README เลย -> ต้องโดนจับ
+d="$(mk)"; mkdir -p "$d/supabase-platform/pending-review"
+echo "select 1;" > "$d/supabase-platform/pending-review/0009_parked.sql"
+check "pending-review จับกรณีไม่มี README เลย" fail "$d"
+
 exit $rc

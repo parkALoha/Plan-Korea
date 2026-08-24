@@ -101,6 +101,42 @@ else
   echo "✅ .env: ไม่มีไฟล์ .env ที่ชี้ไป DB ทริป"
 fi
 
+# ── ทุก .sql ที่จอดใน pending-review/ ต้องมีชื่ออยู่ใน README ของโฟลเดอร์นั้น ──────
+# 🔴 `pending-review/` ถูกออกแบบให้ **CLI มองไม่เห็นโดยตั้งใจ** (P1 · 24 ส.ค. 2026)
+#    ซึ่งแปลว่ามันเป็นที่ที่ **ของหายเงียบได้ดีที่สุดในรีโป** — ไม่มีเครื่องมือไหนเดินผ่านมันเลย
+#    ไฟล์ที่จอดแล้วไม่มีใครจดว่ารออะไร **หน้าตาเหมือนไฟล์ที่ทำเสร็จแล้ว**
+#
+# ด่านนี้ไม่ตัดสินว่าไฟล์ถูกหรือผิด — ถามข้อเดียวว่า **"ยังมีคนรู้ไหมว่ามันรออะไร"**
+# ⚠️ ไม่ใช้เกณฑ์ "ค้างเกิน N วัน" โดยตั้งใจ: บน CI ไฟล์ถูก checkout ใหม่ทุกครั้ง
+#    **mtime จึงเป็นเวลา checkout ไม่ใช่เวลาที่จอด** — เกณฑ์เวลาที่วัดจาก mtime จะโกหก
+PRDIR="$ROOT/supabase-platform/pending-review"
+if [ -d "$PRDIR" ]; then
+  prsql="$(find "$PRDIR" -maxdepth 1 -name '*.sql' 2>/dev/null | sort)"
+  if [ -z "$prsql" ]; then
+    echo "✅ pending-review: ไม่มีไฟล์ค้าง"
+  elif [ ! -f "$PRDIR/README.md" ]; then
+    echo "🔴 pending-review: มี .sql จอดอยู่แต่ไม่มี README.md — ไม่มีใครรู้ว่ามันรออะไร"
+    fail=1
+  else
+    missing=""
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      grep -qF "$(basename "$f")" "$PRDIR/README.md" || missing="$missing  $(basename "$f")
+"
+    done <<EOF
+$prsql
+EOF
+    if [ -n "$missing" ]; then
+      echo "🔴 pending-review: ไฟล์พวกนี้จอดอยู่แต่ไม่มีชื่อใน README.md — จอดแล้วหาย"
+      printf '%s' "$missing"
+      echo "   เพิ่มลงตาราง 'ของที่อยู่ในนี้ตอนนี้' พร้อมระบุว่า **รออะไร/ใครตัดสิน**"
+      fail=1
+    else
+      echo "✅ pending-review: ทุกไฟล์ที่จอดมีคนจดว่ารออะไร"
+    fi
+  fi
+fi
+
 # ── link ต้องอยู่ "ถูกที่" ไม่ใช่แค่ "ชี้ถูก ref" ──────────────────────────────────
 # 🔴 สถานะ link ผูกกับ **workdir** ไม่ใช่กับ repo — ราก link แยกจาก supabase-platform/ ได้
 #    ด่านข้างล่างถามว่า "ชี้ไปโปรเจกต์ไหน" แต่ไม่เคยถามว่า "ยืนอยู่ตรงไหนตอนถาม" (P1 ชี้ 24 ส.ค. 2026)
