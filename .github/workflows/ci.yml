@@ -129,6 +129,17 @@ jobs:
           node-version: '20.12.2'
           cache: npm
       - run: npm ci
+      # 🔴 ด่านนี้ต้องมาก่อน vitest เสมอ — job นี้คือ **จุดเดียวใน CI ที่แตะ Supabase จริง**
+      #    ไม่มี `db push` ใน CI เลย แต่ vitest ตัวนี้ยิง REST เข้า DB ด้วย service_role
+      #    ถ้า secret ถูกตั้งผิดใบ มันจะรันเมทริกซ์ใส่โปรเจกต์นั้น **อัตโนมัติ ไม่มีคนดู**
+      #    ด่าน `do $guard$` ใน SQL กันตรงนี้ไม่ได้ — มันกันแค่ตอน migration (ดู D48)
+      - name: ยืนยันว่า secret ชี้ engine-dev ก่อนแตะ DB
+        run: .github/check-ci-target.py
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
       - name: RLS matrix — skip ต้องกลายเป็น fail
         run: npx vitest run lib/__tests__/rlsMatrix.test.ts
         env:

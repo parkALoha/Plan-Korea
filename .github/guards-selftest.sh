@@ -158,4 +158,38 @@ check ".env ที่ชี้ engine-dev ต้องผ่าน" pass "$d"
 d="$(mk)"; printf 'URL=https://%s.supabase.co\n' "$TRIP_REF" > "$d/.env.development.local"
 check ".env จับไฟล์อื่นในตระกูลเดียวกันด้วย" fail "$d"
 
+# ── ด่าน ci-target (ยืนยัน secret ก่อน CI แตะ DB) ────────────────────────────────
+# 🔴 ด่านนี้ไม่ได้อยู่ใน guards.sh เพราะมันตรวจ **env ของ CI** ไม่ใช่ไฟล์ในทรี
+#    แต่ต้องมีเทสต์ด้านลบเหมือนกันตามกฎ E0 ข้อ 1
+CIT="$(cd "$(dirname "$0")" && pwd)/check-ci-target.py"
+mkjwt() { python3 -c "
+import base64,json,sys
+p=base64.urlsafe_b64encode(json.dumps({'ref':sys.argv[1]}).encode()).decode().rstrip('=')
+print('eyJhbGciOiJIUzI1NiJ9.'+p+'.sig')" "$1"; }
+DEVREF=pmvxwcimjebogjfimzqy
+
+citcheck() {  # citcheck <ชื่อ> <pass|fail> <url-ref> <anon-ref> <svc-ref>
+  name="$1"; want="$2"
+  if NEXT_PUBLIC_SUPABASE_URL="https://$3.supabase.co" \
+     NEXT_PUBLIC_SUPABASE_ANON_KEY="$(mkjwt "$4")" \
+     SUPABASE_SERVICE_ROLE_KEY="$(mkjwt "$5")" \
+     "$CIT" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got · check-ci-target.py ใช้การไม่ได้"
+  rc=1; return 1
+}
+
+citcheck "ci-target: ทุกค่าชี้ engine-dev ต้องผ่าน" pass "$DEVREF" "$DEVREF" "$DEVREF"
+citcheck "ci-target: URL ชี้ DB ทริปต้องแดง" fail "$TRIP_REF" "$DEVREF" "$DEVREF"
+citcheck "ci-target: service_role ของโปรเจกต์อื่นต้องแดง แม้ URL ถูก" fail "$DEVREF" "$DEVREF" "abcdefghijklmnopqrst"
+citcheck "ci-target: anon ของโปรเจกต์อื่นต้องแดง แม้ URL ถูก" fail "$DEVREF" "abcdefghijklmnopqrst" "$DEVREF"
+
+# ไม่ตั้ง env เลย ต้องแดง (ตรวจไม่ได้ ≠ ปลอดภัย)
+if ( env -u NEXT_PUBLIC_SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_ANON_KEY \
+         -u SUPABASE_SERVICE_ROLE_KEY "$CIT" >/dev/null 2>&1 ); then
+  echo "🔴 ci-target: ไม่ตั้ง env แล้วยังผ่าน — ตรวจไม่ได้ต้องไม่ผ่าน"; rc=1
+else
+  echo "✅ ci-target: ไม่ตั้ง env ต้องไม่ผ่าน — ได้ fail ตามคาด"
+fi
+
 exit $rc
