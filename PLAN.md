@@ -2027,10 +2027,28 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 
 ---
 
-## 4.5 Dynamic Travel Platform Engine — ระยะออกแบบ (เริ่ม 17 ส.ค. 2026)
+## 4.5 Dynamic Travel Platform Engine — 🔴 **ระยะสร้าง** (ออกแบบ 17 ส.ค. · เริ่มสร้าง 18 ส.ค. 2026)
 
 > **งานคนละก้อนกับทุกอย่างข้างบน** — ข้างบนคือเว็บทริปเกาหลีที่ต้องใช้จริง 11–21 ต.ค.
 > ก้อนนี้คือการขยายเป็นแพลตฟอร์มหลายประเทศ · **เอกสารทั้งหมดอยู่ที่ [`docs/engine/`](docs/engine/README.md)**
+
+> ### 🔴 อ่านกล่องนี้ก่อนเชื่ออะไรในหัวข้อ 4.5 (แก้ 24 ส.ค. 2026)
+>
+> หัวข้อนี้เขียนเมื่อ **17 ส.ค.** ตอนที่ยังเป็นระยะออกแบบ · **มี 3 ข้อความข้างล่างที่ตายไปแล้ว ห้ามอ้างอิง:**
+>
+> | ข้อความเดิมในหัวข้อนี้ | ความจริงวันนี้ |
+> |---|---|
+> | *"ออกแบบก่อน ยังไม่เขียนโค้ด · รอลงมือจริงหลัง 21 ต.ค."* | 🔴 **`D33` (18 ส.ค.) ผู้ใช้สั่งเริ่มสร้างทันที** — เขียนโค้ดจริงได้แล้ว **เฉพาะบน branch `platform` ที่ `/Users/park/plan-korea-platform`** |
+> | *"dev DB = Supabase local ผ่าน Docker"* | 🔴 **`D14` (17 ส.ค. เย็น) เปลี่ยนเป็น Supabase คลาวด์ org ใหม่** — org `Plan-trip-app` · project `engine-dev` · ref `pmvxwcimjebogjfimzqy` |
+> | *"กติกาเหล็กของระยะออกแบบ"* 5 ข้อ | 🔴 **มีฉบับระยะสร้างแทนแล้วที่ [`docs/engine/README.md`](docs/engine/README.md)** — อ่านฉบับนั้น |
+>
+> ✅ **สิ่งที่ไม่เปลี่ยนเลยสักข้อคือความปลอดภัยของทริป:**
+> `main` **freeze เหมือนเดิมทุกตัวอักษร** (แก้ได้เฉพาะบั๊กที่ทำให้ใช้งานไม่ได้ + เนื้อหาทริป)
+> · **ห้ามแตะ `ejzibhgqhxdzkovsnpds` ทุกกรณี** · **ห้าม merge `platform` → `main` ก่อนกลับจากทริป 21 ต.ค.**
+> · **ห้าม `git checkout` สลับ branch ในทรีหลัก** — ใช้ `git worktree` เท่านั้น
+>
+> **ผู้ใช้ตัดสินเพิ่ม 3 ข้อเมื่อ 24 ส.ค. 2026** → `D41` ขอบเขต = **M1 เท่านั้น** · `D42` ล็อกอิน = **Google OAuth + magic link ทั้งสองทาง**
+> · `D43` ของค้างทริปเป็นรางที่ 2 ที่ P1 ถือเอง · รายละเอียดเต็มอยู่ใน `docs/engine/README.md`
 
 **โจทย์:** ขยายจากเว็บทริปเกาหลีของคน 2 คน → engine ที่รับทริปประเทศไหนก็ได้
 + AI Copilot + Real-time Collaboration + Mobile App
@@ -2042,8 +2060,8 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 
 | เรื่อง | คำตอบ |
 |---|---|
-| จะเดินงานแบบไหน | **ออกแบบก่อน ยังไม่เขียนโค้ด** — ส่งมอบเอกสาร รอลงมือจริงหลัง 21 ต.ค. |
-| dev DB | **Supabase local ผ่าน Docker** ไม่สร้างโปรเจกต์คลาวด์ใหม่ |
+| จะเดินงานแบบไหน | ~~**ออกแบบก่อน ยังไม่เขียนโค้ด** — ส่งมอบเอกสาร รอลงมือจริงหลัง 21 ต.ค.~~ 🔴 **ตายแล้วโดย `D33` (18 ส.ค.)** — สร้างได้เลยบน `platform` |
+| dev DB | ~~**Supabase local ผ่าน Docker** ไม่สร้างโปรเจกต์คลาวด์ใหม่~~ 🔴 **ตายแล้วโดย `D14` (วันเดียวกัน)** — ใช้คลาวด์ org ใหม่ `pmvxwcimjebogjfimzqy` |
 | P5–P8 | เปิดเซสชันแล้ว ยืนยันครบใน `cwd=/Users/park/plan-korea` |
 | งบประมาณ | **คงไว้ ไม่ทำ** — ยึดตามหัวข้อ 1 เดิม · P5 ห้ามใส่ budget optimization |
 
@@ -2071,7 +2089,7 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 ⚠️ **ข้อแลก:** free tier หลับเมื่อไม่มีทราฟฟิก 7 วัน (เหตุผลเดียวกับที่ทริปต้องมี cron `keep-alive`) — staging ต้องมีกลไกเดียวกัน
 ⚠️ **ไม่มี backup/PITR บน free** — ตอนขึ้น prod จริงของแพลตฟอร์มต้องขยับเป็น Pro ตามที่ P6 ประเมินไว้
 
-### 🔴 กติกาเหล็กของระยะออกแบบ
+### 🔴 กติกาเหล็กของระยะออกแบบ — ⚠️ **ฉบับนี้หมดอายุแล้ว · ฉบับที่ใช้จริงอยู่ที่ [`docs/engine/README.md`](docs/engine/README.md)**
 
 1. **ห้ามแก้โค้ดแอป** — `app/` `components/` `hooks/` `lib/` `data/` `supabase/migrations/` แตะไม่ได้
 2. **ห้ามแตะ Supabase `ejzibhgqhxdzkovsnpds`** ทุกกรณี
@@ -2090,18 +2108,29 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 · `next.config.ts` ว่างเปล่าทั้งไฟล์ · เทสต์ครอบเฉพาะ pure function
 → รายละเอียดเต็มพร้อมเหตุผลที่ [`docs/engine/README.md`](docs/engine/README.md)
 
-### ลำดับเฟสระยะลงมือ (หลัง 21 ต.ค.) — ห้ามสลับ
+### ลำดับเฟสระยะลงมือ — ห้ามสลับ  *(ตัดคำว่า "หลัง 21 ต.ค." ออก 24 ส.ค. — `D33` · เหลือแค่ `E9` Cutover ที่รอหลังทริป)*
 
 `E0` ตั้งราง → **`E1` Identity** → `E2` Schema → `E3` DAL/Server Actions → `E4` Provider registry
 → `E5` UI → `E6` Perf → `E7` ซ้อม migrate ข้อมูลจริง 2 รอบ → `E8` AI + Mobile
 
 **E1 ต้องมาก่อนทุกอย่าง** — 67 จุดที่อ่าน/เขียนตรงจาก browser จะพังพร้อมกันหมดวินาทีที่ RLS จริงถูกเปิด
 
-### สถานะ (17 ส.ค. 2026)
+### สถานะ (อัปเดต 24 ส.ค. 2026)
 
+**ระยะออกแบบ — จบแล้ว**
 - [x] สำรวจฐานรหัสทั้งโปรเจกต์ · [x] `TEAM.md` 4 → 8 บทบาท · [x] `docs/engine/README.md`
 - [x] `docs/engine/architecture.md` (P1) · [x] ส่งบรีฟเข้าครบ 7 เซสชัน
-- [ ] รอเอกสารจาก P2–P8 กลับมา แล้ว P1 ตรวจความเข้ากันได้ทั้งชุด
+- [x] เอกสารกลับมาครบทั้ง 8 บทบาท (~1 MB · ข้อตัดสิน `D1`–`D43`)
+
+**ระยะสร้าง — บน branch `platform` ที่ `/Users/park/plan-korea-platform`**
+- [x] **`E0` ตั้งราง** — CI 3 job · `.github/guards.sh` + self-test · `supabase-platform/` workdir · `migration-template.sql`
+- [x] Supabase CLI 2.114.0 ลงเครื่องแล้ว · `supabase init` แล้ว
+- [x] **`E1` migration แปลงเป็นของที่รันได้แล้ว** — `supabase-platform/supabase/migrations/20260824043822_identity.sql`
+      · เจอและแก้ `P-24` (`create schema app` ต้องมาก่อน ADP ไม่งั้นตายที่คำสั่งที่ 2)
+      · self-check แยกไฟล์ + เพิ่มหัวข้อ 9 สำหรับ `E1-AC7`
+- [ ] 🔴 **ค้างที่ผู้ใช้ 4 ข้อ** — ยืนยัน Vercel · `supabase link` · GitHub secret 4 ตัว · เปิด auth provider 2 ทาง + บอกอีเมลของ A/B
+- [ ] `E1` รันจริงบน `engine-dev` แล้วผ่าน AC1–AC7 (P4 วัด)
+- [ ] ⚠️ **ยังไม่เคยรัน migration กับ DB ใดๆ** — เครื่องนี้ไม่มี psql ไม่มี docker · `db push` ครั้งแรกคือการรันครั้งแรก
 
 ---
 
