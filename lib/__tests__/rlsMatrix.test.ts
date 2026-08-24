@@ -514,7 +514,15 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       if (error) console.warn(`\n⚠️  ลบทริปของรอบนี้ไม่สำเร็จ: ${error.message}\n`);
     }
 
-    for (const id of userIds) await admin.auth.admin.deleteUser(id).catch(() => {});
+    // 🔴 ฉบับเดิมเป็น `.catch(() => {})` — **กลืนความล้มเหลวทั้งหมดโดยไม่มีสัญญาณ**
+    //    เส้นทางที่ล้มได้จริง: `deleteUser` → `profiles` cascade → ชน `trips.created_by`
+    //    ที่เป็น `on delete restrict` ถ้ามีทริปของรอบนี้หลงเหลือ (เช่นถูกสร้างนอกตัวกรองข้างบน)
+    //    → ผู้ใช้ค้างในฐานของกลางถาวร **และพอกขึ้นทุกรอบโดยไม่มีใครรู้**
+    //    ⚠️ ยัง **ไม่ throw** ด้วยเหตุผลเดียวกับข้างบน: afterAll ที่ล้มจะกลบผลของเคสที่เพิ่งรัน
+    for (const id of userIds) {
+      const { error } = await admin.auth.admin.deleteUser(id);
+      if (error) console.warn(`\n⚠️  ลบผู้ใช้ทดสอบ ${id} ไม่สำเร็จ: ${error.message}\n`);
+    }
   });
 
   // ── ด้านบวก: precondition ของทั้งชุด ────────────────────────────────────
