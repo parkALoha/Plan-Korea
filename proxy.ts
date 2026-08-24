@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { PIN_COOKIE, expectedPinToken, pinTokenMatches } from "@/lib/pinAuth";
+import { refreshSession } from "@/lib/auth/proxySession";
 
 /**
  * ด่าน PIN ของทั้งเว็บ (เฟส 13.5)
@@ -19,6 +20,10 @@ import { PIN_COOKIE, expectedPinToken, pinTokenMatches } from "@/lib/pinAuth";
  * - `/api/keep-alive` (เฟส 25) — Vercel Cron ยิงมาโดยไม่มีคุกกี้ PIN ถ้าโดนดักจะได้ 401
  *   **ก่อนแตะ Supabase** = cron เขียวทุกวันแต่ DB ยังหลับ · route นั้นมีด่าน CRON_SECRET ของตัวเอง
  *   และไม่คืนข้อมูลทริปออกมาเลย (ตอบแค่ ok/เวลา)
+ * - 🔴 `/login`, `/auth/callback` (E1) — **ไก่กับไข่แบบเดียวกับ `/unlock` เป๊ะ**
+ *   ถ้าด่าน PIN ดัก 2 เส้นนี้ **จะล็อกอินไม่ได้เลยตลอดกาล** เพราะทางเข้าถูกด่านที่รอทางเข้าปิดอยู่
+ *   ⚠️ วันนี้ยังไม่กัดเพราะ `TRIP_PIN` ไม่ได้ตั้งบนเครื่อง dev → `expectedPinToken()` เป็นเท็จ
+ *   → **ปล่อยผ่านทั้งเว็บอยู่แล้ว** · มันจะกัดวินาทีแรกที่มีใครตั้ง env และไม่มีอะไรเตือนก่อนหน้านั้น
  */
 const PUBLIC_PATHS = [
   "/unlock",
@@ -26,13 +31,22 @@ const PUBLIC_PATHS = [
   "/sw.js",
   "/manifest.webmanifest",
   "/api/keep-alive",
+  "/login",
+  "/auth/callback",
 ];
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // 🔴 ต่ออายุ session **ก่อนด่านใด ๆ และก่อนการคืนค่าทุกทาง** (E1)
+  // ถ้าวางไว้หลังด่าน PIN เส้นทางที่ปล่อยผ่านตั้งแต่ต้น (เช่น `/login`) จะไม่ถูกต่ออายุเลย
+  // → ผู้ใช้ที่ค้างอยู่หน้านั้นนาน ๆ จะหลุดทั้งที่ไม่ได้ทำอะไรผิด
+  // ⚠️ ต้องคืน `session.response` เสมอเมื่อจะปล่อยผ่าน **ห้ามสร้าง `NextResponse.next()` ใหม่**
+  //    ไม่งั้นคุกกี้ที่เพิ่งต่ออายุจะหายไปเงียบ ๆ และอาการจะโผล่ตอน token เดิมหมดอายุเท่านั้น
+  const session = await refreshSession(req);
+
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    return NextResponse.next();
+    return session.response;
   }
 
   // ยังไม่ได้ตั้ง TRIP_PIN/TRIP_PIN_SECRET → ปล่อยผ่านทั้งหมด (เว็บทำงานเหมือนก่อนมีเฟส 13.5)
@@ -41,11 +55,11 @@ export function proxy(req: NextRequest) {
   // ซึ่งอันตรายกว่ามากตอนอยู่เกาหลีจริงแล้วเปิดหน้า /today ไม่ได้
   // ⚠️ แลกมาด้วยว่า **ถ้าไม่ตั้ง env บน Vercel production จะไม่มี PIN ป้องกันเลย** ต้องไปตั้งเอง
   if (!expectedPinToken()) {
-    return NextResponse.next();
+    return session.response;
   }
 
   if (pinTokenMatches(req.cookies.get(PIN_COOKIE)?.value)) {
-    return NextResponse.next();
+    return session.response;
   }
 
   // API ตอบ 401 เป็น JSON ไม่ redirect — ฝั่ง client เป็น fetch/`<img>` การ redirect ไปหน้า HTML
