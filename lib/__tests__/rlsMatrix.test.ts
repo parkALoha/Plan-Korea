@@ -716,4 +716,49 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 สมาชิกที่ไม่ใช่เจ้าของ ต้องเห็นทริปได้ — ช่องที่เมทริกซ์ 48 เคสมองไม่เห็น", () => {
+    /**
+     * 🎯 **ทำไมเคสนี้ถึงสำคัญกว่าที่หน้าตามันดู**
+     *
+     * เคสด้านลบทั้งหมดข้างบนพิสูจน์ว่า **คนนอกไม่เห็น** · เคสด้านบวกพิสูจน์ว่า **เจ้าของเห็น**
+     * 🔴 **ไม่มีเคสไหนพิสูจน์ว่า *สมาชิกที่ไม่ใช่เจ้าของ* เห็น** — และนั่นคือทั้งหมดที่แพลตฟอร์มนี้มีไว้ทำ
+     *
+     * ถ้า `trips_select` เขียนเป็น `created_by = auth.uid()` แทน `app.can_read_trip(id)`
+     * **เมทริกซ์ทั้ง 48 เคสจะยังเขียวหมด**: A เห็นของตัวเอง · B เห็นแต่ของตัวเอง · C ไม่เห็นอะไร
+     * แต่ **ทุกคนที่ถูกเชิญเข้าทริปจะเปิดไม่เห็นอะไรเลย** = ฟีเจอร์หลักพังเงียบสนิท
+     *
+     * ⚠️ **และ mutation test หาข้อนี้ไม่เจอ** — mutation test พิสูจน์ว่า assert ที่มีอยู่ไวพอ
+     * มันไม่บอกว่า **assert ที่ควรมีแต่ไม่มี** คืออันไหน · คนละชนิดของช่องกัน
+     */
+    it("🔴 viewer ที่เพิ่งถูกเชิญ ต้องอ่านทริปได้ทันที (สิทธิ์มาจาก trip_members ไม่ใช่ created_by)", async () => {
+      const { error: invErr } = await A.from("trip_members").insert({
+        trip_id: tripA,
+        user_id: ids.c,
+        role: "viewer",
+      });
+      expect(invErr, "owner เชิญ viewer ไม่ได้").toBeNull();
+
+      const { data, error } = await C.from("trips").select("id").eq("id", tripA);
+      expect(error).toBeNull();
+      expect(
+        data,
+        "C เป็นสมาชิกแล้วแต่ยังอ่านทริปไม่เห็น — policy ผูกกับ created_by ไม่ใช่ trip_members",
+      ).toHaveLength(1);
+    });
+
+    it("viewer อ่านได้แต่แก้ไม่ได้ — บทบาทต้องมีผล ไม่ใช่แค่การเป็นสมาชิก", async () => {
+      await C.from("trips").update({ title: `viewer-edit-${stamp}` }).eq("id", tripA);
+      const { data } = await A.from("trips").select("title").eq("id", tripA).single();
+      expect(data?.title, "viewer แก้ทริปได้ = บทบาทไม่มีผล").not.toBe(`viewer-edit-${stamp}`);
+    });
+
+    it("🔴 ถอดออกจากทริปแล้วต้องมองไม่เห็นทันที — สิทธิ์ตามสมาชิกภาพ ไม่ใช่ให้ครั้งเดียวถาวร", async () => {
+      // คู่กับเคสแรก: ถ้าเห็นตอนเป็นสมาชิกแต่ยังเห็นหลังถูกถอด แปลว่าสิทธิ์ไม่ได้ตามสมาชิกภาพจริง
+      await A.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.c);
+      const { data } = await C.from("trips").select("id").eq("id", tripA);
+      expect(data, "ถูกถอดออกแล้วยังเห็นทริปอยู่").toEqual([]);
+    });
+  });
+
 });
