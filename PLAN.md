@@ -2149,7 +2149,9 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 ### 🔴 ค้างอยู่ตรงนี้เป๊ะ — เมทริกซ์ RLS รันครั้งแรกแล้วแดง *(แก้คำวินิจฉัย 24 ส.ค. — P1 รีวิวซ้ำก่อน push)*
 
 1. **`P-26` migration เขียนแล้ว แต่ 🔴 อย่าเพิ่ง push — P1 เชื่อว่ามันยังไม่พอ (`P-27`)**
-   ไฟล์ `20260824144235_fix_trip_visible_on_create.sql` ย้าย trigger เป็น `BEFORE INSERT` ซึ่งแก้ **ลำดับการทำงาน**
+   🔒 **ย้ายออกจาก `supabase/migrations/` ไปไว้ที่ `supabase-platform/pending-review/` แล้ว** — `db push` มองไม่เห็น
+   (โน้ตที่บอกว่าอย่า push อยู่คนละไฟล์กับคำสั่งที่คนกำลังพิมพ์ · ต้องกันด้วยโครงสร้าง ไม่ใช่ด้วยคำเตือน)
+   ไฟล์ `pending-review/20260824144235_fix_trip_visible_on_create.sql` ย้าย trigger เป็น `BEFORE INSERT` ซึ่งแก้ **ลำดับการทำงาน**
    แต่ที่ทำให้ policy ไม่ผ่านคือ **snapshot มองไม่เห็นแถว** ไม่ใช่แถวยังไม่มี — `app.can_read_trip`/`app.trip_role` เป็น `stable`
    จึงใช้ snapshot ของคำสั่งที่เรียก ซึ่งมองไม่เห็นแถวที่ trigger เพิ่งเขียนในคำสั่งเดียวกัน
    · **คาดว่า push แล้วได้ error เดิมเป๊ะ แถมทิ้ง FK `deferrable` ไว้ถาวรโดยไม่ได้อะไร**
@@ -2185,6 +2187,9 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
       · เจอและแก้ `P-24` (`create schema app` ต้องมาก่อน ADP ไม่งั้นตายที่คำสั่งที่ 2)
       · self-check แยกไฟล์ + เพิ่มหัวข้อ 9 สำหรับ `E1-AC7`
 - [ ] 🔴 **ค้างที่ผู้ใช้ 4 ข้อ** — ยืนยัน Vercel · `supabase link` · GitHub secret 4 ตัว · เปิด auth provider 2 ทาง + บอกอีเมลของ A/B
+- [x] **`D48` ด่านกันรันผิดโปรเจกต์เป็น allowlist แล้ว** — `20260824220618_project_identity_guard.sql`
+      สร้าง `app.project_identity` · `migration-template.sql` เปลี่ยนบล็อกด่านเป็น assert ตารางนี้
+      · ⚠️ **ยังไม่ได้รัน** (token 403) · ทดสอบเท่าที่ทำได้แล้ว: guards.sh เขียวทุกข้อ · 247 เทสต์ผ่าน · lint สะอาด
 - [ ] `E1` รันจริงบน `engine-dev` แล้วผ่าน AC1–AC7 (P4 วัด)
 - [ ] ⚠️ **ยังไม่เคยรัน migration กับ DB ใดๆ** — เครื่องนี้ไม่มี psql ไม่มี docker · `db push` ครั้งแรกคือการรันครั้งแรก
 
