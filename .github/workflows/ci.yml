@@ -21,7 +21,7 @@ permissions:
 jobs:
   # ด่านเร็ว — ล้มใน ~30 วินาทีโดยไม่ต้องรอ npm ci
   guards:
-    name: Guards (AC9 · AC10 · ref)
+    name: Guards (AC9 · AC10 · ref · anchor)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -38,7 +38,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── ด่าน AC10 · ref · link — ตรรกะอยู่ใน .github/guards.sh ────────────────────
+      # ── ด่าน AC10 · ref · link · anchor — ตรรกะอยู่ใน .github/guards.sh ──────────────
       # 🔴 self-test ต้องรัน "ก่อน" ด่านจริงเสมอ
       #    ถ้า guards.sh ถูกแก้จนไม่จับอะไรเลย ผลเขียวของ step ถัดไปจะไม่มีความหมาย
       #    — เราต้องรู้ว่าด่านยังทำงาน ก่อนจะเชื่อว่าด่านบอกว่าไม่มีปัญหา
@@ -46,7 +46,7 @@ jobs:
       - name: guards self-test (พิสูจน์ว่าด่านยังจับของผิดได้)
         run: .github/guards-selftest.sh
 
-      - name: guards (AC10 · ref · link) กับทรีจริง
+      - name: guards (AC10 · ref · link · anchor) กับทรีจริง
         run: .github/guards.sh .
         env:
           DEV_PROJECT_REF: ${{ secrets.DEV_PROJECT_REF }}

@@ -85,4 +85,27 @@ if [ -f "$linkfile" ]; then
   fi
 fi
 
+# ── ลิงก์ภายในเอกสาร `](#หัวข้อ)` ต้องชี้ไปหัวข้อที่มีอยู่จริง ────────────────────
+# 🔴 ความพังชนิด "ไม่มีสัญญาณ": ไม่ error ไม่ fail test ไม่ขึ้น lint · คนกดแล้วไม่ไปไหนก็เลื่อนหาเอง
+#    เจอจริง 24 ส.ค. 2026 — สารบัญ backlog.md ข้อ 2.6 ชี้ผิดตั้งแต่วันที่เขียน (`-` เกินมาตัวเดียว)
+#    ตรรกะอยู่ใน .github/check-anchors.py (เป็น Python ไม่ใช่ bash — เหตุผลอยู่ในหัวไฟล์นั้น)
+ANCHORS="$(cd "$(dirname "$0")" && pwd)/check-anchors.py"
+mds=()
+while IFS= read -r f; do [ -n "$f" ] && mds+=("$f"); done < <(
+  find "$ROOT" -name '*.md' \
+    -not -path '*/node_modules/*' -not -path '*/.next/*' -not -path '*/.git/*' 2>/dev/null | sort
+)
+if [ "${#mds[@]}" -gt 0 ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "🔴 anchor: ไม่มี python3 — ตรวจไม่ได้ ถือว่าไม่ผ่าน (ตรวจไม่ได้ ≠ ปลอดภัย)"
+    fail=1
+  elif [ ! -f "$ANCHORS" ]; then
+    echo "🔴 anchor: หา check-anchors.py ไม่เจอที่ $ANCHORS — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+    fail=1
+  elif ! python3 "$ANCHORS" "${mds[@]}"; then
+    echo "   แก้ที่สารบัญ หรือแก้ที่หัวข้อก็ได้ ขอแค่ให้ตรงกัน"
+    fail=1
+  fi
+fi
+
 exit $fail
