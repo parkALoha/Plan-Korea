@@ -3,41 +3,14 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
-
-/**
- * พากลับไปหน้าที่ตั้งใจจะเข้าเท่านั้น — รับเฉพาะ path ภายในเว็บนี้ (เดิมจาก app/unlock/page.tsx)
- * กัน open redirect: "//evil.com" กับ "https://evil.com" ต้องไม่ผ่าน
- */
-function safeNextPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
-}
+import { signInWithGoogle, sendMagicLink } from "@/lib/auth/signIn";
 
 /**
  * ตรวจรูปแบบอีเมลแบบหยาบฝั่ง client เท่านั้น — ไม่ใช่แหล่งความจริง แค่กันพิมพ์ผิดชัดๆ ก่อนยิง request
- * ความถูกต้องจริงต้องตรวจฝั่งเซิร์ฟเวอร์เสมอ (ที่นี่คือ Supabase Auth เมื่อต่อจริงแล้ว)
+ * ความถูกต้องจริงต้องตรวจฝั่งเซิร์ฟเวอร์เสมอ (Supabase Auth ที่ `lib/auth/signIn.ts`)
  */
 function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-type GoogleResult = { ok: true } | { ok: false; error: string };
-type MagicLinkResult = { ok: true } | { ok: false; error: "send-failed" };
-
-/**
- * 🔴 ฟังก์ชันหลอกชั่วคราว — รอ P1 ส่ง signature จริงจาก `lib/auth/` (E1, กำลังทำ `requireUser()` +
- * server client อยู่) ห้ามเดา API เพิ่มเติมนอกเหนือจากนี้ ตอนต่อจริงแทนที่แค่ 2 ฟังก์ชันนี้
- * ส่วน UI/state ทั้งหมดด้านล่างออกแบบให้ไม่ต้องแก้โครงตอนสลับเข้าของจริง
- */
-async function mockSignInWithGoogle(): Promise<GoogleResult> {
-  await new Promise((r) => setTimeout(r, 500));
-  return { ok: true };
-}
-
-async function mockSendMagicLink(email: string): Promise<MagicLinkResult> {
-  await new Promise((r) => setTimeout(r, 500));
-  void email; // เก็บ signature ให้ตรงของจริง — ยังไม่ได้ต่อ Supabase Auth จึงไม่ได้ใช้ค่าจริง
-  return { ok: true };
 }
 
 /**
@@ -100,15 +73,12 @@ function LoginContent() {
     setGoogleBusy(true);
     setGoogleError(null);
     try {
-      const result = await mockSignInWithGoogle();
-      if (result.ok) {
-        const next = safeNextPath(searchParams.get("next"));
-        // location.assign ไม่ใช่ router.push — ต้องให้เบราว์เซอร์ยิง request ใหม่ทั้งรอบเพื่อให้
-        // proxy/server เห็น session cookie ที่เพิ่งถูกเซ็ต (แบบเดียวกับ app/unlock/page.tsx)
-        window.location.assign(next);
-        return;
+      // ไม่ต้อง window.location.assign เอง — signInWithGoogle() พาเบราว์เซอร์ออกจากหน้าไปที่ Google ตรงๆ
+      // เมื่อสำเร็จ ({ ok: true } แปลว่า "เริ่มเดินทางแล้ว" ไม่ใช่ "ล็อกอินเสร็จแล้ว" — ดู lib/auth/signIn.ts)
+      const result = await signInWithGoogle(searchParams.get("next"));
+      if (!result.ok) {
+        setGoogleError("เข้าสู่ระบบด้วย Google ไม่สำเร็จ — ลองใหม่อีกครั้ง");
       }
-      setGoogleError("เข้าสู่ระบบด้วย Google ไม่สำเร็จ — ลองใหม่อีกครั้ง");
     } catch {
       setGoogleError("เชื่อมต่อไม่ได้ — ลองใหม่อีกครั้ง");
     } finally {
@@ -131,7 +101,7 @@ function LoginContent() {
     setExpiredNoteDismissed(true);
 
     try {
-      const result = await mockSendMagicLink(trimmed);
+      const result = await sendMagicLink(trimmed, searchParams.get("next"));
       if (result.ok) {
         setMagicLinkStatus("sent");
         return;
@@ -188,7 +158,10 @@ function LoginContent() {
 
         {magicLinkStatus === "sent" ? (
           <div role="status" className="rounded-xl bg-panel-pine px-4 py-3 text-center text-sm text-panel-pine-ink">
-            ส่งลิงก์ไปที่ {email.trim()} แล้ว — เปิดอีเมลนั้นเพื่อเข้าใช้งาน
+            {/* ห้ามเขียนว่า "ส่งไปแล้ว" แบบยืนยัน — sendMagicLink() ตอบ { ok: true } เหมือนกันหมด
+                ไม่ว่าอีเมลนั้นจะมีบัญชีอยู่จริงหรือไม่ (ตั้งใจของ Supabase กันไล่เดาสมาชิก)
+                ถ้าเขียนว่า "ส่งแล้ว" คนพิมพ์อีเมลผิดจะรอลิงก์ที่ไม่มีวันมาแล้วคิดว่าเว็บพัง */}
+            ถ้าอีเมล {email.trim()} มีอยู่ในระบบ ลิงก์เข้าสู่ระบบกำลังส่งไปหาคุณ — เปิดอีเมลนั้นเพื่อเข้าใช้งาน
             <button
               type="button"
               onClick={() => {
