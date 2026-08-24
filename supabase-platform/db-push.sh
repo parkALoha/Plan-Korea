@@ -130,5 +130,5 @@ if [ "${1:-}" = "--self-test" ]; then self_test; exit $?; fi
 
 check_args "$@"      # 🔴 ต้องมาก่อน check_target — ไม่มีประโยชน์ที่จะยืนยันปลายทางที่ flag กำลังจะเปลี่ยน
 check_target
-echo "→ supabase db push --workdir supabase-platform ${*}"
+echo "→ supabase db push --workdir supabase-platform ${*:-}"
 exec supabase db push --workdir supabase-platform "$@"
