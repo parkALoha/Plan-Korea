@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { stripTsComments } from "./_helpers";
 
 /**
  * ด่านของ `E3-AC9` / `D38` — **Server Action ไม่ใช่สิทธิ์พิเศษ**
@@ -20,64 +21,6 @@ const ROOT = resolve(__dirname, "..", "..");
 
 /** โซนที่กฎนี้บังคับ — โค้ดที่เสิร์ฟให้ผู้ใช้จริง ไม่รวมเทสต์กับสคริปต์ */
 const SCANNED = ["lib/auth", "app"];
-
-/**
- * ตัดคอมเมนต์ TS ออกก่อน match
- *
- * 🔴 **จำเป็น ไม่ใช่ของแถม** — `lib/auth/server.ts` เขียนคำว่า `SUPABASE_SERVICE_ROLE_KEY`
- * ไว้ในคอมเมนต์เพื่อ**ห้ามใช้มัน** · ด่านที่อ่านทั้งไฟล์จะแดงใส่ไฟล์ที่อธิบายว่าทำไมสิ่งนั้นถึงต้องห้าม
- * แรงกดดันที่ตามมาคือ "ลบคอมเมนต์ทิ้งให้เทสต์เขียว" = **ลบความรู้เพื่อให้ตัวเลขสวย**
- * (บทเรียน `D40` ของ P4 — เจอมาแล้วกับ `rls-policies.sql` และกฎ gitleaks ของ P6)
- *
- * ⚠️ **ข้อจำกัดที่รู้อยู่และจงใจแก้:** `//` ใน `"https://…"` ไม่ใช่คอมเมนต์
- * ตัดแบบไร้เดียงสาจะกินบรรทัดที่เหลือ → **จับของจริงไม่เจอ ซึ่งเป็นทิศที่แย่กว่าจับผิด**
- * จึงต้องเดินทีละตัวอักษรและรู้ว่าตอนนี้อยู่ในสตริงหรือไม่
- */
-function stripTsComments(src: string): string {
-  let out = "";
-  let i = 0;
-  let quote: string | null = null;
-
-  while (i < src.length) {
-    const c = src[i];
-    const next = src[i + 1];
-
-    if (quote) {
-      if (c === "\\") {
-        out += c + (next ?? "");
-        i += 2;
-        continue;
-      }
-      if (c === quote) quote = null;
-      out += c;
-      i++;
-      continue;
-    }
-
-    if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-      out += c;
-      i++;
-      continue;
-    }
-
-    if (c === "/" && next === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
-      continue;
-    }
-
-    if (c === "/" && next === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-
-    out += c;
-    i++;
-  }
-  return out;
-}
 
 /** ตัวจับของจริง — **เคสพิสูจน์ข้างล่างต้องเรียกตัวนี้ ไม่ใช่เขียน regex ซ้ำ** (กฎ E0 ข้อ 5) */
 function violations(src: string): string[] {
