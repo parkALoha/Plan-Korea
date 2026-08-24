@@ -10,24 +10,43 @@
 -- 🔴 ห้ามปล่อยช่อง rollback ว่าง — migration ที่ไม่มีทางถอย แก้ได้ทางเดียวคือเขียน SQL สดหน้างาน
 
 -- ── ด่านกันรันผิดโปรเจกต์ · ต้องเป็นบล็อกแรกเสมอ ก่อน DDL ทุกบรรทัด ──────────
--- ไม่มี ref ไม่มีความลับในบล็อกนี้ · อ้างสิ่งที่มีอยู่ใน schema อยู่แล้ว
 -- ทำงานตอนคนพลาด ไม่ใช่ตอนคนอ่านเอกสารล่วงหน้า · raise exception = rollback ทั้ง transaction
-do $$
+--
+-- 🔴 คัดลอกบล็อกนี้ไป **ทั้งก้อน ไม่ต้องแก้อะไร** — มันถามว่า "ฐานนี้ใช่ engine-dev ไหม"
+--    ไม่ใช่ "ฐานนี้ใช่ฐานที่ห้ามแตะไหม" · ความต่างนี้คือ `D48` ทั้งข้อ
+do $guard$
 begin
-  -- migration แรกสุดของแพลตฟอร์ม: เปลี่ยนเงื่อนไขเป็น "ต้องยังไม่มี trip_meta"
-  -- เพื่อกันไม่ให้รันใส่ DB ทริปโดยพลาด (DB ทริปมี trip_meta อยู่แล้ว)
-  if exists (
+  if not exists (
     select 1 from information_schema.tables
-    where table_schema = 'public' and table_name = 'trip_meta'
+    where table_schema = 'app' and table_name = 'project_identity'
   ) then
-    raise exception 'ผิดโปรเจกต์: ฐานนี้มีตาราง trip_meta = นี่คือ DB ทริปจริง ไม่ใช่ engine-dev';
+    raise exception 'ผิดโปรเจกต์: ไม่มี app.project_identity → ฐานนี้ไม่ใช่ engine-dev ของแพลตฟอร์ม';
   end if;
 
-  -- migration ตัวที่ 2 เป็นต้นไป: เปลี่ยนมา assert ตาราง _project_identity แทน
-  -- (ชัดกว่าและไม่ผูกกับ schema ที่จะเปลี่ยนไปเรื่อยๆ)
-  -- if not exists (select 1 from public._project_identity where name = 'plan-korea-platform') then
-  --   raise exception 'ผิดโปรเจกต์: ฐานนี้ไม่ใช่ engine-dev ของแพลตฟอร์ม';
-  -- end if;
-end $$;
+  if not exists (
+    select 1 from app.project_identity where name = 'plan-korea-platform'
+  ) then
+    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ใช่ของ plan-korea-platform';
+  end if;
+end $guard$;
 
 -- ── DDL ของจริงเริ่มตรงนี้ ────────────────────────────────────────────────────
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ประวัติของบล็อกด่าน — เก็บไว้เพราะ "ทำไมถึงเปลี่ยน" มีค่ากว่า "เปลี่ยนเป็นอะไร"
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ฉบับเดิม (ใช้ถึง `20260824220618_project_identity_guard.sql` เท่านั้น) เป็น **denylist**:
+--
+--   if exists (select 1 from information_schema.tables
+--              where table_schema = 'public' and table_name = 'trip_meta') then
+--     raise exception 'ผิดโปรเจกต์: ฐานนี้มีตาราง trip_meta = นี่คือ DB ทริปจริง';
+--   end if;
+--
+-- มันล้มเฉพาะกับ **ฐานที่คนเขียนด่านนึกออก ณ วันที่เขียน** ซึ่งตอนนั้นมีใบเดียวคือ DB ทริปจริง
+-- 🔴 24 ส.ค. 2026 พบว่า token ที่เครื่องถืออยู่มองเห็น **`a-gleam` ฐาน production ของร้าน** ด้วย
+--    และ `a-gleam` **ไม่มี `trip_meta` → เดินผ่านด่านเดิมได้ทั้งดุ้น** (`D48`)
+--
+-- 📌 และข้อที่ต้องจำให้ได้จริง ๆ: **ทางแก้นี้ถูกเขียนไว้ในไฟล์นี้อยู่แล้วตั้งแต่ `E0` — เป็นคอมเมนต์**
+--    แล้ว migration ตัวที่ 2 ก็คัดลอก*บล็อกที่ทำงานอยู่* ไปแทน ซึ่งเป็นสิ่งที่ถูกต้องที่จะทำ
+--    🔴 **แผนที่ถูกทิ้งไว้เป็นคอมเมนต์ ไม่ใช่แผน** · ถ้ารู้ว่าบล็อกต้องเปลี่ยน ให้เปลี่ยนที่บล็อก
