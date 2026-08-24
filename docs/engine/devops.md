@@ -1276,6 +1276,23 @@ cd /Users/park/plan-korea-platform && SUPABASE_ACCESS_TOKEN=<TOKEN> supabase lin
 > · และถ้าอยากปลอดภัยกว่านั้น **สร้าง OAuth client ในโปรเจกต์ Google Cloud ใหม่ก็ได้** ไม่จำเป็นต้องเป็น
 > `galvanized-pipe-427006-t6` — แค่สะดวกกว่าเพราะมีบัญชีอยู่แล้ว
 
+> ### 🔴 ก่อนแตะอะไรในหน้า dashboard — ยืนยันก่อนว่าอยู่โปรเจกต์ไหน (เพิ่ม 24 ส.ค. 2026)
+> **เกิดขึ้นจริงแล้ววันนี้:** ผู้ใช้เปิดหน้า provider แล้ว **callback URL เป็นของ `ejzibhgqhxdzkovsnpds` = DB ทริปจริง**
+> P8 ทันก่อนกด Save · ช่อง Client ID ยังว่าง **ไม่มีอะไรลง DB ทริป** — แต่ห่างจาก Save แค่คลิกเดียว
+>
+> 🔴 **ทุกด่านที่เรามี (`guards.sh` · CI · บล็อก assert หัว migration) มองไม่เห็นเบราว์เซอร์เลยสักตัว**
+> งานในหน้า dashboard **อยู่นอกทุกด่าน** — ตรงนี้มีแค่ตาคุณ ไม่มีอะไรรับไม้ต่อถ้าพลาด
+>
+> **ตรวจ 1 อย่างก่อนคลิกอะไรก็ตาม:** ดู URL บนแถบที่อยู่ ต้องมี **`pmvxwcimjebogjfimzqy`**
+> ❌ ถ้าเห็น **`ejzibhgqhxdzkovsnpds`** → **นั่นคือ DB ทริป หยุดทันที** สลับโปรเจกต์ที่ project picker มุมซ้ายบนก่อน
+>
+> ⚠️ **ข้อที่ผมยืนยันไม่ได้ (ตามกติกา D3):** ถ้าบัญชีในเบราว์เซอร์**ไม่มีสิทธิ์**ใน `engine-dev`
+> ผมไม่ทราบว่า Supabase จะขึ้น 404 หรือ **เด้งไปโปรเจกต์อื่นที่บัญชีนั้นเข้าได้เงียบๆ** — ผมไม่มีเบราว์เซอร์จะทดสอบ
+> **ถ้าเปิดลิงก์ข้างล่างแล้วไปโผล่โปรเจกต์อื่น ให้ถือว่าเป็นกรณีหลัง** และแก้ที่สิทธิ์บัญชี ไม่ใช่กดต่อ
+>
+> 📌 **บัญชีในเบราว์เซอร์ ≠ บัญชีของ CLI** — คนละกลไก ไม่เกี่ยวกัน · ผลของ `supabase projects list`
+> **ใช้สรุปสิ่งที่เห็นในเบราว์เซอร์ไม่ได้** (P8 เกือบพลาดตรงนี้ 24 ส.ค. 2026)
+
 **(ก) Email / magic link — ง่ายที่สุด ทำก่อน**
 `https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/auth/providers` → **Email**
 → เปิด **Enable Email provider** · เปิด **Enable Email OTP / Magic Link**
@@ -1285,8 +1302,15 @@ cd /Users/park/plan-korea-platform && SUPABASE_ACCESS_TOKEN=<TOKEN> supabase lin
 
 **ขั้น 1 — คัดลอก callback URL จาก Supabase ก่อน**
 หน้า providers เดิม → **Google** → เปิดสวิตช์ → จะเห็นช่อง **Callback URL (for OAuth)**
-→ **คัดลอกค่านั้นไว้** (รูปแบบ `https://pmvxwcimjebogjfimzqy.supabase.co/auth/v1/callback`)
+→ **คัดลอกค่านั้นไว้** — ต้องเป็น `https://pmvxwcimjebogjfimzqy.supabase.co/auth/v1/callback` **เป๊ะ**
 🔴 **ต้องคัดลอกจากหน้าจริง ห้ามพิมพ์เอง** — พิมพ์ผิดตัวเดียว Google จะปฏิเสธด้วย `redirect_uri_mismatch`
+
+> 🔴 **หยุดอ่านตรงนี้ก่อนวางลง Google — callback URL คือเครื่องตรวจว่าคุณอยู่โปรเจกต์ถูกไหม**
+> มันมี ref ของโปรเจกต์อยู่ในตัวมันเอง **จึงบอกความจริงได้แม้คุณจะเชื่อว่าเปิดหน้าถูกแล้ว**
+> · ขึ้นต้นด้วย `https://pmvxwcimjebogjfimzqy.` → ✅ ถูกโปรเจกต์ ไปต่อได้
+> · ขึ้นต้นด้วย `https://ejzibhgqhxdzkovsnpds.` → 🔴 **นี่คือ DB ทริป · หยุด** อย่าวางลง Google อย่ากด Save
+>   สลับโปรเจกต์แล้วคัดลอกใหม่ · **ค่าที่คัดลอกมาแล้วให้ทิ้ง อย่าเอามาใช้ต่อ**
+> **นี่คือจุดที่ตรวจได้ถูกที่สุดในทั้งขั้นตอน** เพราะเป็นค่าที่หน้าเว็บ*บอกคุณเอง* ไม่ใช่ค่าที่คุณเชื่อว่าใช่
 
 **ขั้น 2 — สร้าง OAuth client ใน Google Cloud**
 `https://console.cloud.google.com/apis/credentials` → เลือกโปรเจกต์ → **Create credentials → OAuth client ID**
