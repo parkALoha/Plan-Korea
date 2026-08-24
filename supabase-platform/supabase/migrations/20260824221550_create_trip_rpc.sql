@@ -25,7 +25,8 @@
 --   ② ห้ามรับ `created_by`                            → อ่านจาก `auth.uid()` ข้างในเท่านั้น
 --   ③ ห้ามรับ `id`                                    → ปล่อยให้ `gen_random_uuid()` ของตาราง
 --   ④ `auth.uid() is null` ต้อง raise เอง             → บล็อกแรกของ body
---   ⑤ revoke จาก public แล้ว grant ให้ authenticated  → ท้ายไฟล์ · **ข้อที่ร้ายที่สุดถ้าลืม**
+--   ⑤ revoke จาก **public, anon** แล้ว grant ให้ authenticated → ท้ายไฟล์ · **ข้อที่ร้ายที่สุดถ้าลืม**
+--      🔴 `from public` เฉย ๆ **ไม่พอ** — ดู `P-32` ที่บล็อกนั้น
 --   ⑥ คืนเฉพาะแถวที่เพิ่งสร้าง ห้าม `setof`           → `returns public.trips`
 --
 -- ⚠️ **สิ่งที่ migration นี้ *ไม่* ทำ และตั้งใจไม่ทำ:**
@@ -66,6 +67,13 @@ begin
 end $guard$;
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- 🔴 `P-32` (P4) — ADP ของ **functions** ในสคีมา `public` ยังเป็นค่าเริ่มต้นของ Supabase
+-- ───────────────────────────────────────────────────────────────────────────
+-- `0001` ตั้ง ADP ไว้แล้วจริง **แต่เขียนว่า `on tables`** เท่านั้น — ไม่ได้ครอบ functions
+-- → ฟังก์ชันใหม่ทุกตัวใน `public` ยังได้ `execute` ให้ `anon` **ตามชื่อ** โดยอัตโนมัติ
+-- ต้องมาก่อน `create function` ข้างล่าง ไม่งั้นไม่มีผลกับตัวมันเอง (บทเรียนเดียวกับ `P-18`)
+alter default privileges in schema public revoke all on functions from anon, authenticated;
+
 create function public.create_trip(
   p_title         text,
   p_start_date    date,
@@ -114,9 +122,34 @@ end;
 $$;
 
 -- ⑤ 🔴 ข้อที่ร้ายที่สุดถ้าลืม — ฟังก์ชันนี้ข้าม RLS โดยนิยาม
---    `public` รวม `anon` ด้วย · ปล่อยไว้ = คนไม่ล็อกอินเรียกฟังก์ชันที่ข้าม RLS ได้
---    (④ จะปฏิเสธเขาอยู่ดีเพราะ auth.uid() เป็น null — แต่ **ไม่พึ่งด่านชั้นเดียว**)
-revoke execute on function public.create_trip(text, date, date, text) from public;
+--
+-- 🔴 **`P-32` (P4 · แก้ 24 ส.ค. 2026) — ฉบับแรกเขียน `from public` เฉย ๆ ซึ่ง*ไม่ได้*ปิดรู**
+--   `revoke … from public` ถอนเฉพาะสิทธิ์ที่ให้ผ่าน pseudo-role `PUBLIC`
+--   **ถ้า `anon` ถือสิทธิ์ที่ให้มา "ตามชื่อ" คำสั่งนั้นไม่แตะมันเลย**
+--   และหลักฐานว่า Supabase ให้แบบนั้นอยู่ในไฟล์ `0001` ของเราเอง (คอมเมนต์บรรทัด 21):
+--     `alter default privileges in schema public grant all on tables to anon, authenticated;`
+--     = *"คือการคืนค่าเริ่มต้นของ Supabase"* → **ให้ตามชื่อ ไม่ใช่ผ่าน `PUBLIC`**
+--   · ต่างจาก `app.*` ตรงที่สคีมา `app` ไม่ให้ `usage` กับ `anon` → เอื้อมไม่ถึงอยู่แล้ว
+--     **แต่ `public` ให้ usage กับ `anon`** → เอื้อมถึงเต็มที่
+--
+--   🎯 **ผลคือโค้ดขัดกับคอมเมนต์ที่ตัวเองเขียน** — ผมเขียนว่า *"④ จะปฏิเสธเขาอยู่ดี
+--      แต่ไม่พึ่งด่านชั้นเดียว"* ทั้งที่ชั้นที่สองไม่ได้ทำงาน · **มันพึ่งชั้นเดียวจริง ๆ**
+--
+--   ✅ ใส่ `anon` เข้าไปตรง ๆ · **ถูกทั้งสองกรณี** (`D49` รอบที่สอง):
+--      ไม่เคยมีสิทธิ์ → คำสั่งนี้ไม่ทำอะไร · มีสิทธิ์ → ปิดรู · **ยืนยันกับ DB ไม่ต้องเลย**
+revoke execute on function public.create_trip(text, date, date, text) from public, anon;
 grant  execute on function public.create_trip(text, date, date, text) to authenticated;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- `P-32` ต่อ — `revoke … from public` ของ `0001` เป็นรูปแบบเดียวกันทั้ง 4 บรรทัด
+-- ───────────────────────────────────────────────────────────────────────────
+-- ตอนนี้ปลอดภัยเพราะ `anon` ไม่มี `usage` บนสคีมา `app` — **แต่นั่นคือกันไว้ด้วยชั้นอื่น
+-- ไม่ใช่ด้วย `revoke` ที่เขียนไว้** · วันที่มีใคร grant usage บน `app` ให้ `anon`
+-- (ซึ่งจะดูเหมือนการเปลี่ยนแปลงเล็ก ๆ) **รูเปิดพร้อมกันหมดทุกฟังก์ชันโดยไม่มีสัญญาณ**
+-- 🔴 `0001` รันไปแล้ว แก้ในไฟล์นั้นไม่มีผล — ต้อง revoke ซ้ำที่นี่
+revoke execute on function app.trip_role(uuid)        from public, anon;
+revoke execute on function app.can_read_trip(uuid)    from public, anon;
+revoke execute on function app.shares_trip_with(uuid) from public, anon;
+revoke execute on function app.trip_owner_count(uuid) from public, anon;
 
 commit;
