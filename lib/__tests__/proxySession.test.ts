@@ -17,7 +17,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const REFRESHED = "sb-refreshed-marker";
 const refreshSession = vi.fn();
 
-vi.mock("@/lib/auth/proxySession", () => ({ refreshSession }));
+// ⚠️ mock **เฉพาะ `refreshSession`** และปล่อย export อื่นเป็นของจริง
+// 🔴 ฉบับแรกเขียน `() => ({ refreshSession })` = แทนที่ทั้งโมดูล → `withSessionCookies` หายไป
+//    วันที่ `proxy.ts` เริ่ม import มันจึงพังทันที · **mock ที่แทนทั้งโมดูลจะกลืน export ใหม่ทุกตัว
+//    ที่ใครเพิ่มเข้ามาทีหลัง** และข้อความ error ไม่ได้ชี้ไปที่ mock เลยถ้าไม่รู้ว่าต้องมองตรงนี้
+vi.mock("@/lib/auth/proxySession", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/proxySession")>()),
+  refreshSession,
+}));
 
 const { proxy } = await import("@/proxy");
 const { NextRequest, NextResponse } = await import("next/server");
@@ -71,6 +78,29 @@ describe("proxy ต้องคืน response ที่ถือคุกกี
     });
     const res = await proxy(req);
     expect(res.cookies.get(REFRESHED)?.value).toBe("1");
+  });
+
+  // ── S5 (P4 พบ) — ทางออกที่ **บล็อก** ก็ต้องไม่ทิ้งคุกกี้ที่หมุนไปแล้ว ────────────
+  // `refreshSession()` รันไปก่อนถึงด่านเสมอ → token เก่าถูกใช้ไปแล้วไม่ว่าจะออกทางไหน
+  // ทิ้ง Set-Cookie = ไคลเอนต์ถือ token เก่าที่อาจถูกเพิกถอนแล้ว = แย่ที่สุดของสองทาง
+  describe("🔴 S5 — ทางออกที่บล็อกผู้ใช้ ต้องเก็บคุกกี้ที่ต่ออายุไว้ด้วย", () => {
+    beforeEach(() => {
+      process.env.TRIP_PIN = "1234";
+      process.env.TRIP_PIN_SECRET = "secret-for-test";
+    });
+
+    it("/api/* ที่ถูกบล็อก 401 — คุกกี้ต้องรอด และ status ต้องยังเป็น 401", async () => {
+      const res = await proxy(request("/api/place-details"));
+      expect(res.status, "การเก็บคุกกี้ต้องไม่เปลี่ยนสถานะการบล็อก").toBe(401);
+      expect(res.cookies.get(REFRESHED)?.value, "คุกกี้ที่หมุนแล้วถูกทิ้ง").toBe("1");
+    });
+
+    it("หน้าเว็บที่ถูกเด้งไป /unlock — คุกกี้ต้องรอด และยังต้องเด้งเหมือนเดิม", async () => {
+      const res = await proxy(request("/today"));
+      expect(res.status).toBe(307);
+      expect(new URL(res.headers.get("location") ?? "").pathname).toBe("/unlock");
+      expect(res.cookies.get(REFRESHED)?.value, "คุกกี้ที่หมุนแล้วถูกทิ้ง").toBe("1");
+    });
   });
 
   it("ต่ออายุ session **ก่อน** ด่าน PIN ตัดจบ — เส้นที่ถูกบล็อกก็ยังต้องเรียก", async () => {

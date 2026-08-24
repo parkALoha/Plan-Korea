@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { PIN_COOKIE, expectedPinToken, pinTokenMatches } from "@/lib/pinAuth";
-import { refreshSession } from "@/lib/auth/proxySession";
+import { refreshSession, withSessionCookies } from "@/lib/auth/proxySession";
 
 /**
  * ด่าน PIN ของทั้งเว็บ (เฟส 13.5)
@@ -64,15 +64,20 @@ export async function proxy(req: NextRequest) {
 
   // API ตอบ 401 เป็น JSON ไม่ redirect — ฝั่ง client เป็น fetch/`<img>` การ redirect ไปหน้า HTML
   // จะทำให้ได้ response ที่ parse ไม่ออกแทนที่จะรู้ชัดๆ ว่าโดนล็อกอยู่
+  // 🔴 S5: ถูกบล็อกไม่ได้แปลว่าทิ้งคุกกี้ที่หมุนไปแล้ว — `refreshSession()` รันไปก่อนแล้ว
+  //    ถ้าไม่ก็อปมา ไคลเอนต์จะถือ token เก่าที่อาจถูกเพิกถอนแล้ว (เหตุผลเต็มใน proxySession.ts)
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "locked" }, { status: 401 });
+    return withSessionCookies(
+      session.response,
+      NextResponse.json({ error: "locked" }, { status: 401 }),
+    );
   }
 
   const url = req.nextUrl.clone();
   url.pathname = "/unlock";
   // จำหน้าที่ตั้งใจจะเข้าไว้ เพื่อพากลับไปหลังปลดล็อก (เช่นเปิดลิงก์ /today มาตรงๆ)
   url.searchParams.set("next", pathname + req.nextUrl.search);
-  return NextResponse.redirect(url);
+  return withSessionCookies(session.response, NextResponse.redirect(url));
 }
 
 export const config = {
