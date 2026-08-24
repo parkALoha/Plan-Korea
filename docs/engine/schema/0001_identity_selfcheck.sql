@@ -27,13 +27,34 @@ select c.relname as table_without_policy
    and not exists (select 1 from pg_policy p where p.polrelid = c.oid);
 
 -- 7.2 ต้องได้ 0 แถว — policy ที่เปิดโล่ง (บั๊ก B2 ของเว็บเดิม)
+--
 -- 🔴 P-20: ฉบับแรกใช้ `and` → policy ที่ using(true) แต่ with check เข้ม **หลุดเช็ค**
 --    ทั้งที่ครึ่งอ่านเปิดโล่ง · ต้องเป็น `or` จับได้ทั้งกรณีที่ครึ่งใดครึ่งหนึ่งเป็น true
+--
+-- 🔴 P-25 (P8 พบตอนรันจริงบน engine-dev 24 ส.ค. 2026) — **ฉบับ `or` คืน 7 แถวจาก 10 policy
+--    ทั้งที่ไม่มีตัวไหนเปิดโล่งเลยสักตัว**
+--    `coalesce(pg_get_expr(...), 'true')` อ่าน **"clause ที่คำสั่งนั้นไม่มีตามไวยากรณ์"**
+--    ว่าเป็น **"เปิดโล่ง"** · SELECT ไม่มี `with check` · INSERT ไม่มี `using` · DELETE ไม่มี `with check`
+--    → **ทุก policy ที่มี clause เดียวโดยธรรมชาติถูกจับหมด** (7 ตัวพอดี · อีก 3 คือ `*_update` ที่มีครบสอง)
+--    ทางแก้: gate ด้วย `polcmd` — ตรวจ `using` เฉพาะ r/w/d/* · ตรวจ `with check` เฉพาะ a/w/*
+--    ✅ พิสูจน์แล้วด้วยการรันฉบับแก้บน engine-dev จริง: **Success. No rows returned**
+--
+-- 🎯 **ทำไมข้อนี้ด่วนกว่าที่ตัวเลขทำให้รู้สึก (P8 ชี้ · ผมยกเป็นเหตุผลหลัก):**
+--    **เช็คที่แดงตลอดเวลา = เช็คที่ถูกมองข้ามถาวร** · วันที่มันแดงเพราะ `using (true)` ของจริง
+--    จะไม่มีใครแยกออกจากเสียงรบกวนเดิมได้
+--    ⚠️ และมันจะแย่ลงเองที่ E2: `E2-AC1` คือ 13 ตาราง × 4 verb → policy clause เดียวจะมีหลายสิบตัว
+--    → 7.2 จะรายงานเลขสองหลักทุกครั้งจนถูกอ่านว่า "ปกติของมัน" **พอดีกับเฟสที่ E2-AC2 ต้องการให้เป็นศูนย์**
+--
+-- ⚠️ **สิ่งที่ยังไม่มีใครพิสูจน์ และจดไว้แทนที่จะปล่อยให้เข้าใจว่าครอบแล้ว:**
+--    หัวข้อ 8 พิสูจน์ว่าเช็คใน 7.x **คืนแถวได้จริง** = กัน false negative
+--    **แต่ไม่มีข้อไหนพิสูจน์ว่าเช็คไม่คืนแถวที่ไม่ควรคืน = ไม่มีใครกัน false positive เลย**
+--    `P-25` คือ false positive ที่ **รอดผ่านหัวข้อ 8 มาได้ ทั้งที่หัวข้อ 8 ออกแบบมาตรวจตัวเช็คโดยเฉพาะ**
+--    · false negative = เช็คไม่ฟ้อง (เสียข้อเดียว) · **false positive = คนเลิกฟัง (เสียทั้งชุด)**
 select polrelid::regclass as tbl, polname, polcmd
   from pg_policy
  where polrelid in ('public.profiles'::regclass,'public.trips'::regclass,'public.trip_members'::regclass)
-   and ( coalesce(pg_get_expr(polqual, polrelid), 'true') = 'true'
-      or coalesce(pg_get_expr(polwithcheck, polrelid), 'true') = 'true' );
+   and ( (polcmd in ('r','w','d','*') and coalesce(pg_get_expr(polqual, polrelid), 'true') = 'true')
+      or (polcmd in ('a','w','*')     and coalesce(pg_get_expr(polwithcheck, polrelid), 'true') = 'true') );
 
 -- 7.3 ต้องได้ 0 แถว — สิทธิ์ที่หลุดไปถึงคนไม่ล็อกอิน
 -- 🔴 P4 (c): ฉบับแรกเช็คแค่ grantee='anon' → **grant ให้ PUBLIC ไม่โผล่** ทั้งที่ให้ผลถึง anon เหมือนกัน
