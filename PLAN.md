@@ -1913,6 +1913,37 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 > ทริปเหลืออีก ~2 เดือนจึงไม่กระทบ · ถ้าจะย้ายต้องใส่ `mapId` เพิ่ม ซึ่งเปลี่ยนสไตล์แผนที่ทั้งใบ **ไม่คุ้มตอนนี้**
 >
 > ### 🔴 ค้างอยู่ตอนนี้ (13 ส.ค. 2026)
+>
+> **🔴🔴 A. แผนที่พังบน production — ต้องปิดก่อนบิน (18 ส.ค. 2026)**
+> อาการ: เข้าเว็บได้ปกติ **แต่พอเลื่อนลงจนกล่องแผนที่เข้าจอ ทั้งหน้าดับเป็น "This page couldn't load"**
+> · console: **`Google Maps JavaScript API error: InvalidKeyMapError`** แล้วตามด้วย
+>   `Cannot read properties of undefined (reading 'getAt')` + `IntersectionObserver: parameter 1 is not of type 'Element'`
+>   — **สองตัวหลังเป็นผลตามมา ไม่ใช่สาเหตุ**
+> · เลื่อนแล้วถึงพัง เพราะ `DayMapPanel` mount ต่อเมื่อ IntersectionObserver เห็นกล่องเข้าจอ (`DayStopsSection.tsx:578`)
+>
+> **สาเหตุที่สงสัย (ยังไม่ยืนยัน):** `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` บน Vercel ขึ้นว่า **Updated ~3h ago**
+> ค่านี้ **ฝังตอน build ไม่ได้อ่านตอนใช้งาน** → เปลี่ยนแล้วเว็บยังใช้ของเดิมจนกว่าจะ build ใหม่
+> 🔴 **redeploy รอบหมุน PIN (18 ส.ค.) คือตัวที่ทำให้ค่าใหม่เริ่มมีผล — ไม่ได้ทำให้คีย์เสีย แค่ทำให้คีย์ที่เสียอยู่แล้วโผล่**
+>
+> **ขั้นตอนแยกสาเหตุ (ยังไม่ได้ทำ):** DevTools → Network → filter `maps` → เลื่อนให้พัง → ดู URL `js?key=`
+> · `key=` **ว่าง** → env ไม่ถูกฝังตอน build → ตั้งใหม่บน Vercel + redeploy
+> · `key=AIza…` **มีค่า** → Google ปฏิเสธ → คีย์ถูกลบ/ปิด/ใส่ข้อจำกัดผิดใน Google Cloud
+>
+> ⚠️ **ห้ามแก้ด้วยการใส่ Application restrictions กับใบ *เซิร์ฟเวอร์* (`GOOGLE_MAPS_API_KEY`)** — ดูข้อ 4 ด้านล่าง
+>    ใบเบราว์เซอร์ (`NEXT_PUBLIC_…EMBED_KEY`) ต่างหากที่ควรมี Websites restriction
+>    (`http://localhost:3000/*` + `https://korea-trip-plan-one.vercel.app/*` · จำกัดเหลือ Maps Embed + Maps JavaScript)
+>
+> 🟡 **ทางกลบชั่วคราวถ้าจำเป็น:** Vercel → Deployments → `99a2ff4` (14 ส.ค.) → **Instant Rollback**
+>    build นั้นฝังคีย์ใบเก่าที่ยังดี · **PIN ใหม่ยังใช้ได้เพราะอ่านตอนใช้งาน ไม่ได้ฝังตอน build**
+>    ⚠️ **เป็นการกลบ ไม่ใช่แก้** — deploy ครั้งถัดไปจะพังอีก
+>
+> 🔴 **ต้องปิดก่อน 11 ต.ค. และต้องยืนยันด้วยการเลื่อนดูจริงบนมือถือ** — สคริปต์ตรวจไม่ได้
+>    (IntersectionObserver ไม่ trigger จาก `scrollIntoView()` · บันทึกไว้แล้วในข้อ 4 ขั้น 3)
+>
+> **บทเรียนที่ต้องติดอยู่กับข้อนี้:** ตอนหมุน PIN ผู้ใช้ตรวจว่า **PIN เก่าใช้ไม่ได้** แล้วถือว่าจบ
+> **ไม่มีใครตรวจว่า PIN ใหม่ใช้ได้ และไม่มีใครเปิดเว็บดูหลัง redeploy**
+> 🔴 **redeploy เปลี่ยนทุกอย่างที่ฝังตอน build ไม่ใช่แค่ค่าที่เราตั้งใจเปลี่ยน** — ครั้งหน้าต้องเปิดเว็บเลื่อนดูจริงทุกครั้งหลัง redeploy
+
 
 > **-1 / 0. ~~รัน migration `0027` / `0029` / `0030`~~ — ✅ รันครบแล้วทั้งหมด ลบรายการทิ้ง (13 ส.ค. 2026)**
 > P4 ไล่ curl ทีละตัวไปที่ `ejzibhgqhxdzkovsnpds` แล้วยืนยันว่า **`0019`-`0031` ลงครบ ไม่มี SQL ค้างสักตัว**
