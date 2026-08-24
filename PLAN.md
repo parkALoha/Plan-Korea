@@ -2122,6 +2122,33 @@ dev server แก้ DNS `places.googleapis.com` ไม่ได้ (`ENOTFOUND`
 - [x] `docs/engine/architecture.md` (P1) · [x] ส่งบรีฟเข้าครบ 7 เซสชัน
 - [x] เอกสารกลับมาครบทั้ง 8 บทบาท (~1 MB · ข้อตัดสิน `D1`–`D43`)
 
+### 🔴 สถานะสด ณ สิ้นวัน 24 ส.ค. 2026 — อ่านข้อนี้ก่อนถ้าเพิ่งกลับมา
+
+**อยู่ที่ `E1` Identity ~75%** · `E0` จบแล้ว · `E2`–`E9` ยังไม่เริ่ม (ยกเว้น `E2-AC6` ที่ทำล่วงหน้าแล้ว)
+
+**ผ่านแล้ววันนี้:**
+- ✅ `db push` สำเร็จ — สคีมา identity อยู่บน `engine-dev` จริง
+- ✅ **`E1-AC1` ผ่าน** — ล็อกอิน Google ได้จริง · session รอดข้ามการโหลดหน้า (ยืนยันในเบราว์เซอร์ที่ `/account`)
+- ✅ self-check 14/14 · ผู้ใช้ตั้ง `.env.local` ของทรี `platform` แล้ว (ชี้ `engine-dev`)
+- ✅ `E2-AC6` แมป 111 คอลัมน์ครบ → [`docs/engine/column-map.md`](docs/engine/column-map.md)
+
+**🔴 ค้างอยู่ตรงนี้เป๊ะ — เมทริกซ์ RLS รันครั้งแรกแล้วแดง:**
+1. **`P-26` เจอสาเหตุแล้ว** — `insert … returning` ถูกปฏิเสธเพราะ trigger `trips_bootstrap_owner`
+   เป็น `AFTER INSERT` จึงทำงานหลัง `returning` ประเมิน · migration แก้เขียนแล้ว
+   (`20260824144235_fix_trip_visible_on_create.sql`) **แต่ยังไม่ `db push` — รอ P4 ตรวจ**
+2. **`service_role` ไม่มีสิทธิ์ DML บนทั้ง 3 ตาราง** — P1 ลืม grant · **จงใจยังไม่แก้**
+   เพื่อไม่ให้เปลี่ยน 2 อย่างพร้อมกันแล้วแยกไม่ออกว่าอะไรแก้อะไร · เมทริกซ์จะยังตายที่ `afterAll`
+3. **`E1-AC7` ยังวัดไม่ได้** — ต้องออกจากระบบแล้วเข้าใหม่ด้วย magic link อีเมลเดิม
+   แล้วเทียบ `user id` · **ค่าอ้างอิง `b56d0964-d160-4442-add7-a5a94348f137`** (ดูที่ `/account`)
+4. **`E1-AC6` ถอด PIN — ยังไม่เริ่ม** เหลือ 4 ไฟล์ · P4 รอเมทริกซ์เขียวก่อนตามลำดับที่ล็อกไว้
+
+**🔴 ของที่ผู้ใช้ต้องทำ:**
+- **push ยังไม่ได้ทำ** — `platform` ค้าง 52 commit · `main` ค้าง 6 (มีการแก้ open redirect ที่ `/unlock` ซึ่ง**ยังไม่มีผลบน production จนกว่าจะ push**)
+- 🔑 **หมุนความลับ 4 อย่างที่หลุดเข้าแชท/ภาพหน้าจอวันนี้:** Supabase access token · รหัส DB `engine-dev` · Google client secret · **service role key** (ตัวหลังหลุดทางภาพหน้าจอ และแตะโปรเจกต์ mu-phone ได้ด้วย)
+- ลบ OAuth client ที่เผลอสร้างในโปรเจกต์ Google Cloud ของร้าน `A GLEAM` (⚠️ ห้ามแตะ Maps key · ห้ามทำช่วง 11–21 ต.ค.)
+
+---
+
 **ระยะสร้าง — บน branch `platform` ที่ `/Users/park/plan-korea-platform`**
 - [x] **`E0` ตั้งราง** — CI 3 job · `.github/guards.sh` + self-test · `supabase-platform/` workdir · `migration-template.sql`
 - [x] Supabase CLI 2.114.0 ลงเครื่องแล้ว · `supabase init` แล้ว
