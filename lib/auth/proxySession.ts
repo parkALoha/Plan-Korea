@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { User } from "@supabase/supabase-js";
+import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
 
 /**
  * ต่ออายุ session ที่ชั้น proxy — เจ้าของ: P1-Lead (E1)
@@ -38,6 +39,9 @@ export async function refreshSession(request: NextRequest): Promise<ProxySession
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(url, key, {
+    // 🔴 S1 (P4 พบ · P1 ยืนยันด้วยการรัน) — ขาดบรรทัดนี้แล้ว `createServerClient` **โยนทันที**
+    //    บน Node 20 และเนื่องจากฟังก์ชันนี้อยู่บรรทัดแรกของ `proxy()` ผลคือ **ทั้งเว็บ 500 ทุกเส้น**
+    realtime: { transport: NO_REALTIME_TRANSPORT },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (list) => {

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
 
 /**
  * ชั้น auth ฝั่งเซิร์ฟเวอร์ของแพลตฟอร์ม (E1) — เจ้าของ: P1-Lead
@@ -40,6 +41,8 @@ export async function createServerSupabase(): Promise<SupabaseClient> {
     requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
     requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
+      // 🔴 S1 — เหตุผลเต็มอยู่ใน `lib/auth/noRealtime.ts` · ขาดบรรทัดนี้แล้วโยนบน Node 20
+      realtime: { transport: NO_REALTIME_TRANSPORT },
       cookies: {
         getAll: () => cookieStore.getAll(),
         setAll: (list) => {
