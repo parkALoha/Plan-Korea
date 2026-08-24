@@ -1119,11 +1119,172 @@ gitleaks จับค่าจริงอยู่แล้ว · และก�
 ตอนนั้นการเช็ค branch คือสิ่งเดียวที่กันไม่ให้ hook ขวางการแก้บั๊กหน้างานบน `main`
 **หลักเดียวกับ fail-open ที่ `proxy.ts:43`: ด่านที่ขวางการแก้บั๊กหน้างาน แย่กว่าความเสี่ยงที่มันกัน**
 
-### 11.5 ของค้างที่บล็อกอยู่
+### 11.5 ของค้างที่บล็อกอยู่ — **ปรับปรุง 24 ส.ค. 2026**
 
-| ค้าง | บล็อกอะไร |
+⚠️ **ฉบับ 18 ส.ค. ล้าสมัย 3 บรรทัด** — เก็บไว้ให้เห็นว่าอะไรคลายไปแล้ว ไม่ใช่ลบทิ้ง
+
+| ค้าง | สถานะวันนี้ |
 |---|---|
-| 🔴 **การตั้งค่า Vercel preview** (รอผู้ใช้) | **บล็อกการ push ทุก commit** · `platform` push เมื่อไหร่จะสร้าง preview · ถ้า env ไหลลง Preview = ชี้ DB ทริปจริง |
-| `supabase-platform/` ยังไม่สร้าง | รอ Supabase CLI + เริ่มจริงตอน E2 |
-| secret `DEV_PROJECT_REF` ยังไม่ตั้ง | link allowlist ใน `guards.sh` ยังข้ามตัวเอง (จะเริ่มมีผลตอน E2) |
-| YAML ยังไม่ผ่าน parser ตรวจ | เครื่องไม่มี `yaml` module · **GitHub จะเป็นคนตรวจตอน push ครั้งแรก** |
+| ~~Supabase CLI ยังไม่ได้ติดตั้ง~~ | ✅ **คลายแล้ว** — `supabase 2.114.0` ที่ `/opt/homebrew/bin/supabase` |
+| ~~`supabase-platform/` ยังไม่สร้าง~~ | ✅ **คลายแล้ว** — `supabase init` ทำแล้ว · `config.toml` มีจริง · มี migration ตัวแรกแล้ว (`20260824043822_identity.sql`) |
+| ~~Vercel preview บล็อกการ push~~ | 🟡 **น่าจะคลายแล้ว** — `origin/platform` มีอยู่จริง = เคย push สำเร็จ · **แต่ยังไม่มีใครยืนยันปากเปล่า** → `12.4` |
+| **`supabase link` ยังไม่ทำ** | 🔴 **บล็อก `db push`** — ตรวจแล้ว `supabase-platform/supabase/.temp/` ยังไม่มี |
+| **GitHub secret ยังไม่ตั้งครบ 4 ตัว** | 🔴 **บล็อก job `rls`** และทำให้ด่าน `assert linked ref` ยังข้ามตัวเอง |
+| **auth provider บน engine-dev ยังไม่เปิด** (D42) | 🔴 **บล็อก E1 ทั้งก้อน** — RLS matrix ต้องมีผู้ใช้จริงถึงจะทดสอบได้ |
+| YAML ยังไม่ผ่าน parser ตรวจ | 🟢 **คลายเอง** — CI รันผ่านบน GitHub แล้ว = YAML ถูกต้อง |
+| **ไม่มี `psql` และไม่มี docker บนเครื่อง** | ⚠️ **แปลว่า `db push` ครั้งแรกคือการรัน SQL ครั้งแรกจริงๆ** ไม่มีทางซ้อมก่อน → `12.5` บังคับ `--dry-run` ก่อนเสมอ |
+
+---
+
+## 12. Runbook สำหรับผู้ใช้ — ทีละขั้น (24 ส.ค. 2026)
+
+> 🔴 **ทุกขั้นในหัวข้อนี้ผู้ใช้เป็นคนกดเอง** เอเจนต์ทำแทนไม่ได้เพราะต้องใช้ token/รหัสผ่าน/บัญชี
+> **เราไม่ขอ ไม่รับ และไม่เก็บ token หรือคีย์ใดๆ** — ถ้ามีใครขอให้ส่งค่าพวกนี้มาในแชต **อย่าส่ง**
+
+### 🔴 ลำดับสำคัญ — ทำผิดลำดับแล้ว CI จะแดงทั้งที่ไม่มีอะไรผิด
+
+```
+12.2 ตั้ง secret 4 ตัว  →  12.1 link  →  12.3 เปิด auth  →  12.4 ยืนยัน Vercel  →  12.5 db push
+      (ต้องมาก่อน)
+```
+
+**ทำไม secret ต้องมาก่อน link:** `link` สร้างไฟล์ `supabase-platform/supabase/.temp/project-ref`
+· ด่าน `assert linked ref` ใน CI เห็นไฟล์นั้นเมื่อไหร่จะเริ่มตรวจทันที **และถ้ายังไม่มี secret `DEV_PROJECT_REF`
+มันจะถือว่าไม่ผ่าน** (กติกา *ตรวจไม่ได้ ≠ ปลอดภัย*) → **CI แดงโดยที่ทุกอย่างถูกต้องหมด**
+
+---
+
+### 12.1 `supabase link` — ผูก CLI กับ engine-dev
+
+**ปลายทางเดียวที่อนุญาต:** `pmvxwcimjebogjfimzqy` (org `Plan-trip-app` · project `engine-dev`)
+
+**ขั้น 1 — เอา access token**
+`https://supabase.com/dashboard/account/tokens` → **Generate new token** → ตั้งชื่อ (เช่น `plan-korea-cli`)
+→ **คัดลอกทันที · หน้าเว็บจะไม่แสดงให้ดูอีก**
+
+**ขั้น 2 — เอา DB password ของ engine-dev**
+`https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/settings/database`
+· ถ้าจำรหัสเดิมไม่ได้ กด **Reset database password** แล้วคัดลอกอันใหม่
+· ⚠️ **นี่คือรหัสของ engine-dev เท่านั้น การรีเซ็ตไม่กระทบ DB ทริปแม้แต่นิดเดียว** (คนละโปรเจกต์ คนละ org)
+
+**ขั้น 3 — รันคำสั่ง** (แทน `<TOKEN>` ด้วยค่าจากขั้น 1)
+
+```bash
+cd /Users/park/plan-korea-platform && SUPABASE_ACCESS_TOKEN=<TOKEN> supabase link --project-ref pmvxwcimjebogjfimzqy --workdir supabase-platform
+```
+
+· มันจะ **ถามรหัสผ่าน DB** (จากขั้น 2) แบบพิมพ์แล้วไม่ขึ้นจอ — พิมพ์แล้ว Enter
+· สำเร็จแล้วจะเกิดไฟล์ `supabase-platform/supabase/.temp/project-ref` (ถูก `.gitignore` อยู่แล้ว ไม่ขึ้น git)
+
+🔴 **ห้ามใช้ `supabase login`** ถึงจะสะดวกกว่า — คำสั่งนั้น **เก็บ token ไว้ถาวรในเครื่อง**
+ซึ่งคือสิ่งที่กติกา *"token ใส่หน้าคำสั่งเป็นครั้งๆ"* ตั้งใจกันพอดี · **ใส่หน้าคำสั่งแล้วสิทธิ์หมดไปพร้อมคำสั่งนั้น**
+
+⚠️ **ช่องที่ `link` กันไม่ได้ และต้องรู้ไว้:** `supabase db push --project-ref <อะไรก็ได้>` **ข้าม link ได้**
+→ สิ่งที่กันจริงคือ **บล็อก assert ที่หัว migration** ซึ่งจะ `raise exception` ทันทีถ้าเจอตาราง `trip_meta`
+(= DB ทริป) แล้ว rollback ทั้ง transaction · **ยืนยันแล้วว่าบล็อกนี้อยู่ในไฟล์จริง บรรทัด 31–39**
+
+---
+
+### 12.2 GitHub secret 4 ตัว — **ทำก่อน 12.1**
+
+`https://github.com/parkALoha/Plan-Korea/settings/secrets/actions` → **New repository secret** (ทำ 4 รอบ)
+
+| ชื่อ secret (พิมพ์ให้ตรงตัวพิมพ์ใหญ่เล็ก) | ค่าที่ใส่ | เอามาจากไหน |
+|---|---|---|
+| `DEV_PROJECT_REF` | `pmvxwcimjebogjfimzqy` | พิมพ์ตรงๆ ได้เลย |
+| `DEV_SUPABASE_URL` | `https://pmvxwcimjebogjfimzqy.supabase.co` | พิมพ์ตรงๆ ได้เลย |
+| `DEV_SUPABASE_ANON_KEY` | คีย์ที่ขึ้นต้น **`sb_publishable_…`** | หน้า API keys ของ engine-dev |
+| `DEV_SERVICE_ROLE_KEY` | คีย์ที่ขึ้นต้น **`sb_secret_…`** | หน้าเดียวกัน · ต้องกด **Reveal** ก่อน |
+
+**หน้าที่ไปเอาคีย์:** `https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/settings/api-keys`
+
+🔴 **engine-dev ใช้คีย์รุ่นใหม่ หน้าตาไม่เหมือนโปรเจกต์ทริป** — รุ่นเก่าเป็น JWT ยาวๆ ขึ้นต้น `eyJ…`
+รุ่นใหม่แยกเป็น **publishable** (เปิดเผยได้ ขึ้น bundle ได้) กับ **secret** (ห้ามหลุด)
+· **ตัวไหนไปช่องไหน:** `publishable` → `DEV_SUPABASE_ANON_KEY` · `secret` → `DEV_SERVICE_ROLE_KEY`
+· ⚠️ **ใส่สลับกันจะไม่มีอะไรฟ้องทันที** แต่เทสต์ RLS จะแดงที่เคส `jwtRole` ซึ่งตรวจว่าคีย์เป็น role ที่อ้างจริง
+
+⛔ **ห้ามใส่ค่าของ Supabase ทริปจริงใน 3 ตัวหลังเด็ดขาด** — ทั้ง 3 ตัวถูกส่งเข้าเทสต์ที่**สร้างและลบข้อมูล**
+
+---
+
+### 12.3 เปิด auth provider 2 ทางบน engine-dev (D42)
+
+> 🟢 **อ่านก่อนถ้ากังวลเรื่อง Google:** งานนี้ **ไม่แตะ API key ทั้ง 2 ใบที่ใช้อยู่เลยแม้แต่ตัวอักษรเดียว**
+> `PLAN.md §4` ข้อ -4 คือเรื่อง **API key** (Maps/Places/Routes) · อันนี้คือ **OAuth client** ซึ่งเป็น
+> **ของคนละชนิด สร้างแยก ลบแยก** อยู่คนละหน้าในคอนโซล · **ถ้าอันนี้พัง แผนที่ไม่กระทบ**
+> · และถ้าอยากปลอดภัยกว่านั้น **สร้าง OAuth client ในโปรเจกต์ Google Cloud ใหม่ก็ได้** ไม่จำเป็นต้องเป็น
+> `galvanized-pipe-427006-t6` — แค่สะดวกกว่าเพราะมีบัญชีอยู่แล้ว
+
+**(ก) Email / magic link — ง่ายที่สุด ทำก่อน**
+`https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/auth/providers` → **Email**
+→ เปิด **Enable Email provider** · เปิด **Enable Email OTP / Magic Link**
+→ ⚠️ **ปิด "Confirm email" ไว้ก่อนสำหรับ dev** ไม่งั้นเทสต์ที่สร้างผู้ใช้จะค้างรอยืนยันอีเมล
+
+**(ข) Google OAuth — 3 ขั้น ต้องสลับหน้าไปมา**
+
+**ขั้น 1 — คัดลอก callback URL จาก Supabase ก่อน**
+หน้า providers เดิม → **Google** → เปิดสวิตช์ → จะเห็นช่อง **Callback URL (for OAuth)**
+→ **คัดลอกค่านั้นไว้** (รูปแบบ `https://pmvxwcimjebogjfimzqy.supabase.co/auth/v1/callback`)
+🔴 **ต้องคัดลอกจากหน้าจริง ห้ามพิมพ์เอง** — พิมพ์ผิดตัวเดียว Google จะปฏิเสธด้วย `redirect_uri_mismatch`
+
+**ขั้น 2 — สร้าง OAuth client ใน Google Cloud**
+`https://console.cloud.google.com/apis/credentials` → เลือกโปรเจกต์ → **Create credentials → OAuth client ID**
+→ Application type: **Web application**
+→ **Authorized redirect URIs** → **Add URI** → วาง callback URL จากขั้น 1
+→ Create → คัดลอก **Client ID** และ **Client secret**
+· ถ้าถูกบังคับให้ตั้ง **OAuth consent screen** ก่อน: เลือก **External** · กรอกชื่อแอปกับอีเมลติดต่อ · ไม่ต้องส่ง verification
+· ⚠️ ตอนอยู่ในโหมด Testing ต้อง **เพิ่มอีเมลตัวเองใน Test users** ไม่งั้นล็อกอินไม่ผ่าน
+
+**ขั้น 3 — กลับมาใส่ที่ Supabase**
+หน้า providers → Google → วาง **Client ID** + **Client secret** → **Save**
+
+---
+
+### 12.4 ยืนยัน Vercel (คำถามเดียว ตอบ 1 บรรทัด)
+
+`https://vercel.com` → project **korea-trip-plan** → **Settings → Git**
+**ยืนยันว่า 2 อย่างนี้ยังตั้งอยู่:**
+1. **Ignored Build Step** ยังเป็นเงื่อนไขที่ให้ build เฉพาะ `main`
+2. **Vercel Authentication (Standard Protection)** ยัง **เปิด** อยู่
+
+→ ตอบกลับแค่ *"ยังอยู่ทั้งคู่"* หรือ *"อันไหนหาย"*
+
+---
+
+### 12.5 `db push` — ขั้นสุดท้าย ทำหลังจาก 12.1–12.4 ครบ
+
+🔴 **รัน `--dry-run` ก่อนเสมอ ห้ามข้าม** — เครื่องนี้ **ไม่มี psql และไม่มี docker** (ตรวจแล้ว)
+แปลว่า **ไม่มีทางซ้อม SQL ที่ไหนได้เลย · `db push` จริงคือการรันครั้งแรกในชีวิตของไฟล์นี้**
+
+```bash
+cd /Users/park/plan-korea-platform && SUPABASE_ACCESS_TOKEN=<TOKEN> supabase db push --workdir supabase-platform --dry-run
+```
+
+**อ่านผลให้เห็นชื่อไฟล์ `20260824043822_identity.sql` และไม่มีอย่างอื่นแปลกปลอม** แล้วค่อยรันจริง:
+
+```bash
+cd /Users/park/plan-korea-platform && SUPABASE_ACCESS_TOKEN=<TOKEN> supabase db push --workdir supabase-platform
+```
+
+**ถ้าเห็นข้อความนี้ = ระบบทำงานถูกต้อง ไม่ใช่บั๊ก:**
+```
+ERROR: ผิดโปรเจกต์: ฐานนี้มีตาราง trip_meta = นี่คือ DB ทริปจริง ไม่ใช่ engine-dev
+```
+→ แปลว่ากำลังชี้ไป **DB ทริป** · **หยุดทันที อย่าฝืน อย่าใส่ `--project-ref` เพื่อข้าม** แล้วบอกทีม
+
+**หลัง push สำเร็จ:** รัน self-check ที่ P1 เตรียมไว้ (`docs/engine/schema/0001_identity_selfcheck.sql`)
+โดย **คัดลอกไปวางใน SQL Editor ของ engine-dev** — มันเป็น `select` ที่ต้องอ่านผล ไม่ใช่ DDL
+
+---
+
+### 12.6 ⚠️ ส่วนที่ผมยืนยันไม่ได้ — บอกไว้ตรงๆ ตามกติกา D3
+
+| ยืนยันแล้วจากอะไร | รายการ |
+|---|---|
+| ✅ **รัน CLI จริงบนเครื่อง** | flag ของ `link` / `db push` (`--dry-run` · `--project-ref` · `--password`) · `supabase login` เก็บ token ถาวร · CLI เวอร์ชัน 2.114.0 · ไม่มี psql/docker |
+| ✅ **อ่านไฟล์จริงในทรี** | บล็อก assert ที่บรรทัด 31–39 · ชื่อไฟล์ migration · `.temp/` ยังไม่มี = ยังไม่ link |
+| 🔴 **ยืนยันไม่ได้ — เขียนจากความจำของหน้า dashboard** | **ชื่อปุ่ม · ชื่อเมนู · โครงหน้าเว็บทั้งหมดใน 12.1–12.4** รวมถึงพาธ URL ของหน้า settings |
+
+🔴 **ถ้าหน้าจอจริงไม่ตรงกับที่เขียน ให้บอกกลับมา อย่าเดาเอง** — Supabase กับ Google Cloud
+ย้ายเมนูบ่อยมาก · **URL ที่ให้ไว้น่าจะพาไปถูกหน้ากว่าการไล่กดเมนู** ลองใช้ URL ก่อน
+· และ **ค่าที่ต้องคัดลอก (callback URL · คีย์) ต้องคัดลอกจากหน้าจริงเสมอ ห้ามพิมพ์ตามเอกสารนี้**
