@@ -85,6 +85,23 @@ describe("app/auth/callback — แลก code เป็น session แล้ว
       expect(location).not.toContain("08x");
     });
 
+    // S3 (P4) — ฉบับแรกส่ง `?error=` ต่อไปดิบ ๆ · ความปลอดภัยไปแขวนอยู่กับ whitelist
+    // ในไฟล์ของ P2 ที่ไม่มีอะไรผูกไว้กับไฟล์นี้เลย
+    it("🔴 รหัสข้อผิดพลาดที่ไม่รู้จัก ต้องกลายเป็น unknown ไม่ใช่ส่งต่อดิบ ๆ", async () => {
+      const injected = "<img src=x onerror=alert(1)>";
+      const location = await callbackLocation("?error=" + encodeURIComponent(injected));
+      expect(location).toContain("error=unknown");
+      expect(location).not.toContain("onerror");
+      expect(location).not.toContain("alert");
+    });
+
+    it("รหัสที่รู้จักต้องผ่านไปเหมือนเดิม — ไม่ใช่กรองจนไม่เหลืออะไร", async () => {
+      // 🔴 เคสด้านบวกคู่กับข้อบน · ถ้าไม่มี ตัวกรองที่ทิ้งทุกอย่างจะเขียวหมด
+      for (const code of ["otp_expired", "link_expired", "access_denied"]) {
+        expect(await callbackLocation(`?error_code=${code}`)).toContain(`error=${code}`);
+      }
+    });
+
     it("next ที่เป็นอันตราย ต้องถูกล้างแม้ในเส้นทางที่ล้มเหลว", async () => {
       const location = await callbackLocation(
         "?error_code=otp_expired&next=" + encodeURIComponent("//evil.example"),

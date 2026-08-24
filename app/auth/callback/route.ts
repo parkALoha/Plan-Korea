@@ -19,9 +19,18 @@ import { safeNextPath } from "@/lib/auth/nextPath";
  * โดเมนที่จะเด้งกลับไป
  *
  * ⚠️ บน Vercel `request.url` เป็น host ภายใน ไม่ใช่โดเมนที่ผู้ใช้เห็น → ต้องอ่าน `x-forwarded-host`
- * 🔴 **แต่ header นี้ผู้เรียกปลอมได้** จึงใช้ได้เฉพาะตอนอยู่หลัง proxy ที่เราไว้ใจจริง
- * ที่นี่ปลอดภัยเพราะ **ปลายทางถูกบังคับให้เป็น path ภายในด้วย `safeNextPath` อยู่แล้ว**
- * — host ที่ปลอมมาจะได้แค่พาผู้ใช้ไป path ภายในบนโดเมนนั้น ไม่ใช่เอา session ไปที่อื่น
+ *
+ * 🔴 **เหตุผลที่ปลอดภัย — แก้ 24 ส.ค. 2026 ตามที่ P4 (`S2`) ชี้ว่าฉบับแรกให้เหตุผลผิด:**
+ * ฉบับแรกเขียนว่า *"ปลอดภัยเพราะ `safeNextPath` บังคับให้เป็น path ภายใน"* — **ไม่จริง**
+ * `safeNextPath` คุม **path** · `x-forwarded-host` คือ **host** · คนละตัวกันคนละชั้น
+ * ปลอม header สำเร็จเมื่อไหร่ ปลายทางคือ `https://evil.example/<path ภายในที่ถูกต้องทุกประการ>`
+ * → **การบังคับ path ไม่ได้กันอะไรเลยในทิศนี้**
+ *
+ * เหตุผลจริงที่ทำให้ยังรับได้วันนี้ มี 2 ข้อ และทั้งคู่**เป็นเงื่อนไขของสภาพแวดล้อม ไม่ใช่ของโค้ดนี้**:
+ *   ① เบราว์เซอร์ของเหยื่อ **ตั้ง `x-forwarded-host` ข้ามโดเมนเองไม่ได้** — คนยิงได้แค่ redirect ตัวเอง
+ *   ② Vercel **เขียนทับ header นี้เองที่ขอบเครือข่าย** ค่าที่ปลอมมาจึงไปไม่ถึงโค้ดนี้
+ * 🔴 **ข้อ ② หายไปทันทีถ้าย้ายออกจาก Vercel** — วันนั้นต้องมี allowlist ของ host ที่ยอมรับ
+ * **อย่าอ่านย่อหน้านี้ว่า "กันไว้แล้ว" — มันแปลว่า "ยังไม่โดนเพราะสภาพแวดล้อม"**
  */
 function originOf(request: NextRequest): string {
   const url = new URL(request.url);
@@ -29,6 +38,32 @@ function originOf(request: NextRequest): string {
   if (!forwardedHost) return url.origin;
   const proto = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
   return `${proto}://${forwardedHost}`;
+}
+
+/**
+ * รหัสข้อผิดพลาดที่ยอมให้ส่งต่อไปที่ `/login` — ค่าที่ไม่รู้จักกลายเป็น `"unknown"`
+ *
+ * 🔴 **S3 (P4 ชี้ 24 ส.ค. 2026):** ฉบับแรกส่ง `?error=` ต่อไปดิบ ๆ · ใครยิง `?error=<อะไรก็ได้>`
+ * ก็ได้ค่านั้นไปโผล่ที่ URL ของหน้า `/login`
+ * ที่ไม่ระเบิดคือ `app/login/page.tsx` **เทียบกับ whitelist ของมันเองก่อนใช้** — ไม่ได้เอาไป render
+ *
+ * 🎯 **แปลว่าความปลอดภัยของไฟล์นี้ ไปแขวนอยู่กับบรรทัดในไฟล์ของคนอื่น ที่ไม่มีอะไรผูกไว้กับกันเลย**
+ * วันที่ P2 เปลี่ยนเป็น `แสดงข้อผิดพลาด: {errorCode}` ซึ่งเป็นสิ่งที่ทำกันปกติ **ช่องเปิดทันที**
+ * และคอมเมนต์ฝั่งนี้จะยังอ่านว่ากันไว้แล้ว — **`D46` ที่ผมอ้างเองใน `nextPath.ts` เป๊ะ**
+ * → กรองที่นี่ด้วย **ค่าที่ออกจากไฟล์นี้จึงมีจำนวนจำกัดและรู้ล่วงหน้าทั้งหมด**
+ */
+const KNOWN_ERROR_CODES = new Set([
+  "otp_expired", // magic link หมดอายุ — เคสที่พบบ่อยที่สุด
+  "link_expired",
+  "access_denied", // ผู้ใช้กด "ไม่อนุญาต" ที่หน้า Google
+  "server_error",
+  "missing_code",
+  "exchange_failed",
+]);
+
+function knownErrorCode(raw: string | null): string | null {
+  if (!raw) return null;
+  return KNOWN_ERROR_CODES.has(raw) ? raw : "unknown";
 }
 
 function backToLogin(request: NextRequest, params: Record<string, string>): NextResponse {
@@ -45,7 +80,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   //    (`error=access_denied&error_code=otp_expired`) · ส่งต่อให้ `/login` แสดงข้อความที่ P2 เตรียมไว้
   //    🔴 ส่งต่อเฉพาะ **รหัส** ไม่ส่ง `error_description` เพราะมันเป็นข้อความอิสระจากภายนอก
   //       ที่จะไปโผล่บนหน้าเว็บเรา — ไม่มีเหตุผลให้ปลายทางเขียนข้อความบนหน้าจอผู้ใช้ของเรา
-  const errorCode = searchParams.get("error_code") ?? searchParams.get("error");
+  const errorCode = knownErrorCode(searchParams.get("error_code") ?? searchParams.get("error"));
   if (errorCode) {
     return backToLogin(request, { error: errorCode, next });
   }
