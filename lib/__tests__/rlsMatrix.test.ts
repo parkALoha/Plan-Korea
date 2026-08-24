@@ -894,4 +894,62 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 กิ่งที่เหลือของ trips_insert · trips_update · profiles_* ", () => {
+    /**
+     * ปิดรายการ `D60` ให้ครบทุก policy ของ `E1`
+     *
+     * 🔴 **ข้อแรกเป็นช่องที่ผมสร้างขึ้นเองตอนย้าย `mk()` ไปใช้ RPC (`dc386ec`)**
+     * ก่อนหน้านั้น `mk()` ยิง `insert` ตรง ทุกรอบของ `beforeAll` จึงเดินผ่าน `trips_insert` เสมอ
+     * · พอย้ายไป RPC (ซึ่งเป็น `security definer` = **ข้าม RLS**) **ไม่มีอะไรเดินผ่าน policy นั้นอีกเลย**
+     * → เคสด้านลบเดียวที่เหลือคือ anon (`E1-AC4`) ซึ่งถูกกันด้วย **grant** ไม่ใช่ policy
+     * ⚠️ **การย้ายไปทางที่ปลอดภัยกว่า ทำให้ด่านเก่าหลุดออกจากการทดสอบโดยไม่มีใครสังเกต** —
+     *   ชนิดเดียวกับที่ `D60` มีไว้จับ แค่มาจากทางที่เราเป็นคนทำเอง
+     */
+    it("🔴 ด้านลบ: A สร้างทริปในนามคนอื่นไม่ได้ (trips_insert · กิ่งนี้ไม่มีใครเดินตั้งแต่ย้ายไป RPC)", async () => {
+      const { error } = await A.from("trips").insert({
+        created_by: ids.b,
+        title: `forged-${stamp}`,
+        start_date: "2026-10-11",
+        end_date: "2026-10-21",
+      });
+      expect(error?.code, `A สร้างทริปในนาม B ได้: ${error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("ด้านบวก: A สร้างทริปในนามตัวเองด้วย insert ตรงได้ (ไม่มี .select() จึงไม่ชน P-26)", async () => {
+      // `.select()` ต่างหากที่ล้ม ไม่ใช่ `insert` — เคสนี้ตรึงความต่างนั้นไว้
+      const { error } = await A.from("trips").insert({
+        created_by: ids.a,
+        title: `direct-${stamp}`,
+        start_date: "2026-10-11",
+        end_date: "2026-10-21",
+      });
+      expect(error, "insert ตรงในนามตัวเองถูกปฏิเสธ = trips_insert เข้มเกินไป").toBeNull();
+    });
+
+    it("🔴 editor แก้ทริปไม่ได้ — บทบาทกลางที่ไม่มีเคสไหนในไฟล์นี้เคยแตะ", async () => {
+      // ⚠️ เคสนี้**ตรึงพฤติกรรมวันนี้** (`trips_update` = owner เท่านั้น) ไม่ใช่รับรองว่าถูก
+      //    ถ้า E2 ตัดสินว่า editor ควรแก้ทริปได้ **ให้แก้เคสนี้อย่างตั้งใจ ไม่ใช่ลบทิ้งให้ผ่าน**
+      //    📌 วันนี้ `editor` กับ `viewer` มีสิทธิ์เท่ากันทุกประการใน E1 — ดูรายงาน P-46
+      await A.from("trip_members").insert({ trip_id: tripA, user_id: ids.c, role: "editor" });
+      await C.from("trips").update({ title: `editor-edit-${stamp}` }).eq("id", tripA);
+      const { data } = await A.from("trips").select("title").eq("id", tripA).single();
+      expect(data?.title, "editor แก้ทริปได้ ทั้งที่ policy เขียนว่า owner เท่านั้น").not.toBe(
+        `editor-edit-${stamp}`,
+      );
+      await A.from("trip_members").delete().eq("trip_id", tripA).eq("user_id", ids.c);
+    });
+
+    it("🔴 A แก้โปรไฟล์คนอื่นไม่ได้ (profiles_update · เดิมทดสอบแต่แก้ของตัวเอง)", async () => {
+      await A.from("profiles").update({ display_name: `hijack-${stamp}` }).eq("id", ids.b);
+      const { data } = await B.from("profiles").select("display_name").eq("id", ids.b).single();
+      expect(data?.display_name, "A แก้โปรไฟล์ B ได้").not.toBe(`hijack-${stamp}`);
+    });
+
+    it("🔴 A สร้างแถว profiles ให้คนอื่นไม่ได้ (profiles_insert · ไม่มีเคสเลยทั้งสองทิศ)", async () => {
+      const { error } = await A.from("profiles").insert({ id: ids.b, display_name: `fake-${stamp}` });
+      expect(error, "A แทรกแถว profiles ของ B ได้").not.toBeNull();
+    });
+  });
+
 });
