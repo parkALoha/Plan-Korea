@@ -1,22 +1,43 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- E1 — Identity + แกนสิทธิ์ขั้นต่ำ
+-- E1 — Identity + แกนสิทธิ์ขั้นต่ำ  ·  เจ้าของ: P1-Lead  ·  24 ส.ค. 2026
 -- ═══════════════════════════════════════════════════════════════════════════
+-- ที่มา: docs/engine/schema/0001_identity.sql (แบบ · แหล่งความจริงของการออกแบบ)
+--        ไฟล์นี้คือ "ของที่รันจริง" · ต่างจากแบบ 3 อย่างและตั้งใจทั้งสามข้อ:
+--          ① เพิ่มบล็อก assert ปลายทางไว้ใต้ begin; ก่อน DDL ทุกบรรทัด
+--          ② ตัดหัวข้อ 7–8 (self-check) ออก → ย้ายไป 0001_identity_selfcheck.sql
+--             เพราะมันเป็น SELECT ที่ต้อง "อ่านผล" ไม่ใช่ DDL ที่ push แล้วจบ
+--          ③ เติมบล็อก rollback ด้านล่างตาม supabase-platform/migration-template.sql
 --
--- 🔴 รันบน engine-dev เท่านั้น: https://supabase.com/dashboard/project/pmvxwcimjebogjfimzqy/sql/new
---    ห้ามรันบน ejzibhgqhxdzkovsnpds (DB ทริปจริง) ทุกกรณี — กติกาเหล็กข้อ 2
+-- 🔴 ปลายทางเดียวที่อนุญาต: engine-dev (org Plan-trip-app)
+--    รันด้วย: supabase db push --workdir supabase-platform
 --
--- เกณฑ์ที่ไฟล์นี้ต้องผ่าน (backlog E1):
---   AC2  มี profiles · trips · trip_members และ RLS อ้าง auth.uid() จริง
---   AC3  C ยิง GET /rest/v1/trips ด้วย JWT ตัวเอง ต้องได้ []
---   AC4  D (ไม่มี JWT) ยิงทั้ง 3 ตาราง ต้องได้ 401 หรือ []
---
--- ⚠️ ขอบเขตของไฟล์นี้ — เขียนไว้เพราะ D29 ชนิดที่ 3 (เหตุผลที่แคบกว่าที่ข้อความบอก):
---   ครอบ:     สิทธิ์ระดับแถวของ 3 ตารางนี้เท่านั้น
---   ไม่ครอบ:  ตารางทริปเดิม 14 ตัว (E2) · Storage (E2) · แคช (E3) · การย้ายข้อมูลจริง (E7)
---   ไฟล์นี้ตอบว่า "ใครอ่าน/เขียนแถวไหนได้" ไม่ได้ตอบว่า "ข้อมูลเดิมย้ายมายังไง"
+-- ── rollback ──────────────────────────────────────────────────────────────
+--   drop trigger if exists on_auth_user_created on auth.users;
+--   drop table if exists public.trip_members;
+--   drop table if exists public.trips;
+--   drop table if exists public.profiles;
+--   drop schema if exists app cascade;
+--   -- ⚠️ ข้อนี้ "ไม่" อยู่ในการถอยอัตโนมัติ และตั้งใจไม่ใส่:
+--   --    alter default privileges in schema public grant all on tables to anon, authenticated;
+--   --    คือการคืนค่าเริ่มต้นของ Supabase ซึ่ง "เปิดโล่งให้ anon กับตารางใหม่ทุกตัว"
+--   --    = เปิดรูที่ migration นี้ตั้งใจปิด · รันข้อนี้ต่อเมื่อจะทิ้งโปรเจกต์ทั้งใบเท่านั้น
 -- ═══════════════════════════════════════════════════════════════════════════
 
 begin;
+
+-- ── ด่านกันรันผิดโปรเจกต์ · ต้องเป็นบล็อกแรกเสมอ ก่อน DDL ทุกบรรทัด ──────────
+-- ไม่มี ref ไม่มีความลับในบล็อกนี้ · อ้างสิ่งที่มีอยู่ใน schema อยู่แล้ว
+-- ทำงานตอนคนพลาด ไม่ใช่ตอนคนอ่านเอกสารล่วงหน้า · raise exception = rollback ทั้ง transaction
+do $guard$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'trip_meta'
+  ) then
+    raise exception 'ผิดโปรเจกต์: ฐานนี้มีตาราง trip_meta = นี่คือ DB ทริปจริง ไม่ใช่ engine-dev';
+  end if;
+end $guard$;
+
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 🔴 P-18 (P4): ต้องอยู่**บนสุด** ก่อน create table ทุกตัว
@@ -404,119 +425,3 @@ create trigger trips_touch    before update on public.trips
   for each row execute function app.touch_updated_at();
 
 commit;
-
--- ═══════════════════════════════════════════════════════════════════════════
--- 7. self-check — รันหลัง commit แล้วต้องได้ผลตามที่เขียนไว้
--- ═══════════════════════════════════════════════════════════════════════════
-
--- ⚠️ ชุดนี้ P4 ตรวจแล้วและชี้ช่อง 5 จุด — แก้ครบทั้ง 5 · ที่มาอยู่ในคอมเมนต์แต่ละข้อ
--- 🔴 หลักที่ใช้: เช็คที่ยืนยันว่า "ไม่มีของผิด" เชื่อไม่ได้ ถ้าไม่มีเช็คที่ยืนยันว่า "ของที่ต้องมี มีอยู่"
-
--- 7.1 ต้องได้ 0 แถว — ตารางที่เปิด RLS แต่ไม่มี policy สักตัว
-select c.relname as table_without_policy
-  from pg_class c
-  join pg_namespace n on n.oid = c.relnamespace
- where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
-   and not exists (select 1 from pg_policy p where p.polrelid = c.oid);
-
--- 7.2 ต้องได้ 0 แถว — policy ที่เปิดโล่ง (บั๊ก B2 ของเว็บเดิม)
--- 🔴 P-20: ฉบับแรกใช้ `and` → policy ที่ using(true) แต่ with check เข้ม **หลุดเช็ค**
---    ทั้งที่ครึ่งอ่านเปิดโล่ง · ต้องเป็น `or` จับได้ทั้งกรณีที่ครึ่งใดครึ่งหนึ่งเป็น true
-select polrelid::regclass as tbl, polname, polcmd
-  from pg_policy
- where polrelid in ('public.profiles'::regclass,'public.trips'::regclass,'public.trip_members'::regclass)
-   and ( coalesce(pg_get_expr(polqual, polrelid), 'true') = 'true'
-      or coalesce(pg_get_expr(polwithcheck, polrelid), 'true') = 'true' );
-
--- 7.3 ต้องได้ 0 แถว — สิทธิ์ที่หลุดไปถึงคนไม่ล็อกอิน
--- 🔴 P4 (c): ฉบับแรกเช็คแค่ grantee='anon' → **grant ให้ PUBLIC ไม่โผล่** ทั้งที่ให้ผลถึง anon เหมือนกัน
-select table_name, grantee, privilege_type
-  from information_schema.role_table_grants
- where grantee in ('anon','PUBLIC') and table_schema = 'public'
-   and table_name in ('profiles','trips','trip_members');
-
--- 7.4 🔴 ต้องได้ 0 แถว — **ตารางที่มี policy แต่ลืม grant ให้ authenticated**
--- P4 (a) เรียกข้อนี้ว่าช่องที่แพงที่สุด และเหตุผลคือ:
---   `alter default privileges ... revoke` ที่เพิ่มเข้ามา ทำให้ "ลืม grant" กลายเป็น
---   **ค่าเริ่มต้นของทุกตารางใหม่ใน E2** ไม่ใช่อุบัติเหตุ
---   7.1 จับ "RLS เปิดแต่ไม่มี policy" · **ไม่จับ "มี policy แต่ลืม grant"** ซึ่งอาการคือแอปพังเงียบ
--- 🎯 ถ้าไม่มีข้อนี้ คนที่เจอ permission denied คนแรกคือผู้ใช้ ไม่ใช่ CI
-select c.relname as has_policy_but_no_grant
-  from pg_class c
-  join pg_namespace n on n.oid = c.relnamespace
- where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
-   and exists (select 1 from pg_policy p where p.polrelid = c.oid)
-   and not exists (
-     select 1 from information_schema.role_table_grants g
-      where g.table_schema = 'public' and g.table_name = c.relname
-        and g.grantee = 'authenticated');
-
--- 7.5 ต้องได้ 0 แถว — `force row level security` ที่ไหนก็ตาม
--- P4 (d): ถ้ามีใครเปิดบน trip_members **กลไก definer พังทั้งชุด**
---         และ error จะโผล่ตอน runtime ไม่ใช่ตอน migrate
-select c.relname as forced_rls
-  from pg_class c join pg_namespace n on n.oid = c.relnamespace
- where n.nspname = 'public' and c.relforcerowsecurity;
-
--- 7.6 ต้องได้ 0 แถว — definer ที่ไม่ได้ตรึง search_path
--- P4 (e): ฟังก์ชันใหม่ใน E2 ที่ลืมตั้ง = ช่องยกระดับสิทธิ์ · ตรวจจาก pg_proc.proconfig ได้ตรงๆ
-select p.proname as definer_without_search_path
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'app' and p.prosecdef
-   and not exists (
-     select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%');
-
--- 7.7 🔴 ต้องได้ 1 แถว — trigger ที่กัน P-13 (ทริปกำพร้าตอนสร้าง)
-select tgname from pg_trigger
- where tgrelid = 'public.trips'::regclass and tgname = 'trips_bootstrap_owner';
-
--- 7.8 🔴 ต้องได้ 1 แถว — trigger ที่กัน P-19 (ทริปกำพร้าตอน owner ออกพร้อมกัน)
-select tgname from pg_trigger
- where tgrelid = 'public.trip_members'::regclass and tgname = 'trip_members_keep_owner';
-
--- 7.10 🔴🔴 ต้องได้ 0 แถว — **เขียน policy ครบ แต่ลืมเปิด RLS**
--- P-22 (P4): 7.1 จับ "RLS เปิด ไม่มี policy" · 7.4 จับ "RLS เปิด มี policy ไม่มี grant"
--- **ไม่มีข้อไหนจับรูตรงกลาง: RLS *ปิด* แต่มี policy**
---   → policy นอนอยู่เฉยๆ ไม่ทำงานสักตัว · grant มีครบ → **ตารางเปิดโล่งให้ทุกคนที่ล็อกอิน**
---   → และ 7.2 ก็ไม่จับ เพราะ policy ไม่ได้เป็น `true` — มันแค่ไม่เคยถูกเรียกใช้
--- 🔴 คือ B2 ของเว็บเดิมกลับมาในรูปใหม่ · **มีทุกอย่างยกเว้นสวิตช์** ซึ่งเป็น config ที่อันตรายที่สุดเท่าที่เป็นได้
-select c.relname as policies_but_rls_off
-  from pg_class c join pg_namespace n on n.oid = c.relnamespace
- where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
-   and exists (select 1 from pg_policy p where p.polrelid = c.oid);
-
--- 7.9 ต้อง > 0 — E1-AC2 วัดว่ามี auth.uid() จริงในนโยบาย
-select count(*) as policies_using_auth_uid
-  from pg_policy
- where pg_get_expr(polqual, polrelid) like '%auth.uid%'
-    or pg_get_expr(polwithcheck, polrelid) like '%auth.uid%';
-
--- ═══════════════════════════════════════════════════════════════════════════
--- 8. 🔴 พิสูจน์ว่าชุดเช็คข้างบน "คืนแถวได้จริง" — P-21 (P4)
--- ═══════════════════════════════════════════════════════════════════════════
--- ทุกข้อใน 7.x เป็น "ต้องได้ 0 แถว" · **และไม่มีข้อไหนพิสูจน์ว่าตัวมันเองไม่ได้พังเงียบ**
--- query ที่เขียนผิดจนไม่ match อะไรเลย → 0 แถว → อ่านว่าผ่าน
--- 🎯 นี่คือหลักที่เขียนกำกับหัวข้อ 7 ไว้เอง **แต่ยังไม่ได้ใช้กับตัวชุดเช็คเอง**
---    (และเป็นหลักเดียวกับเคสด้านบวกของ P4 กับ P6 — คนละงาน วันเดียวกัน)
-
--- 8.1 ต้องได้ 3 — ถ้าได้ 0 แปลว่า filter ของ 7.4 พัง ไม่ใช่ว่า grant ครบ
-select count(*) as tables_with_authenticated_grant
-  from (select distinct table_name
-          from information_schema.role_table_grants
-         where table_schema = 'public' and grantee = 'authenticated'
-           and table_name in ('profiles','trips','trip_members')) t;
-
--- 8.2 ต้องเท่ากับจำนวน definer ทั้งหมดใน app — ถ้าได้ 0 แปลว่าสมมติฐานรูปแบบ proconfig ผิด
---     ซึ่งจะทำให้ 7.6 เงียบตลอดกาล
-select
-  count(*) filter (where exists (
-    select 1 from unnest(coalesce(p.proconfig,'{}')) cfg where cfg like 'search_path=%')) as with_search_path,
-  count(*) as definers_total
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'app' and p.prosecdef;
-
--- 8.3 ต้องได้แถว — พิสูจน์ว่า view + filter ของ 7.3 ทำงาน (service_role ต้องมีสิทธิ์อยู่แล้ว)
-select count(*) as service_role_grants
-  from information_schema.role_table_grants
- where grantee = 'service_role' and table_schema = 'public'
-   and table_name in ('profiles','trips','trip_members');
