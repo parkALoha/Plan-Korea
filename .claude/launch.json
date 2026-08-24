@@ -4,7 +4,10 @@
     {
       "name": "korea-trip-plan-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
     },
@@ -12,13 +15,41 @@
       "comment": "โปรเจ็ค MU Phone อยู่คนละโฟลเดอร์ (/Users/park/mu-phone) — ใส่ไว้ตรงนี้เพื่อให้ preview เปิดได้ตอน session ยืนอยู่ที่ plan-korea",
       "name": "mu-phone-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/park/mu-phone", "run", "dev", "--", "-p", "3200"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/park/mu-phone",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3200"
+      ],
       "port": 3200
+    },
+    {
+      "comment": "branch platform อยู่ใน git worktree แยกที่ /Users/park/plan-korea-platform — ทุกเซสชันมี cwd เป็น /Users/park/plan-korea จึงต้องใส่ --prefix ไม่งั้น preview จะไปสตาร์ทเว็บทริปในทรีหลักแทน ซึ่งดูเหมือนทำงานถูกทุกอย่าง (TEAM.md ข้อ 3) · พอร์ตแยกด้วยเพื่อให้เปิดพร้อมทรีหลักได้และรู้ทันทีว่ากำลังดูทรีไหน",
+      "name": "platform-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/park/plan-korea-platform",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3300"
+      ],
+      "port": 3300
     },
     {
       "name": "korea-trip-plan-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3101"],
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3101"
+      ],
       "port": 3101
     }
   ]
