@@ -232,17 +232,53 @@ describe("E1-AC2 — migration ต้องอ้าง identity จริง", 
 });
 
 describe("ความครบของ matrix — ตรวจตัวรายการ ไม่ใช่ตัวระบบ", () => {
+  /**
+   * 🔴 **`D61` — บล็อกนี้เคยรับรองความครบ โดยตัวมันเองมีจุดบอดเดียวกับที่มันควรจับ**
+   *
+   * ฉบับเดิมมี persona 4 ตัว: `A_owner` · `B_other_trip` · `C_no_trip` · `D_anon`
+   * **ทั้ง 4 ตัวคือ "เจ้าของ" หรือ "คนนอก" — ไม่มีตัวไหนเป็น *สมาชิกที่ไม่ใช่เจ้าของ* เลย**
+   * ซึ่งเป็นสถานะที่ผู้ใช้จริงส่วนใหญ่ของแพลตฟอร์มจะอยู่ · **แขกไม่ใช่คนนอก**
+   * → มันจึงประกาศว่า "ครอบ 48 ช่อง" ครบถ้วน **ในขณะที่กิ่งครึ่งหนึ่งของ policy ไม่มีใครเดินไปถึง**
+   *
+   * ⚠️ และเคสเดิม `expect(3 * 4 * 4).toBe(48)` **เป็นการคูณเลขให้ตัวเองดู** — จริงเสมอ
+   * ไม่ว่าเมทริกซ์จะทดสอบอะไรหรือไม่ทดสอบอะไร · **เขียวที่แปลว่า "ไม่ได้ตรวจ" ในรูปที่บริสุทธิ์ที่สุด**
+   */
   const TABLES = ["profiles", "trips", "trip_members"] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
-  const PERSONAS = ["A_owner", "B_other_trip", "C_no_trip", "D_anon"] as const;
+  const PERSONAS = [
+    "A_owner",
+    "B_other_trip",
+    "C_no_trip",
+    "D_anon",
+    // 🔴 เพิ่ม 24 ส.ค. 2026 (D61) — สองตัวนี้คือช่องว่างที่ทำให้ 13 กิ่งไม่มีเคส
+    "C_member_viewer",
+    "C_member_editor",
+  ] as const;
 
-  it("ครอบ 3 ตาราง × 4 verb × 4 persona = 48 ช่อง", () => {
-    expect(TABLES.length * VERBS.length * PERSONAS.length).toBe(48);
+  it("🔴 ต้องมี persona ที่เป็นสมาชิกแต่ไม่ใช่เจ้าของ — ไม่งั้นเมทริกซ์รู้จักคิดแต่เรื่องคนนอก", () => {
+    const insiders = PERSONAS.filter((p) => p.includes("member"));
+    expect(
+      insiders.length,
+      "ไม่มี persona ที่อยู่ในทริปแต่ไม่ควรมีอำนาจ = กิ่ง 'สมาชิกที่ไม่ใช่ owner' ของทุก policy ว่าง",
+    ).toBeGreaterThan(0);
   });
 
-  it("มี persona ที่ไม่ได้ล็อกอิน และ persona ที่ล็อกอินแต่ไม่มีทริป — คนละเคสกัน", () => {
+  it("แยก persona ที่ไม่ได้ล็อกอิน ออกจาก persona ที่ล็อกอินแต่ไม่มีทริป", () => {
     expect(PERSONAS).toContain("D_anon");
     expect(PERSONAS).toContain("C_no_trip");
+  });
+
+  it("🔴 จำนวน policy ต้องตรงกับที่เมทริกซ์นี้เคยไล่กิ่งไว้ — เพิ่ม policy ต้องมาทบทวนที่นี่", () => {
+    // 🎯 `P-48`: รายการกิ่งหมดอายุทุกครั้งที่มีคนเปลี่ยนทางที่โค้ดเดิน
+    //    เอกสารบังคับตัวเองไม่ได้ · เลขที่ตรึงไว้บังคับได้
+    //    ⚠️ ขึ้นเลขนี้ได้ **หลังไล่กิ่งของ policy ใหม่แล้วเท่านั้น** ไม่ใช่เพื่อให้ผ่าน
+    const policies = migrationFiles
+      .flatMap((f) => readFileSync(f, "utf8").split("\n"))
+      .filter((line) => line.startsWith("create policy"));
+    expect(
+      policies.length,
+      "จำนวน policy เปลี่ยนไปจาก 10 — ไล่กิ่งของตัวใหม่ให้ครบก่อน แล้วค่อยขึ้นเลขนี้",
+    ).toBe(10);
   });
 });
 
