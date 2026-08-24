@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOWFILE = os.environ.get("ALLOWED_REF_FILE") or os.path.join(HERE, "allowed-project-ref")
@@ -57,18 +58,31 @@ def main() -> int:
     bad = 0
 
     # ── URL: บังคับ ตรวจได้เสมอ ────────────────────────────────────────────────
+    # 🔴 ต้องเทียบ **host ที่ parse แล้ว** ห้ามใช้ substring เด็ดขาด
+    #    ฉบับแรกของด่านนี้ (24 ส.ค. 2026) ใช้ `f"https://{allowed}.supabase.co" not in url`
+    #    ซึ่ง **ผ่านทั้งสามเคสนี้** ตอนผมย้อนกลับมาทดสอบตัวเอง:
+    #      · https://<ref-ทริป>.supabase.co#https://<ref-dev>.supabase.co   ← ปลายทางคือ DB ทริป!
+    #      · https://evil.example.com/?u=https://<ref-dev>.supabase.co
+    #      · https://<ref-dev>.supabase.co.attacker.test
+    #    เคสแรกไม่ใช่การโจมตี — **copy-paste พลาดก็เกิดได้** และปลายทางคือฐานที่ห้ามแตะที่สุด
+    #    🔴 อันตรายขึ้นอีกชั้นตั้งแต่ `00271d3` ให้ `delete on public.trips` กับ service_role
+    #       = ด่านที่ปล่อยผ่านตรงนี้ ไม่ได้แปลว่า "รันเทสต์ผิดที่" แต่แปลว่า "**ลบแถวผิดฐาน**"
     url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "").strip()
+    parsed = urlparse(url) if url else None
+    host = (parsed.hostname or "").lower() if parsed else ""
     if not url:
         print("🔴 ci-target: ไม่ได้ตั้ง NEXT_PUBLIC_SUPABASE_URL — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
         bad += 1
-    elif f"https://{allowed}.supabase.co" not in url:
-        # ⛔ ไม่พิมพ์ url เต็ม เผื่อมีอะไรติดมา — พิมพ์แค่ ref ที่ดึงได้
-        got = re.search(r"https://([a-z]{20})\.supabase\.co", url)
-        print(f"🔴 ci-target: URL ไม่ได้ชี้ engine-dev · เจอ ref = {got.group(1) if got else '(อ่านไม่ออก)'}")
-        print(f"   ต้องเป็น {allowed} เท่านั้น — หยุดก่อนแตะ DB")
+    elif parsed.scheme != "https":
+        print(f"🔴 ci-target: URL ไม่ใช่ https (scheme='{parsed.scheme}') — หยุดก่อนแตะ DB")
+        bad += 1
+    elif host != f"{allowed}.supabase.co":
+        # ⛔ พิมพ์ได้แค่ host ห้ามพิมพ์ url เต็ม เผื่อมี query/credential ติดมา
+        print(f"🔴 ci-target: host ของ URL ไม่ใช่ engine-dev · เจอ '{host or '(อ่านไม่ออก)'}'")
+        print(f"   ต้องเป็น {allowed}.supabase.co เป๊ะ — หยุดก่อนแตะ DB")
         bad += 1
     else:
-        print(f"✅ ci-target: URL ชี้ {allowed}")
+        print(f"✅ ci-target: URL ชี้ {allowed} (host ตรงเป๊ะ)")
 
     # ── คีย์: ตรวจ claim `ref` ใน JWT · best-effort ────────────────────────────
     for name in ("NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"):

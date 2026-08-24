@@ -184,6 +184,32 @@ citcheck "ci-target: URL ชี้ DB ทริปต้องแดง" fail "$
 citcheck "ci-target: service_role ของโปรเจกต์อื่นต้องแดง แม้ URL ถูก" fail "$DEVREF" "$DEVREF" "abcdefghijklmnopqrst"
 citcheck "ci-target: anon ของโปรเจกต์อื่นต้องแดง แม้ URL ถูก" fail "$DEVREF" "abcdefghijklmnopqrst" "$DEVREF"
 
+# 🔴 เคสที่ฉบับแรกของด่านนี้ **ปล่อยผ่านทั้งหมด** (เจอตอนย้อนกลับมาทดสอบตัวเอง 24 ส.ค. 2026)
+#    ต้นเหตุ: เทียบ URL ด้วย substring แทนที่จะ parse host
+#    ⚠️ เคสแรกอันตรายที่สุดและ **ไม่ใช่การโจมตี — copy-paste พลาดก็เกิดได้**:
+#       host จริงคือ DB ทริป แต่มี ref ของ engine-dev ห้อยอยู่ท้าย fragment
+#    🔴 และตั้งแต่ `00271d3` ให้ `delete on public.trips` กับ service_role
+#       การปล่อยผ่านตรงนี้ = **ลบแถวผิดฐาน** ไม่ใช่แค่รันเทสต์ผิดที่
+urlcheck() {  # urlcheck <ชื่อ> <pass|fail> <url>
+  name="$1"; want="$2"
+  if NEXT_PUBLIC_SUPABASE_URL="$3" \
+     NEXT_PUBLIC_SUPABASE_ANON_KEY="$(mkjwt "$DEVREF")" \
+     SUPABASE_SERVICE_ROLE_KEY="$(mkjwt "$DEVREF")" \
+     "$CIT" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got · ด่าน URL ใช้การไม่ได้"
+  rc=1; return 1
+}
+
+urlcheck "ci-target: host เป็น DB ทริป แต่มี ref dev ห้อยท้าย ต้องแดง" fail \
+  "https://$TRIP_REF.supabase.co#https://$DEVREF.supabase.co"
+urlcheck "ci-target: host คนละเจ้า แต่มี ref dev ใน query ต้องแดง" fail \
+  "https://evil.example.com/?u=https://$DEVREF.supabase.co"
+urlcheck "ci-target: host ที่เอา ref dev ไปขึ้นต้นโดเมนอื่น ต้องแดง" fail \
+  "https://$DEVREF.supabase.co.attacker.test"
+urlcheck "ci-target: scheme ไม่ใช่ https ต้องแดง" fail "http://$DEVREF.supabase.co"
+urlcheck "ci-target: URL ที่ถูกต้องต้องยังผ่าน" pass "https://$DEVREF.supabase.co"
+
 # ไม่ตั้ง env เลย ต้องแดง (ตรวจไม่ได้ ≠ ปลอดภัย)
 if ( env -u NEXT_PUBLIC_SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_ANON_KEY \
          -u SUPABASE_SERVICE_ROLE_KEY "$CIT" >/dev/null 2>&1 ); then
