@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 /**
  * Test matrix ของ RLS — DoD พิเศษของ E1 (ใช้ต่อใน E2)
@@ -40,9 +40,22 @@ const migrationFiles = readdirSync(MIGRATIONS_DIR)
   .filter((f) => f.endsWith(".sql"))
   .map((f) => join(MIGRATIONS_DIR, f));
 
-const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+/**
+ * อ่านค่าจาก env แล้ว `.trim()` — **ที่เดียวในไฟล์ที่ยอมให้มีช่องว่างส่วนเกิน** (F2 · P4 พบ)
+ *
+ * 🔴 ทำไมต้อง trim ที่นี่ ไม่ใช่ใน `keyRole`: คีย์จริงไม่มีช่องว่างอยู่ในตัวมันเลย
+ * ช่องว่างมาจาก**ทางเดินของค่า** (คัดลอกจาก dashboard · แปะเข้า GitHub Secrets · here-doc ใน shell)
+ * `keyRole` จึงต้องเข้มไว้ — ของที่มีช่องว่างคือของที่ยังไม่ได้ทำความสะอาด **ไม่ใช่คีย์ที่ใช้ได้**
+ * ⚠️ ถ้าย้าย trim เข้าไปใน `keyRole` ด่านจะยอมรับค่าที่ไม่เคยผ่านการทำความสะอาด และเราจะไม่รู้เลย
+ * ว่ามีที่ไหนอีกในระบบที่ส่งคีย์แบบมี `\n` ต่อท้ายเข้ามา
+ */
+function readEnvKey(name: string): string {
+  return (process.env[name] ?? "").trim();
+}
+
+const URL_ = readEnvKey("NEXT_PUBLIC_SUPABASE_URL");
+const ANON = readEnvKey("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const SERVICE = readEnvKey("SUPABASE_SERVICE_ROLE_KEY");
 const hasCreds = Boolean(URL_ && ANON && SERVICE);
 
 /**
@@ -64,9 +77,16 @@ const hasCreds = Boolean(URL_ && ANON && SERVICE);
  * 🔴 รูปแบบที่ไม่รู้จัก → คืน `null` = **ล้ม ไม่ใช่ผ่าน** (ตรวจไม่ได้ ≠ ปลอดภัย)
  */
 function keyRole(key: string): string | null {
+  // F2 (P4): คีย์ที่มีช่องว่างที่ไหนก็ตาม = ยังไม่ผ่านการทำความสะอาด → ปฏิเสธ
+  // 🔴 ทิศที่ P4 ชี้ว่าอันตรายคือ `\n` **ต่อท้าย** ซึ่งฉบับก่อน **ผ่าน** ด่านไปได้
+  //    (ขณะที่เว้นวรรค **นำหน้า** ล้ม) — ทิศที่ผ่านคือทิศที่เกิดง่ายที่สุดตอนแปะคีย์ด้วยมือ
+  //    การทำความสะอาดเกิดที่ `readEnvKey` ที่เดียว · ที่นี่เข้มไว้เพื่อให้รู้ว่ามีทางไหนที่ยังไม่สะอาด
+  if (/\s/.test(key)) return null;
+
   // คีย์รุ่นใหม่ — ไม่มีจุด ไม่มี payload ให้ถอด แยกได้จาก prefix เท่านั้น
-  if (key.startsWith("sb_publishable_")) return "anon";
-  if (key.startsWith("sb_secret_")) return "service_role";
+  // F4 (P4): ต้องมีตัวคีย์จริงหลัง prefix · `sb_publishable_` เปล่า ๆ เคยอ่านเป็นคีย์ที่ใช้ได้
+  if (/^sb_publishable_.+$/.test(key)) return "anon";
+  if (/^sb_secret_.+$/.test(key)) return "service_role";
 
   // คีย์รุ่นเก่า — JWT · base64url ไม่ใช่ base64 ธรรมดา (payload มี `-`/`_` ได้)
   const payload = key.split(".")[1];
@@ -226,6 +246,39 @@ describe("keyRole — ด่านกันหยิบคีย์ผิดใ�
         expect(keyRole(junk), `"${junk}" ไม่ควรอ่านเป็น role ใดๆ`).toBeNull();
       }
     });
+
+    // F2 (P4) — ทิศที่ฉบับก่อน **ผ่าน** และเป็นทิศที่เกิดง่ายที่สุดสัปดาห์นี้
+    it("🔴 คีย์ที่มีช่องว่างต้องล้ม — ทั้งนำหน้าและต่อท้าย (ต่อท้ายคือทิศที่เคยรอด)", () => {
+      expect(keyRole("sb_publishable_AbC123\n"), "`\\n` ต่อท้ายเคยผ่านด่านไปได้").toBeNull();
+      expect(keyRole(" sb_publishable_AbC123")).toBeNull();
+      expect(keyRole("sb_secret_AbC123\r\n")).toBeNull();
+      expect(keyRole("sb_publishable_AbC 123")).toBeNull();
+    });
+
+    // F4 (P4) — คีย์ที่ถูกตัดจนเหลือแต่ prefix เคยอ่านเป็นคีย์ที่ใช้ได้
+    it("prefix เปล่า ๆ ไม่มีตัวคีย์ ต้องล้ม", () => {
+      expect(keyRole("sb_publishable_")).toBeNull();
+      expect(keyRole("sb_secret_")).toBeNull();
+    });
+  });
+
+  // 🔴 การทำความสะอาดต้องมีเคสคุม ไม่งั้นมันคือพฤติกรรมที่มองไม่เห็น (กฎ E0 ข้อ 1)
+  describe("readEnvKey — ที่เดียวที่ยอมให้มีช่องว่างส่วนเกิน", () => {
+    const NAME = "__RLS_MATRIX_TRIM_PROBE__";
+    afterEach(() => {
+      delete process.env[NAME];
+    });
+
+    it("ตัดช่องว่างที่ติดมากับการแปะคีย์ด้วยมือ แล้วผลลัพธ์ต้องผ่าน keyRole ได้", () => {
+      process.env[NAME] = "  sb_publishable_AbC123\n";
+      const cleaned = readEnvKey(NAME);
+      expect(cleaned).toBe("sb_publishable_AbC123");
+      expect(keyRole(cleaned), "ทำความสะอาดแล้วต้องใช้ได้จริง").toBe("anon");
+    });
+
+    it("env ที่ไม่มีอยู่ ต้องได้สตริงว่าง ไม่ใช่ undefined", () => {
+      expect(readEnvKey(NAME)).toBe("");
+    });
   });
 });
 
@@ -285,8 +338,25 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     D = createClient(URL_, ANON, { auth: { persistSession: false } });
 
     // กับดักที่ 1 — key ที่ client ทดสอบถือ ต้องเป็น anon เท่านั้น
-    expect(keyRole(ANON), "NEXT_PUBLIC_SUPABASE_ANON_KEY ไม่ใช่ anon key").toBe("anon");
-    expect(keyRole(SERVICE), "SUPABASE_SERVICE_ROLE_KEY ไม่ใช่ service_role key").toBe("service_role");
+    //
+    // 🔴 F3 (P4): แยก 2 ความล้มเหลวออกจากกัน เพราะ **ทางแก้ตรงข้ามกัน**
+    //    · อ่านรูปแบบไม่ออก → ปัญหาอยู่ที่ **ลิสต์ของเราเก่า** (Supabase ออกรูปแบบใหม่)
+    //    · อ่านออกแต่ role ผิด → ปัญหาอยู่ที่ **คนหยิบคีย์ผิดใบ**
+    //    ฉบับก่อนพูดว่า "ไม่ใช่ anon key" เหมือนกันทั้งสองกรณี → วันที่รูปแบบที่ 3 มาถึง
+    //    คนจะไปไล่หาคีย์ผิดใบ แล้วลงเอยด้วยการ "ขยายด่านจนเขียว" ซึ่งเป็นแรงกดดัน
+    //    เดียวกับที่คอมเมนต์ของ `stripComments` ในไฟล์นี้เตือนไว้เอง
+    for (const [name, key, want] of [
+      ["NEXT_PUBLIC_SUPABASE_ANON_KEY", ANON, "anon"],
+      ["SUPABASE_SERVICE_ROLE_KEY", SERVICE, "service_role"],
+    ] as const) {
+      expect(
+        keyRole(key),
+        `${name}: อ่านรูปแบบคีย์ไม่ออก — ไม่ใช่ JWT และไม่ขึ้นต้นด้วย sb_publishable_/sb_secret_\n` +
+          `  🔴 ถ้ามั่นใจว่าคีย์ถูกใบ แปลว่า "ลิสต์รูปแบบของเราเก่า" ไม่ใช่ "หยิบผิดใบ"\n` +
+          `  → ขยาย keyRole พร้อมเคส 2 ทิศ **อย่าปิดเคสนี้ทิ้งเพื่อให้เขียว**`,
+      ).not.toBeNull();
+      expect(keyRole(key), `${name}: หยิบคีย์ผิดใบ — ช่องนี้ต้องเป็น "${want}"`).toBe(want);
+    }
 
     A = await makeUser("a");
     B = await makeUser("b");
