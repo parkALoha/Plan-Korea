@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * > *"อยู่ ๆ ก็หลุด"* ที่ไม่ผูกกับการกระทำไหนเลย · ตามกลับมาถึงบรรทัดนี้แทบไม่ได้
  *
  * แยกไฟล์จาก `proxy.test.ts` โดยตั้งใจ เพราะชุดนี้ต้อง mock `refreshSession`
- * ซึ่งจะไปรบกวนเคสของ P4 ที่ทดสอบด่าน PIN ด้วยของจริง
+ * ซึ่งจะไปรบกวนเคสด่านของ P4 ที่ทดสอบด้วยของจริง
  */
 
 const REFRESHED = "sb-refreshed-marker";
@@ -41,9 +41,15 @@ function responseWithRefreshedCookie() {
 }
 
 describe("proxy ต้องคืน response ที่ถือคุกกี้ต่ออายุแล้ว", () => {
+  /** ให้ request ถัดไปนับว่า "ล็อกอินแล้ว" — ด่านใหม่ตัดสินจาก `user` ไม่ใช่คุกกี้ความลับร่วม */
+  function signedIn() {
+    refreshSession.mockResolvedValue({
+      response: responseWithRefreshedCookie(),
+      user: { id: "11111111-2222-3333-4444-555555555555" },
+    });
+  }
+
   beforeEach(() => {
-    delete process.env.TRIP_PIN;
-    delete process.env.TRIP_PIN_SECRET;
     refreshSession.mockReset();
     refreshSession.mockResolvedValue({ response: responseWithRefreshedCookie(), user: null });
   });
@@ -53,7 +59,8 @@ describe("proxy ต้องคืน response ที่ถือคุกกี
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });
 
-  it("🔴 เส้นทางที่ปล่อยผ่านเพราะยังไม่ตั้ง PIN — คุกกี้ที่ต่ออายุต้องรอด", async () => {
+  it("🔴 เส้นทางที่ผ่านเพราะมี session — คุกกี้ที่ต่ออายุต้องรอด", async () => {
+    signedIn();
     const res = await proxy(request("/today"));
     expect(res.cookies.get(REFRESHED)?.value, "คุกกี้ต่ออายุหายระหว่างทาง").toBe("1");
   });
@@ -65,18 +72,11 @@ describe("proxy ต้องคืน response ที่ถือคุกกี
     expect(res.cookies.get(REFRESHED)?.value).toBe("1");
   });
 
-  it("🔴 เส้นทางที่ผ่านด่าน PIN ด้วยคุกกี้ถูกต้อง — คุกกี้ที่ต่ออายุต้องรอด", async () => {
+  it("🔴 /api/* ที่ผ่านเพราะมี session — คุกกี้ที่ต่ออายุต้องรอด", async () => {
     // ทางออกที่สามของฟังก์ชัน · ครบทั้ง 3 ทางที่ "ปล่อยผ่าน"
-    const { PIN_COOKIE, expectedPinToken } = await import("@/lib/pinAuth");
-    process.env.TRIP_PIN = "1234";
-    process.env.TRIP_PIN_SECRET = "secret-for-test";
-    const token = expectedPinToken();
-    expect(token, "ตั้ง env แล้วต้องได้ token").toBeTruthy();
-
-    const req = new NextRequest("https://plan.example.com/today", {
-      headers: { cookie: `${PIN_COOKIE}=${token}` },
-    });
-    const res = await proxy(req);
+    // (`AC6`: เดิมทางนี้คือ "ผ่านด่าน PIN ด้วยคุกกี้ถูกต้อง" — คำถามเดิม ด่านใหม่)
+    signedIn();
+    const res = await proxy(request("/api/place-details"));
     expect(res.cookies.get(REFRESHED)?.value).toBe("1");
   });
 
@@ -84,30 +84,24 @@ describe("proxy ต้องคืน response ที่ถือคุกกี
   // `refreshSession()` รันไปก่อนถึงด่านเสมอ → token เก่าถูกใช้ไปแล้วไม่ว่าจะออกทางไหน
   // ทิ้ง Set-Cookie = ไคลเอนต์ถือ token เก่าที่อาจถูกเพิกถอนแล้ว = แย่ที่สุดของสองทาง
   describe("🔴 S5 — ทางออกที่บล็อกผู้ใช้ ต้องเก็บคุกกี้ที่ต่ออายุไว้ด้วย", () => {
-    beforeEach(() => {
-      process.env.TRIP_PIN = "1234";
-      process.env.TRIP_PIN_SECRET = "secret-for-test";
-    });
-
+    // ไม่ต้องตั้งอะไร — ค่าเริ่มต้นของชุดนี้คือ `user: null` = ยังไม่ล็อกอิน = ถูกบล็อก
     it("/api/* ที่ถูกบล็อก 401 — คุกกี้ต้องรอด และ status ต้องยังเป็น 401", async () => {
       const res = await proxy(request("/api/place-details"));
       expect(res.status, "การเก็บคุกกี้ต้องไม่เปลี่ยนสถานะการบล็อก").toBe(401);
       expect(res.cookies.get(REFRESHED)?.value, "คุกกี้ที่หมุนแล้วถูกทิ้ง").toBe("1");
     });
 
-    it("หน้าเว็บที่ถูกเด้งไป /unlock — คุกกี้ต้องรอด และยังต้องเด้งเหมือนเดิม", async () => {
+    it("หน้าเว็บที่ถูกเด้งไป /login — คุกกี้ต้องรอด และยังต้องเด้งเหมือนเดิม", async () => {
       const res = await proxy(request("/today"));
       expect(res.status).toBe(307);
-      expect(new URL(res.headers.get("location") ?? "").pathname).toBe("/unlock");
+      expect(new URL(res.headers.get("location") ?? "").pathname).toBe("/login");
       expect(res.cookies.get(REFRESHED)?.value, "คุกกี้ที่หมุนแล้วถูกทิ้ง").toBe("1");
     });
   });
 
-  it("ต่ออายุ session **ก่อน** ด่าน PIN ตัดจบ — เส้นที่ถูกบล็อกก็ยังต้องเรียก", async () => {
+  it("ต่ออายุ session **ก่อน** ด่านตัดจบ — เส้นที่ถูกบล็อกก็ยังต้องเรียก", async () => {
     // 🔴 ถ้าย้าย refreshSession ไปไว้หลังด่าน เส้นที่ถูกบล็อกจะไม่ถูกต่ออายุเลย
     //    → ผู้ใช้ที่ token ใกล้หมดอายุและบังเอิญเปิดหน้าที่ถูกบล็อก จะเสียโอกาสต่ออายุครั้งนั้นไป
-    process.env.TRIP_PIN = "1234";
-    process.env.TRIP_PIN_SECRET = "secret-for-test";
     await proxy(request("/today"));
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });

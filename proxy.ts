@@ -1,39 +1,30 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { PIN_COOKIE, expectedPinToken, pinTokenMatches } from "@/lib/pinAuth";
 import { refreshSession, withSessionCookies } from "@/lib/auth/proxySession";
 
 /**
- * ด่าน PIN ของทั้งเว็บ (เฟส 13.5)
+ * ด่าน session ของทั้งเว็บ — `E1-AC6` (แทนที่ด่าน PIN ของเฟส 13.5 เมื่อ 25 ส.ค. 2026)
+ *
+ * 🔴 **`/unlock` กับโมดูล PIN เดิม ถูกลบทั้งหมดแล้ว** · สิทธิ์มาจาก `trip_members` ไม่ใช่ความลับร่วม
+ * · PIN เป็นความลับ **ก้อนเดียวที่ทุกคนใช้ร่วมกัน** — แยกไม่ออกว่าใครเป็นใคร และถอนคืนทีละคนไม่ได้
+ * · ⚠️ และมันไม่เคยกัน Supabase เลย (โมดูลนั้นเขียนขอบเขตตัวเองไว้ · พิสูจน์ด้วย curl 11 ส.ค. 2026)
+ *   **ด่านจริงของข้อมูลคือ RLS** ซึ่งเมทริกซ์ 73 เคสยืนยันแล้ว · ด่านนี้เป็นชั้นหน้า ไม่ใช่ชั้นเดียว
  *
  * หมายเหตุเรื่องชื่อไฟล์: Next 16 **เลิกใช้ `middleware.ts` แล้ว** เปลี่ยนเป็น `proxy.ts` ที่ root
  * และ export ชื่อ `proxy` (ดู node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md)
- * ไฟล์นี้รันบน Node.js runtime เป็นค่าเริ่มต้น จึงใช้ `node:crypto` ใน lib/pinAuth.ts ได้ตรงๆ
  */
 
 /**
  * เส้นทางที่ต้องเข้าได้เสมอ
- * - `/unlock`, `/api/unlock` — ไม่งั้นจะกรอก PIN ไม่ได้เลย (ไก่กับไข่)
- * - `/sw.js`, `/manifest.webmanifest` (เฟส 18) — เบราว์เซอร์ขอ 2 ไฟล์นี้แบบ **ไม่แนบคุกกี้**
+ * - 🔴 `/login`, `/auth/callback` — **ไก่กับไข่**: ถ้าด่านดัก 2 เส้นนี้ จะล็อกอินไม่ได้เลยตลอดกาล
+ *   เพราะทางเข้าถูกด่านที่รอทางเข้าปิดอยู่ (เหตุผลเดียวกับที่ `/unlock` เคยต้องอยู่ในลิสต์นี้)
+ * - `/sw.js`, `/manifest.webmanifest` — เบราว์เซอร์ขอ 2 ไฟล์นี้แบบ **ไม่แนบคุกกี้**
  *   ถ้าโดนด่านดักจะได้ 307 ไปหน้า HTML แทนไฟล์จริง → ลงทะเบียน service worker ไม่ผ่าน
- *   และปุ่ม "เพิ่มลงหน้าจอโฮม" ไม่ขึ้น · ทั้งสองไฟล์ไม่มีข้อมูลทริปอยู่ข้างใน จึงเปิดสาธารณะได้
- * - `/api/keep-alive` (เฟส 25) — Vercel Cron ยิงมาโดยไม่มีคุกกี้ PIN ถ้าโดนดักจะได้ 401
- *   **ก่อนแตะ Supabase** = cron เขียวทุกวันแต่ DB ยังหลับ · route นั้นมีด่าน CRON_SECRET ของตัวเอง
- *   และไม่คืนข้อมูลทริปออกมาเลย (ตอบแค่ ok/เวลา)
- * - 🔴 `/login`, `/auth/callback` (E1) — **ไก่กับไข่แบบเดียวกับ `/unlock` เป๊ะ**
- *   ถ้าด่าน PIN ดัก 2 เส้นนี้ **จะล็อกอินไม่ได้เลยตลอดกาล** เพราะทางเข้าถูกด่านที่รอทางเข้าปิดอยู่
- *   ⚠️ วันนี้ยังไม่กัดเพราะ `TRIP_PIN` ไม่ได้ตั้งบนเครื่อง dev → `expectedPinToken()` เป็นเท็จ
- *   → **ปล่อยผ่านทั้งเว็บอยู่แล้ว** · มันจะกัดวินาทีแรกที่มีใครตั้ง env และไม่มีอะไรเตือนก่อนหน้านั้น
+ *   และปุ่ม "เพิ่มลงหน้าจอโฮม" ไม่ขึ้น · ทั้งสองไฟล์ไม่มีข้อมูลผู้ใช้อยู่ข้างใน จึงเปิดสาธารณะได้
+ * - `/api/keep-alive` — Vercel Cron ยิงมาโดยไม่มีคุกกี้ · route นั้นมีด่าน `CRON_SECRET` ของตัวเอง
+ *   และไม่คืนข้อมูลออกมาเลย (ตอบแค่ ok/เวลา)
  */
-const PUBLIC_PATHS = [
-  "/unlock",
-  "/api/unlock",
-  "/sw.js",
-  "/manifest.webmanifest",
-  "/api/keep-alive",
-  "/login",
-  "/auth/callback",
-];
+const PUBLIC_PATHS = ["/sw.js", "/manifest.webmanifest", "/api/keep-alive", "/login", "/auth/callback"];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -49,33 +40,36 @@ export async function proxy(req: NextRequest) {
     return session.response;
   }
 
-  // ยังไม่ได้ตั้ง TRIP_PIN/TRIP_PIN_SECRET → ปล่อยผ่านทั้งหมด (เว็บทำงานเหมือนก่อนมีเฟส 13.5)
+  // 🔴 **กลับทิศจากด่าน PIN โดยตั้งใจ — ด่านเดิม fail-open ด่านนี้ fail-closed**
   //
-  // จงใจเลือก "ปล่อยผ่าน" ไม่ใช่ "บล็อก" เพราะถ้าบล็อกแล้วลืมตั้ง env บน Vercel เว็บจะตายทั้งเว็บ
-  // ซึ่งอันตรายกว่ามากตอนอยู่เกาหลีจริงแล้วเปิดหน้า /today ไม่ได้
-  // ⚠️ แลกมาด้วยว่า **ถ้าไม่ตั้ง env บน Vercel production จะไม่มี PIN ป้องกันเลย** ต้องไปตั้งเอง
-  if (!expectedPinToken()) {
+  // ด่าน PIN เลือกปล่อยผ่านตอน env ไม่ครบ เพราะ *"ลืมตั้ง env บน Vercel แล้วเว็บตายทั้งเว็บ
+  // อันตรายกว่า ตอนอยู่เกาหลีจริงแล้วเปิด /today ไม่ได้"* — **เหตุผลนั้นถูกสำหรับเว็บทริป**
+  // เพราะข้อมูลทริปอยู่ในโค้ดและ IndexedDB แอปยังทำงานได้โดยไม่มี Supabase
+  //
+  // ⚠️ **แพลตฟอร์มไม่ใช่แบบนั้น**: ตาราง · RLS · ตัวตน อยู่ใน Supabase ทั้งหมด
+  // ไม่มี Supabase = **ไม่มีข้อมูลให้แสดงอยู่แล้ว** → ปล่อยผ่านไม่ได้อะไรกลับมาเลย
+  // ได้แค่หน้าเปล่าที่ไม่มีด่าน ซึ่งเป็นสภาพที่คนตั้งค่าผิดจะไม่มีทางสังเกตเห็น
+  // → **ไม่มี user = ไม่ผ่าน** ทั้งกรณี "ยังไม่ล็อกอิน" และกรณี "ยังไม่ได้ตั้งค่า"
+  //   สองกรณีนี้จบที่หน้า `/login` เหมือนกัน ซึ่งบอกความจริงกับผู้ใช้มากกว่าหน้าเปล่า
+  if (session.user) {
     return session.response;
   }
 
-  if (pinTokenMatches(req.cookies.get(PIN_COOKIE)?.value)) {
-    return session.response;
-  }
-
-  // API ตอบ 401 เป็น JSON ไม่ redirect — ฝั่ง client เป็น fetch/`<img>` การ redirect ไปหน้า HTML
-  // จะทำให้ได้ response ที่ parse ไม่ออกแทนที่จะรู้ชัดๆ ว่าโดนล็อกอยู่
-  // 🔴 S5: ถูกบล็อกไม่ได้แปลว่าทิ้งคุกกี้ที่หมุนไปแล้ว — `refreshSession()` รันไปก่อนแล้ว
+  // API ตอบ 401 เป็น JSON ไม่ redirect — ฝั่ง client เป็น fetch การ redirect ไปหน้า HTML
+  // จะทำให้ได้ response ที่ parse ไม่ออกแทนที่จะรู้ชัดๆ ว่ายังไม่ได้ล็อกอิน
+  // 🔴 `S5`: ถูกบล็อกไม่ได้แปลว่าทิ้งคุกกี้ที่หมุนไปแล้ว — `refreshSession()` รันไปก่อนแล้ว
   //    ถ้าไม่ก็อปมา ไคลเอนต์จะถือ token เก่าที่อาจถูกเพิกถอนแล้ว (เหตุผลเต็มใน proxySession.ts)
   if (pathname.startsWith("/api/")) {
     return withSessionCookies(
       session.response,
-      NextResponse.json({ error: "locked" }, { status: 401 }),
+      NextResponse.json({ error: "unauthenticated" }, { status: 401 }),
     );
   }
 
   const url = req.nextUrl.clone();
-  url.pathname = "/unlock";
-  // จำหน้าที่ตั้งใจจะเข้าไว้ เพื่อพากลับไปหลังปลดล็อก (เช่นเปิดลิงก์ /today มาตรงๆ)
+  url.pathname = "/login";
+  // จำหน้าที่ตั้งใจจะเข้าไว้ เพื่อพากลับไปหลังล็อกอิน (เช่นเปิดลิงก์ที่ถูกแชร์มาตรงๆ)
+  // `safeNextPath` ฝั่ง callback เป็นคนตรวจค่านี้ก่อนใช้ — ที่นี่เป็นฝั่งเขียน ไม่ใช่ฝั่งเชื่อ
   url.searchParams.set("next", pathname + req.nextUrl.search);
   return withSessionCookies(session.response, NextResponse.redirect(url));
 }
@@ -83,7 +77,7 @@ export async function proxy(req: NextRequest) {
 export const config = {
   // ต้องตัด `_next` ออก **ทั้งก้อน** ไม่ใช่แค่ _next/static กับ _next/image
   // (เคยเขียนแบบนั้นแล้วเจอของจริง: `/_next/hmr` โดนด่านนี้ดักไปด้วย → HMR ตอน dev พัง →
-  //  React ไม่ hydrate → ฟอร์มกรอก PIN ตกไปเป็น native submit กดแล้วรีโหลดเฉยๆ ไม่มีอะไรเกิดขึ้น)
+  //  React ไม่ hydrate → ฟอร์มล็อกอินตกไปเป็น native submit กดแล้วรีโหลดเฉยๆ ไม่มีอะไรเกิดขึ้น)
   // ตัด `_next` ทิ้งได้อย่างปลอดภัยเพราะข้อมูลของหน้าที่ต้องหวงเดินทางผ่าน URL ของหน้านั้นเอง
   // (RSC ยิงไปที่ path เดิมพ่วง `?_rsc=` ซึ่งยังเข้าด่านนี้อยู่) — ยืนยันแล้วว่า /today ยังเด้ง 307 ปกติ
   // ส่วนไฟล์รูป/ไอคอนใน public/ ตัดออกด้วย เผื่อ manifest กับไอคอน PWA ในเฟส 18

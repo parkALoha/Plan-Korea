@@ -25,7 +25,7 @@ function k(name: string): string {
 }
 
 function req(headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest("https://example.com/api/unlock", { headers });
+  return new NextRequest("https://example.com/api/place-details", { headers });
 }
 
 afterEach(() => {
@@ -86,9 +86,17 @@ describe("isRateLimited() — เพดานต่อ window", () => {
 
   it("🔴 ถังล้น 5,000 แล้ว clear() ทั้งกระบิ — ปลด limit ของคนที่กำลังโดนจำกัดอยู่", () => {
     // `rateLimit.ts:7-9` เขียนกำกับเองว่ายอมรับผลข้างเคียงนี้เพราะ "เป็นด่านคุมค่าใช้จ่าย
-    // ไม่ใช่ด่านความปลอดภัย" — แต่ `/api/unlock` **เป็นด่านความปลอดภัย** (`unlock/route.ts:5-8`
-    // เขียนเองว่าเพดานนี้คือสิ่งเดียวที่ทำให้ PIN สั้นๆ พอใช้ได้ ห้ามถอดออก)
-    // เทสต์นี้บันทึกช่องนั้นเป็นตัวเลข ไม่ใช่ข้อความในเอกสาร — ดู security-review.md §5.1 ข้อ 3
+    // ไม่ใช่ด่านความปลอดภัย" — เดิมข้อนั้น **ไม่จริง** เพราะ `/api/unlock` เป็นด่านความปลอดภัย
+    // (เพดานนี้คือสิ่งเดียวที่ทำให้ PIN สั้น ๆ พอใช้ได้)
+    //
+    // 🔴 **25 ส.ค. 2026 (`AC6`): เหตุผลนั้นหมดอายุแล้ว — `/api/unlock` ถูกลบทั้ง route**
+    //    วันนี้ไม่มี endpoint ไหนที่ rate limiter ตัวนี้คุมแล้วเป็นด่านความปลอดภัย
+    //    (การล็อกอินไปอยู่กับ Supabase ซึ่งมี rate limit ของตัวเอง ไม่ผ่านตัวนี้)
+    //
+    // ⚠️ **แต่เคสนี้ไม่ถูกลบ และช่องยังถูกบันทึกไว้เป็นตัวเลขเหมือนเดิม** —
+    //    ข้อห้ามที่เหตุผลหมดอายุ ต้องถูก**ตัดสินใหม่**ไม่ใช่หายไปเองเพราะไม่มีใครดูแล้ว (`D35`)
+    //    วันที่มี endpoint ที่เป็นด่านความปลอดภัยกลับมาอยู่หลัง limiter ตัวนี้ **ช่องนี้กลับมาทันที**
+    //    ดู security-review.md §5.1 ข้อ 3
     const victim = k("victim");
     expect(isRateLimited(victim, 1, 60_000)).toBe(false);
     expect(isRateLimited(victim, 1, 60_000)).toBe(true); // โดนจำกัดแล้ว

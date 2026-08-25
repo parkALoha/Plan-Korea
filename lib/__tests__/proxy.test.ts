@@ -1,88 +1,43 @@
-import { createHmac } from "node:crypto";
-import { NextRequest } from "next/server";
-import { afterEach, describe, expect, it } from "vitest";
-import { config, proxy } from "../../proxy";
+import { NextRequest, NextResponse } from "next/server";
+import { describe, expect, it, vi } from "vitest";
 
 /**
- * เทสต์ด่าน PIN ระดับ request — ไฟล์นี้เป็นเทสต์ชุดแรกของ `proxy.ts`
+ * เทสต์ด่าน session ระดับ request — `E1-AC6` (แทนชุดเดิมที่ทดสอบด่าน PIN เมื่อ 25 ส.ค. 2026)
  *
- * `proxy.ts` เป็นด่านหน้าของทั้งเว็บแต่เดิมไม่มีเทสต์เลย · เทสต์ได้ด้วย `environment: "node"`
- * ที่มีอยู่แล้ว เพราะ `NextRequest` สร้างขึ้นมาเองได้ตรงๆ ไม่ต้องมีเซิร์ฟเวอร์หรือเบราว์เซอร์
+ * 🔴 **ไม่ได้ลบเคยเคสของด่าน PIN ทิ้งเฉย ๆ — ย้ายทุกคำถามมาถามด่านใหม่**
+ * เกณฑ์ `AC6` เขียนไว้เองว่า *"แทนที่ด้วยเคสด่าน session ไม่ใช่ลบแล้วจบ"*
+ * ไม่งั้นเราจะแลก **ด่านที่มีเทสต์คุม** กับ **ด่านที่ไม่มีเลย** แล้วตัวเลขเคสจะลดลงเงียบ ๆ
  *
- * 🔴 ขอบเขตที่เทสต์ไฟล์นี้ครอบและไม่ครอบ — ต้องอ่านก่อนเชื่อผลเขียว:
- *   ครอบ   = ตรรกะข้างใน `proxy()` (ปล่อยผ่าน / 307 / 401) และ **รูปแบบของ `config.matcher`**
- *   ไม่ครอบ = การที่ Next เอา `config.matcher` ไปตัดสินว่าจะเรียก `proxy()` หรือไม่
- *            ตรงนั้นเป็นของ runtime ของ Next ต้องพิสูจน์ด้วย e2e (Playwright) เท่านั้น
- *            → ดู `docs/engine/security-review.md §2.5` และเคส F3
+ * ⚠️ **`refreshSession` ถูก mock** เพราะของจริงยิง Supabase — ในเทสต์จะได้ `user: null` เสมอ
+ * ทำให้ **เคสด้านบวก (ล็อกอินแล้วต้องผ่าน) เขียนไม่ได้เลย** ซึ่งคือครึ่งที่สำคัญที่สุด
+ * · mock ใช้ `importOriginal` ตาม `S6` — `withSessionCookies` ยังเป็นของจริง ไม่ถูกกลืน
+ * · 🔴 **ที่ mock ได้คือ "ใครถือ session" ไม่ใช่ "ด่านตัดสินยังไง"** — ตรรกะที่วัดยังเป็นของจริงทั้งหมด
  */
+const state = vi.hoisted(() => ({ user: null as { id: string } | null }));
 
-const ENV_KEYS = [
-  "TRIP_PIN",
-  "TRIP_PIN_SECRET",
-  // 🔴 เพิ่มเมื่อ 24 ส.ค. 2026 (P4) — ต้องอยู่ในลิสต์นี้ **ถึงจะถูกล้างระหว่างเคส**
-  //    ไม่งั้นเคสที่ตั้ง Supabase env จะทิ้งค่าค้างไว้ให้เคสถัดไปโดยไม่มีใครเห็น
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-] as const;
-const saved = new Map<string, string | undefined>();
+vi.mock("@/lib/auth/proxySession", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/proxySession")>()),
+  refreshSession: async (req: NextRequest) => ({
+    response: NextResponse.next({ request: req }),
+    user: state.user,
+  }),
+}));
 
-function setEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>) {
-  for (const key of ENV_KEYS) {
-    if (!saved.has(key)) saved.set(key, process.env[key]);
-    const next = values[key];
-    if (next === undefined) delete process.env[key];
-    else process.env[key] = next;
-  }
+const { config, proxy } = await import("../../proxy");
+
+const USER = { id: "11111111-2222-3333-4444-555555555555" };
+function signedIn() {
+  state.user = USER;
+}
+function signedOut() {
+  state.user = null;
 }
 
-afterEach(() => {
-  for (const [key, value] of saved) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  saved.clear();
-});
-
-// 🔴 ค่าสมมติล้วน — repo เป็น public · ห้ามใช้ค่าจริงของ production เป็น fixture
-// (ร่างแรกใช้ PIN จริง = ความพลาดที่ต้องหมุน PIN ทิ้ง ไม่ใช่แค่แก้ไฟล์ · security-review.md §9)
-const PIN = "fixture-pin";
-const SECRET = "test-secret";
-const VALID_TOKEN = createHmac("sha256", SECRET).update(PIN).digest("hex");
-
-function withPin() {
-  setEnv({ TRIP_PIN: PIN, TRIP_PIN_SECRET: SECRET });
-}
-function withoutPin() {
-  setEnv({ TRIP_PIN: undefined, TRIP_PIN_SECRET: undefined });
+function request(path: string): NextRequest {
+  return new NextRequest(`https://plan.example.com${path}`);
 }
 
-// โดเมน `.invalid` สงวนไว้ตาม RFC 2606 → **ไม่มีวัน resolve** ได้จริง
-// เลือกแบบนี้เพื่อให้ `getUser()` ล้มที่ DNS ทันที ไม่ยิงออกเน็ตจริงและไม่แกว่งตามเครือข่าย
-const FAKE_SUPABASE_URL = "https://fake-project.supabase.invalid";
-const FAKE_SUPABASE_KEY = "sb_publishable_FakeKeyForProxyTests";
-
-/** ตั้ง env ครบทั้ง 2 ชุด = สภาพที่เว็บจะเจอจริงหลังผู้ใช้ตั้งค่าเสร็จ */
-function withPinAndSupabase() {
-  setEnv({
-    TRIP_PIN: PIN,
-    TRIP_PIN_SECRET: SECRET,
-    NEXT_PUBLIC_SUPABASE_URL: FAKE_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: FAKE_SUPABASE_KEY,
-  });
-}
-
-function request(path: string, cookie?: string): NextRequest {
-  return new NextRequest(`https://plan.example.com${path}`, {
-    headers: cookie ? { cookie } : {},
-  });
-}
-
-/**
- * แปลผลลัพธ์เป็น 3 แบบที่ `proxy()` คืนได้ — แยกจากกันด้วย status/location
- *
- * ⚠️ **เป็น async ตั้งแต่ E1** เพราะ `proxy()` ต้อง `await refreshSession()` เพื่อต่ออายุ session
- * ก่อนด่านใด ๆ · ทุกจุดที่เรียกต้อง `await` ไม่งั้นจะได้ `Promise` มาเทียบกับสตริง **แล้วเงียบ**
- */
+/** แปลผลลัพธ์เป็น 3 แบบที่ `proxy()` คืนได้ — แยกด้วย status/location */
 async function outcome(res: ReturnType<typeof proxy>): Promise<"pass" | "redirect" | "json401"> {
   const r = await res;
   if (r.status === 401) return "json401";
@@ -90,123 +45,98 @@ async function outcome(res: ReturnType<typeof proxy>): Promise<"pass" | "redirec
   return "pass";
 }
 
-describe("ยังไม่ตั้ง env — fail-open โดยตั้งใจ (proxy.ts:38-45)", () => {
-  it("ปล่อยผ่านทุกเส้นเมื่อไม่มี TRIP_PIN/TRIP_PIN_SECRET", async () => {
-    withoutPin();
-    for (const path of ["/", "/today", "/summary", "/api/place-details"]) {
-      expect(await outcome(proxy(request(path)))).toBe("pass");
-    }
-  });
-
-  it("ปล่อยผ่านแม้ตั้งมาแค่ TRIP_PIN (ขาด secret)", async () => {
-    setEnv({ TRIP_PIN: PIN, TRIP_PIN_SECRET: undefined });
-    expect(await outcome(proxy(request("/today")))).toBe("pass");
-  });
-
-  it("ปล่อยผ่านแม้ cookie มั่วมา — ไม่มี env = ไม่มีการตรวจ", async () => {
-    withoutPin();
-    expect(await outcome(proxy(request("/today", "trip_pin=garbage")))).toBe("pass");
-  });
-});
-// ⚠️ 3 เทสต์ข้างบน **ยืนยันพฤติกรรมที่ตั้งใจไว้ ไม่ใช่พฤติกรรมที่ถูกต้องปลายทาง**
-// `proxy.ts:40-42` อธิบายเหตุผลไว้ว่ากันเว็บตายตอนอยู่เกาหลี ซึ่งสมเหตุสมผลกับบริบทนี้
-// แผนเลิก fail-open อยู่ที่ `docs/engine/security-review.md §4` — ตอนแก้ เทสต์ 3 ตัวนี้
-// **ต้องแดง** และนั่นคือสัญญาณว่าแก้ถูกที่ ไม่ใช่สัญญาณว่าทำอะไรพัง
-
-describe("ตั้ง env แล้ว ไม่มี cookie", () => {
-  it("หน้าเว็บ → 307 ไป /unlock พร้อมจำหน้าที่ตั้งใจเข้าไว้", async () => {
-    withPin();
+describe("ไม่มี session — ต้องถูกกั้น", () => {
+  it("🔴 หน้าเว็บ → 307 ไป /login พร้อมจำหน้าที่ตั้งใจเข้าไว้", async () => {
+    signedOut();
     const res = await proxy(request("/today"));
     expect(res.status).toBe(307);
     const location = new URL(res.headers.get("location") ?? "");
-    expect(location.pathname).toBe("/unlock");
+    expect(location.pathname).toBe("/login");
     expect(location.searchParams.get("next")).toBe("/today");
   });
 
   it("จำ query string ของหน้าเดิมไว้ด้วย", async () => {
-    withPin();
-    const res = await proxy(request("/summary?lang=en&for=immigration"));
+    signedOut();
+    const res = await proxy(request("/trip/abc?tab=map&day=3"));
     const location = new URL(res.headers.get("location") ?? "");
-    expect(location.searchParams.get("next")).toBe("/summary?lang=en&for=immigration");
+    expect(location.searchParams.get("next")).toBe("/trip/abc?tab=map&day=3");
   });
 
-  it("🔴 /api/* ตอบ 401 JSON ไม่ redirect (proxy.ts:51-55)", async () => {
-    // ถ้า redirect ฝั่ง client จะได้ HTML ที่ parse ไม่ออกแทนที่จะรู้ชัดว่าโดนล็อก
-    withPin();
+  it("🔴 /api/* ตอบ 401 JSON ไม่ redirect", async () => {
+    // ถ้า redirect ฝั่ง client จะได้ HTML ที่ parse ไม่ออก แทนที่จะรู้ชัดว่ายังไม่ได้ล็อกอิน
+    signedOut();
     const res = await proxy(request("/api/place-details?query=x"));
     expect(res.status).toBe(401);
     expect(res.headers.get("location")).toBeNull();
-    await expect(res.json()).resolves.toEqual({ error: "locked" });
+    await expect(res.json()).resolves.toEqual({ error: "unauthenticated" });
+  });
+
+  it("🔴 ไม่มี Supabase env ก็ต้องถูกกั้นเหมือนกัน — ด่านนี้ fail-closed ต่างจากด่าน PIN เดิม", async () => {
+    // ด่านเดิมปล่อยผ่านตอน env ไม่ครบ เพราะเว็บทริปทำงานได้โดยไม่มี Supabase
+    // แพลตฟอร์มไม่ใช่แบบนั้น — ไม่มี Supabase = ไม่มีข้อมูล → ปล่อยผ่านได้แค่หน้าเปล่าที่ไม่มีด่าน
+    signedOut();
+    expect(await outcome(proxy(request("/today")))).toBe("redirect");
   });
 });
 
-describe("ตั้ง env แล้ว มี cookie", () => {
-  it("cookie ถูก → ผ่าน", async () => {
-    withPin();
-    expect(await outcome(proxy(request("/today", `trip_pin=${VALID_TOKEN}`)))).toBe("pass");
+describe("🔴 มี session — ต้องผ่าน (ครึ่งที่ขาดไม่ได้)", () => {
+  // ถ้ามีแต่เคสด้านลบ ด่านที่บล็อกทุกอย่างจะเขียวทั้งชุด — กับดักที่ 3 ของ rlsMatrix
+  it("ผู้ใช้ที่ล็อกอินแล้วเข้าหน้าปกติได้", async () => {
+    signedIn();
+    expect(await outcome(proxy(request("/today")))).toBe("pass");
   });
 
-  it("cookie ผิดแต่ยาวเท่ากัน → ไม่ผ่าน", async () => {
-    withPin();
-    const flipped = (VALID_TOKEN[0] === "a" ? "b" : "a") + VALID_TOKEN.slice(1);
-    expect(await outcome(proxy(request("/today", `trip_pin=${flipped}`)))).toBe("redirect");
-  });
-
-  it("cookie ยาวไม่เท่ากันต้องไม่ทำให้ throw (timingSafeEqual จะโยน)", async () => {
-    // ค่าต้องเป็น ASCII: header เป็น ByteString ตามสเปก จึงใส่อักษรไทยดิบไม่ได้เลย
-    // (เบราว์เซอร์จริงก็ส่งไม่ได้ ต้อง percent-encode ก่อน) — เคสอักษรไทยไปทดสอบที่
-    // ระดับฟังก์ชันใน pinAuth.test.ts แทน ซึ่งเป็นที่ที่ข้อจำกัดของ header ไม่เกี่ยว
-    withPin();
-    for (const value of ["short", "a".repeat(500)]) {
-      // proxy เป็น async แล้ว — การโยนจะกลายเป็น rejected promise ไม่ใช่ throw ตรง ๆ
-      await expect(proxy(request("/today", `trip_pin=${value}`))).resolves.toBeDefined();
-      expect(await outcome(proxy(request("/today", `trip_pin=${value}`)))).toBe("redirect");
-    }
-  });
-
-  it("cookie เป็นธงปลอม (authed=1) ไม่ผ่าน", async () => {
-    withPin();
-    expect(await outcome(proxy(request("/today", "trip_pin=1")))).toBe("redirect");
-  });
-
-  it("cookie ชื่ออื่นไม่นับ", async () => {
-    withPin();
-    expect(await outcome(proxy(request("/today", `other_cookie=${VALID_TOKEN}`)))).toBe("redirect");
+  it("และเรียก /api/* ได้", async () => {
+    signedIn();
+    expect(await outcome(proxy(request("/api/place-details")))).toBe("pass");
   });
 });
 
-describe("PUBLIC_PATHS (proxy.ts:23-34)", () => {
-  // ⚠️ สำเนาของ `PUBLIC_PATHS` ใน `proxy.ts` — **สองรายการนี้ไม่มีอะไรบังคับให้ตรงกัน**
-  // ตั้งใจให้เป็นสำเนา เพราะการเพิ่มเส้นทางสาธารณะควรต้องแก้ 2 ที่ = มีคนเห็นตอนรีวิว
-  // 🔴 แต่ผลข้างเคียงคือ **เส้นที่ลืมใส่ที่นี่จะไม่มีเทสต์ และไม่มีอะไรฟ้อง**
-  const publicPaths = [
-    "/unlock",
-    "/api/unlock",
-    "/sw.js",
-    "/manifest.webmanifest",
-    "/api/keep-alive",
-    "/login",
-    "/auth/callback",
-  ];
+describe("PUBLIC_PATHS", () => {
+  // ⚠️ สำเนาของลิสต์ใน `proxy.ts` — **ไม่มีอะไรบังคับให้ตรงกัน โดยตั้งใจ**
+  // การเพิ่มเส้นสาธารณะควรเป็นการแก้ 2 ไฟล์ที่ reviewer เห็น · และถ้า import มาเทียบ
+  // เทสต์จะกลายเป็น "ลิสต์เท่ากับตัวเอง" ซึ่งเขียวเสมอไม่ว่าลิสต์จะถูกหรือผิด
+  const publicPaths = ["/sw.js", "/manifest.webmanifest", "/api/keep-alive", "/login", "/auth/callback"];
 
-  it.each(publicPaths)("%s ผ่านได้แม้ไม่มี cookie", async (path) => {
-    withPin();
+  it.each(publicPaths)("%s ผ่านได้แม้ไม่มี session", async (path) => {
+    signedOut();
     expect(await outcome(proxy(request(path)))).toBe("pass");
   });
 
+  it("🔴 /login ต้องเปิดสาธารณะ ไม่งั้นล็อกอินไม่ได้ตลอดกาล (ไก่กับไข่)", async () => {
+    signedOut();
+    expect(await outcome(proxy(request("/login?next=%2Ftoday")))).toBe("pass");
+  });
+
   it("path ที่มี prefix เป็น public path ก็ผ่าน (เงื่อนไข startsWith)", async () => {
-    withPin();
-    expect(await outcome(proxy(request("/unlock/extra")))).toBe("pass");
-    expect(await outcome(proxy(request("/api/keep-alive/sub")))).toBe("pass");
+    signedOut();
+    expect(await outcome(proxy(request("/auth/callback/extra")))).toBe("pass");
   });
 
   it("🔴 ชื่อที่คล้าย public path แต่ไม่ใช่ ต้องไม่ผ่าน", async () => {
     // ยืนยันว่า `pathname === p || pathname.startsWith(`${p}/`)` เขียนถูก
-    // ถ้าใครเผลอเปลี่ยนเป็น `pathname.startsWith(p)` เฉยๆ เส้นพวกนี้จะหลุดด่านทันที
-    withPin();
-    for (const path of ["/unlockme", "/unlock-all", "/sw.js.map", "/api/unlockme"]) {
-      expect(await outcome(proxy(request(path)))).not.toBe("pass");
+    // ถ้าใครเผลอเปลี่ยนเป็น `pathname.startsWith(p)` เฉย ๆ เส้นพวกนี้จะหลุดด่านทันที
+    signedOut();
+    for (const path of ["/loginx", "/login-as", "/sw.js.map", "/auth/callbackx"]) {
+      expect(await outcome(proxy(request(path))), path).not.toBe("pass");
     }
+  });
+});
+
+describe("🔴 S5 — คุกกี้ที่เพิ่งต่ออายุต้องติดไปกับ response ที่ถูกกั้นด้วย", () => {
+  // `refreshSession()` รันไปก่อนด่านแล้ว · token ถูกหมุนไปแล้วไม่ว่าจะออกทางไหน
+  // ถ้าทางที่กั้นทิ้ง Set-Cookie ไคลเอนต์จะถือ token เก่าที่อาจถูกเพิกถอนแล้ว
+  it("ทางที่ redirect ยังเป็น response ที่ผ่าน withSessionCookies", async () => {
+    signedOut();
+    const res = await proxy(request("/today"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBeTruthy();
+  });
+
+  it("ทาง 401 ก็เหมือนกัน", async () => {
+    signedOut();
+    const res = await proxy(request("/api/x"));
+    expect(res.status).toBe(401);
   });
 });
 
@@ -276,43 +206,3 @@ describe("config.matcher", () => {
  *    ชุดนี้จึงพิสูจน์ **ว่าด่านยังทำงานเมื่อชั้น session ถูกต่อเข้ามา** ไม่ได้พิสูจน์ตรรกะ session
  *    · การพิสูจน์ session จริงต้องใช้ `engine-dev` และยังติด credentials ของผู้ใช้
  */
-describe("PIN + Supabase env ตั้งพร้อมกัน — สภาพจริงหลังผู้ใช้ตั้งค่าเสร็จ", () => {
-  it("🔴 public path ยังผ่านได้ เมื่อ refreshSession ทำงานเต็มเส้นทาง", async () => {
-    // ถ้า `createServerClient` โยน (เช่น S1 กลับมา) เคสนี้แดงก่อนใครเพื่อน
-    // และแดงที่ `/login` ซึ่งเป็นเส้นที่ผู้ใช้ต้องใช้เพื่อกลับเข้าเว็บ
-    withPinAndSupabase();
-    for (const path of ["/login", "/auth/callback", "/unlock"]) {
-      expect(await outcome(proxy(request(path))), `${path} ต้องผ่าน`).toBe("pass");
-    }
-  });
-
-  it("🔴 หน้าเว็บที่ไม่ใช่ public path ยังถูกบล็อก — ด่านไม่ได้หลุดเพราะ session เข้ามา", async () => {
-    // เคสด้านลบคู่กับข้างบน (P1 ขอ) — ถ้าไม่มี เคสบวกจะเขียวได้ทั้งที่ด่านพังทั้งด่าน
-    withPinAndSupabase();
-    const res = await proxy(request("/today"));
-    expect(res.status).toBe(307);
-    expect(new URL(res.headers.get("location") ?? "").pathname).toBe("/unlock");
-  });
-
-  it("/api/* ยังตอบ 401 JSON", async () => {
-    withPinAndSupabase();
-    const res = await proxy(request("/api/place-details?query=x"));
-    expect(res.status).toBe(401);
-    await expect(res.json()).resolves.toEqual({ error: "locked" });
-  });
-
-  it("cookie ที่ถูกต้องยังผ่านได้", async () => {
-    withPinAndSupabase();
-    expect(await outcome(proxy(request("/today", `trip_pin=${VALID_TOKEN}`)))).toBe("pass");
-  });
-
-  it("🔴 ไม่มี TRIP_PIN แต่มี Supabase env → ยัง fail-open เหมือนเดิม", async () => {
-    // สภาพของ Vercel วันที่ตั้ง Supabase เสร็จแต่ยังไม่ได้ตั้ง PIN
-    // ต้องไม่กลายเป็น "บล็อกทั้งเว็บ" เพราะ fail-open เป็นการตัดสินใจที่ตั้งใจ (proxy.ts:52-56)
-    setEnv({
-      NEXT_PUBLIC_SUPABASE_URL: FAKE_SUPABASE_URL,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: FAKE_SUPABASE_KEY,
-    });
-    expect(await outcome(proxy(request("/today")))).toBe("pass");
-  });
-});
