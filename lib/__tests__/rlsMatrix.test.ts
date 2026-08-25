@@ -3225,6 +3225,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     let tripP = "";
     let itemP = "";
     let ghostId = "";
+    let ghostName = "";
     let ghost: SupabaseClient;
 
     beforeAll(async () => {
@@ -3260,6 +3261,12 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         role: "editor",
       });
       if (inv.error) throw new Error(`เชิญผีเป็น editor ไม่ได้: ${inv.error.message}`);
+
+      // 🔴 อ่านชื่อไว้**ก่อน**ลบบัญชี — หลังลบแล้วไม่มีที่ไหนให้อ่านอีก
+      //    `admin` (service_role) ไม่มี grant บน `profiles` → ต้องอ่านผ่าน client ของผีเอง
+      const prof = await ghost.from("profiles").select("display_name").eq("id", ghostId).single();
+      if (prof.error) throw new Error(`อ่าน display_name ของผีไม่ได้: ${prof.error.message}`);
+      ghostName = prof.data!.display_name as string;
     });
 
     afterAll(async () => {
@@ -3309,7 +3316,23 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       ).toBeNull();
     });
 
-    it("🔴 ตรึง: แถวอยู่ต่อ แต่ไม่เหลืออะไรบอกได้เลยว่าใครเพิ่ม/ใครติ๊ก/ใครแก้", async () => {
+    /**
+     * 🟢 **`D78` ข้อ ② ลงแล้ว 25 ส.ค. 2026 — เคสตรึงของ P4 ถูกแทนที่ตามที่เขาสั่งไว้เอง**
+     *
+     * ข้อความ assert ของเคสเดิมเขียนไว้ว่า *"ถ้าคุณเพิ่งลงมือตาม `D78` ข้อ ② — **ลบบล็อกนี้ทิ้ง**
+     * ⚠️ อย่าแก้ตัวเลขให้เคสเขียว บล็อกนี้มีไว้เพื่อถูกลบ ไม่ใช่เพื่อถูกดูแล"*
+     * → **ลบเคสตรึงทิ้งจริง** และเขียนด้านบวกแทนในที่เดิม · เคส 3 ตัวข้างบนยังใช้ได้ทั้งหมด
+     *   (ผู้ใช้ตัดสิน `Q4` = เก็บ `display_name` · trigger `app.preserve_authorship`)
+     *
+     * 🔴 **ช่องที่ 3 ที่ P4 ชี้ไว้ยังเปิดอยู่ และเคสนี้ตรึงมันไว้แทน:** `updated_by_user`
+     *    **ไม่มี `legacy_updated_by` อยู่ที่ไหนเลยทั้งสคีมา** → `D78` ข้อ ② ครอบไม่ได้ตามนิยาม
+     *    · P1 ตัดสินว่า**ไม่เพิ่มคอลัมน์นั้น**: `updated_by_user` แปลว่า *"คนล่าสุดที่แก้"*
+     *      ซึ่งถูกเขียนทับทุกครั้งที่มีคนแก้ต่ออยู่แล้ว — แช่เป็นข้อความ = แช่ค่าที่กำลังจะถูกทับ
+     *      ต่างจาก `added_by` ที่เป็นข้อเท็จจริงที่เกิดครั้งเดียวและไม่เปลี่ยนอีก
+     *    · ⚠️ **ถ้าวันหนึ่งมีคนเห็นต่างและเพิ่ม `legacy_updated_by` เข้ามา `app.preserve_authorship`
+     *      จะครอบมันเองทันทีโดยไม่ต้องแก้ไฟล์ไหนเลย** — และเคสนี้จะแดง ซึ่งคือสัญญาณที่ถูก
+     */
+    it("🟢 D78/Q4 — แถวอยู่ต่อ และยังบอกได้ว่าใครเพิ่ม/ใครติ๊ก แม้บัญชีหายไปแล้ว", async () => {
       const { data, error } = await admin
         .from("checklist_items")
         .select(
@@ -3324,25 +3347,44 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(data, "แถวหายไปพร้อมบัญชี — นั่นไม่ใช่ P-55 แต่เป็นของที่แย่กว่า").not.toBeNull();
       expect(data!.text).toContain(stamp);
 
-      // ② สิ่งที่บล็อกนี้ตรึงไว้ — **ทั้งหมดนี้คือของที่เราอยากให้เปลี่ยน**
-      const lost = Object.entries({
-        added_by_user: data!.added_by_user,
-        legacy_added_by: data!.legacy_added_by,
-        checked_by_user: data!.checked_by_user,
-        legacy_checked_by: data!.legacy_checked_by,
-        updated_by_user: data!.updated_by_user,
-      })
-        .filter(([, v]) => v !== null)
-        .map(([k, v]) => `${k}=${v}`);
+      // ② FK ยังทำงานเหมือนเดิม — ตัวชี้ไปที่บัญชีต้องหลุด ไม่ใช่ค้างชี้ไปที่ของที่ไม่มีแล้ว
+      expect(data!.added_by_user, "`on delete set null` ไม่ทำงาน").toBeNull();
+      expect(data!.checked_by_user, "`on delete set null` ไม่ทำงาน").toBeNull();
 
+      // ③ 🟢 หัวใจของ `D78` ข้อ ② — ชื่อถูกเขียนไว้ก่อน FK จะล้างตัวชี้
       expect(
-        lost,
-        "มีคอลัมน์ที่ยังเก็บประวัติไว้ได้หลังลบบัญชี\n" +
-          "  🟢 **ถ้าคุณเพิ่งลงมือตาม `D78` ข้อ ② นี่คือผลที่ต้องการ — ลบบล็อกนี้ทิ้งทั้งบล็อก**\n" +
-          "  ⚠️ **อย่าแก้ตัวเลขให้เคสเขียว** บล็อกนี้มีไว้เพื่อถูกลบ ไม่ใช่เพื่อถูกดูแล\n" +
-          "  · และตรวจ `updated_by_user` แยกต่างหาก: มันไม่มี `legacy_updated_by` ให้ลง\n" +
-          "    ทางแก้ของ `D78` ข้อ ② จึงครอบมันไม่ได้ **ต้องเพิ่มคอลัมน์ก่อน**",
-      ).toEqual([]);
+        data!.legacy_added_by,
+        "ประวัติ 'ใครเพิ่ม' หายไปพร้อมบัญชี — `D78` ข้อ ② ถอยหลัง\n" +
+          "  ตรวจ: trigger ต้องเป็น `before delete` ไม่ใช่ `after` · และต้องอยู่บน `public.profiles`",
+      ).toBe(ghostName);
+      expect(data!.legacy_checked_by, "ประวัติ 'ใครติ๊ก' หายไปพร้อมบัญชี").toBe(ghostName);
+
+      // ④ 🔴 ช่องที่ 3 — ตรึงไว้ว่ามัน**ยังหาย** และนั่นคือการตัดสินใจ ไม่ใช่ของค้าง
+      expect(
+        data!.updated_by_user,
+        "ถ้าข้อนี้ไม่ใช่ null แปลว่ามีคนเพิ่ม `legacy_updated_by` เข้ามา — ไปอ่านคอมเมนต์เหนือเคสนี้ก่อนแก้",
+      ).toBeNull();
+    });
+
+    it("🔴 ห้ามทับสตริงเดิมที่ `E7` ย้ายมา — `display_name` เป็นของสำรอง ไม่ใช่ของหลัก", async () => {
+      // แถวที่ "ย้ายมาจากทริปเก่า" จำลองด้วยการเขียน `legacy_added_by` ไปตั้งแต่ตอน insert
+      // (ไคลเอนต์มีสิทธิ์คอลัมน์นี้ตอน insert จริง — ดู grant ของ `checklist_items`)
+      // 🔴 ผีถูกลบไปแล้วตั้งแต่เคสก่อนหน้า จึงต้องใช้ `B` ที่ยังอยู่ แล้วยืนยันว่า
+      //    trigger ของ**ผี**ไม่ได้ไปแตะแถวนี้ เพราะมันไม่ใช่แถวของผี
+      const seeded = await A.from("checklist_items")
+        .insert({
+          trip_id: tripP,
+          text: `ของที่ย้ายมา ${stamp}`,
+          category: "เอกสาร",
+          legacy_added_by: "ปาร์ค (สตริงเดิมจากทริปเก่า)",
+        })
+        .select("id, legacy_added_by")
+        .single();
+      expect(seeded.error?.message ?? null).toBeNull();
+      expect(
+        seeded.data!.legacy_added_by,
+        "ไคลเอนต์เขียน `legacy_added_by` ตอน insert ไม่ได้ — `E7` จะย้ายค่าเดิมเข้ามาไม่ได้เลย",
+      ).toBe("ปาร์ค (สตริงเดิมจากทริปเก่า)");
     });
   });
 

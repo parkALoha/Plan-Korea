@@ -320,9 +320,21 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "app.can_read_trip",
       "app.can_write_trip",
       "app.handle_new_user",
+      // 🔴 เพิ่ม 25 ส.ค. (P1) — `P-55`/`D78`/`Q4`: เขียน `display_name` ลง `legacy_<x>_by`
+      //    ก่อน FK จะ `set null` ตอนลบ `profiles` · **`before delete` ไม่ใช่ `after`**
+      //    คำตอบของคำถามข้างบน: **เป็น trigger function ไม่รับพารามิเตอร์เลย**
+      //    · เขียนเฉพาะคอลัมน์ `legacy_*` และ **เฉพาะแถวที่ค่ายังเป็น `null`** — ไม่ทับของ `E7`
+      //    · ไม่แตะ `created_at`/`updated_at`/`updated_by_user`/`id` ของตารางไหนทั้งสิ้น
+      //    เหตุผลที่ต้องเป็น definer: **คนที่ลบบัญชีไม่มีสิทธิ์เขียนตารางของทริปที่เขาไม่ได้อยู่**
+      //    invoker แปลว่าประวัติจะรอดเฉพาะทริปที่เขายังเป็นสมาชิก = รอดบางแถว เงียบ ๆ
+      "app.preserve_authorship",
       "app.shares_trip_with",
       "app.trip_owner_count",
       "app.trip_role",
+      // 🔴 เพิ่ม 25 ส.ค. (P1) — รายการคู่คอลัมน์ที่ `app.preserve_authorship` เดินตาม
+      //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · อ่าน `pg_catalog` อย่างเดียว · ไม่แตะข้อมูลผู้ใช้**
+      //    แยกจาก trigger โดยตั้งใจ เพื่อให้เทสต์เห็นขอบเขตจริงว่ามันครอบตารางไหนบ้าง
+      "public.authorship_columns",
       "public.client_writable_timestamps",
       "public.create_trip",
       // 🔴 `P-53` — soft delete ต้องผ่าน RPC เพราะ PostgREST ห่อ `UPDATE` ด้วย `RETURNING` เสมอ
