@@ -52,6 +52,7 @@ import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
+import { useSignedFiles } from "@/hooks/useSignedFiles";
 import NoteBody from "@/components/NoteBody";
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
@@ -111,6 +112,8 @@ function SummaryDayCard({
 }) {
   const en = lang === "en";
   const meta = CITY_META[day.city];
+  // เซ็นรูปจุดแวะทั้งวันครั้งเดียว (E2-AC13 ②) — การ์ดนี้เรนเดอร์ต่อวันอยู่แล้วเหมือน DayStopsSection
+  const signedStopPhotos = useSignedFiles(stops.map((s) => s.photo_url));
   // แถวที่กดเปิดดูรายละเอียดอยู่ — หน้านี้ยังอ่านอย่างเดียวเหมือนเดิม โมดัลไม่มีปุ่มแก้อะไรเลย
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   // แถวตารางบินที่กดอยู่ — คนละสเตทกับ viewIndex เพราะไม่ได้อ้างดัชนีใน schedule (คนละลิสต์กัน)
@@ -310,11 +313,14 @@ function SummaryDayCard({
               </div>
               {/* รูปตัวอย่าง: รูปที่เราอัปโหลดเองมาก่อน ไม่มีก็ใช้รูปแรกจาก Google (เฟส 22)
                   — หน้าสรุปเดิมเป็นตัวหนังสือล้วนจนดูไม่ออกว่าแต่ละที่หน้าตาแบบไหน */}
+              {/* signedStopPhotos undefined (loading) / null (เซ็นไม่สำเร็จ) ตกไปที่ PlaceThumb (รูป
+                  Google) เหมือน PlaceCard.tsx — การ์ดนี้มี fallback ที่มีความหมายอยู่แล้ว ไม่ต้องมี
+                  skeleton ใหม่ (E2-AC13 ②) */}
               {place &&
-                (stop.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
+                (stop.photo_url && typeof signedStopPhotos.get(stop.photo_url) === "string" ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset
                   <img
-                    src={stop.photo_url}
+                    src={signedStopPhotos.get(stop.photo_url) as string}
                     alt=""
                     loading="lazy"
                     className="h-12 w-12 shrink-0 rounded-lg object-cover"
@@ -485,6 +491,10 @@ function SummaryContent() {
   const en = lang === "en";
   const { hotels, loaded: hotelsLoaded } = useHotels();
   const { bookings, loaded: bookingsLoaded } = useBookings();
+  // เซ็นรวมทีเดียวทั้งทริป (E2-AC13 ②) — ส่วน "ตั๋ว/booking ทั้งหมด" โชว์ทุกใบพร้อมกันในหน้าเดียว
+  const signedBookingFiles = useSignedFiles(
+    bookings.filter((b) => isImageAttachment(b.file_name, b.file_url)).map((b) => b.file_url)
+  );
   const { items: checklistItems, loaded: checklistLoaded } = useChecklist();
   const { plans, activePlanId, loaded: plansLoaded } = usePlans();
   const { stops, loaded: stopsLoaded } = useStops(activePlanId);
@@ -734,7 +744,8 @@ function SummaryContent() {
               </h2>
               <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
                 {bookings.map((b) => {
-                  const thumb = isImageAttachment(b.file_name, b.file_url) ? b.file_url : null;
+                  const isImage = isImageAttachment(b.file_name, b.file_url);
+                  const thumbSigned = b.file_url ? signedBookingFiles.get(b.file_url) : undefined;
                   return (
                   <div key={b.id} className="flex items-start gap-2.5 px-3 py-2.5 text-sm">
                     <div className="min-w-0 flex-1">
@@ -746,7 +757,7 @@ function SummaryContent() {
                       </div>
                       <div className="font-medium text-content">
                         {b.title}
-                        {b.file_url && !thumb ? " 📎" : ""}
+                        {b.file_url && !isImage ? " 📎" : ""}
                       </div>
                       {b.confirmation_number && (
                         <div className="text-xs text-content-soft">
@@ -754,16 +765,29 @@ function SummaryContent() {
                         </div>
                       )}
                     </div>
-                    {thumb && (
+                    {/* signedBookingFiles มี 3 สถานะ (E2-AC13 ②) — undefined กำลังเซ็น · null เซ็นไม่สำเร็จ
+                        (ต้องบอก ไม่ใช่กลืน) · string เปิดได้ */}
+                    {isImage && thumbSigned === undefined && (
+                      <div className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-surface-soft" />
+                    )}
+                    {isImage && thumbSigned === null && (
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-[10px] text-content-soft"
+                        title="เปิดรูปตั๋วไม่ได้"
+                      >
+                        🖼️✕
+                      </div>
+                    )}
+                    {isImage && typeof thumbSigned === "string" && (
                       <button
                         type="button"
-                        onClick={() => setZoomed({ src: thumb, alt: b.title })}
+                        onClick={() => setZoomed({ src: thumbSigned, alt: b.title })}
                         aria-label={`${b.title} — ${en ? "view ticket photo" : "ดูรูปตั๋วขนาดเต็ม"}`}
                         className="shrink-0"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                        {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
                         <img
-                          src={thumb}
+                          src={thumbSigned}
                           alt=""
                           loading="lazy"
                           className="h-10 w-10 rounded-lg object-cover"
