@@ -296,6 +296,29 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 ---
 
+## 🟢 `data/places.ts` → `catalog_places` + `catalog_place_names` (`P-58` · 25 ส.ค. 2026)
+
+**ไฟล์ที่สองในคลาสของ `P-57`** — 72 ที่คัดสรร · `B6` สั่งให้หายไป · ไม่เคยมีใครแมป
+
+| ฟิลด์ใน `Place` | ปลายทาง | หมายเหตุ |
+|---|---|---|
+| `id` (slug เช่น `hanoi-hoan-kiem`) | `catalog_places.legacy_slug` | `unique` — `E7` join ด้วยคอลัมน์นี้ (P5 ยืนยัน) |
+| `nameTh` · `nameEn` · `nameLocal?` | `catalog_place_names(locale, name, priority)` | `D55` |
+| `addressLocal?` | `catalog_places.address_local` | `D55` — ที่อยู่ไม่ใช่ชื่อ อยู่บนแถวสถานที่ |
+| `city` (slug) | `catalog_places.city_id` → `catalog_cities.legacy_slug` | |
+| `category` | `catalog_places.category` | |
+| `lat` · `lng` | คงเดิม | |
+| **`mapsQuery`** | ✅ **`catalog_places.maps_query`** 🆕 | 🔴 **คีย์ของ `place_details_cache`/`place_photo_cache`** (`placeQuery.ts:17`) |
+| **`descriptionTh`** | ✅ **`catalog_places.description`** 🆕 | ⚠️ ภาษาเดียว สมมาตรกับ `custom_places` — **`Q6`** |
+| **`googlePlaceId?`** | ✅ **`catalog_places.google_place_id`** 🆕 | |
+| **`youtubeQuery`** | ✅ **`catalog_places.youtube_query`** 🆕 | ไม่เพิ่มให้ `custom_places` — ผู้ใช้ไม่ได้กรอกค่านี้ |
+| — | `weather_sensitivity` · `source` | คอลัมน์ใหม่ที่ไม่มีต้นทางในไฟล์ (P5 · `D53`) |
+
+🔴 **4 ตัวที่ทำเครื่องหมาย 🆕 ไม่มีในสคีมาจนถึง 25 ส.ค. 2026** — และ **`custom_places` เก็บได้ 3 ใน 4 มาตลอด**
+🎯 **คลังถูกสร้างโดยลอกบางส่วนของ `custom_places` โดยไม่มีใครเทียบกับ `data/places.ts` ซึ่งเป็นต้นทางจริง**
+
+---
+
 ## 🔴 `data/itinerary.ts` → ? — **ครึ่งที่ไฟล์นี้ไม่เคยครอบ** (`P-57` · P1 · 25 ส.ค. 2026)
 
 > **เอกสารนี้แมป *ตาราง DB 14 ใบ* · โครงของทริปอยู่ใน *ไฟล์* ไม่ใช่ตาราง**
