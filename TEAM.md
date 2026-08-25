@@ -155,6 +155,16 @@ mcp__ccd_session_mgmt__list_sessions
     · 🔴 **โค้ดที่เสิร์ฟผู้ใช้ยังห้ามแตะ service role key เหมือนเดิมทุกตัวอักษร** — `authNoServiceRole.test.ts` ยังบังคับ `lib/auth` + `app/`
     · ระบุสิทธิ์ทีละตัวตามกติกา **ไม่ใช่ `grant all`**
     · ไฟล์: `supabase-platform/supabase/migrations/20260825133252_e2_catalog_service_role_grant.sql`
+  · **ข้อยกเว้นที่ 4 (25 ส.ค. 2026 · branch `platform` เท่านั้น):** P1 อนุมัติ
+    `grant select, delete on public.trip_days to service_role` + `grant select on public.trip_stops to service_role`
+    **ขอบเขต: ให้ชุดทดสอบเดินเส้นทางที่ไคลเอนต์เดินไม่ได้ เพื่อพิสูจน์ว่ามันถูกกัน** — รูปเดียวกับข้อยกเว้นที่ 2 เป๊ะ
+    · เหตุ: เคส `D73` (*ลบวันที่ยังมีจุดแวะอยู่ไม่ได้*) **ไปไม่ถึง trigger ด้วยซ้ำ** — `permission denied for table trip_days`
+    · 🎯 **และมันเปิดเผยข้อเท็จจริงที่มีค่ากว่าตัว grant: ประตูที่ P7 กลัวหนึ่งบานปิดอยู่แล้ววันนี้**
+      `service_role` ลบ `trip_days` ไม่ได้ · **แต่ประตู `security definer` ยังเปิดอยู่** (รันด้วยสิทธิ์เจ้าของ ไม่ผ่าน grant)
+      → **trigger ยังจำเป็นทุกตัวอักษร** และตัวปรับช่วงวันของ `E3` คือของที่จะเดินเข้าประตูนั้น
+    · 🔴 **ไม่ให้ `insert`/`update`** — fixture ทั้งหมดสร้างผ่าน client ของผู้ใช้จริง (`A`/`B`/`C`)
+      ซึ่งเป็นสิ่งที่ทำให้เคสวัด RLS จริง ไม่ใช่วัดว่า `service_role` ทำอะไรได้
+    · ไฟล์: `supabase-platform/supabase/migrations/20260825140848_e2_service_role_day_stop_grant.sql`
 
 ## 4. คุยกันข้ามเซสชันยังไง
 
