@@ -19,8 +19,52 @@ import { stripTsComments } from "./_helpers";
 
 const ROOT = resolve(__dirname, "..", "..");
 
-/** โซนที่กฎนี้บังคับ — โค้ดที่เสิร์ฟให้ผู้ใช้จริง ไม่รวมเทสต์กับสคริปต์ */
-const SCANNED = ["lib/auth", "app"];
+/**
+ * โซนที่กฎนี้บังคับ — **ทุกไฟล์ที่ build เอาไปเสิร์ฟ** ไม่ใช่รายชื่อที่เรานึกออก
+ *
+ * 🔴 **แก้ 25 ส.ค. 2026 — ฉบับเดิมเป็น `["lib/auth", "app"]` และมันรั่วอยู่จริงตอนที่เขียนอยู่นี้** (P5 ชี้)
+ * `lib/supabase.ts` **สร้าง Supabase client และถูก import จากแทบทุก route** แต่ไม่อยู่ในสองโฟลเดอร์นั้น
+ * → **เปลี่ยนคีย์บรรทัดเดียวที่นั่น = ทุก route ได้สิทธิ์ service role โดยด่านนี้ยังเขียว**
+ * · `lib/googlePlaces.ts` กับ `lib/travelProvider.ts` ก็อ่าน `GOOGLE_MAPS_API_KEY` นอกโซนเดิมเหมือนกัน
+ *
+ * 🎯 **รากของช่องไม่ใช่ "ลิสต์สั้นไป" — มันคือ*ทิศของการนับ*** · ลิสต์แบบ "โฟลเดอร์ที่น่าสงสัย"
+ * แปลว่า **โฟลเดอร์ที่ไม่มีใครนึกถึง = เขียว** → นับจากทั้งทรีแล้วตัดสิ่งที่รู้ว่าไม่ได้เสิร์ฟออกแทน
+ * **ของที่ไม่รู้จักจะได้ถูกตรวจ ไม่ใช่ถูกข้าม**
+ */
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".next",
+  ".git",
+  "__tests__",
+  "supabase", // SQL ล้วน
+  "supabase-platform", // worktree อีกทรี ไม่ใช่โค้ดที่ build ที่นี่
+  "docs",
+  "public",
+]);
+
+/**
+ * ทะเบียน env ที่โค้ดเสิร์ฟผู้ใช้อ่านได้ — **ทะเบียน ไม่ใช่ใบอนุญาต**
+ *
+ * 🔴 การมีชื่ออยู่ที่นี่ **ไม่ได้แปลว่าปลอดภัย** — มันแปลว่า *"มีคนอ้างว่าชื่อนี้ไม่ใช่คีย์ที่มีสิทธิ์"*
+ * และคำอ้างนั้นต้องหักล้างได้ → **ชั้น B ตรวจ *ค่าจริง* ของทุกชื่อในนี้** (ยังไม่ลง รอ `Q3`)
+ * เพราะชั้น A ตัวเดียวยังโดน `P-30`: **ผู้เขียนตั้งชื่ออะไรก็ได้ = ผลิตเงื่อนไขที่ด่านตรวจได้เอง**
+ *
+ * `NEXT_PUBLIC_*` ผ่านโดยไม่ต้องลงทะเบียน — **สาธารณะตามนิยามของ Next เอง ไม่ใช่ตามที่เราตัดสิน**
+ * (Next ฝังค่าลง bundle ฝั่งเบราว์เซอร์ → ใครก็อ่านได้อยู่แล้ว การ "อนุญาต" จึงไม่มีความหมาย)
+ */
+const ALLOWED_ENV: Record<string, string> = {
+  CRON_SECRET: "app/api/keep-alive — ความลับฝั่งเซิร์ฟเวอร์ ใช้ยืนยันว่า cron เป็นคนเรียก ไม่ใช่คีย์ฐานข้อมูล",
+  GOOGLE_MAPS_API_KEY: "คีย์ Google ฝั่งเซิร์ฟเวอร์ · ไม่มีสิทธิ์อะไรกับ Supabase เลย",
+  NODE_ENV: "ตัวแปรของ build tool",
+};
+
+/**
+ * รูปของคีย์ที่มีสิทธิ์ **ตามที่ Supabase เป็นคนออกแบบ ไม่ใช่ที่เราคิดขึ้น**
+ * 🎯 นี่คือสิ่งที่ทำให้ด่านไม่ถูก `P-30`: ผู้เขียนเปลี่ยน*ชื่อ*ได้ตามใจ
+ *    แต่ทำให้คีย์ลับ**เลิกขึ้นต้นด้วยคำนำหน้าของมันเอง**ไม่ได้
+ * ⚠️ ประกอบจากชิ้นส่วนโดยตั้งใจ — ถ้าเขียนเต็มคำ ไฟล์นี้จะจับตัวเองได้ทันทีที่มีใครขยายโซนสแกน
+ */
+const SECRET_PREFIX = "sb_" + "secret_";
 
 /** ตัวจับของจริง — **เคสพิสูจน์ข้างล่างต้องเรียกตัวนี้ ไม่ใช่เขียน regex ซ้ำ** (กฎ E0 ข้อ 5) */
 function violations(src: string): string[] {
@@ -28,6 +72,20 @@ function violations(src: string): string[] {
   const hits: string[] = [];
   if (/SUPABASE_SERVICE_ROLE_KEY/.test(code)) hits.push("SUPABASE_SERVICE_ROLE_KEY");
   if (/\.auth\s*\.\s*getSession\s*\(/.test(code)) hits.push("auth.getSession()");
+
+  // 🔴 ชั้น A — **นับชื่อ env ที่ไฟล์นี้อ่าน แล้วเทียบกับทะเบียน** ไม่ใช่ไล่จับชื่อที่เราเดาว่าอันตราย
+  //    ทิศนี้ทำให้ **ชื่อที่ไม่รู้จัก = แดง** · ทิศเดิมทำให้ **ชื่อที่ไม่รู้จัก = เขียว**
+  //    ซึ่งคือช่องที่ P5 ชี้: คีย์ที่มีสิทธิ์ตัวที่สองจะมองไม่เห็นโดยด่านที่เขียนมาเพื่อจับสิ่งนี้พอดี
+  for (const m of code.matchAll(/process\s*\.\s*env\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*["'`]([^"'`]+)["'`]\s*\])/g)) {
+    const name = m[1] ?? m[2];
+    if (!name || name.startsWith("NEXT_PUBLIC_")) continue;
+    if (name === "SUPABASE_SERVICE_ROLE_KEY") continue; // จับไปแล้วข้างบน อย่ารายงานซ้ำ
+    if (!(name in ALLOWED_ENV)) hits.push(`env ที่ไม่ได้ลงทะเบียน: ${name}`);
+  }
+
+  // 🔴 คีย์ที่ถูกแปะตรง ๆ ไม่ผ่าน `process.env` เลย — **เกิดขึ้นแล้วจริงในทีมนี้**
+  if (code.includes(SECRET_PREFIX)) hits.push("คีย์ลับถูกแปะเป็นสตริงในโค้ด");
+
   return hits;
 }
 
@@ -42,22 +100,53 @@ function walk(dir: string): string[] {
   for (const name of entries) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
+      if (SKIP_DIRS.has(name)) continue;
       found = found.concat(walk(p));
-    } else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(name)) {
+    } else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(name) && !/\.d\.ts$/.test(name)) {
       found.push(p);
     }
   }
   return found;
 }
 
-const FILES = SCANNED.flatMap((d) => walk(join(ROOT, d)));
+const FILES = walk(ROOT);
 
 describe("E3-AC9 / D38 — ฝั่งเซิร์ฟเวอร์ต้องไม่มีสิทธิ์มากกว่าเบราว์เซอร์", () => {
   // 🔴 เคสด้านบวกของ "ตัวชุดเช็คเอง" — ถ้าไม่มีไฟล์ให้สแกน ทุกเคสข้างล่างจะเขียวโดยไม่ตรวจอะไรเลย
   //    (P-21 ของ P4: "สแกนแคบลง" กับ "สแกนความว่างเปล่า" ให้ผลเหมือนกันเป๊ะ)
-  it("มีไฟล์ให้สแกนจริง และครอบ lib/auth", () => {
+  it("มีไฟล์ให้สแกนจริง และครอบไฟล์ที่เคยหลุด", () => {
     expect(FILES.length).toBeGreaterThan(0);
-    expect(FILES.some((f) => f.includes(join("lib", "auth")))).toBe(true);
+    // 🔴 ระบุไฟล์ที่ **เคยหลุดจริง** ไม่ใช่แค่ "โฟลเดอร์มีของ" — ถ้าใครหด `SKIP_DIRS`
+    //    หรือย้ายไฟล์ ด่านจะแดงพร้อมชื่อไฟล์ ไม่ใช่เงียบแล้วสแกนน้อยลง
+    for (const must of [
+      join("lib", "auth", "server.ts"),
+      join("lib", "supabase.ts"), // ← ช่องที่ P5 ชี้ · สร้าง client และถูก import แทบทุก route
+      join("lib", "googlePlaces.ts"),
+      join("app", "api", "keep-alive", "route.ts"),
+    ]) {
+      expect(
+        FILES.some((f) => f.endsWith(must)),
+        `ไฟล์ที่ต้องถูกสแกนหายไปจากรายการ: ${must}\n` +
+          "  → ถ้าย้ายที่จริง แก้รายการนี้ **พร้อมอธิบายว่าทำไมของใหม่ยังถูกครอบ**",
+      ).toBe(true);
+    }
+  });
+
+  it("🔴 ทะเบียน env ต้องอธิบายทุกชื่อที่มีอยู่ — ไม่ใช่รายชื่อค้างจากอดีต", () => {
+    // ทะเบียนที่มีชื่อเกินของจริง = ใบอนุญาตค้างให้คนหยิบไปใช้โดยไม่มีใครทบทวน
+    const namesInUse = new Set<string>();
+    for (const f of FILES) {
+      const code = stripTsComments(readFileSync(f, "utf8"));
+      for (const m of code.matchAll(/process\s*\.\s*env\s*\.\s*([A-Za-z_$][\w$]*)/g)) {
+        if (!m[1].startsWith("NEXT_PUBLIC_")) namesInUse.add(m[1]);
+      }
+    }
+    const stale = Object.keys(ALLOWED_ENV).filter((n) => !namesInUse.has(n));
+    expect(
+      stale,
+      "ทะเบียนมีชื่อที่ไม่มีโค้ดไหนใช้แล้ว — ถอนออก\n" +
+        "  🔴 รายการที่ค้างไว้คือใบอนุญาตที่รอคนหยิบ และมันจะถูกหยิบโดยไม่มีใครทบทวนเหตุผลอีกครั้ง",
+    ).toEqual([]);
   });
 
   it("🔴 ไม่มีไฟล์ไหนแตะ service role key หรือใช้ getSession() ตัดสินสิทธิ์", () => {
@@ -94,6 +183,29 @@ describe("E3-AC9 / D38 — ฝั่งเซิร์ฟเวอร์ต้�
 
     it("ด้านลบ: `getUser()` ซึ่งเป็นทางที่ถูก ต้องไม่ถูกจับ", () => {
       expect(violations(`const { data } = await supabase.auth.getUser();`)).toEqual([]);
+    });
+
+    it("🔴 ชั้น A ด้านบวก: **ชื่อที่ไม่เคยมีใครเห็น** ต้องแดง — นี่คือทั้งหมดที่ช่องของ P5 ต้องการ", () => {
+      // ชื่อนี้ไม่อยู่ในทะเบียน และไม่มีใครเดาได้ล่วงหน้า — ด่านเดิม (regex ชื่อเดียว) เขียวสนิท
+      expect(violations(`const k = process.env.CACHE_WRITER_TOKEN;`)).toContain(
+        "env ที่ไม่ได้ลงทะเบียน: CACHE_WRITER_TOKEN",
+      );
+      // เขียนแบบวงเล็บก็ต้องจับได้ ไม่งั้นเลี่ยงด่านได้ด้วยการเปลี่ยนวิธีพิมพ์
+      expect(violations(`const k = process.env["ANOTHER_SECRET"];`)).toContain(
+        "env ที่ไม่ได้ลงทะเบียน: ANOTHER_SECRET",
+      );
+    });
+
+    it("ชั้น A ด้านลบ: `NEXT_PUBLIC_*` และชื่อที่ลงทะเบียนแล้ว ต้องไม่ถูกจับ", () => {
+      expect(violations(`const u = process.env.NEXT_PUBLIC_SUPABASE_URL;`)).toEqual([]);
+      expect(violations(`const c = process.env.CRON_SECRET;`)).toEqual([]);
+    });
+
+    it("🔴 คีย์ที่แปะเป็นสตริงตรง ๆ ต้องแดง — มันไม่ผ่าน `process.env` เลยสักตัว", () => {
+      const pasted = `const k = "${SECRET_PREFIX}AbCdEf123";`;
+      expect(violations(pasted)).toContain("คีย์ลับถูกแปะเป็นสตริงในโค้ด");
+      // และคอมเมนต์ที่ *พูดถึง* ต้องไม่ถูกจับ ด้วยเหตุผลเดียวกับ D40
+      expect(violations(`// ห้ามแปะคีย์ที่ขึ้นต้นด้วย ${SECRET_PREFIX} ลงไฟล์`)).toEqual([]);
     });
   });
 });
