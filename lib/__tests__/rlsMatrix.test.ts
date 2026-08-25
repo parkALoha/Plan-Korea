@@ -3202,15 +3202,30 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
        *    และมันเชื่อได้เพราะเคส "ฐานกับทรีตรงกัน" ข้างบนพิสูจน์ไปแล้วว่าสองฝั่งเป็นชุดเดียวกัน
        *    ⚠️ ถ้าเคสนั้นแดง เคสนี้ก็ไม่มีความหมาย — **มันพึ่งกันโดยตั้งใจ**
        */
-      const tables = [
-        ...new Set(
-          migrationFiles.flatMap((f) => [
-            ...stripComments(readFileSync(f, "utf8")).matchAll(
-              /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi,
-            ),
-          ].map((m) => m[1].toLowerCase())),
-        ),
-      ].sort();
+      /**
+       * 🔴 **แก้ 25 ส.ค. 2026 (P1) — ต้องหัก `drop table` ออกด้วย ไม่ใช่รวมทุก `create table`**
+       * ตัวสแกนฉบับแรกอ่านแต่ `create table` → **ตารางที่ถูกสร้างแล้วลบในภายหลัง จะถูกนับว่ายังอยู่**
+       * แล้วเคส `MISSING` ข้างล่างจะแดงใส่ของที่ถูกต้อง
+       * · เจอจริงทันที: `rls_force_probe` (ตารางทดลองตอบคำถาม `force RLS` ของ P5 · สร้างแล้ว
+       *   ลบในคอมมิตถัดไปตามที่เขียนกำกับไว้) — **เคสนี้แดงเพราะกลไกทำงานถูก ไม่ใช่เพราะฐานผิด**
+       * 🎯 และมันเป็นรูปเดียวกับที่ตัวสแกนนี้มีไว้จับพอดี: **"อ่านจากเจตนาที่เขียนไว้ ไม่ใช่จากของที่มีอยู่"**
+       *   — ไฟล์บอกว่า *เคยสร้าง* ไม่ได้บอกว่า *ยังอยู่* · `drop` คือส่วนที่หายไปจากคำถาม
+       */
+      const created = new Set<string>();
+      for (const f of migrationFiles) {
+        const sql = stripComments(readFileSync(f, "utf8"));
+        for (const m of sql.matchAll(
+          /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi,
+        )) {
+          created.add(m[1].toLowerCase());
+        }
+        for (const m of sql.matchAll(
+          /drop\s+table\s+(?:if\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi,
+        )) {
+          created.delete(m[1].toLowerCase());
+        }
+      }
+      const tables = [...created].sort();
 
       // ด้านบวกของตัวดึงรายชื่อเอง — regex ที่พังจะให้ลิสต์ว่าง แล้วเคสนี้เขียวโดยไม่ตรวจอะไร
       expect(tables.length, "ดึงชื่อตารางจากไฟล์ migration ไม่ได้เลย").toBeGreaterThan(15);
