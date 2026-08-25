@@ -147,3 +147,52 @@ export function dayStopsIncludingDeleted(opts: { tripDayId: string; planId: stri
     .order("rank", { ascending: true })
     .order("id", { ascending: true });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// ค้นชื่อสถานที่ — `D56` · รูปพารามิเตอร์จาก `copilot-spec.md §25` (P5)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 **`intent` เป็น required และ TS ก็บังคับเหมือนที่ SQL บังคับ — จงใจซ้ำกันสองชั้น**
+ *
+ * P5: *ค่าเริ่มต้นใดก็ตาม **ถูกครึ่งหนึ่งของเวลา และเงียบอีกครึ่งหนึ่ง***
+ * · default `discover` → ผู้ใช้ถามถึงจุดในแผนตัวเอง แล้วได้ *"ไม่เจอ"*
+ * · default `identify` → ขอบเขตแคบเกิน แล้วได้ *"ไม่เจอ"* เหมือนกัน
+ * **ทั้งสองพังด้วยข้อความเดียวกันเป๊ะ → แยกไม่ออกจาก log ว่าตั้ง default ผิดข้าง**
+ *
+ * | | `identify` — *"'ตลาดกลางคืน' คือจุดไหนในแผน"* | `discover` — *"หาที่แบบนี้ให้เพิ่ม"* |
+ * |---|---|---|
+ * | ขอบเขต | เฉพาะที่ทริปนี้อ้างถึงแล้ว (`trip_stops`) · **รวม `custom_places`** | `catalog_places` ของเมืองนั้น |
+ * | `picker_hidden` | **ไม่กรอง** — สนามบินคือจุดแวะจริง | **กรอง** |
+ * | ตัดของที่อยู่ในแผนแล้ว | **ไม่** — นั่นคือสิ่งที่กำลังหา | **ใช่** |
+ */
+export type PlaceSearchIntent = "identify" | "discover";
+
+export type PlaceSearchHit = {
+  source: "catalog" | "custom";
+  place_id: string;
+  city_id: string | null;
+  matched_name: string;
+  locale: string;
+  score: number;
+};
+
+/**
+ * 🔴 **RPC นี้เป็น `security invoker`** — RLS เป็นตัวจำกัดขอบเขตให้เอง
+ * ไม่มีบรรทัดไหนในนั้นเช็คว่าใครเป็นเจ้าของทริป และนั่นคือเหตุผลที่มันจะยังถูกวันที่ policy เปลี่ยน (`D38`)
+ */
+export function searchPlaceNames(opts: {
+  tripId: string;
+  query: string;
+  intent: PlaceSearchIntent;
+  cityId?: string;
+  limit?: number;
+}) {
+  return supabase.rpc("search_place_names", {
+    p_trip_id: opts.tripId,
+    p_query: opts.query,
+    p_intent: opts.intent,
+    p_city_id: opts.cityId ?? null,
+    p_limit: opts.limit ?? 20,
+  });
+}
