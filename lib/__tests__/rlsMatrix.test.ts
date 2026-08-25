@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { readEnvKey, requireLiveCreds } from "./_helpers";
+import { TEST_COUNTRY_CODES, readEnvKey, requireLiveCreds } from "./_helpers";
 
 /**
  * Test matrix ของ RLS — DoD พิเศษของ E1 (ใช้ต่อใน E2)
@@ -443,6 +443,25 @@ describe("ความครบของ matrix — ตรวจตัวรา�
    * ⚠️ **ด่านนี้พิสูจน์ไม่ได้ว่าเคสถูกเขียนจริง** มันบังคับแค่ให้ *มีคนตัดสินใจ* ตอนเพิ่มตาราง
    *    (ถ้าแดง: ไปเพิ่มเคส 2 ทิศก่อน **แล้วค่อย**เติมชื่อลงลิสต์นี้ — ไม่ใช่เติมชื่อให้เขียวแล้วจบ)
    */
+  /**
+   * 🔴 **ทะเบียนรหัสประเทศของชุดทดสอบ — ค่าซ้ำต้องแดง *ก่อน* ที่มันจะกลายเป็น "ข้าม"**
+   *
+   * P4 กับ P1 เลือก `"zz"` ตรงกันโดยไม่รู้ → `beforeAll` ของบล็อกหลังล้มด้วยคีย์ซ้ำ
+   * → **12 เคสถูกข้าม และผลรวมพิมพ์ว่า `349 passed | 12 skipped` ซึ่งอ่านเหมือนรันสบาย ๆ**
+   * 🎯 บทเรียนคือ **"ข้าม" อ่านเป็นเขียวเสมอ** ไม่ใช่ "ระวังชนกัน"
+   */
+  it("🔴 รหัสประเทศของแต่ละบล็อกต้องไม่ซ้ำกัน — namespace มีแค่ 676 ค่าและทุกบล็อกแชร์มัน", () => {
+    const codes = Object.values(TEST_COUNTRY_CODES);
+    expect(
+      new Set(codes).size,
+      `มีรหัสซ้ำใน TEST_COUNTRY_CODES: ${codes.join(", ")}\n` +
+        "  🔴 ถ้าปล่อยไว้ บล็อกหลังจะล้มที่ beforeAll แล้วเคสของมันจะถูก **ข้าม** ไม่ใช่ **แดง**",
+    ).toBe(codes.length);
+    for (const c of codes) {
+      expect(c, `รหัส ${c} ไม่ใช่ [a-z]{2} — catalog_countries.id จะปฏิเสธ`).toMatch(/^[a-z]{2}$/);
+    }
+  });
+
   it("🔴 ตารางเนื้อหาต้องขึ้นทะเบียน — ตารางใหม่ที่ยังไม่มีเคส 2 ทิศ ต้องไม่ผ่านเงียบ ๆ", () => {
     const content = new Set<string>();
     for (const [key, body] of policyMap()) {
@@ -1989,7 +2008,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      * 🔴 ฉบับแรกใช้ `` `t${stamp}`.slice(0,2) `` ซึ่งได้ `t1` → **ตัวเลขไม่ผ่าน `^[a-z]{2}$`**
      * (`check` จับได้ทันทีที่รันครั้งแรก — ซึ่งคือสิ่งที่ `check` มีไว้ทำ)
      */
-    const cc = "zz";
+    const cc = TEST_COUNTRY_CODES.catalogGeo;
     let cityId = "";
 
     beforeAll(async () => {
@@ -2098,7 +2117,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      * **ด้วยรหัสข้อผิดพลาดที่ระบุ** — constraint ที่ไม่มีอยู่จะทำให้ครึ่งหลังแดงทันที
      * 📌 ครั้งหน้าเขียนเคสก่อน push — ราคาของการทำผิดลำดับคือหลักฐานที่อ่อนกว่าที่ควรเป็น
      */
-    const cc2 = "zy";
+    const cc2 = TEST_COUNTRY_CODES.catalogPlaces;
     let cityA = "", cityB = "", placeA = "";
 
     const mkCity = async (slug: string, lat: number) => {
@@ -2378,7 +2397,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      * เพราะตารางเดียวจะบังคับให้ policy เดียวรับใช้ทั้ง `using (true)` และเงื่อนไขผูก `trip_members`
      * ด้วย `or` — **และบั๊กใน `or` นั้นครั้งเดียวคือชื่อสถานที่ในทริปคนอื่นรั่ว**
      */
-    let tripC = "", cityC = "", cc3 = "zx", placeC = "";
+    let tripC = "", cityC = "", cc3 = TEST_COUNTRY_CODES.customPlaces, placeC = "";
 
     beforeAll(async () => {
       const t = await A.rpc("create_trip", {
@@ -2496,7 +2515,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      * อยู่ตรงไหนตอนไหนย้อนหลังได้ทั้งทริป**
      */
     let tripS = "", planS = "", dayS1 = "", dayS2 = "", catPlace = "", myPlace = "", otherPlace = "";
-    const cc4 = "zw";
+    const cc4 = TEST_COUNTRY_CODES.tripStops;
 
     beforeAll(async () => {
       await admin.from("catalog_cities").delete().eq("country_id", cc4);
