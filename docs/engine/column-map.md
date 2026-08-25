@@ -395,6 +395,62 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 ---
 
+## 🟢 `data/transferPoints.ts` → `catalog_places` (`P-60` · DDL ลงแล้ว 25 ส.ค. 2026)
+
+**ตัดสินไปแล้วใน `P-60` แต่คำตอบอยู่แค่ใน `README.md` บรรทัดเดียว ไม่เคยลงไฟล์นี้** — เขียนลงมา 26 ส.ค. 2026
+· 🔴 **และนั่นคือรูปของ `P-57` ซ้ำ:** เกณฑ์ชี้มาที่ไฟล์นี้ · คำตอบอยู่ที่อื่น · **ทั้งสองฝั่งดูเรียบร้อยแยกกัน**
+
+`TransferPoint = Place & { transferKind, pickerHidden }` → **ฟิลด์ของ `Place` ได้ปลายทางจากหัวข้อ `data/places.ts` ข้างบนครบแล้ว** เหลือ 2 ตัวที่เป็นของไฟล์นี้เอง:
+
+| ฟิลด์ | ปลายทาง | เหตุผล |
+|---|---|---|
+| `transferKind` | **`catalog_places.transfer_kind`** `text check in ('airport','station')` | มี `check` ผูกกับ `source = 'transfer'` — แถวที่ไม่ใช่จุดเปลี่ยนถ่ายถือค่านี้ไม่ได้ |
+| `pickerHidden` | **`catalog_places.picker_hidden`** `boolean not null default false` | 🔴 `D81` ③.๖ — วันนี้กฎ *"สนามบินไม่ใช่ที่เที่ยว"* บังคับด้วย**การอยู่คนละไฟล์** · ยุบเข้าตารางเดียวแล้วเหลือแค่ธง · ทุก query ที่ browse ต้องมี `and not picker_hidden` → บังคับที่ [`lib/engine/db.ts`](../../lib/engine/db.ts) |
+
+📌 **`home-base` จงใจไม่อยู่ในไฟล์นี้** (ไฟล์ขึ้น git · เป็นที่อยู่จริงของเจ้าของทริป) → อยู่ใน `custom_places` เหมือนเดิม **ไม่ย้ายเข้าคลังกลาง**
+
+---
+
+## 🟢 `data/emergency.ts` → `catalog_country_contacts` (`P-60` · DDL ลงแล้ว 25 ส.ค. 2026)
+
+`EMERGENCY_BY_COUNTRY: Record<"kr" | "vn", EmergencyContact[]>` — **คีย์ของ `Record` คือรหัสประเทศ ซึ่งตรงกับ `catalog_countries.id` พอดี** จึงไม่ต้องออกแบบคีย์ใหม่
+
+| ฟิลด์ | ปลายทาง | เหตุผล |
+|---|---|---|
+| *(คีย์ `Record`)* | **`country_id`** `text → catalog_countries(id) on delete cascade` | `"kr"` · `"vn"` เป็น id ของประเทศอยู่แล้ว |
+| `icon` | `icon` | |
+| `label` | `label` `not null` | |
+| `local` | **`local_number`** | เปลี่ยนชื่อ — `local` ชนกับคำที่ใช้เรียก *ภาษาท้องถิ่น* ทั่วทั้งโปรเจกต์ (`name_local` · `address_local`) |
+| `tel` | `tel` | |
+| `detail` | `detail` | |
+| `url` | `url` | |
+| *(ลำดับใน array)* | **`priority`** `int not null default 1` + `unique (country_id, priority)` | 🔴 ลำดับใน array คือข้อมูลจริง — เบอร์ฉุกเฉินหลักต้องมาก่อนเบอร์สถานทูตเสมอ · **ถ้าไม่เก็บ ลำดับจะกลายเป็นสิ่งที่ฐานไม่รับประกัน** |
+
+🔴 **`check` ที่บังคับว่าต้องติดต่อได้จริง:** `local_number is not null or tel is not null or url is not null`
+· แถวที่ไม่มีทางติดต่อเลย **เป็นแถวที่อ่านเหมือนมีข้อมูลแต่กดอะไรไม่ได้** — และนี่คือหน้าจอที่คนเปิดตอนฉุกเฉิน
+
+---
+
+## 🟢 `data/airportAccess.ts` → `catalog_place_access` (`P-60` · DDL ลงแล้ว 25 ส.ค. 2026)
+
+`AIRPORT_ACCESS: Record<string, AirportAccessOption[]>` — **คีย์คือ id ของสนามบิน** (`"airport-icn"`) → เป็น**ตารางลูก**ของจุดเปลี่ยนถ่าย ไม่ใช่ตารางอิสระ
+
+| ฟิลด์ | ปลายทาง | เหตุผล |
+|---|---|---|
+| *(คีย์ `Record`)* | **`place_id`** `uuid → catalog_places(id) on delete cascade` | ตัวเลือกการเดินทางไม่มีความหมายถ้าไม่มีสนามบิน → `cascade` ถูกต้อง |
+| `id` | **`legacy_slug`** `text check ~ '^[a-z0-9-]{1,60}$'` | `"arex-express"` เป็น slug ของไฟล์เดิม ไม่ใช่ id ของฐาน · **เก็บไว้เพื่อให้ `E7` เทียบแถวได้** |
+| `icon` | `icon` | |
+| `label` | `label` `not null` | |
+| `minutes` | `minutes` `int not null check (between 0 and 1440)` | |
+| `from` | **`from_label`** | เปลี่ยนชื่อ — `from` เป็นคำสงวนของ SQL |
+| `note` | `note` | |
+| *(ลำดับใน array)* | **`priority`** + `unique (place_id, priority)` | เหตุผลเดียวกับ `catalog_country_contacts` |
+
+⚠️ **`minutes` เป็นค่าอ้างอิงจากผู้ให้บริการ ไม่ใช่เวลาจริงจาก Routes API** — ไฟล์เดิมเขียนเหตุผลไว้เองว่าคำถามตอน 05:45 คือ *"รถไฟด่วนกับบัสอันไหนคุ้มกว่า"* ซึ่งต้องเห็นทุกตัวเลือกพร้อมกัน
+🔴 **UI ต้องติดป้ายแยกให้ชัดว่าอันไหนเป็นอันไหน** (กติกาเดียวกับป้าย *"จริง/ประมาณการ"*) — **ยุบสองอย่างนี้เข้าด้วยกันคือการให้ตัวเลขที่ดูแม่นกว่าความจริง**
+
+---
+
 ## ⏳ ของที่ยังไม่มีคำตอบ — จดไว้แทนที่จะปล่อยให้เข้าใจว่าครบ
 
 1. ✅ **ปิดแล้ว 24 ส.ค. 2026 — `trip_hotels.leg_id`** → `D51`
