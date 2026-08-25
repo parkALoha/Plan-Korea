@@ -1,5 +1,47 @@
 import { defineConfig } from "vitest/config";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { runIntegrityFailure } from "./lib/__tests__/_runIntegrity";
+
+/**
+ * 🔴 **ด่านสุดท้าย: รอบที่มีเคสถูกข้าม ต้องไม่ออกจากโปรเซสด้วยรหัส 0** (P4 · 26 ส.ค. 2026)
+ *
+ * วัดมาแล้ว: ไม่มี creds + ไม่ตั้ง `RLS_MATRIX_REQUIRED=1` → **`Tests 26 passed | 230 skipped`
+ * และ exit 0** · `requireLiveCreds` กันได้เฉพาะเมื่อมีคน**จำได้ว่าต้องตั้งธง**
+ * → ตัวนี้ทำให้ **ลืมตั้งธงแล้วยังแดง** · เหตุผลเต็มอยู่ใน `_runIntegrity.ts`
+ *
+ * 📌 ตั้งใจให้อยู่ที่ reporter ไม่ใช่ในเทสต์: เทสต์ที่ถูกข้ามไปแล้ว **ไม่มีทางตรวจตัวเองได้**
+ */
+function countTasks(tasks: readonly unknown[]): { skipped: number; total: number } {
+  let skipped = 0;
+  let total = 0;
+  for (const raw of tasks) {
+    const t = raw as { type?: string; mode?: string; tasks?: unknown[]; result?: { state?: string } };
+    if (t.tasks) {
+      const inner = countTasks(t.tasks);
+      skipped += inner.skipped;
+      total += inner.total;
+    } else if (t.type === "test" || t.type === "custom") {
+      total += 1;
+      if (t.mode === "skip" || t.mode === "todo" || t.result?.state === "skip") skipped += 1;
+    }
+  }
+  return { skipped, total };
+}
+
+const runIntegrityReporter = {
+  onFinished(files: unknown[] = [], errors: unknown[] = []) {
+    const counted = countTasks(files);
+    const why = runIntegrityFailure({
+      skipped: counted.skipped,
+      suiteErrors: errors.length + files.filter((f) => (f as { result?: { state?: string } }).result?.state === "fail" && !(f as { tasks?: unknown[] }).tasks?.length).length,
+      total: counted.total,
+    });
+    if (why) {
+      console.error(`\n🔴 รอบนี้อ่านเป็น "ผ่าน" ไม่ได้:\n${why}\n`);
+      process.exitCode = 1;
+    }
+  },
+};
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
@@ -24,5 +66,7 @@ export default defineConfig({
     //    วันที่ 30s ไม่พอ **คำตอบคือลดจำนวน round trip ไม่ใช่เพิ่มตัวเลขนี้อีกรอบ**
     hookTimeout: 30_000,
     testTimeout: 30_000,
+
+    reporters: ["default", runIntegrityReporter],
   },
 });
