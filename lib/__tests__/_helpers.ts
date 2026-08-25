@@ -141,4 +141,6 @@ export const TEST_COUNTRY_CODES = {
   tripStops: "zw",
   /** บล็อกตรวจว่าคลังเขียนจากไคลเอนต์ไม่ได้ — P4 (ยังใช้สตริงในบล็อกตัวเอง · จองไว้ที่นี่กันคนอื่นหยิบ) */
   catalogWriteGuard: "xq",
+  /** บล็อก soft delete (`D76`) — P1 */
+  softDelete: "zv",
 } as const;

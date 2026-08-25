@@ -305,11 +305,38 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     expect(PERSONAS).toContain("C_no_trip");
   });
 
-  /** verb ที่แต่ละตารางมี policy จริง — อ่านจากไฟล์ที่รันจริง ไม่ใช่จากความจำ */
-  function policiedVerbs(table: string): string[] {
-    const re = new RegExp(`^create policy \\S+ on public\\.${table}\\s*\\n\\s*for (\\w+)`, "gm");
+  /**
+   * แผนที่ `ตาราง.ชื่อ` → เงื่อนไข **ตามสภาพหลัง migration ทุกไฟล์รันจบ**
+   *
+   * 🔴 **แก้ 25 ส.ค. 2026 — ฉบับเดิมมองไม่เห็น `drop policy`**
+   * `D76` ถอด policy `DELETE` ของ `trip_stops`/`custom_places` ออกด้วย `drop policy` ในไฟล์ทีหลัง
+   * **แต่ข้อความ `create policy … for delete` ยังอยู่ในไฟล์เก่า** → ด่านรายงานว่ายังมีอยู่
+   * 🎯 **ด่านที่อ่าน *ไฟล์* แทน *สภาพจริง* — หมวดเดียวกับที่ P7 ชี้ตอนเสนอ `has_column_privilege`**
+   * · ตอนนี้เดิน `create`/`drop` **ตามลำดับ** เหมือนที่ Postgres ทำ
+   * · ⚠️ **ยังไม่ใช่สภาพของฐาน** — มันคือสภาพของ*ไฟล์เมื่อรันครบ* · ใครแก้ policy จากแดชบอร์ด ด่านนี้ไม่เห็น
+   *   (ตัวที่ตอบเรื่องฐานคือ `client_writable_timestamps()` และเมทริกซ์สด)
+   */
+  function policyMapOrdered(): Map<string, string> {
     const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
-    return [...src.matchAll(re)].map((m) => m[1]).sort();
+    const out = new Map<string, string>();
+    const re = /(create|drop)\s+policy\s+(?:if\s+exists\s+)?(\S+)\s+on\s+public\.(\w+)([\s\S]*?);/g;
+    for (const m of src.matchAll(re)) {
+      const key = `${m[3]}.${m[2]}`;
+      if (m[1] === "drop") out.delete(key);
+      else out.set(key, stripComments(m[4]).replace(/\s+/g, " ").trim().toLowerCase());
+    }
+    return out;
+  }
+
+  /** verb ที่แต่ละตารางมี policy จริง — จากสภาพหลังไฟล์ทุกตัวรันจบ ไม่ใช่ทุกบรรทัดที่เคยเขียน */
+  function policiedVerbs(table: string): string[] {
+    const verbs: string[] = [];
+    for (const [key, body] of policyMapOrdered()) {
+      if (key.split(".")[0] !== table) continue;
+      const v = body.match(/^\s*for (\w+)/)?.[1];
+      if (v) verbs.push(v);
+    }
+    return verbs.sort();
   }
 
   it("🔴 ตารางที่ **จงใจไม่มี** policy DELETE ต้องไม่มีต่อไป — เพิ่มเมื่อไหร่ต้องเป็นการตัดสินใจ", () => {
@@ -330,7 +357,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    — กันด้วย FK ไม่ใช่ด้วยเคสที่แดงทีหลัง (บทเรียนจาก `D73`)
       // `trip_stops` — ผู้ใช้ลบจุดแวะจริงทุกวัน · `E2-AC12` (soft delete) ยังไม่ตัดสินทั้งตระกูล
       // 🔴 เมื่อ `E2-AC12` ตัดสินแล้วว่าเป็น soft delete ชื่อนี้ต้องออกจากลิสต์ **ไม่ใช่อยู่ต่อ**
-      const MAY_DELETE = ["trip_members", "trip_plans", "custom_places", "custom_place_names", "trip_stops"];
+      // 🔴 `trip_stops` และ `custom_places` **ออกจากลิสต์แล้ว 25 ส.ค. — `D76` ตัดสิน soft delete**
+      //    ตรงกับที่เขียนไว้เองว่า *"เมื่อ `E2-AC12` ตัดสินแล้ว ชื่อต้องออกจากลิสต์ ไม่ใช่อยู่ต่อ"*
+      //    `custom_place_names` ยังอยู่ — เป็นใบที่หายไปกับพ่อ ไม่ใช่ของที่ผู้ใช้ลบทีละแถว
+      const MAY_DELETE = ["trip_members", "trip_plans", "custom_place_names"];
       if (!MAY_DELETE.includes(t)) {
         expect(verbs, `${t} มี policy DELETE แล้ว — ตั้งใจหรือเปล่า`).not.toContain("delete");
       }
@@ -341,15 +371,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
    * แผนที่ `ตาราง.ชื่อ` → เงื่อนไขที่ normalize แล้ว · **เอาการประกาศครั้งสุดท้าย**
    * เพราะนั่นคือสิ่งที่เหลืออยู่ในฐานหลัง migration ทุกตัวรันจบ
    */
-  function policyMap(): Map<string, string> {
-    const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
-    const out = new Map<string, string>();
-    for (const m of src.matchAll(/create policy\s+(\S+)\s+on\s+public\.(\w+)([\s\S]*?);/g)) {
-      const body = stripComments(m[3]).replace(/\s+/g, " ").trim().toLowerCase();
-      out.set(`${m[2]}.${m[1]}`, body); // ประกาศทีหลังทับของเดิม — ตรงกับที่ Postgres ทำ
-    }
-    return out;
-  }
+  /** ชื่อเดิมที่เคสอื่นเรียกอยู่ — ตอนนี้ชี้ไปตัวที่รู้จัก `drop policy` แล้ว */
+  const policyMap = policyMapOrdered;
 
   it("🔴 รายชื่อ policy ต้องไม่เปลี่ยน — เพิ่ม/ลบ/เปลี่ยนชื่อ ต้องมาไล่กิ่งก่อน", () => {
     // 🎯 `P-48` เดิมนับ **จำนวนคำสั่ง `create policy`** ซึ่งเป็นพร็อกซี ไม่ใช่ของจริง:
@@ -368,7 +391,6 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "custom_place_names.custom_place_names_insert",
       "custom_place_names.custom_place_names_select",
       "custom_place_names.custom_place_names_update",
-      "custom_places.custom_places_delete",
       "custom_places.custom_places_insert",
       "custom_places.custom_places_select",
       "custom_places.custom_places_update",
@@ -393,7 +415,6 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "trip_plans.trip_plans_insert",
       "trip_plans.trip_plans_select",
       "trip_plans.trip_plans_update",
-      "trip_stops.trip_stops_delete",
       "trip_stops.trip_stops_insert",
       "trip_stops.trip_stops_select",
       "trip_stops.trip_stops_update",
@@ -510,6 +531,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    เหตุผลที่ต้องเป็น definer: invoker แปลว่า **ค่าคงที่ถูกบังคับกับบางคน และเงียบกับบางคน**
       //    · และคนที่มันเงียบด้วยคือคนที่มีสิทธิ์มากที่สุด ซึ่งกลับด้านกับสิ่งที่ควรเป็น
       "app.assert_day_has_no_stops",
+      // 🔴 เพิ่ม 25 ส.ค. — FK `restrict` กันการลบ**จริง**ได้ แต่ **ไม่รู้จัก `deleted_at`**
+      //    ถ้าไม่มีตัวนี้ soft delete จะพาสถานที่หายไปจากใต้จุดแวะที่ยังชี้อยู่
+      "app.assert_place_not_in_use",
       "app.assert_trip_has_owner",
       "app.assert_trip_has_plan",
       "app.bootstrap_trip_owner",
@@ -521,6 +545,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "app.trip_role",
       "public.client_writable_timestamps",
       "public.create_trip",
+      // 🔴 `P-53` — soft delete ต้องผ่าน RPC เพราะ PostgREST ห่อ `UPDATE` ด้วย `RETURNING` เสมอ
+      //    → แถวที่เพิ่งทำให้ตัวเองหายไป ไม่ผ่าน policy `SELECT` ของตัวเอง · **`P-26` กลับด้าน**
+      //    คำตอบของคำถามข้างบน: รับ `p_id uuid` ตัวเดียว · ตั้ง `deleted_at` เท่านั้น
+      //    · ถาม `app.can_write_trip()` ของคนเรียกเองก่อนทำอะไรทั้งสิ้น
+      "public.soft_delete_custom_place",
+      "public.soft_delete_trip_stop",
       "public.unsafe_state_clear",
       "public.unsafe_state_reason",
       "public.unsafe_state_set",
@@ -536,6 +566,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 8 (`01adb82c…` → `2a759c27…`) — **ค่าไม่ได้เปลี่ยนเพราะ policy เปลี่ยน**
+    //    แต่เพราะตัวสแกนเพิ่งรู้จัก `drop policy` → policy ที่ถูกถอดออกไม่ถูกนับอีกต่อไป
+    //    🎯 ค่าเดิมคือ fingerprint ของ**ไฟล์ทุกบรรทัดที่เคยเขียน** · ค่าใหม่คือของ**สภาพหลังรันจบ**
+    // 🔴 อัปเดตรอบ 7 (`d223b58a…` → `01adb82c…`) — `D76` soft delete
+    //    `trip_stops_select`/`custom_places_select` เติม `and deleted_at is null`
+    //    · policy `DELETE` ของทั้งสองตาราง **ถูกถอดออก** (ลบผ่าน RPC เท่านั้น · `P-53`)
     // 🔴 อัปเดตรอบ 6 (`be2d37ba…` → `d223b58a…`) — `trip_stops` 4 policy
     //    กิ่งที่ไล่แล้ว: editor เขียนได้ · viewer ถูกปฏิเสธ · `D70` ชี้สถานที่ข้ามทริปไม่ได้
     //    · `D53` check ผูกกับ `kind` (0 · 1 · ห้าม 2) · `trip_id` เขียนไม่ได้ · `D73` trigger ยิงจริง
@@ -554,7 +590,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "d223b58a5049c24b",
+      "2a759c273a47a876",
     );
   });
 });
@@ -1691,6 +1727,13 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           error,
           "ลบแผนใบสุดท้ายสำเร็จ = ทริปกลายเป็นใบเปล่าที่ผู้ใช้กู้เองไม่ได้",
         ).not.toBeNull();
+        // 🔴 P4: `not.toBeNull()` อย่างเดียว **ผ่านได้ด้วย error อะไรก็ได้** — policy เปลี่ยน · FK · คอลัมน์ผิด
+        //    เคสนี้ตั้งชื่อว่าทดสอบ trigger จึงต้องยืนยันว่า **trigger เป็นคนปฏิเสธ** ไม่ใช่อย่างอื่น
+        //    (บทเรียนเดียวกับเคส anon-insert ที่เคยเขียวเพราะชื่อคอลัมน์ผิด ไม่ใช่เพราะ RLS)
+        expect(
+          error?.message ?? "",
+          `ถูกปฏิเสธด้วยเหตุอื่น ไม่ใช่ trigger: ${error?.code} ${error?.message}`,
+        ).toContain("ลบแผนสุดท้ายไม่ได้");
         const { data } = await A.from("trip_plans").select("id").eq("trip_id", tripP);
         expect(data, "แผนหายไปทั้งที่ trigger ควรกันไว้").toHaveLength(1);
       });
@@ -2670,9 +2713,15 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(error, `ลบวันว่างไม่ได้: ${error?.message} — trigger เข้มเกินไป`).toBeNull();
     });
 
-    it("🔴 ลบสถานที่ที่ยังอยู่ในแผนไม่ได้ (`restrict`) — กันด้วย FK ไม่ใช่ด้วยเคส", async () => {
-      const { error } = await B.from("custom_places").delete().eq("id", myPlace);
-      expect(error?.code, `ลบสถานที่ที่ยังถูกใช้ได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
+    it("🔴 ลบสถานที่ที่ยังอยู่ในแผนไม่ได้ — สองชั้น: `restrict` กันการลบจริง · trigger กัน soft delete", async () => {
+      // ชั้นที่ 1: `DELETE` ตรง ๆ ถูกถอดออกทั้ง policy และ grant แล้ว (`D76`)
+      const hard = await B.from("custom_places").delete().eq("id", myPlace);
+      expect(hard.error?.code, `ยังลบจริงได้: ${hard.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      // ชั้นที่ 2: soft delete ก็ไม่ได้ ถ้ายังมีจุดแวะที่ยังไม่ถูกลบชี้อยู่
+      // 🔴 FK `restrict` **ไม่รู้จัก `deleted_at`** — ถ้าไม่มี trigger ชั้นนี้จะเปิดโล่ง
+      const soft = await B.rpc("soft_delete_custom_place", { p_id: myPlace });
+      expect(soft.error, `soft delete สถานที่ที่ยังถูกใช้อยู่สำเร็จ`).not.toBeNull();
     });
 
     it("ด้านบวก: ลบทริปทั้งใบยังทำได้ — cascade ต้องไม่ถูก trigger ของ D73 ขวาง", async () => {
@@ -2691,6 +2740,137 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         `ลบทริปทั้งใบไม่ได้: ${error?.message}\n` +
           "  🔴 = `when (pg_trigger_depth() = 0)` หายไป → trigger ขวาง cascade ที่ถูกต้องด้วย",
       ).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC12 / D76 — soft delete: ลบแล้วหายจากสายตา แต่แถวยังอยู่", () => {
+    /**
+     * ✅ เขียนก่อน `db push`
+     *
+     * `D76` ตัดสินครั้งเดียวทั้งตระกูลหลังจากถูกเลื่อนมา **5 ตารางติดกัน** (P7 จับได้)
+     * · ลบ = `UPDATE` ตั้ง `deleted_at` · **policy `DELETE` และ `grant delete` ถูกถอดออก**
+     * · อ่าน = policy เติม `and deleted_at is null` — **บังคับที่ policy ไม่ใช่ที่ query**
+     *   ลืมที่ query แล้ว**เห็นน้อยลง** ไม่ใช่เห็นมากขึ้น
+     */
+    let tripD2 = "", planD = "", dayD = "", placeD = "", stopD = "";
+    const ccD = TEST_COUNTRY_CODES.softDelete;
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccD);
+      await admin.from("catalog_countries").delete().eq("id", ccD);
+      await admin.from("catalog_countries").insert({ id: ccD, name_th: "ทดสอบห้า", name_en: "T5" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccD, name_th: "เมืองD", name_en: "CityD", lat: 37, lng: 127, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+
+      const t = await A.rpc("create_trip", {
+        p_title: `soft-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripD2 = t.data.id as string;
+      await A.from("trip_members").insert({ trip_id: tripD2, user_id: ids.c, role: "viewer" });
+
+      const pl = await A.from("trip_plans").insert({ trip_id: tripD2, name: "P" }).select("id").single();
+      planD = pl.data!.id as string;
+      const dd = await A.from("trip_days").insert({ trip_id: tripD2, date: "2026-10-12" }).select("id").single();
+      dayD = dd.data!.id as string;
+      const pc = await A.from("custom_places")
+        .insert({ trip_id: tripD2, city_id: ci.data.id, category: "cafe", lat: 1, lng: 1 })
+        .select("id").single();
+      if (pc.error) throw new Error(`สร้างสถานที่: ${pc.error.message}`);
+      placeD = pc.data.id as string;
+
+      const st = await A.from("trip_stops")
+        .insert({ trip_id: tripD2, plan_id: planD, trip_day_id: dayD, kind: "place", custom_place_id: placeD, rank: "m" })
+        .select("id").single();
+      if (st.error) throw new Error(`สร้างจุดแวะ: ${st.error.message}`);
+      stopD = st.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccD);
+      await admin.from("catalog_countries").delete().eq("id", ccD);
+    });
+
+    it("🔴 `DELETE` ตรง ๆ ทำไม่ได้อีกแล้ว — ลบต้องผ่าน RPC", async () => {
+      const { error } = await A.from("trip_stops").delete().eq("id", stopD);
+      expect(
+        error?.code,
+        `ยังลบจริงได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  = `grant delete`/policy DELETE ยังค้างอยู่ · soft delete จะถูกข้ามได้ทุกครั้ง",
+      ).toBe("42501");
+    });
+
+    /**
+     * 🔴 **`P-53` — ฉบับแรกของเคสนี้ยิง `update({ deleted_at })` ตรง ๆ แล้วได้
+     * `42501 new row violates row-level security policy` · วัดจากฐานจริง:**
+     * ```
+     * update trip_stops set note = 'x'         → ✅ ผ่าน
+     * update trip_stops set deleted_at = now()  → 🔴 ถูกปฏิเสธ
+     * ```
+     * **PostgREST ห่อทุก `UPDATE` ด้วย CTE ที่มี `RETURNING`** → แถวใหม่ต้องผ่าน policy `SELECT` ด้วย
+     * → **การตั้ง `deleted_at` ทำให้แถวใหม่มองไม่เห็นโดยตัวมันเอง แล้วถูกปฏิเสธเพราะมองไม่เห็น**
+     *
+     * 🎯 **นี่คือ `P-26` เป๊ะ แค่กลับด้าน** — รากเดียวกัน (`RETURNING` เจอ policy ที่ซ่อนแถว)
+     * และทางแก้ตัวเดียวกัน: **RPC `security definer`** (`D49`)
+     * · ✅ ของแถม: **"ลบ" กลายเป็น *การกระทำที่มีชื่อ*** แทน *"เขียนคอลัมน์หนึ่งที่ต้องจำเองว่าแปลว่าลบ"*
+     */
+    it("ด้านบวก: ลบผ่าน RPC ได้ แล้วแถวหายจากสายตาทันที", async () => {
+      const upd = await A.rpc("soft_delete_trip_stop", { p_id: stopD });
+      expect(upd.error, `ลบจุดแวะไม่ได้: ${upd.error?.message}`).toBeNull();
+
+      const seen = await A.from("trip_stops").select("id").eq("id", stopD);
+      expect(seen.data, "ลบแล้วยังเห็นอยู่ = policy ไม่ได้กรอง `deleted_at is null`").toEqual([]);
+
+      const asViewer = await C.from("trip_stops").select("id").eq("id", stopD);
+      expect(asViewer.data, "viewer ยังเห็นแถวที่ถูกลบ").toEqual([]);
+    });
+
+    it("🔴 แถวยังอยู่จริงในฐาน — นี่คือความต่างทั้งหมดระหว่าง soft delete กับ delete", async () => {
+      const { data } = await admin.from("trip_stops").select("id,deleted_at,updated_by_user").eq("id", stopD);
+      expect(data, "แถวหายจริง = ไม่ใช่ soft delete").toHaveLength(1);
+      expect(data?.[0]?.deleted_at, "deleted_at ว่าง ทั้งที่ถูกลบไปแล้ว").not.toBeNull();
+      expect(
+        data?.[0]?.updated_by_user,
+        "soft delete คือ UPDATE → ต้องได้ 'ใครลบ' ฟรีจาก updated_by_user (D76)",
+      ).toBe(ids.a);
+    });
+
+    it("🔴 ไคลเอนต์เขียน `deleted_at` เองไม่ได้เลย — เหลือทางเดียวจริง ๆ ไม่ใช่ 'สองทางแต่แนะนำทางนี้'", async () => {
+      const { error } = await A.from("trip_stops")
+        .update({ deleted_at: null }).eq("trip_id", tripD2);
+      expect(
+        error?.code,
+        `ไคลเอนต์เขียน deleted_at ได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  · ถ้าเขียนได้ แปลว่า 'กู้คืน' ก็ทำได้เงียบ ๆ โดยไม่ผ่านด่านของ RPC เลย",
+      ).toBe("42501");
+    });
+
+    it("🔴 D76 + D73 — วันที่จุดแวะถูกลบหมดแล้ว ต้องลบวันได้ (trigger ต้องไม่นับ tombstone)", async () => {
+      const { error } = await admin.from("trip_days").delete().eq("id", dayD);
+      expect(
+        error,
+        `ลบวันไม่ได้ทั้งที่จุดแวะถูกลบไปหมดแล้ว: ${error?.message}\n` +
+          "  🔴 = trigger นับ tombstone เป็นจุดแวะที่ยังอยู่ · ผู้ใช้เห็นวันว่างแต่ลบไม่ได้ตลอดกาล\n" +
+          "  ต้องมี `and deleted_at is null` ในเงื่อนไขของ `app.assert_day_has_no_stops()`",
+      ).toBeNull();
+    });
+
+    it("🔴 ลบสถานที่ที่ยังมีจุดแวะ *ที่ยังไม่ถูกลบ* ชี้อยู่ ไม่ได้", async () => {
+      const d2 = await A.from("trip_days").insert({ trip_id: tripD2, date: "2026-10-14" }).select("id").single();
+      const st2 = await A.from("trip_stops").insert({
+        trip_id: tripD2, plan_id: planD, trip_day_id: d2.data!.id,
+        kind: "place", custom_place_id: placeD, rank: "n",
+      });
+      expect(st2.error).toBeNull();
+
+      const del = await A.rpc("soft_delete_custom_place", { p_id: placeD });
+      expect(
+        del.error,
+        "ลบสถานที่ที่ยังถูกใช้อยู่สำเร็จ = จุดแวะจะชี้ไปสถานที่ที่ผู้ใช้มองไม่เห็น",
+      ).not.toBeNull();
     });
   });
 
