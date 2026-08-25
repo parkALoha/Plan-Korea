@@ -46,7 +46,7 @@ create policy trips_select on public.trips
 
 -- 🟢 เก็บธง — **ก้อน R ต้องลบธงเสมอ** ไม่งั้นเมทริกซ์จะเตือนทุกรอบจนกว่าจะเก็บ
 --    (ซึ่งเป็นพฤติกรรมที่ต้องการ: ลืมคืนค่า = ดังทุกรอบ ไม่ใช่เงียบ)
-delete from app.unsafe_state;
+delete from app.unsafe_state where singleton;   -- 🔴 ต้องมี `where` — Supabase เปิด safeupdate ไว้ DELETE เปล่าถูกปฏิเสธ
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════╗
