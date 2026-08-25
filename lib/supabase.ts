@@ -122,8 +122,10 @@ export type BookingCategory = "flight" | "hotel" | "ktx" | "bus" | "ticket" | "o
  *  ทำให้ตัวเลข "จองแล้ว" นับของที่ยังไม่ได้จองรวมไปด้วย */
 export type BookingStatus = "booked" | "pending" | "walk_up";
 
-/** Supabase Storage bucket สำหรับไฟล์แนบตั๋ว (ตั้งสาธารณะเหมือน RLS ของตารางอื่น) */
-export const BOOKING_FILES_BUCKET = "booking-files";
+/** Supabase Storage bucket สำหรับไฟล์แนบตั๋ว — **นิยามอยู่ที่ `lib/engine/storageKey.ts`**
+ *  ย้ายไปที่นั่น 26 ส.ค. 2026 เพราะ `sw.js` ต้องใช้ชื่อนี้ด้วย และมัน import ไฟล์นี้ไม่ได้
+ *  (`lib/supabase.ts` สร้าง realtime client ตอนโหลด) — re-export ไว้เพื่อไม่ให้จุดเรียกเดิมต้องแก้ */
+export { BOOKING_FILES_BUCKET } from "./engine/storageKey";
 
 export type TripBooking = {
   id: string;
