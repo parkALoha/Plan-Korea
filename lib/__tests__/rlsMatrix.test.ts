@@ -1977,7 +1977,6 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
    */
   describe("🔴 E2 — คลังลูก: `catalog_country_contacts` · `catalog_place_access` (`P-60`)", () => {
     const cc = TEST_COUNTRY_CODES.catalogChildren;
-    let cityId = "";
     let placeId = "";
     let contactId = "";
     let accessId = "";
@@ -2009,7 +2008,6 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         country_id: cc, name_th: "เมืองลูกคลัง", name_en: "ChildCity", lat: 1, lng: 1, timezone: "UTC",
       }).select("id").single();
       if (city.error) throw new Error(`สร้างเมืองไม่ได้: ${city.error.message}`);
-      cityId = city.data!.id as string;
       const place = await admin.from("catalog_places").insert({
         city_id: city.data!.id, category: "transfer", source: "transfer",
         transfer_kind: "airport", lat: 1, lng: 1,
