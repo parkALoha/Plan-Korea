@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BOOKING_FILES_BUCKET,
   supabase,
@@ -15,6 +15,7 @@ import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { bookByDate } from "@/lib/bookingDeadline";
 import { PhotoLightbox } from "./PhotoLightbox";
+import { signStoredFile, storageKeyOf, forgetSignedFile } from "@/lib/engine/files";
 
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
 
@@ -32,13 +33,9 @@ function randomSuffix() {
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-// public URL รูปแบบ `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}` — ต้องแกะ path กลับมา
-// เพื่อสั่งลบไฟล์จริงใน bucket (แค่ล้าง state ไม่พอ ไฟล์ยังค้างอยู่)
-function storagePathFromPublicUrl(url: string): string | null {
-  const marker = `/storage/v1/object/public/${BOOKING_FILES_BUCKET}/`;
-  const idx = url.indexOf(marker);
-  return idx === -1 ? null : url.slice(idx + marker.length);
-}
+// เดิมมี storagePathFromPublicUrl เขียนเอง — แทนที่ด้วย storageKeyOf จาก lib/engine/files (E2-AC13 ②)
+// เพราะรู้จักทั้งรูปแบบ URL เก่าและ path ใหม่ และปฏิเสธ URL โดเมนอื่น (เช่นรูป Google Places ที่เคย
+// ลงคอลัมน์เดียวกัน) แทนที่จะเดาว่าเป็น path ของ bucket นี้แล้วไปเซ็น/ลบผิดไฟล์
 
 export function BookingEditModal({
   existing,
@@ -71,8 +68,32 @@ export function BookingEditModal({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [openFileError, setOpenFileError] = useState<string | null>(null);
+  const [openingFile, setOpeningFile] = useState(false);
   // path ของไฟล์ที่อัปโหลดในเซสชันนี้แต่ยังไม่ได้กดบันทึก — ถ้าปิด modal เฉยๆ ต้องลบทิ้งกันไฟล์ค้าง
   const pendingUploadPathRef = useRef<string | null>(null);
+
+  // เซ็น signed URL สำหรับแสดงผล (E2-AC13 ②) — undefined = กำลังเซ็น · null = เซ็นไม่สำเร็จ (ต้องบอก
+  // ไม่ใช่กลืน) · string = เปิดได้ · ทำงานได้กับทั้งค่าเก่า (public URL เต็ม) และค่าใหม่ (path) เพราะ
+  // storageKeyOf ที่ signStoredFile ใช้ข้างในรู้จักทั้งสองแบบ ไม่ต้องรู้ว่าแถวนี้เป็นแบบไหน
+  //
+  // เก็บคู่กับ fileUrl ที่ผลนั้นเป็นของ แล้ว derive ตอน render (แพทเทิร์นเดียวกับ usePlacePhotos.ts)
+  // แทนการ setState(undefined) ตรงๆ ในเอฟเฟกต์ตอน fileUrl เปลี่ยน — กัน react-hooks/set-state-in-effect
+  // และผลข้างเคียงคือถูกอยู่แล้ว: ผลของ fileUrl เก่าไม่ควรโผล่เป็นค่าที่ใช้ได้ของ fileUrl ใหม่
+  const [signedResult, setSignedResult] = useState<{ fileUrl: string; url: string | null } | null>(
+    null
+  );
+  useEffect(() => {
+    if (!fileUrl) return;
+    let cancelled = false;
+    signStoredFile(fileUrl).then((url) => {
+      if (!cancelled) setSignedResult({ fileUrl, url });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fileUrl]);
+  const signedFileUrl = signedResult?.fileUrl === fileUrl ? signedResult.url : undefined;
 
   async function handleFileChange(file: File | null) {
     if (!file) return;
@@ -101,13 +122,30 @@ export function BookingEditModal({
   }
 
   async function handleRemoveFile() {
-    const path = pendingUploadPathRef.current ?? storagePathFromPublicUrl(fileUrl);
+    const path = pendingUploadPathRef.current ?? storageKeyOf(fileUrl);
     if (path) {
       await supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
+      forgetSignedFile(fileUrl);
     }
     pendingUploadPathRef.current = null;
     setFileUrl("");
     setFileName("");
+  }
+
+  // ปุ่ม "เปิดไฟล์" เซ็นใหม่ทุกครั้งตอนคลิก ไม่ใช้ signedFileUrl ที่เซ็นไว้ตอนโมดัลเปิด (§12.2 ux-flows.md)
+  // — กันเคสโมดัลเปิดค้างไว้นานแล้วกด ได้ URL ที่หมดอายุไปแล้ว
+  async function handleOpenFile() {
+    if (!fileUrl || openingFile) return;
+    setOpeningFile(true);
+    setOpenFileError(null);
+    const url = await signStoredFile(fileUrl);
+    setOpeningFile(false);
+    if (!url) {
+      setOpenFileError("เปิดไฟล์ไม่สำเร็จ — ลองใหม่อีกครั้ง");
+      return;
+    }
+    // เซ็นก่อนเปิดแท็บเสมอ ไม่เปิดแท็บด้วย URL เปล่าแล้วรอ fetch — ถ้าเซ็นพัง ต้องไม่มีแท็บใหม่โผล่เลย
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function handleCloseAttempt() {
@@ -329,27 +367,42 @@ export function BookingEditModal({
         {fileUrl ? (
           <div className="rounded-lg border border-line px-3 py-2">
             {/* รูปตั๋วให้ดูได้ในแอปเลย ไม่ต้องเด้งออกแท็บใหม่ (บนมือถือที่ติดตั้งเป็น PWA = เสียบริบททั้งหมด)
-                PDF ยังเป็นลิงก์เหมือนเดิม เพราะ render ในหน้าไม่ได้ */}
-            {isImageAttachment(fileName, fileUrl) && (
+                PDF ยังเป็นลิงก์เหมือนเดิม เพราะ render ในหน้าไม่ได้
+                signedFileUrl มี 3 สถานะ (undefined กำลังเซ็น · null เซ็นไม่สำเร็จ · string เปิดได้)
+                เซ็นตอน fileUrl เปลี่ยน ไม่ใช่ตอนคลิก — ต้องเห็นรูปทันทีไม่มีจังหวะคลิกก่อน (§12.2 ux-flows.md) */}
+            {isImageAttachment(fileName, fileUrl) && signedFileUrl === undefined && (
+              <div className="mb-2 h-24 w-full max-w-40 animate-pulse rounded-lg bg-surface-soft" />
+            )}
+            {isImageAttachment(fileName, fileUrl) && signedFileUrl === null && (
+              <div
+                className="mb-2 flex h-24 w-full max-w-40 items-center justify-center rounded-lg bg-surface-soft text-xs text-content-soft"
+                title="เปิดรูปตั๋วไม่ได้"
+              >
+                🖼️✕ เปิดรูปไม่ได้
+              </div>
+            )}
+            {isImageAttachment(fileName, fileUrl) && typeof signedFileUrl === "string" && (
               <button
                 type="button"
                 onClick={() => setZoomed(true)}
                 className="mb-2 block w-full max-w-40"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
-                <img src={fileUrl} alt="" className="w-full rounded-lg object-cover" />
+                {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
+                <img src={signedFileUrl} alt="" className="w-full rounded-lg object-cover" />
                 <span className="mt-1 block text-[11px] text-pine-dark">แตะเพื่อดูขนาดเต็ม</span>
               </button>
             )}
             <div className="flex items-center gap-2">
-              <a
-                href={fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-w-0 flex-1 truncate text-sm text-pine underline"
+              {/* เดิมเป็น <a href={fileUrl}> ตรงๆ — ตอนนี้ต้องเซ็นใหม่ทุกครั้งตอนคลิก ไม่ใช้ signedFileUrl
+                  ที่เซ็นไว้ตอนโมดัลเปิดซ้ำ กันเปิดโมดัลค้างไว้นานแล้วกดได้ลิงก์ที่หมดอายุไปแล้ว */}
+              <button
+                type="button"
+                onClick={handleOpenFile}
+                disabled={openingFile}
+                className="min-w-0 flex-1 truncate text-left text-sm text-pine underline disabled:opacity-60"
               >
-                📎 {fileName || "เปิดไฟล์"}
-              </a>
+                {openingFile ? "กำลังเปิด..." : `📎 ${fileName || "เปิดไฟล์"}`}
+              </button>
               <button
                 onClick={handleRemoveFile}
                 className="shrink-0 rounded-full p-1 text-content-soft hover:bg-surface-soft"
@@ -357,6 +410,7 @@ export function BookingEditModal({
                 ✕
               </button>
             </div>
+            {openFileError && <p className="mt-1 text-xs text-red-600">{openFileError}</p>}
           </div>
         ) : (
           <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-line px-3 py-3 text-xs text-content-soft hover:bg-surface-soft">
@@ -373,9 +427,9 @@ export function BookingEditModal({
         {uploadError && <p className="mt-1 text-xs text-red-600">{uploadError}</p>}
       </div>
 
-      {zoomed && fileUrl && (
+      {zoomed && typeof signedFileUrl === "string" && (
         <PhotoLightbox
-          src={fileUrl}
+          src={signedFileUrl}
           alt={fileName || "รูปตั๋วที่แนบไว้"}
           onClose={() => setZoomed(false)}
         />
