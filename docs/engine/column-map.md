@@ -358,8 +358,27 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 🎯 **`bookings` ตอบ *"จองอะไรไว้"* · `day.events` ตอบ *"วันนี้มีอะไรตายตัวบ้าง และมันบีบตารางยังไง"***
 **เที่ยวบินเป็นทั้งสองอย่าง** — และนั่นคือสิ่งที่ทำให้มันไม่ใช่การเพิ่มตารางเปล่า ๆ **แต่เป็นการตัดสินว่าสองเรื่องนี้สัมพันธ์กันยังไง**
 
-🔴 **ผมไม่ตัดสินคนเดียว (`Q7`)** — กระทบ `useDaySchedule` (ตรรกะเวลา · P5) · โมเดล sync (P7) · หน้า ตม. (P2)
-· **และมันแปลว่า `E2-AC6` ยังปิดไม่ได้** ทั้งที่ครึ่ง DB ครบ 111/111 แล้ว
+✅ **ปิดแล้ว 26 ส.ค. 2026 — `D81` · DDL ลง `20260826010130_e2_d81_trip_stop_events.sql`**
+
+ทั้ง 15 ฟิลด์ลงเป็นคอลัมน์บน **`trip_stops` ที่ `kind='event'`** (ไม่มีตารางที่สาม):
+
+| ฟิลด์ใน TS | คอลัมน์ใน DB | หมายเหตุ |
+|---|---|---|
+| `time` · `endTime` | `fixed_start_time` · `fixed_end_time` | รูปแบบเดียวกับ `transfer_target_time` · **ไม่มี check ว่าปลาย > ต้น** (ช่วงต่อเครื่องข้ามเที่ยงคืนได้) |
+| 🔴 `anchor` | **`schedule_bound`** | เปลี่ยนชื่อเพราะ `anchor` ชนกับ `hotelAnchorId()` (`D81` ②) |
+| 🔴 `dayOffset` | `day_offset int not null default 0` | check `between 0 and 3` |
+| 🔴 `flight.*` (5) | `flight_no` · `flight_from_code` · `flight_to_code` · `flight_from_en` · `flight_to_en` | **ครบชุดหรือไม่มีเลย** — ครึ่งชุดคือช่องว่างที่ถูกพิมพ์ลงเอกสาร ตม. จริง |
+| `layover.*` (4) | `layover_baggage` · `layover_immigration` · `layover_leaves_airport` · `layover_terminal_change` | ครบชุดหรือไม่มีเลย เช่นกัน |
+| `placeId` | `catalog_place_id` · `custom_place_id` · **`place_ref='hotel'`** | อย่างมาก 1 ใน 3 · `@hotel` → `place_ref` · `home-base` → `custom_places` |
+| `kind` | `event_kind` | `transfer` → **`move`** (ชนกับ `trip_stops.kind='transfer'`) · null ได้จริง |
+| `icon` · `alert` · `editable` · `titleEn` | `icon` · `is_alert` · **`time_is_flexible`** · `title_en` | `editable` กลับด้านเป็น "เวลานี้ยืดหยุ่นได้" ให้ตรงกับสิ่งที่มันหมายถึงจริง |
+| `title` · `detail` | `title` · `note` (คอลัมน์เดิม) | |
+
+🔴 **สิ่งที่ DDL บังคับให้ไม่ได้ และย้ายไปอยู่ที่ [`lib/engine/db.ts`](../../lib/engine/db.ts) แทน:**
+`deleted_at is null` + `order by rank, id` ของคิวรีที่ถาม *"แถวไหนกำหนดขอบของวัน"* (`D81` ③ · ③.๕)
+· **ทั้งสองครึ่งลืมแล้วไม่แดง** — ดูเหตุผลเต็มในหัวไฟล์นั้น
+
+· **`E2-AC6` ปลดล็อกแล้ว** — ครึ่ง DB เคยครบ 111/111 มาก่อน สิ่งที่ค้างคือกลุ่มนี้กลุ่มเดียว
 
 ---
 
