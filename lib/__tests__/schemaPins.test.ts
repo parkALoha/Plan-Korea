@@ -646,6 +646,39 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       expect(runIntegrityFailure({ skipped: 0, suiteErrors: 0, total: 487 })).toBeNull();
     });
 
+    /**
+     * 🔴 **ธง `EXPECT_SKIPPED_TESTS` — เพิ่ม 26 ส.ค. (P1 · P6 วินิจฉัย)**
+     *
+     * reporter ทำให้ job `Lint · Test · Types · Build` **แดงทุก push** เพราะ job นั้น
+     * **ไม่มี creds โดยการออกแบบ** (ไม่ให้ `service_role` กระจายเกิน job `rls`)
+     * → 233 เคสถูกข้าม **ซึ่งถูกต้อง** แต่ reporter อ่านว่าผิด
+     * 🎯 **ด่านกลายเป็นสิ่งที่ตัวมันเกิดมาเพื่อกัน:** *แดงที่ไม่ใช่บั๊ก สอนให้คนเลิกอ่านสีของ CI*
+     *
+     * 🔴 **3 เคสนี้คือสัญญาของธง และเคสที่ 2 กับ 3 สำคัญกว่าเคสที่ 1:**
+     * ธงผ่อน **เฉพาะการข้าม** — `suiteErrors` และ *"ไม่มีเคสให้รันเลย"* **ยังล้มเสมอ**
+     * · ไม่มี creds **ไม่ใช่เหตุผลให้ `beforeAll` ล้ม** · และ "ไม่มีอะไรให้รัน" ไม่เคยเป็นสิ่งที่ตั้งใจ
+     * · **ถ้าผ่อนทั้งก้อน ธงตัวเดียวจะปิดด่านทั้งด่าน ซึ่งคือรูปที่ทีมนี้ปฏิเสธมาทั้งวัน**
+     */
+    it("ธง `expectSkipped` ผ่อนเฉพาะการข้าม — รอบที่ข้ามอย่างเดียวต้องผ่าน", () => {
+      expect(
+        runIntegrityFailure({ skipped: 233, suiteErrors: 0, total: 494 }, { expectSkipped: true }),
+      ).toBeNull();
+    });
+
+    it("🔴 ธง `expectSkipped` **ต้องไม่ปิด** ด่าน suite ที่รันไม่สำเร็จ", () => {
+      const why = runIntegrityFailure(
+        { skipped: 233, suiteErrors: 1, total: 494 },
+        { expectSkipped: true },
+      );
+      expect(why, "ธงกลบ suite ที่ล้มไปด้วย — ไม่มี creds ไม่ใช่เหตุผลให้ `beforeAll` ล้ม").not.toBeNull();
+      expect(why).toContain("suite");
+    });
+
+    it("🔴 ธง `expectSkipped` **ต้องไม่ปิด** ด่าน 'ไม่มีเคสให้รันเลย'", () => {
+      const why = runIntegrityFailure({ skipped: 0, suiteErrors: 0, total: 0 }, { expectSkipped: true });
+      expect(why, "ธงกลบรอบที่ไม่ได้ตรวจอะไรเลยไปด้วย").not.toBeNull();
+    });
+
     it("🔴 เคสถูกข้าม = อ่านเป็นเขียวไม่ได้ — **นี่คือทางที่วัดแล้วว่าเปิดอยู่จริง**", () => {
       const why = runIntegrityFailure({ skipped: 230, suiteErrors: 0, total: 256 });
       expect(why, "รอบที่ข้าม 230 เคสยังอ่านเป็นเขียวได้").not.toBeNull();

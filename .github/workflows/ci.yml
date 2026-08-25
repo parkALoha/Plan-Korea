@@ -80,7 +80,19 @@ jobs:
       - run: npm ci
 
       - run: npm run lint
+
+      # 🔴 job นี้ **ไม่มี creds โดยการออกแบบ** — เราตั้งใจไม่ให้ `service_role` กระจายเกิน job `rls`
+      #    → เคสสด (`describe.runIf(hasCreds)`) ถูกข้าม **ซึ่งเป็นพฤติกรรมที่ถูก ไม่ใช่ของที่ต้องแก้**
+      #    แต่ `runIntegrityReporter` (P4) ทำให้มันแดงทุก push ตั้งแต่ 26 ส.ค. — P6 วัดมา
+      #
+      # 🎯 ธงประกาศอยู่ **ตรงนี้ ไม่ใช่ใน `vitest.config.mts`** เพื่อให้ข้อยกเว้น**เห็นใน diff**
+      #    รูปเดียวกับ `migration-guard-exempt` / `no-policy-tables`
+      # ⚠️ มันผ่อน **เฉพาะการข้าม** — `suiteErrors` และ "ไม่มีเคสให้รันเลย" ยังล้มเสมอ
+      #    และ reporter ยัง**พิมพ์จำนวนที่ข้าม**ออกมาให้เห็นใน log ทุกรอบ
+      # 🔴 ห้ามตั้งธงนี้ใน job `rls` — ที่นั่นการข้ามคือความล้มเหลวจริง
       - run: npm test
+        env:
+          EXPECT_SKIPPED_TESTS: "1"
 
       # 🔴 ต้องมาก่อน tsc เสมอ — Next 16 สร้าง global type (`LayoutProps`/`PageProps`/`RouteContext`)
       #    ตอน build/dev · worktree ที่เพิ่ง clone ยังไม่มีไฟล์พวกนี้ `tsc --noEmit` จะล้มทันทีด้วย

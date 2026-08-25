@@ -31,11 +31,25 @@ function countTasks(tasks: readonly unknown[]): { skipped: number; total: number
 const runIntegrityReporter = {
   onFinished(files: unknown[] = [], errors: unknown[] = []) {
     const counted = countTasks(files);
-    const why = runIntegrityFailure({
-      skipped: counted.skipped,
-      suiteErrors: errors.length + files.filter((f) => (f as { result?: { state?: string } }).result?.state === "fail" && !(f as { tasks?: unknown[] }).tasks?.length).length,
-      total: counted.total,
-    });
+    // 🔴 job ที่ **ไม่มี creds โดยการออกแบบ** ประกาศตัวเองใน `ci.yml` (เห็นใน diff)
+    //    ไม่ใช่ซ่อนไว้ในไฟล์นี้ — รูปเดียวกับ `migration-guard-exempt` / `no-policy-tables`
+    const expectSkipped = process.env.EXPECT_SKIPPED_TESTS === "1";
+    const why = runIntegrityFailure(
+      {
+        skipped: counted.skipped,
+        suiteErrors: errors.length + files.filter((f) => (f as { result?: { state?: string } }).result?.state === "fail" && !(f as { tasks?: unknown[] }).tasks?.length).length,
+        total: counted.total,
+      },
+      { expectSkipped },
+    );
+    // 🔴 **พิมพ์จำนวนที่ข้ามเสมอ แม้ตอนผ่อน** — ธงบอกว่า "ไม่ต้องล้ม" ไม่ได้บอกว่า "ไม่ต้องเห็น"
+    //    ถ้าวันหนึ่งมีคนตั้งธงผิดที่ ตัวเลขนี้คือสิ่งเดียวที่จะบอกเขา
+    if (expectSkipped && counted.skipped > 0) {
+      console.error(
+        `\n🟡 ข้าม ${counted.skipped} เคส · job นี้ประกาศ EXPECT_SKIPPED_TESTS=1 จึงไม่ล้ม\n` +
+          "   ⚠️ ถ้าคุณไม่ได้ตั้งใจตั้งธงนี้ นี่คือรอบที่ไม่ได้ตรวจอะไรเลย\n",
+      );
+    }
     if (why) {
       console.error(`\n🔴 รอบนี้อ่านเป็น "ผ่าน" ไม่ได้:\n${why}\n`);
       process.exitCode = 1;
