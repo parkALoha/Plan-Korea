@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""ด่าน — ชื่อตารางที่ส่งให้ `supabase.from(...)` ต้องเป็นสตริงตรงเสมอ
+"""ด่าน 2 ข้อรอบ `supabase.from(...)` — ใช้ตัวแยกวิเคราะห์ตัวเดียวกัน
+
+① ชื่อตารางต้องเป็น **สตริงตรง** เสมอ (ยกเว้นไฟล์ชั้น data-access)
+② ตารางใน `helper-only-tables` **เรียกได้จากชั้น data-access เท่านั้น**
+
+📌 อยู่ไฟล์เดียวกันเพราะทั้งคู่ต้องแยกให้ออกว่า `.from(` ตัวไหนคือตาราง ตัวไหนคือ
+   `Array.from` / `Buffer.from` / `storage.from` · **แยกไฟล์ = มีตัวแยกวิเคราะห์ 2 ตัว
+   ที่ต้องแก้พร้อมกันตลอดไป** ซึ่งเป็นรูปที่เราหลีกเลี่ยงกันมาทั้งคืน
 
 ใช้:  .github/check-dynamic-from.py <ไฟล์.ts|.tsx> [...]
 คืน:  0 = ทุกจุดใช้สตริงตรง · 1 = เจอชื่อตารางที่เป็นตัวแปร/นิพจน์
@@ -58,12 +65,27 @@ def scan(path: str) -> list:
                 if ".storage" in back:
                     continue
             rest = code[m.end():]
-            if rest[:1] in ('"', "'", "`"):
-                continue          # สตริงตรง — ที่ต้องการ
+            lit = re.match(r'["\'`]([a-z0-9_]+)["\'`]', rest)
+            if lit:
+                hits.append((line_no, recv, "literal", lit.group(1)))
+                continue
             if rest == "":
                 continue          # อาร์กิวเมนต์ขึ้นบรรทัดใหม่ · ผู้รับไม่ใช่ตาราง ผ่านมาถึงนี่ไม่ได้
-            hits.append((line_no, recv or "(ไม่มีผู้รับ)", rest[:40]))
+            hits.append((line_no, recv or "(ไม่มีผู้รับ)", "dynamic", rest[:40]))
     return hits
+
+
+def protected_tables() -> set:
+    """ตารางที่เรียกได้จากชั้น data-access เท่านั้น"""
+    import os
+    f = os.environ.get("HELPER_ONLY_TABLES") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "helper-only-tables")
+    try:
+        raw = open(f, encoding="utf-8").read()
+    except OSError:
+        return set()
+    return {l.strip() for l in raw.splitlines()
+            if l.strip() and not l.strip().startswith("#")}
 
 
 def allowed_files() -> set:
@@ -82,14 +104,21 @@ def allowed_files() -> set:
 def main(paths) -> int:
     bad = 0
     allow = allowed_files()
+    protected = protected_tables()
     for path in paths:
         norm = path.lstrip("./")
-        if norm in allow:
-            continue
-        for line_no, recv, snippet in scan(path):
-            print(f"🔴 dynamic-from: {path}:{line_no} — `{recv}.from(` รับชื่อตารางที่ไม่ใช่สตริงตรง")
-            print(f"   เจอ: {snippet.strip()}")
-            bad += 1
+        is_helper = norm in allow
+        for line_no, recv, kind, val in scan(path):
+            if kind == "dynamic":
+                if is_helper:
+                    continue
+                print(f"🔴 dynamic-from: {path}:{line_no} — `{recv}.from(` รับชื่อตารางที่ไม่ใช่สตริงตรง")
+                print(f"   เจอ: {val.strip()}")
+                bad += 1
+            elif val in protected and not is_helper:
+                print(f"🔴 helper-only: {path}:{line_no} — เรียก `{val}` ตรง ๆ นอกชั้น data-access")
+                print(f"   → `{val}` ต้องพก predicate ของ D81 · เรียกผ่าน lib/engine/db.ts เท่านั้น")
+                bad += 1
     if bad:
         print("   🔴 ชื่อตารางที่เป็นตัวแปร ทำให้ด่านอื่นที่อ่านชื่อตารางมองไม่เห็นจุดนี้ทั้งหมด")
         print("      เขียนชื่อตรง ๆ หรือคุยกับ P6/P1 ถ้าคิดว่าเคสนี้จำเป็นจริง")

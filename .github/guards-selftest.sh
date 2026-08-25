@@ -407,4 +407,31 @@ else
 fi
 rm -rf "$d" "$al"
 
+# ── ด่าน helper-only (ครึ่งที่สองของ D81 · ใช้ตัวแยกวิเคราะห์ตัวเดียวกับ dynamic-from) ──
+hochk() {  # hochk <ชื่อ> <pass|fail> <เนื้อไฟล์>
+  name="$1"; want="$2"; d="$(mktemp -d)"
+  printf '%s\n' "$3" > "$d/x.ts"
+  if DYNAMIC_FROM_ALLOWED=/dev/null "$DYN" "$d/x.ts" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  rm -rf "$d"
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got"; rc=1; return 1
+}
+
+hochk "helper-only จับการเรียก catalog_places ตรง ๆ" fail 'supabase.from("catalog_places").select("*");'
+# 🔴 เคสนี้ตรึง *การตัดสินใจ* ไม่ใช่แค่พฤติกรรม: trip_stops ยังไม่อยู่ในรายการโดยตั้งใจ
+#    (7 จุดในโค้ดเว็บทริปที่ freeze) · วันที่ย้ายเข้า helper แล้วเพิ่มชื่อ เคสนี้จะแดง
+#    **และมันควรแดง** — เป็นสัญญาณว่าถึงเวลาแก้เคสนี้พร้อมกัน ไม่ใช่ว่าด่านพัง
+hochk "trip_stops ยังเรียกตรงได้ (ยังไม่อยู่ในรายการ)" pass 'supabase.from("trip_stops").select("*");'
+hochk "ตารางที่ไม่ได้คุ้มครอง เรียกตรงได้" pass 'supabase.from("bookings").select("*");'
+
+# ไฟล์ในชั้น data-access เรียกตารางที่คุ้มครองได้
+d="$(mktemp -d)"; printf 'supabase.from("catalog_places").select("*");\n' > "$d/db.ts"
+al="$(mktemp)"; printf 'db.ts\n' > "$al"
+if ( cd "$d" && DYNAMIC_FROM_ALLOWED="$al" "$DYN" db.ts >/dev/null 2>&1 ); then
+  echo "✅ helper-only: ไฟล์ในชั้น data-access เรียกตารางที่คุ้มครองได้ — ได้ pass ตามคาด"
+else
+  echo "🔴 helper-only: ไฟล์ในชั้น data-access ควรเรียกได้ แต่โดนจับ"; rc=1
+fi
+rm -rf "$d" "$al"
+
 exit $rc
