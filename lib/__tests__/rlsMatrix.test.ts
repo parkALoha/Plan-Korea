@@ -1703,4 +1703,97 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 updated_by_user — ประวัติที่ backfill ไม่ได้ (P7 · D57 ข้อ 2)", () => {
+    /**
+     * คอลัมน์เพิ่มทีหลังถูกมาก · **ประวัติของแถวที่ถูกแก้ไปแล้วก่อนคอลัมน์มีอยู่ = `NULL` ตลอดกาล**
+     * นั่นคือของที่เข้าเงื่อนไข *"เพิ่มทีหลังแล้วเจ็บ"* จริง — ไม่ใช่ `client_edited_at`
+     *
+     * 🎯 **เคสนี้พิสูจน์ deny-by-default ของ column grant ด้วย** — `…122247` ให้ `grant update (…)`
+     * แบบระบุชื่อคอลัมน์ · `updated_by_user` เกิดทีหลัง จึง **ไม่มีสิทธิ์โดยอัตโนมัติ**
+     * ไม่ต้องมี `revoke` เพิ่มสักบรรทัดในไฟล์ที่เพิ่มคอลัมน์
+     */
+    let tripU = "";
+
+    beforeAll(async () => {
+      const { data, error } = await A.rpc("create_trip", {
+        p_title: `by-user-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (error) throw new Error(`สร้างทริปไม่ได้: ${error.message}`);
+      tripU = data.id as string;
+      const inv = await A.from("trip_members").insert({
+        trip_id: tripU, user_id: ids.b, role: "editor",
+      });
+      if (inv.error) throw new Error(`เชิญ B ไม่ได้: ${inv.error.message}`);
+    });
+
+    /**
+     * 🔴 **ฉบับแรกของเคสนี้ให้ `B` แก้ `trips` — และมันตกหลุมที่ P2 เพิ่งรายงานเข้ามาพอดี**
+     * `trips_update` เป็นของ `owner` เท่านั้น · `B` เป็น `editor` → RLS กรองแถวออก
+     * **PostgREST คืน 200 ไม่มี error และแตะ 0 แถว** → `expect(error).toBeNull()` เขียว
+     * แล้วเคสไปแดงบรรทัดถัดไปด้วยอาการที่อ่านเหมือน *"trigger ไม่ทำงาน"* ทั้งที่ trigger ปกติดีทุกอย่าง
+     * 🎯 **เคสนี้จึงเป็นหลักฐานของปัญหา `writeGuard` ที่ P2 รายงาน — มันกัดผมเองภายในชั่วโมงเดียวกัน**
+     * → ย้ายมาใช้ `trip_plans` ซึ่ง `editor` เขียนได้จริง **และอ่านค่าที่เปลี่ยนกลับมาด้วย ไม่เชื่อแค่ว่าไม่มี error**
+     */
+    it("🔴 แก้แล้วต้องรู้ว่าใครแก้ — และต้องเป็น *คนที่แก้จริง* ไม่ใช่เจ้าของทริป", async () => {
+      const mk = await A.from("trip_plans")
+        .insert({ trip_id: tripU, name: "แผนของใคร" })
+        .select("id")
+        .single();
+      expect(mk.error, `สร้างแผนไม่ได้: ${mk.error?.message}`).toBeNull();
+      const planU = mk.data!.id as string;
+
+      const { error } = await B.from("trip_plans").update({ name: "B แก้ชื่อ" }).eq("id", planU);
+      expect(error, `editor แก้ชื่อแผนไม่ได้: ${error?.message}`).toBeNull();
+
+      const { data } = await A.from("trip_plans")
+        .select("name,updated_by_user")
+        .eq("id", planU)
+        .single();
+      expect(data?.name, "การแก้ไม่ได้เกิดขึ้นจริง → ข้อล่างไม่ได้วัด trigger").toBe("B แก้ชื่อ");
+      expect(
+        data?.updated_by_user,
+        "อ่านไม่ได้ว่าใครแก้ล่าสุด = banner 'ถูกทับโดย ‹ชื่อ›' ที่ mobile-arch §3.3 เขียนไว้ ทำไม่ได้",
+      ).toBe(ids.b);
+    });
+
+    it("🔴 ไคลเอนต์ตั้ง updated_by_user เองไม่ได้ — สวมรอยว่าคนอื่นเป็นคนแก้", async () => {
+      const { error } = await A.from("trips")
+        .update({ title: `สวมรอย ${stamp}`, updated_by_user: ids.b })
+        .eq("id", tripU);
+      expect(
+        error?.code,
+        `เขียน updated_by_user ได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  = โยนความผิดให้คนอื่นได้ · และ D38 บอกว่าค่านี้ต้องมาจาก auth.uid() ฝั่งเซิร์ฟเวอร์เท่านั้น",
+      ).toBe("42501");
+    });
+
+    it("🔴 UPDATE ที่ไม่ได้เปลี่ยนอะไรเลย ต้องไม่นับเป็นการแก้ (retry เกิดจริง)", async () => {
+      const before = await A.from("trips")
+        .select("title,updated_at,updated_by_user")
+        .eq("id", tripU)
+        .single();
+      expect(before.error).toBeNull();
+      await new Promise((r) => setTimeout(r, 1100));
+
+      // เขียน **ค่าเดิมเป๊ะ** ทับ — คือสิ่งที่ retry ทำ (`useOnlineStatus.ts:12-17`: navigator.onLine โกหก)
+      const { error } = await A.from("trips")
+        .update({ title: before.data!.title as string })
+        .eq("id", tripU);
+      expect(error).toBeNull();
+
+      const after = await A.from("trips")
+        .select("updated_at,updated_by_user")
+        .eq("id", tripU)
+        .single();
+      expect(
+        after.data?.updated_at,
+        "เขียนค่าเดิมทับแล้ว updated_at ขยับ = ใครกดรีเฟรชก็กลายเป็นคนแก้ล่าสุด",
+      ).toBe(before.data?.updated_at);
+      expect(after.data?.updated_by_user).toBe(before.data?.updated_by_user);
+    });
+  });
+
 });
