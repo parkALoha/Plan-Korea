@@ -280,6 +280,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
     "catalog_countries", "catalog_cities", "catalog_places", "catalog_place_names",
     "custom_places", "custom_place_names", "trip_stops", "bookings",
+    "checklist_items", "place_notes", "hidden_places",
   ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
@@ -360,7 +361,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       // 🔴 `trip_stops` และ `custom_places` **ออกจากลิสต์แล้ว 25 ส.ค. — `D76` ตัดสิน soft delete**
       //    ตรงกับที่เขียนไว้เองว่า *"เมื่อ `E2-AC12` ตัดสินแล้ว ชื่อต้องออกจากลิสต์ ไม่ใช่อยู่ต่อ"*
       //    `custom_place_names` ยังอยู่ — เป็นใบที่หายไปกับพ่อ ไม่ใช่ของที่ผู้ใช้ลบทีละแถว
-      const MAY_DELETE = ["trip_members", "trip_plans", "custom_place_names"];
+      const MAY_DELETE = ["trip_members", "trip_plans", "custom_place_names", "hidden_places"];
       if (!MAY_DELETE.includes(t)) {
         expect(verbs, `${t} มี policy DELETE แล้ว — ตั้งใจหรือเปล่า`).not.toContain("delete");
       }
@@ -391,6 +392,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "catalog_place_names.catalog_place_names_select",
       "catalog_places.catalog_places_select",
       // 🔴 คลัง**ของผู้เช่า** — ครบ 4 verb ต่างจากคลังกลางที่มีแต่ `select` (`D75`)
+      "checklist_items.checklist_items_insert",
+      "checklist_items.checklist_items_select",
+      "checklist_items.checklist_items_update",
       "custom_place_names.custom_place_names_delete",
       "custom_place_names.custom_place_names_insert",
       "custom_place_names.custom_place_names_select",
@@ -398,6 +402,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "custom_places.custom_places_insert",
       "custom_places.custom_places_select",
       "custom_places.custom_places_update",
+      // 🔴 `hidden_places` มี DELETE โดยตั้งใจ — *"เลิกซ่อน"* คือการลบแถวตามนิยาม (`D76`)
+      "hidden_places.hidden_places_delete",
+      "hidden_places.hidden_places_insert",
+      "hidden_places.hidden_places_select",
+      "place_notes.place_notes_insert",
+      "place_notes.place_notes_select",
+      "place_notes.place_notes_update",
       "profiles.profiles_insert",
       "profiles.profiles_select",
       "profiles.profiles_update",
@@ -493,7 +504,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       if (body.includes("can_write_trip")) content.add(key.split(".")[0]);
     }
     expect([...content].sort()).toEqual([
-      "bookings", "custom_place_names", "custom_places",
+      "bookings", "checklist_items", "custom_place_names", "custom_places",
+      "hidden_places", "place_notes",
       "trip_day_plan_settings", "trip_days", "trip_plans", "trip_stops",
     ]);
   });
@@ -554,7 +566,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    คำตอบของคำถามข้างบน: รับ `p_id uuid` ตัวเดียว · ตั้ง `deleted_at` เท่านั้น
       //    · ถาม `app.can_write_trip()` ของคนเรียกเองก่อนทำอะไรทั้งสิ้น
       "public.soft_delete_booking",
+      "public.soft_delete_checklist_item",
       "public.soft_delete_custom_place",
+      "public.soft_delete_place_note",
       "public.soft_delete_trip_stop",
       "public.unsafe_state_clear",
       "public.unsafe_state_reason",
@@ -571,6 +585,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 10 (`35d64de3…` → `329ba089…`) — `checklist_items` · `place_notes` · `hidden_places`
+    //    `hidden_places` มี DELETE โดยตั้งใจ · อีกสองตัวไม่มี (`D76`)
     // 🔴 อัปเดตรอบ 9 (`2a759c27…` → `35d64de3…`) — `bookings` 3 policy (ไม่มี DELETE · `D76`)
     // 🔴 อัปเดตรอบ 8 (`01adb82c…` → `2a759c27…`) — **ค่าไม่ได้เปลี่ยนเพราะ policy เปลี่ยน**
     //    แต่เพราะตัวสแกนเพิ่งรู้จัก `drop policy` → policy ที่ถูกถอดออกไม่ถูกนับอีกต่อไป
@@ -596,7 +612,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "35d64de3e07af763",
+      "329ba089738804ee",
     );
   });
 });
@@ -3078,6 +3094,161 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         `ลบวันไม่ได้ทั้งที่ใบจองถูกลบหมดแล้ว: ${error?.message}\n` +
           "  🔴 = ด่านนับ tombstone เป็นใบจองที่ยังอยู่ (กับดักเดียวกับที่ P7 เจอกับ trip_stops)",
       ).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — `checklist_items` · `place_notes` · `hidden_places` (D53 · D70 · D76)", () => {
+    /**
+     * ✅ เขียนก่อน `db push`
+     *
+     * 🔴 **`Q1` ทำงานอีกครั้ง** — `column-map.md` เขียน `place_id` ว่า *"คงเดิม"* ทั้งใน
+     * `place_notes` และ `hidden_places` **แต่ `D53` แยกการอ้างสถานที่เป็นสองคอลัมน์ไปแล้ว**
+     * → *"คงเดิม"* ชี้ไปคอลัมน์ที่ไม่มีอยู่ในสคีมาใหม่ · ตัดสิน:
+     *   · **`place_notes` ได้ทั้งสองแบบ** (โน้ตบนสถานที่ที่ผู้ใช้เพิ่มเองก็สมเหตุสมผล) → XOR แบบ `trip_stops`
+     *   · **`hidden_places` ได้เฉพาะคลังกลาง** — *"ซ่อน"* สถานที่ที่ตัวเองเพิ่มไม่มีความหมาย **ลบทิ้งเลยตรงกว่า**
+     */
+    let tripK = "", planK = "", catK = "", myK = "";
+    const ccK = TEST_COUNTRY_CODES.tripContent;
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccK);
+      await admin.from("catalog_countries").delete().eq("id", ccK);
+      await admin.from("catalog_countries").insert({ id: ccK, name_th: "ทดสอบเจ็ด", name_en: "T7" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccK, name_th: "เมืองK", name_en: "CityK", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      const cp = await admin.from("catalog_places")
+        .insert({ city_id: ci.data.id, category: "sight", lat: 35, lng: 129 })
+        .select("id").single();
+      if (cp.error) throw new Error(`seed place: ${cp.error.message}`);
+      catK = cp.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `content-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripK = t.data.id as string;
+      await A.from("trip_members").insert({ trip_id: tripK, user_id: ids.b, role: "editor" });
+      await A.from("trip_members").insert({ trip_id: tripK, user_id: ids.c, role: "viewer" });
+
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripK).eq("is_active", true).single();
+      planK = pl.data!.id as string;
+
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripK, city_id: ci.data.id, category: "cafe", lat: 35.1, lng: 129.1 })
+        .select("id").single();
+      if (mp.error) throw new Error(`สร้าง custom place: ${mp.error.message}`);
+      myK = mp.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_places").delete().eq("id", catK);
+      await admin.from("catalog_countries").delete().eq("id", ccK);
+    });
+
+    describe("`checklist_items`", () => {
+      let itemK = "";
+
+      it("ด้านบวก: editor เพิ่มรายการได้ · เซิร์ฟเวอร์เติมคนเพิ่มให้", async () => {
+        const { data, error } = await B.from("checklist_items")
+          .insert({ trip_id: tripK, text: `พาสปอร์ต ${stamp}`, category: "เอกสาร" })
+          .select("id,added_by_user,is_checked").single();
+        expect(error, `เพิ่มรายการไม่ได้: ${error?.message}`).toBeNull();
+        itemK = data!.id as string;
+        expect(data?.added_by_user).toBe(ids.b);
+        expect(data?.is_checked, "รายการใหม่ต้องยังไม่ถูกติ๊ก").toBe(false);
+      });
+
+      it("🔴 ติ๊กแล้วต้องรู้ว่าใครติ๊ก — และไคลเอนต์ตั้งเองไม่ได้", async () => {
+        // 🔴 **UPDATE ที่ถูก RLS กรอง คืน 200 ไม่มี error** — เคสฉบับแรกของผม assert `42501`
+        //    แล้วแดง · **ผมเดินเข้ากับดักที่ P2 รายงานและ P4 ตรึงไว้แล้ว เป็นครั้งที่สองของวัน**
+        //    → ต้อง **อ่านกลับมายืนยัน** ไม่ใช่เชื่อว่าไม่มี error แปลว่าถูกปฏิเสธ
+        await C.from("checklist_items").update({ is_checked: true }).eq("id", itemK);
+        const afterViewer = await B.from("checklist_items").select("is_checked").eq("id", itemK).single();
+        expect(afterViewer.data?.is_checked, "viewer ติ๊กรายการสำเร็จ").toBe(false);
+
+        const byB = await B.from("checklist_items").update({ is_checked: true }).eq("id", itemK);
+        expect(byB.error, `editor ติ๊กไม่ได้: ${byB.error?.message}`).toBeNull();
+
+        const { data } = await B.from("checklist_items").select("checked_by_user").eq("id", itemK).single();
+        expect(data?.checked_by_user, "ติ๊กแล้วไม่รู้ว่าใครติ๊ก").toBe(ids.b);
+
+        const fake = await B.from("checklist_items").update({ checked_by_user: ids.a }).eq("id", itemK);
+        expect(fake.error?.code, `ตั้ง checked_by_user เองได้: ${fake.error?.message ?? "ไม่มี error"}`).toBe("42501");
+      });
+
+      it("🔴 ติ๊กออกแล้วต้องล้างคนติ๊กด้วย — ไม่งั้นค้างเป็นชื่อคนที่ไม่ได้ติ๊กแล้ว", async () => {
+        await B.from("checklist_items").update({ is_checked: false }).eq("id", itemK);
+        const { data } = await B.from("checklist_items").select("checked_by_user").eq("id", itemK).single();
+        expect(data?.checked_by_user, "ติ๊กออกแล้วชื่อคนติ๊กยังค้าง").toBeNull();
+      });
+
+      it("🔴 ลบผ่าน RPC เท่านั้น", async () => {
+        const hard = await B.from("checklist_items").delete().eq("id", itemK);
+        expect(hard.error?.code, `ยังลบจริงได้: ${hard.error?.message ?? "ไม่มี error"}`).toBe("42501");
+        const soft = await B.rpc("soft_delete_checklist_item", { p_id: itemK });
+        expect(soft.error, `ลบผ่าน RPC ไม่ได้: ${soft.error?.message}`).toBeNull();
+        const seen = await B.from("checklist_items").select("id").eq("id", itemK);
+        expect(seen.data).toEqual([]);
+      });
+    });
+
+    describe("`place_notes` — XOR แบบเดียวกับ `trip_stops`", () => {
+      it("ด้านบวก: โน้ตบนสถานที่คลังกลาง และบนสถานที่ของทริป ได้ทั้งคู่", async () => {
+        const a1 = await B.from("place_notes")
+          .insert({ trip_id: tripK, plan_id: planK, catalog_place_id: catK, note: "อร่อย" });
+        expect(a1.error, `โน้ตบนคลังกลางไม่ได้: ${a1.error?.message}`).toBeNull();
+
+        const a2 = await B.from("place_notes")
+          .insert({ trip_id: tripK, plan_id: planK, custom_place_id: myK, note: "ร้านลับ" });
+        expect(a2.error, `โน้ตบนสถานที่ของทริปไม่ได้: ${a2.error?.message}`).toBeNull();
+      });
+
+      it("🔴 โน้ตที่ไม่ชี้สถานที่เลย หรือชี้สองแหล่ง เขียนลงไม่ได้", async () => {
+        const none = await B.from("place_notes")
+          .insert({ trip_id: tripK, plan_id: planK, note: "ลอย ๆ" });
+        expect(none.error?.code, `โน้ตที่ไม่ชี้อะไรเลยเขียนได้: ${none.error?.message ?? "ไม่มี error"}`).toBe("23514");
+
+        const both = await B.from("place_notes")
+          .insert({ trip_id: tripK, plan_id: planK, catalog_place_id: catK, custom_place_id: myK, note: "สอง" });
+        expect(both.error?.code, `โน้ตที่ชี้สองแหล่งเขียนได้: ${both.error?.message ?? "ไม่มี error"}`).toBe("23514");
+      });
+
+      it("🔴 viewer อ่านโน้ตได้ แต่เขียนไม่ได้ · anon ไม่ได้อะไรเลย", async () => {
+        const r = await C.from("place_notes").select("note").eq("trip_id", tripK);
+        expect(r.data, "viewer อ่านโน้ตไม่ได้").not.toHaveLength(0);
+        const w = await C.from("place_notes")
+          .insert({ trip_id: tripK, plan_id: planK, catalog_place_id: catK, note: "x" });
+        expect(w.error?.code).toBe("42501");
+        const anon = await D.from("place_notes").select("note");
+        expect(anon.data ?? []).toEqual([]);
+      });
+    });
+
+    describe("`hidden_places` — คลังกลางเท่านั้น และลบจริงโดยตั้งใจ", () => {
+      it("ด้านบวก: ซ่อนแล้วอ่านกลับได้ · เอากลับคืนได้ด้วยการลบแถว", async () => {
+        const h = await B.from("hidden_places")
+          .insert({ trip_id: tripK, catalog_place_id: catK });
+        expect(h.error, `ซ่อนไม่ได้: ${h.error?.message}`).toBeNull();
+
+        const seen = await C.from("hidden_places").select("catalog_place_id").eq("trip_id", tripK);
+        expect(seen.data, "viewer ไม่เห็นรายการที่ถูกซ่อน = หน้าจอสองคนไม่ตรงกัน").toHaveLength(1);
+
+        // 🔴 **ลบจริงโดยตั้งใจ** — tombstone ของ "การเลิกซ่อน" ไม่มีความหมาย (`D76` ระบุผู้ได้/ไม่ได้)
+        const un = await B.from("hidden_places").delete().eq("trip_id", tripK).eq("catalog_place_id", catK);
+        expect(un.error, `เอากลับคืนไม่ได้: ${un.error?.message}`).toBeNull();
+      });
+
+      it("🔴 ซ่อนซ้ำไม่ได้ · viewer ซ่อนไม่ได้", async () => {
+        await B.from("hidden_places").insert({ trip_id: tripK, catalog_place_id: catK });
+        const dup = await B.from("hidden_places").insert({ trip_id: tripK, catalog_place_id: catK });
+        expect(dup.error?.code, `ซ่อนซ้ำได้: ${dup.error?.message ?? "ไม่มี error"}`).toBe("23505");
+
+        const v = await C.from("hidden_places").insert({ trip_id: tripK, catalog_place_id: catK });
+        expect(v.error?.code).toBe("42501");
+      });
     });
   });
 

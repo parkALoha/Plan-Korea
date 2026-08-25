@@ -145,4 +145,6 @@ export const TEST_COUNTRY_CODES = {
   softDelete: "zv",
   /** บล็อก `bookings` — P1 */
   bookings: "zu",
+  /** บล็อก `checklist_items` · `place_notes` · `hidden_places` — P1 */
+  tripContent: "zt",
 } as const;
