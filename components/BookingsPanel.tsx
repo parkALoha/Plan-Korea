@@ -13,6 +13,7 @@ import {
 } from "@/lib/bookingStatus";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { PhotoLightbox } from "./PhotoLightbox";
+import { useSignedFiles } from "@/hooks/useSignedFiles";
 
 export const BOOKING_CATEGORY_LABEL: Record<BookingCategory, string> = {
   flight: "เที่ยวบิน",
@@ -70,6 +71,11 @@ export function BookingsPanel({
   const counts = bookingCounts(bookings);
   // เรียงใหม่ทุกครั้งที่ render — อันดับขึ้นกับ "วันนี้" จึงขยับเองเมื่อเวลาผ่านไปโดยไม่ต้องแก้ข้อมูล
   const sorted = sortBookingsByUrgency(bookings);
+  // เซ็นทีเดียวทั้งลิสต์ (E2-AC13 ②) — ไม่เซ็นทีละใบตอน render ของแต่ละการ์ด
+  const imageAttachments = bookings
+    .filter((b) => isImageAttachment(b.file_name, b.file_url))
+    .map((b) => b.file_url);
+  const signedThumbs = useSignedFiles(imageAttachments);
 
   return (
     <section className="mb-5">
@@ -112,9 +118,9 @@ export function BookingsPanel({
             const link = safeHttpUrl(booking.link);
             // รูปตั๋วโชว์เป็นรูปย่อบนการ์ดเลย ไม่ใช่ไอคอน 📎 — เห็นปุ๊บรู้ว่าใบไหนคือใบไหน (เฟส 23)
             // PDF ยังเป็น 📎 ต่อท้ายชื่อเหมือนเดิม เพราะ render เป็นรูปไม่ได้
-            const thumb = isImageAttachment(booking.file_name, booking.file_url)
-              ? booking.file_url
-              : null;
+            const isImage = isImageAttachment(booking.file_name, booking.file_url);
+            // undefined = ยังเซ็นไม่เสร็จ (loading) · null = เซ็นไม่สำเร็จ (ต้องบอก ไม่ใช่กลืน) · string = เปิดได้
+            const thumbSigned = booking.file_url ? signedThumbs.get(booking.file_url) : undefined;
             return (
               // ปุ่มการ์ดกับปุ่มรูปเป็นพี่น้องกัน ไม่ใช่ปุ่มซ้อนปุ่ม (HTML ห้าม และกดแล้วยิงสองเด้ง)
               <div
@@ -146,7 +152,7 @@ export function BookingsPanel({
                     </div>
                     <div className="truncate text-sm font-medium text-content">
                       {booking.title}
-                      {booking.file_url && !thumb ? " 📎" : ""}
+                      {booking.file_url && !isImage ? " 📎" : ""}
                     </div>
                     {booking.note && (
                       <div className="line-clamp-2 text-xs text-content-soft">{booking.note}</div>
@@ -165,15 +171,33 @@ export function BookingsPanel({
                   </a>
                 )}
                 </div>
-                {thumb && (
+                {isImage && thumbSigned === undefined && (
+                  // ยังเซ็น signed URL ไม่เสร็จ — ของเดิม (public URL) ไม่มีสถานะนี้เลยเพราะ getPublicUrl()
+                  // เป็น sync แต่ createSignedUrl() ต้องรอ request จริง ต้องมีที่ให้ตาเห็นระหว่างรอ
+                  // ขนาด h-10 w-10 ห่อด้วย p-2 เท่ากับปุ่มรูปจริงด้านล่าง กันเลย์เอาต์กระตุกตอนสลับสถานะ
+                  <div className="shrink-0 self-center p-2">
+                    <div className="h-10 w-10 animate-pulse rounded-lg bg-surface-soft" />
+                  </div>
+                )}
+                {isImage && thumbSigned === null && (
+                  // 🔴 เซ็นไม่สำเร็จ (ไฟล์หาย/ไม่มีสิทธิ์) — ต้องบอกว่า "เปิดไม่ได้" ไม่ใช่กลืนแล้วปล่อยรูปแตก
+                  <div className="shrink-0 self-center p-2" title="เปิดรูปตั๋วไม่ได้">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-[10px] text-content-soft">
+                      🖼️✕
+                    </div>
+                  </div>
+                )}
+                {isImage && typeof thumbSigned === "string" && (
                   <button
-                    onClick={() => setZoomed({ src: thumb, alt: `รูปตั๋วที่แนบไว้กับ “${booking.title}”` })}
+                    onClick={() =>
+                      setZoomed({ src: thumbSigned, alt: `รูปตั๋วที่แนบไว้กับ “${booking.title}”` })
+                    }
                     aria-label={`ดูรูปตั๋วของ ${booking.title} ขนาดเต็ม`}
                     className="shrink-0 self-center p-2"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
                     <img
-                      src={thumb}
+                      src={thumbSigned}
                       alt=""
                       loading="lazy"
                       className="h-10 w-10 rounded-lg object-cover"
