@@ -1377,24 +1377,41 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(data ?? [], `anon อ่าน trip_days ได้: ${error?.message ?? ""}`).toEqual([]);
     });
 
-    it("🔴 E2-AC9 — `updated_at` ที่ client ส่งมาต้องถูกเซิร์ฟเวอร์ทับ (D7)", async () => {
-      const fake = "2000-01-01T00:00:00.000Z";
+    /**
+     * 🔴 **เคสนี้เคยยืนยันสิ่งที่อ่อนกว่า และการเปลี่ยนคือการรัดให้แน่นขึ้น ไม่ใช่การแก้ให้เขียว**
+     *
+     * ฉบับแรก (25 ส.ค. เช้า) ยืนยันว่า *"ส่ง `updated_at` มาได้ แต่ trigger จะทับให้"*
+     * ซึ่งจริงตอนนั้น **และครอบแค่ครึ่งเดียวของพื้นผิว** — `before update` ไม่ยิงตอน `INSERT`
+     * P7 ไล่ DDL ที่ลงจริงแล้วเจอ (`mobile-arch.md §11.10`) → ปิดด้วย column grant
+     * (`20260825122247_e2_freeze_row_times.sql`)
+     *
+     * ตอนนี้ทั้งสองทางถูกปฏิเสธที่**ชั้นสิทธิ์** ซึ่งแรงกว่าการถูกทับเงียบ ๆ:
+     * ไคลเอนต์ที่ส่งมาจะได้ยินเสียง แทนที่จะเข้าใจว่าค่าที่ตัวเองส่งมีผล
+     * · ด้านบวก (`updated_at` ยังขยับเองตอน update ปกติ) อยู่ในบล็อก `E2-AC9 ครึ่งที่หายไป` ท้ายไฟล์
+     */
+    it("🔴 E2-AC9 — `updated_at` ที่ client ส่งมาต้องถูกปฏิเสธ ไม่ใช่แค่ถูกทับ (D7)", async () => {
       const { error } = await A.from("trip_days")
-        .update({ timezone: "Asia/Seoul", updated_at: fake })
+        .update({ timezone: "Asia/Seoul", updated_at: "2000-01-01T00:00:00.000Z" })
         .eq("trip_id", tripD)
         .eq("date", day2);
-      expect(error).toBeNull();
+      expect(
+        error?.code,
+        `client ส่ง updated_at มาแล้วไม่มีอะไรค้าน: ${error?.message ?? "ไม่มี error"}`,
+      ).toBe("42501");
+
+      // และการแก้ที่ถูกต้อง (ไม่ส่งคอลัมน์เวลา) ต้องยังผ่าน — ไม่งั้นข้อบนเขียวเพราะแก้อะไรไม่ได้เลย
+      const ok = await A.from("trip_days")
+        .update({ timezone: "Asia/Seoul" })
+        .eq("trip_id", tripD)
+        .eq("date", day2);
+      expect(ok.error, `แก้ timezone ตามปกติไม่ได้: ${ok.error?.message}`).toBeNull();
 
       const { data } = await A.from("trip_days")
-        .select("updated_at,timezone")
+        .select("timezone")
         .eq("trip_id", tripD)
         .eq("date", day2)
         .single();
-      expect(data?.timezone, "การแก้ไม่ผ่าน → ข้อนี้ไม่ได้วัด updated_at").toBe("Asia/Seoul");
-      expect(
-        new Date(data!.updated_at as string).getUTCFullYear(),
-        "client เขียน updated_at ทับได้ = เครื่องที่นาฬิกาผิดชนะ last-write-wins ตลอดกาล",
-      ).toBeGreaterThan(2020);
+      expect(data?.timezone).toBe("Asia/Seoul");
     });
 
     it("🔴 วันซ้ำในทริปเดียวกันไม่ได้ — `trip_stops.day_id` จะชี้ได้สองที่ถ้าปล่อย", async () => {
@@ -1561,6 +1578,128 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         const { data } = await A.from("trip_plans").select("id").eq("trip_id", tripP);
         expect(data, "แผนหายไปทั้งที่ trigger ควรกันไว้").toHaveLength(1);
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC9 ครึ่งที่หายไป — ไคลเอนต์ตั้งเวลาของแถวเองไม่ได้ (P7 พบ)", () => {
+    /**
+     * `app.touch_updated_at()` เป็น `before update` → **ไม่ยิงตอน INSERT**
+     * และ `default now()` มีผลก็ต่อเมื่อไคลเอนต์ *ไม่ส่ง* คอลัมน์นั้นมา
+     * `grant insert on <table>` เป็นสิทธิ์ระดับตาราง = ครอบทุกคอลัมน์
+     * → แถวเกิดมาพร้อมเวลาที่ไคลเอนต์พิมพ์เอง **และชนะ LWW ตั้งแต่วินาทีแรก**
+     *
+     * 🔴 **เคสเดิมของ `E2-AC9` ทดสอบด้าน `UPDATE` ซึ่งเป็นด้านที่ trigger ครอบอยู่แล้ว**
+     * ด้าน `INSERT` ไม่มีใครลอง — รูปแบบเดิมของทีมนี้: ผ่านเพราะทดสอบด้านที่มันครอบ
+     *
+     * ทางแก้เป็น **column grant** ไม่ใช่ trigger `before insert` เพราะ `E7` ต้องย้ายข้อมูลจริง
+     * เข้ามาพร้อมเวลาเดิม — `service_role` ยังตั้งได้ ส่วน `authenticated` แตะไม่ได้
+     * ⚠️ ราคาของมันคือ **คอลัมน์ใหม่จะไม่มีสิทธิ์โดยอัตโนมัติ** → ต้องมีเคสด้านบวกคู่กันเสมอ
+     * ไม่งั้นวันที่มีคนลืมเติมชื่อคอลัมน์ลง grant เราจะเห็นแค่ "ปลอดภัยดี"
+     */
+    let tripT = "";
+    let planT = "";
+    let dayT = "";
+
+    beforeAll(async () => {
+      const { data, error } = await A.rpc("create_trip", {
+        p_title: `times-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (error) throw new Error(`สร้างทริปของบล็อกเวลาไม่ได้: ${error.message}`);
+      tripT = data.id as string;
+
+      const day = await A.from("trip_days")
+        .insert({ trip_id: tripT, date: "2026-10-15" })
+        .select("id")
+        .single();
+      if (day.error) throw new Error(`สร้างวันไม่ได้: ${day.error.message}`);
+      dayT = day.data.id as string;
+
+      const plan = await A.from("trip_plans")
+        .insert({ trip_id: tripT, name: "แผนเวลา" })
+        .select("id")
+        .single();
+      if (plan.error) throw new Error(`สร้างแผนไม่ได้: ${plan.error.message}`);
+      planT = plan.data.id as string;
+    });
+
+    const FAKE = "2000-01-01T00:00:00.000Z";
+
+    describe("ด้านบวก — แถวปกติต้องยังเขียนได้ (กันเคสลืมเติมคอลัมน์ลง grant)", () => {
+      it("insert ที่ไม่ส่งคอลัมน์เวลามา ต้องผ่านทุกตาราง", async () => {
+        const day = await A.from("trip_days").insert({ trip_id: tripT, date: "2026-10-16" });
+        expect(day.error, `trip_days: ${day.error?.message}`).toBeNull();
+
+        const plan = await A.from("trip_plans").insert({ trip_id: tripT, name: "แผนเวลา 2" });
+        expect(plan.error, `trip_plans: ${plan.error?.message}`).toBeNull();
+
+        const tdps = await A.from("trip_day_plan_settings").insert({
+          trip_id: tripT, plan_id: planT, trip_day_id: dayT, start_time: "07:30",
+        });
+        expect(tdps.error, `trip_day_plan_settings: ${tdps.error?.message}`).toBeNull();
+      });
+
+      it("update คอลัมน์ปกติต้องยังผ่าน", async () => {
+        const { error } = await A.from("trip_plans")
+          .update({ name: "แผนเวลา (แก้ชื่อ)" })
+          .eq("id", planT);
+        expect(error, `แก้ชื่อแผนไม่ได้: ${error?.message}`).toBeNull();
+      });
+    });
+
+    it("🔴 INSERT ที่ส่ง created_at มาเอง ต้องถูกปฏิเสธ — ทั้ง 3 ตารางของ E2", async () => {
+      const day = await A.from("trip_days")
+        .insert({ trip_id: tripT, date: "2026-10-17", created_at: FAKE });
+      expect(day.error?.code, `trip_days รับ created_at: ${day.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      const plan = await A.from("trip_plans")
+        .insert({ trip_id: tripT, name: "แผนปลอม", created_at: FAKE });
+      expect(plan.error?.code, `trip_plans รับ created_at: ${plan.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      const tdps = await A.from("trip_day_plan_settings")
+        .insert({ trip_id: tripT, plan_id: planT, trip_day_id: dayT, created_at: FAKE });
+      expect(tdps.error?.code, `tdps รับ created_at: ${tdps.error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("🔴 INSERT ที่ส่ง updated_at มาเอง ต้องถูกปฏิเสธ — นี่คือค่าที่ตัดสิน last-write-wins", async () => {
+      const { error } = await A.from("trip_days")
+        .insert({ trip_id: tripT, date: "2026-10-18", updated_at: FAKE });
+      expect(
+        error?.code,
+        `แถวเกิดมาพร้อม updated_at ที่ไคลเอนต์พิมพ์เอง: ${error?.message ?? "ไม่มี error"}\n` +
+          "  = เครื่องที่นาฬิกาผิดชนะ LWW ตั้งแต่วินาทีแรก และไม่มีอะไรซ่อมจนกว่าจะมีคนแก้แถวนั้น",
+      ).toBe("42501");
+    });
+
+    it("🔴 UPDATE ที่ส่ง created_at มาเอง ต้องถูกปฏิเสธ — ไม่มี trigger ตัวไหนซ่อมคอลัมน์นี้เลย", async () => {
+      const { error } = await A.from("trip_plans").update({ created_at: FAKE }).eq("id", planT);
+      expect(
+        error?.code,
+        `แก้ created_at ได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  · useChecklist.ts:14 เรียงด้วยค่านี้ → ลำดับที่ผู้ใช้เห็นขึ้นกับค่าที่ไคลเอนต์พิมพ์มา",
+      ).toBe("42501");
+    });
+
+    it("🔴 profiles / trips ก็ต้องปิดเหมือนกัน — ตารางของ E1 ไม่ได้ยกเว้น", async () => {
+      const prof = await A.from("profiles").update({ updated_at: FAKE }).eq("id", ids.a);
+      expect(prof.error?.code, `profiles รับ updated_at: ${prof.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      const trip = await A.from("trips").update({ created_at: FAKE }).eq("id", tripT);
+      expect(trip.error?.code, `trips รับ created_at: ${trip.error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("ด้านบวกที่ต้องไม่หายไป: UPDATE ปกติยังทำให้ updated_at ขยับเองโดยเซิร์ฟเวอร์", async () => {
+      const before = await A.from("trip_plans").select("updated_at").eq("id", planT).single();
+      await new Promise((r) => setTimeout(r, 1100));
+      const { error } = await A.from("trip_plans").update({ is_active: true }).eq("id", planT);
+      expect(error, `แก้ is_active ไม่ได้: ${error?.message}`).toBeNull();
+      const after = await A.from("trip_plans").select("updated_at").eq("id", planT).single();
+      expect(
+        new Date(after.data!.updated_at as string).getTime(),
+        "updated_at ไม่ขยับ = column grant ปิดจนเซิร์ฟเวอร์เขียนเองไม่ได้ด้วย",
+      ).toBeGreaterThan(new Date(before.data!.updated_at as string).getTime());
     });
   });
 
