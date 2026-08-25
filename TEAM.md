@@ -146,6 +146,15 @@ mcp__ccd_session_mgmt__list_sessions
     · ⚠️ `service_role` มี **BYPASSRLS** โดยนิยาม → grant คือด่านสุดท้ายที่เหลือของตารางนั้น **ไม่มี policy มาช่วยอีกชั้น**
       **ขยาย grant นี้ต้องผ่าน P1 และจดที่นี่ทุกครั้ง ห้าม `grant all` เด็ดขาด**
     · ไฟล์: `supabase-platform/supabase/migrations/20260824222206_service_role_test_cleanup_grant.sql`
+  · **ข้อยกเว้นที่ 3 (25 ส.ค. 2026 · branch `platform` เท่านั้น):** P1 อนุมัติ
+    `grant select, insert, update, delete on public.catalog_countries, public.catalog_cities to service_role`
+    **ขอบเขต: ให้ `service_role` ดูแล *คลังอ้างอิงสาธารณะ* ได้ — seed ตอน `E7` และ fixture ของชุดทดสอบ**
+    · 🎯 **ต่างจากข้อยกเว้นที่ 2 ตรงที่คลัง *ไม่มีข้อมูลของผู้ใช้เลยสักแถว*** — ข้อยกเว้นที่ 2 เปิดบน `trips`
+      ซึ่งเป็นข้อมูลผู้ใช้ จึงต้องแคบที่สุด · คลังเขียนจากฝั่งไคลเอนต์ไม่ได้อยู่แล้ว (ไม่มี policy ฝั่งเขียนสักตัว
+      · `authenticated` มีแค่ `select`) → **`service_role` คือทางที่ตั้งใจให้ใช้ดูแลมัน ไม่ใช่ทางลัดที่หลบด่าน**
+    · 🔴 **โค้ดที่เสิร์ฟผู้ใช้ยังห้ามแตะ service role key เหมือนเดิมทุกตัวอักษร** — `authNoServiceRole.test.ts` ยังบังคับ `lib/auth` + `app/`
+    · ระบุสิทธิ์ทีละตัวตามกติกา **ไม่ใช่ `grant all`**
+    · ไฟล์: `supabase-platform/supabase/migrations/20260825133252_e2_catalog_service_role_grant.sql`
 
 ## 4. คุยกันข้ามเซสชันยังไง
 
