@@ -10,6 +10,7 @@ import {
   stripComments,
   tablesFromMigrations,
   tripScopedTables,
+  authorshipPairsFromMigrations,
 } from "./_helpers";
 
 /**
@@ -3939,6 +3940,30 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       ["trip_hotels", "added_by_user", "legacy_added_by"],
       ["trip_stops", "added_by_user", "legacy_added_by"],
     ] as const;
+
+    it("🔴 แหล่งที่สอง: คู่ที่อ่านได้จากไฟล์ ต้องตรงกับที่ฟังก์ชันรายงาน", () => {
+      /**
+       * 🔴 **เคสนี้มีอยู่เพราะเคสข้างล่างตรวจตัวเองไม่ได้** — ลิสต์ `AUTHORSHIP_PAIRS`
+       * ผมก๊อปมาจากผลของ `authorship_columns()` เอง (คอมเมนต์ในลิสต์เขียนไว้ตรง ๆ ว่า
+       * *"เรียงตามที่ฟังก์ชันเรียงมา"*) → **ถ้าตรรกะจับคู่ของฟังก์ชันพลาดคู่ไหนตั้งแต่แรก
+       * ลิสต์จะพลาดคู่เดียวกัน และเคสข้างล่างจะเขียวตลอดกาล**
+       *
+       * 🎯 บทเรียนของ P1 (`P-63`) ที่ผมเอามาใช้กับงานตัวเอง: *ตัวตรวจที่ได้ค่าคาดหวังมาจาก
+       * แหล่งเดียวกับของที่ถูกตรวจ ยืนยันได้แค่ว่า "ผมพิมพ์ตรงกับที่ผมคิด"*
+       * · เขาเจอมันกับ `do $verify$` ที่นับ 37 คอลัมน์จากลิสต์ผิดตัวเดียวกัน **แล้วมันเขียว**
+       *
+       * → ตัวนี้อ่าน **ไฟล์** · ฟังก์ชันอ่าน **ฐาน** · ลิสต์เป็น **การตัดสินของคน** — สามแหล่ง
+       */
+      const fromFiles = authorshipPairsFromMigrations().map(([t, u, l]) => `${t}.${u} → ${l}`);
+      const registry = AUTHORSHIP_PAIRS.map(([t, u, l]) => `${t}.${u} → ${l}`);
+      expect(fromFiles.length, "อ่านคู่จากไฟล์ไม่ได้เลย — เคสนี้กำลังเทียบเซตว่าง").toBeGreaterThan(3);
+      expect(
+        fromFiles,
+        "ไฟล์กับทะเบียนไม่ตรงกัน\n" +
+          "  · **ไฟล์มีมากกว่า** → มีคู่ที่ `authorship_columns()` อาจมองไม่เห็น **นั่นคือบั๊กของฟังก์ชัน**\n" +
+          "  · **ทะเบียนมีมากกว่า** → มีคู่ที่ถูกลบไปแล้วแต่ยังค้างในทะเบียน",
+      ).toEqual(registry);
+    });
 
     it("🔴 ครอบ 8 คู่นี้พอดี — ไม่ขาดและไม่เกิน", async () => {
       const { data, error } = await admin.rpc("authorship_columns");

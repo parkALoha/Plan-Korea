@@ -265,3 +265,53 @@ export function effectiveFunctions(): Map<string, string> {
   }
   return out;
 }
+
+/**
+ * คู่คอลัมน์ประวัติที่อ่านได้ **จากไฟล์ migration** — `<x>_by_user` (uuid) ที่มี `legacy_<x>_by` (text) คู่กัน
+ *
+ * 🔴 **มีอยู่เพื่อเป็น *แหล่งที่สอง* เท่านั้น** (P1 · `P-63` · 26 ส.ค. 2026)
+ * เดิมเคสเทียบผลของ `public.authorship_columns()` กับลิสต์ที่ P4 **ก๊อปมาจากผลของฟังก์ชันนั้นเอง**
+ * → ยืนยันได้แค่ว่า *"ฟังก์ชันเห็นตรงกับที่ฟังก์ชันเคยบอก"* · **ถ้าตรรกะจับคู่ของมันพลาดคู่ไหนตั้งแต่แรก
+ *   ลิสต์จะพลาดคู่เดียวกัน แล้วเคสจะเขียวตลอดกาล**
+ *
+ * 🎯 **บทเรียนของ P1 ที่ผมเอามาใช้กับงานตัวเอง:** *ตัวตรวจที่ได้ค่าคาดหวังมาจากแหล่งเดียวกับ
+ * ของที่ถูกตรวจ ยืนยันได้แค่ว่า "ผมพิมพ์ตรงกับที่ผมคิด" ไม่ได้ยืนยันว่าสิ่งที่ผมคิดถูก*
+ * · เขาเจอมันกับ `do $verify$` ที่นับ 37 คอลัมน์จากลิสต์ที่ผิดตัวเดียวกัน — **และมันเขียว**
+ *
+ * ⚠️ ตัวนี้อ่าน**ไฟล์** ฟังก์ชันอ่าน**ฐาน** — คนละแหล่งจริง · แต่ยังไม่ใช่แหล่งที่สามที่เป็นอิสระจากทั้งคู่
+ */
+export function authorshipPairsFromMigrations(): Array<[string, string, string]> {
+  const cols = new Map<string, Map<string, string>>();
+  const alive = new Set(tablesFromMigrations());
+  const put = (t: string, c: string, ty: string) => {
+    if (!cols.has(t)) cols.set(t, new Map());
+    cols.get(t)!.set(c, ty);
+  };
+  for (const f of migrationFiles) {
+    const sql = stripComments(readFileSync(f, "utf8"));
+    for (const m of sql.matchAll(
+      /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_0-9]+)\s*\(([\s\S]*?)\n\);/gi,
+    )) {
+      const t = m[1].toLowerCase();
+      for (const line of m[2].split("\n")) {
+        const c = /^\s*([a-z_][a-z_0-9]*)\s+(uuid|text)\b/i.exec(line);
+        if (c) put(t, c[1].toLowerCase(), c[2].toLowerCase());
+      }
+    }
+    for (const m of sql.matchAll(/alter\s+table\s+public\.([a-z_0-9]+)([\s\S]*?);/gi)) {
+      const t = m[1].toLowerCase();
+      for (const a of m[2].matchAll(/add\s+column\s+([a-z_][a-z_0-9]*)\s+(uuid|text)\b/gi)) {
+        put(t, a[1].toLowerCase(), a[2].toLowerCase());
+      }
+    }
+  }
+  const out: Array<[string, string, string]> = [];
+  for (const t of [...alive].sort()) {
+    for (const [c, ty] of [...(cols.get(t) ?? new Map())].sort()) {
+      if (ty !== "uuid" || !c.endsWith("_by_user")) continue;
+      const legacy = `legacy_${c.slice(0, -5)}`;
+      if (cols.get(t)!.get(legacy) === "text") out.push([t, c, legacy]);
+    }
+  }
+  return out;
+}
