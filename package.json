@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings=0",
     "test": "vitest run",
     "db:push": "./supabase-platform/db-push.sh",
     "db:push:self-test": "./supabase-platform/db-push.sh --self-test"
