@@ -535,22 +535,54 @@ design ข้างล่างไม่เคยให้ signed URL หลุ�
 
 **แนวที่เลือก: proxy route คงที่ต่อ booking, เซิร์ฟเวอร์เซ็น URL สดทุกครั้งที่ถูกเรียก**
 ```
-GET /api/booking-file/{bookingId}   ← เส้นทางนี้เองที่ SW แคช ไม่ใช่ signed URL ที่มันไปเรียกข้างใน
+GET /api/booking-file/{tripId}/{bookingId}   ← path นี้เองที่ SW แคช ไม่ใช่ signed URL ที่มันไปเรียกข้างใน
 ```
-- Route handler (`app/api/booking-file/[bookingId]/route.ts` — **อยู่ใน `app/api/` โซนของ P1 ไม่ใช่ของ
-  ผม** เสนอเป็นข้อขอต่อ P1) เรียก `createSignedUrl()` **ข้างในเซิร์ฟเวอร์** แล้ว **stream ไฟล์กลับมาเป็น
+- ⚠️ **แก้จากรอบก่อน:** path เดิมที่เสนอคือ `/api/booking-file/{bookingId}` เฉย ๆ — เติม `{tripId}` นำหน้า
+  เข้าไปตอนนี้ เพราะ **SW ต้อง parse tripId จาก URL path ได้เองตรง ๆ ไม่งั้นต่อ `E6-AC6` ไม่ได้** (SW ไม่มี
+  ทาง query DB ว่า bookingId นี้เป็นของทริปไหน) เขียน path ให้ถูกตั้งแต่แรกจะได้ไม่ต้องเปลี่ยน shape ทีหลัง
+- Route handler (`app/api/booking-file/[tripId]/[bookingId]/route.ts` — **อยู่ใน `app/api/` โซนของ P1**)
+  เรียก `createSignedUrl()` **ข้างในเซิร์ฟเวอร์** แล้ว **stream ไฟล์กลับมาเป็น
   body ของ response นี้เอง — ห้าม `redirect()` ไปยัง signed URL ตรง ๆ** เพราะ `isStorable()` ใน `sw.js`
   (บรรทัด `!response.redirected`) ที่กันไม่ให้แคช `/unlock`/`/auth/callback` ทับ จะกันเส้นนี้ไม่ให้ถูกแคช
   ด้วยเหตุผลเดียวกันถ้าเป็น redirect — ต้อง stream เนื้อไฟล์ตรง ๆ ถึงจะแคชได้
 - **TTL 60 วินาทีของ signed URL ไม่ใช่ปัญหาอีกต่อไป** เพราะ TTL นั้นอยู่ "ข้างใน" การเรียกของ route
-  handler เท่านั้น — ฝั่ง browser/SW ไม่เคยเห็น signed URL เลย เห็นแค่ path คงที่ `/api/booking-file/{id}`
-  ที่ไม่มีวันหมดอายุในความหมายของ URL string
-- **ผูกกับ `E6-AC6` โดยตรง** — path มี `{trip_id}/…` อยู่แล้วในระดับ storage และ `bookingId` ผูกกับ
-  `tripId` เสมอ 1 ทาง จึงตั้งชื่อ cache แบบเดียวกับแผนใน §5 ได้เลย (`booking-files-${tripId}-v1`) ไม่ต้อง
-  ออกแบบ scoping ใหม่ซ้ำ — เป็นเหตุผลเพิ่มว่าทำไมควรทำ `E6-AC6` (dynamic `ALL_CACHES` matching) **ก่อน**
-  เพิ่ม cache กลุ่มนี้ ไม่ใช่ทำคู่ขนานกันแล้วมาต่อทีหลัง
-- เมื่อ route มีจริง: เพิ่ม `/api/booking-file/` เข้ากลุ่มที่ผ่าน `cacheFirst` ใน `sw.js` (แพทเทิร์นเดียวกับ
-  `CACHEABLE_API` ปัจจุบัน) — เป็นงานฝั่ง `sw.js` ของผม รอแค่ route มีอยู่จริงก่อน
+  handler เท่านั้น — ฝั่ง browser/SW ไม่เคยเห็น signed URL เลย เห็นแค่ path คงที่ที่ไม่มีวันหมดอายุ
+
+### สัญญาของ route ที่ P1 ขอ — ให้เขียนตามได้โดยไม่ต้องถามกลับ
+
+**Method / path:** `GET /api/booking-file/{tripId}/{bookingId}` เท่านั้น (SW กรองแค่ `GET` อยู่แล้ว —
+`sw.js:98`) · ไม่มี query string ใด ๆ ในเส้นทางนี้ — ถ้ามีพารามิเตอร์เพิ่มในอนาคต (เช่น thumbnail size)
+ให้เป็น path segment ไม่ใช่ query เพราะ query string ต่างกันจะกลายเป็นคีย์แคชคนละอันโดยไม่ตั้งใจ
+
+**สิทธิ์ — ต้องเช็คก่อนเรียก `createSignedUrl()` เสมอ ไม่ใช่ปล่อยให้ signed URL เป็นด่านเดียว:**
+route ต้องยืนยันจาก session cookie ของผู้เรียกเองว่า user คนนี้เป็นสมาชิกของ `tripId` และ `bookingId`
+เป็นของทริปนั้นจริง **ก่อน** เรียกเซ็น — มิฉะนั้น path คงที่นี้เองจะกลายเป็นทางเลี่ยง RLS ของ bucket private
+ทั้งบัคเก็ต (ใครเดา `tripId`/`bookingId` ถูกก็ขอไฟล์ได้โดยไม่ต้องมีสิทธิ์จริง) — นี่คือเหตุผลที่ต้องรอ `E3`
+มี DAL/session จริงตามที่ P1 ว่า ไม่ใช่แค่เรื่องฐานข้อมูลผิด
+
+**Header ที่ response ต้องมี (200 เท่านั้น):**
+| header | ค่า | เหตุผล |
+|---|---|---|
+| `Content-Type` | ชนิดไฟล์จริงจาก storage object (เช่น `image/jpeg`, `application/pdf`) | ต้องส่งต่อจาก signed URL response ตรง ๆ ไม่ hardcode — `isImageAttachment()` (`lib/url.ts`) ที่ใช้อยู่แล้วต้องแยกรูปกับ PDF ให้ถูก |
+| `Content-Disposition` | `inline; filename="<file_name จาก booking>"` | `inline` ให้เปิดในหน้าเว็บ/viewer เหมือนพฤติกรรม `<img src>`/`<a href>` วันนี้ ไม่ force-download |
+| `Cache-Control` | `private, no-store` | **สำคัญ:** กัน HTTP cache ของ browser/proxy เก็บไฟล์ที่มีสิทธิ์เฉพาะคนไว้เอง — ไม่ขัดกับที่ `sw.js` จะแคชผ่าน `cache.put()` เพราะ Cache Storage API **ไม่อ่าน `Cache-Control` เลย** เป็นคนละกลไกกัน — ตั้งใจให้ SW เป็นเจ้าของการแคชเพียงชั้นเดียว ไม่ใช่ให้ HTTP cache ปกติแอบเก็บซ้ำ |
+| `Content-Length` | ถ้ารู้ขนาดจริงจาก storage metadata | ไม่บังคับ แต่ช่วย progress/UX ถ้ามีข้อมูลอยู่แล้ว |
+
+**403/404/401 — ห้าม SW แคชคำตอบ error เด็ดขาด:**
+ไม่ต้องเขียนโค้ดกันเพิ่มฝั่ง `sw.js` เลย **ถ้า route คืน HTTP status code จริง** (`403`/`404`/`401`)
+แทนที่จะคืน `200` พร้อม body `{ error: "..." }` — `isStorable()` ที่มีอยู่แล้ว (`sw.js:56-58`) เช็ค
+`response.status === 200` อยู่แล้ว จึงกรอง error ออกจากการแคชโดยอัตโนมัติไม่ต้องแก้อะไรเพิ่ม **ข้อแม้
+เดียวคือ route ต้องไม่ใจดีคืน 200 ให้กรณี error เพื่อความง่ายฝั่ง client** — ถ้าทำแบบนั้นจะหลุด guard ทันที
+· แนะนำ (ไม่ใช่บังคับ เป็นเรื่อง auth design ของ P1): คืน `404` ทั้งกรณี "ไม่มีไฟล์นี้" และ "มีแต่ไม่มีสิทธิ์"
+เพื่อไม่ให้รู้ได้ว่า resource มีอยู่จริงไหมจากรหัสตอบ — เป็นข้อเสนอ ไม่ใช่สัญญาที่ SW ต้องพึ่ง
+
+**Cache name — scope เมื่อ `E6-AC6` มาถึง:** ตอนนี้ (ก่อน `E6-AC6`) ใช้ cache แบบ flat ไปก่อนได้
+(`booking-files-v1` เข้ากลุ่ม `ALL_CACHES` เดิม) — พอ `E6-AC6` ลง SW จะ parse `tripId` จาก **path segment
+แรกหลัง `/api/booking-file/`** ตรง ๆ (ไม่ต้องแก้ route หรือ header ใด ๆ เพิ่ม เพราะ tripId อยู่ใน URL แล้ว
+ตามสัญญานี้) มาประกอบเป็น `booking-files-${tripId}-v1` — เป็นเหตุผลที่ path ต้องมี tripId ตั้งแต่วันแรก
+
+**เมื่อ route มีจริง:** ผมเพิ่ม path นี้เข้ากลุ่มที่ผ่าน `cacheFirst` ใน `sw.js` ทันที (แพทเทิร์นเดียวกับ
+`CACHEABLE_API` ปัจจุบัน) — ฝั่งผมพร้อมเสมอ รอแค่ route ตามสัญญานี้เท่านั้น
 
 **สรุปสั้น:** เปลี่ยนจาก "คีย์ด้วย URL" เป็น "คีย์ด้วย path คงที่ที่เซิร์ฟเวอร์เซ็น URL สดให้ทุกครั้ง"
 — ใช้ infra เดิม (`cacheFirst`) ได้ทั้งหมดและไม่มี signed URL หลุดไปถึง browser เลยสักจุด (ตรงกับกฎของ
