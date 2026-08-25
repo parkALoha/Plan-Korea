@@ -3798,6 +3798,68 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         expect(r.rows, `คำค้น ${JSON.stringify(q)} คืน ${r.rows.length} แถว`).toEqual([]);
       }
     });
+    describe("🔴 `P-66` — อักขระของ LIKE ในคำค้น ต้องเป็น *ตัวอักษร* ไม่ใช่ *ไวลด์การ์ด*", () => {
+      /**
+       * บั๊กเดิม: `search_norm` ทำแค่ `lower` + `unaccent` แล้ว `q` ไปโผล่ใน `like '%'||q||'%'` ดิบ ๆ
+       * → **ค้น `%` ได้คลังทั้งเมือง** · ด่าน *"คำค้นว่างต้องไม่คืนทั้งคลัง"* ถูกเดินอ้อมด้วยอักขระเดียว
+       *
+       * 🎯 **สิ่งที่ P1 จดไว้ และผมคิดว่าคมกว่าตัวบั๊ก:** คอมเมนต์เหนือด่านนั้นพูดถึง *ผลลัพธ์ที่จะกัน*
+       * (*"คืนศูนย์แถว ไม่ใช่คืนทั้งคลัง"*) · โค้ดพูดถึง *ทางเดียวที่คนเขียนนึกออก* (สตริงว่าง)
+       * **สองบรรทัดติดกัน ไม่มีอะไรขัดกัน — มันแค่ครอบไม่เท่ากัน** จึงมองไม่เห็นจากการอ่าน
+       *
+       * 🔴 **และเกณฑ์ที่ถูกไม่ใช่ *"ค้น `%` ต้องได้ 0 แถว"*** — นั่นจริงเฉพาะคลังที่บังเอิญไม่มีชื่อไหนมี `%`
+       * (*"ลด 50% ร้าน"* เป็นชื่อร้านที่มีจริงได้) · **เกณฑ์ที่ถูกคือ: `%` ต้องหาเจอเฉพาะชื่อที่มี `%` จริง**
+       * → บล็อกนี้จึง seed ชื่อที่มี `%` และ `_` ไว้ **เพื่อให้เคสแยก "escape ถูก" ออกจาก "บล็อกทิ้ง" ได้**
+       */
+      let pctPlace = "", undPlace = "";
+
+      beforeAll(async () => {
+        const mk = async (name: string) => {
+          const p = await admin.from("catalog_places")
+            .insert({ city_id: cityR, category: "sight", lat: 35, lng: 129 })
+            .select("id").single();
+          if (p.error) throw new Error(`seed: ${p.error.message}`);
+          await admin.from("catalog_place_names")
+            .insert({ place_id: p.data.id, city_id: cityR, name, locale: "th" });
+          return p.data.id as string;
+        };
+        pctPlace = await mk(`ลด 50% ร้าน ${stamp}`);
+        undPlace = await mk(`ร้าน_ลับ ${stamp}`);
+      });
+
+      it("🔴 `%` และ `_` ต้องไม่กวาดทั้งคลัง — ต้องเจอเฉพาะชื่อที่มีอักขระนั้นจริง", async () => {
+        const pct = await search(A, { p_query: "%", p_intent: "discover", p_city_id: cityR });
+        expect(
+          pct.rows.map((r) => r.place_id),
+          "ค้น `%` ได้มากกว่าชื่อที่มี `%` จริง — ไวลด์การ์ดยังทำงานอยู่",
+        ).toEqual([pctPlace]);
+
+        const und = await search(A, { p_query: "_", p_intent: "discover", p_city_id: cityR });
+        expect(und.rows.map((r) => r.place_id), "ค้น `_` กวาดเกิน").toEqual([undPlace]);
+      });
+
+      it("🔴 ลำดับการ escape — `\\` ต้องถูกแทนก่อน `%`/`_` ไม่งั้นมันย้อนกลับเป็นไวลด์การ์ด", async () => {
+        /**
+         * 🎯 **เคสที่ยิงแค่ `'%'` ตัวเดียวจะเขียวแม้ลำดับผิด** — ต้องมีทั้ง `\` และ `%` ในสตริงเดียว
+         * ถ้าแทน `%`→`\%` ก่อน แล้วค่อยแทน `\`→`\\` ตัว `\` ที่เพิ่งใส่จะโดนซ้ำเป็น `\\%`
+         * = **หลุดกลับไปเป็นไวลด์การ์ด โดยที่เคสของบั๊กเดิมมองไม่เห็นเลย**
+         */
+        for (const q of ["\\%", "a\\%b_c", "\\", "\\_"]) {
+          const r = await search(A, { p_query: q, p_intent: "discover", p_city_id: cityR });
+          expect(r.rows, `คำค้น ${JSON.stringify(q)} คืน ${r.rows.length} แถว — ต้องไม่ตรงกับชื่อไหนเลย`).toEqual([]);
+        }
+      });
+
+      it("🔴 ด้านบวก: ชื่อที่มี `%`/`_` จริง ต้องยัง **ค้นเจอ** — escape ไม่ใช่การบล็อก", async () => {
+        // ถ้าทางแก้เป็น "ตัดอักขระทิ้ง" หรือ "ปฏิเสธคำค้นที่มีอักขระพวกนี้" เคสนี้จะแดง
+        // และนั่นคือความต่างที่เคสด้านลบข้างบนแยกไม่ออกด้วยตัวเอง
+        const byPct = await search(A, { p_query: "50%", p_intent: "discover", p_city_id: cityR });
+        expect(byPct.rows.some((r) => r.place_id === pctPlace), "ค้นชื่อที่มี `%` จริงไม่เจอ").toBe(true);
+
+        const byUnd = await search(A, { p_query: "ร้าน_ลับ", p_intent: "discover", p_city_id: cityR });
+        expect(byUnd.rows.some((r) => r.place_id === undPlace), "ค้นชื่อที่มี `_` จริงไม่เจอ").toBe(true);
+      });
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3920,15 +3982,28 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
     it("🔴 คนนอกลบแถวของทริป A ไม่ได้สักตาราง — และแถวต้องยังอยู่ครบหลังลอง", async () => {
       // ฝั่ง `delete` กวาดได้จริงโดยไม่ต้องมี payload (ต่างจาก insert/update) จึงครอบตรงนี้ได้เลย
+      /**
+       * 🔴 **นับต้องแยก "อ่านไม่ได้" ออกจาก "ไม่มีแถว" — ผมเขียนพลาดข้อนี้เองในฉบับแรก**
+       * ฉบับแรกใช้ `(...).data ?? []` → **การอ่านที่ล้ม (timeout · เน็ตสะดุด) ให้ `data: null`
+       * แล้วกลายเป็น `0` แล้วเคสจะรายงานว่า "คนนอกลบข้อมูลได้"** ทั้งที่ไม่มีใครลบอะไรเลย
+       * · เกิดขึ้นจริง: `hidden_places: 1 → 0` แดงหนึ่งครั้งในชุดเต็ม **แต่รันบล็อกเดี่ยวผ่านทุกครั้ง**
+       * 🎯 **เป็นกับดักตัวเดียวกับที่ผมเตือน P1 เรื่อง `custom_places` (`data: null` จากไม่มีสิทธิ์
+       *    หน้าตาเหมือน `data: null` จากไม่มีแถว) — และผมเดินเข้าไปเองในไฟล์ของตัวเอง**
+       * → รายงานผิดทิศที่แย่ที่สุด: **ส่งคนไปตามล่าช่องโหว่ที่ไม่มีอยู่จริง**
+       */
+      const count = async (t: string): Promise<number> => {
+        const r = await A.from(t).select("trip_id").eq("trip_id", tripS);
+        if (r.error) throw new Error(`อ่าน ${t} ไม่ได้: ${r.error.code} ${r.error.message}`);
+        return (r.data ?? []).length;
+      };
+
       const before = new Map<string, number>();
-      for (const t of SCOPED) {
-        before.set(t, ((await A.from(t).select("trip_id").eq("trip_id", tripS)).data ?? []).length);
-      }
+      for (const t of SCOPED) before.set(t, await count(t));
       for (const t of SCOPED) await C.from(t).delete().eq("trip_id", tripS);
 
       const damaged: string[] = [];
       for (const t of SCOPED) {
-        const after = ((await A.from(t).select("trip_id").eq("trip_id", tripS)).data ?? []).length;
+        const after = await count(t);
         if (after !== before.get(t)) damaged.push(`${t}: ${before.get(t)} → ${after}`);
       }
       expect(
