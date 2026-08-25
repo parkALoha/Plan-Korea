@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -90,5 +92,90 @@ describe("🔴 `allowNoRows` — ทางออกที่ต้องพิ�
 
   it("ค่าตั้งต้นต้องเข้ม — ไม่ส่ง options มา แล้ว `[]` ต้องล้ม", async () => {
     expect(await writeGuard("ทดสอบ", async () => ({ error: null, data: [] }))).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("🔴 P4 — รูปร่างผลลัพธ์จริงจาก supabase-js · **2 ใน 4 แบบเท่านั้นที่ได้การป้องกัน**", () => {
+  /**
+   * วัดจริงบน `engine-dev`: ให้ `B` (ไม่ใช่สมาชิก) แก้ทริปของ `A` — RLS กรองทิ้งทุกครั้ง
+   * แล้วดูว่า supabase-js คืนอะไรกลับมาตามท้ายคำสั่งแต่ละแบบ
+   *
+   * | ท้ายคำสั่ง | `error` | `data` | `writeGuard` ตัดสิน |
+   * |---|---|---|---|
+   * | ไม่มี `.select()`          | `null`     | `null` | ✅ สำเร็จ — **ถูกต้องตามดีไซน์** (ไม่ได้ถาม จึงไม่รู้) |
+   * | `.select()`                | `null`     | `[]`   | ✅ **ล้ม** — นี่คือช่องที่เพิ่งปิด |
+   * | `.select().maybeSingle()`  | `null`     | `null` | 🔴 **สำเร็จ — ทั้งที่ถามแล้วไม่ได้แถวกลับมา** |
+   * | `.select().single()`       | `PGRST116` | `null` | ✅ ล้ม — รอดเพราะทาง `error` ไม่ใช่ทาง `data` |
+   *
+   * 🔴 **แถวที่สามคือรูเดียวกับที่ `writeGuard` เกิดมาเพื่อปิด แค่เปลี่ยนรูป**
+   * `.maybeSingle()` กับ "ไม่ได้เรียก `.select()`" **คืนค่าหน้าตาเหมือนกันเป๊ะ** —
+   * คนที่เติม `.maybeSingle()` เพราะคิดว่าได้การป้องกัน **จะไม่ได้อะไรเลย และหน้าจอบอกเหมือนกันทุกอย่าง**
+   *
+   * 🎯 `writeGuard` แยกสองกรณีนี้จากผลลัพธ์ไม่ได้ **และไม่ควรพยายาม** — คนที่รู้คือจุดเรียก
+   * เคสข้างล่างจึง **ตรึงขอบเขตไว้ตามความจริง** แล้วปิดทางด้วยด่านสถิต ไม่ใช่แกล้งว่าปิดได้ในตรรกะ
+   */
+  it("ตรึงความจริง: `data: null` ตัดสินว่าสำเร็จ — ทั้งกรณีที่ถูกและกรณีที่เป็นรู", async () => {
+    expect(await writeGuard("x", async () => ({ error: null, data: null }))).toBe(true);
+  });
+
+  it("`data: []` ล้ม — ช่องที่ปิดไปแล้ว", async () => {
+    expect(await writeGuard("x", async () => ({ error: null, data: [] }))).toBe(false);
+  });
+
+  it("`.single()` รอดทาง error ไม่ใช่ทาง data", async () => {
+    expect(await writeGuard("x", async () => ({ error: { code: "PGRST116" }, data: null }))).toBe(
+      false,
+    );
+  });
+
+  it("🔴 `allowNoRows` ครอบทั้งชุด ไม่ใช่ทีละรายการ — Promise.all ที่ปนกันจะได้ใบผ่านยกชุด", async () => {
+    // การลบที่ "ไม่มีก็ไม่เป็นไร" + การแก้ที่ "ต้องมีผล" อยู่ในชุดเดียวกัน
+    // → ธงใบเดียวปลดล็อกให้ทั้งคู่ · การแก้ที่ถูก RLS กรองจะเงียบไปด้วย
+    const mixed = await writeGuard(
+      "x",
+      async () => [
+        { error: null, data: [] }, // การลบที่ยอมให้ว่างได้
+        { error: null, data: [] }, // 🔴 การแก้ที่ไม่ควรยอม — แต่แยกไม่ออก
+      ],
+      { allowNoRows: true },
+    );
+    expect(mixed, "ชุดผสมได้ใบผ่านทั้งชุด — ข้อจำกัดที่รู้อยู่ ไม่ใช่บั๊กที่เพิ่งเจอ").toBe(true);
+  });
+});
+
+describe("🔴 ด่านสถิต — `.maybeSingle()` ห้ามอยู่ในคำขอที่ห่อด้วย writeGuard", () => {
+  /**
+   * ตรรกะแยก `.maybeSingle()` ออกจาก "ไม่ได้เรียก `.select()`" ไม่ได้ — **แต่ไฟล์แยกได้**
+   * 🎯 ปิดที่ทางเข้าแทนที่จะพยายามปิดที่ผลลัพธ์ · วันนี้ยังไม่มีใครใช้ **ด่านนี้จึงกันไว้ก่อนที่รูจะเกิด**
+   */
+  it("ไม่มีจุดไหนใน hooks/app/components ใช้ maybeSingle ในบล็อกของ writeGuard", () => {
+    const roots = ["hooks", "app", "components", "lib"];
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "__tests__" && e.name !== "node_modules") walk(full);
+        } else if (/\.(ts|tsx)$/.test(e.name) && !full.includes("writeGuard")) {
+          const src = readFileSync(full, "utf8");
+          for (const m of src.matchAll(/writeGuard\(([\s\S]{0,400}?)\)\s*;/g)) {
+            if (m[1].includes("maybeSingle")) offenders.push(full);
+          }
+        }
+      }
+    };
+    for (const r of roots) {
+      try {
+        walk(resolve(process.cwd(), r));
+      } catch {
+        /* โฟลเดอร์ไม่มีก็ข้าม */
+      }
+    }
+    expect(
+      offenders,
+      "`.maybeSingle()` คืน `data: null` ตอนไม่ได้แถว — writeGuard แยกจาก 'ไม่ได้เรียก select' ไม่ได้\n" +
+        "  → ใช้ `.select()` เฉย ๆ (ได้ `[]`) หรือ `.single()` (ได้ error) แทน",
+    ).toEqual([]);
   });
 });

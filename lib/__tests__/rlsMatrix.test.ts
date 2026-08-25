@@ -421,6 +421,53 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     expect([...content].sort()).toEqual(["trip_day_plan_settings", "trip_days", "trip_plans"]);
   });
 
+  /**
+   * ทะเบียน `security definer` — **รั้ว column grant ไม่ครอบข้างในฟังก์ชันพวกนี้โดยนิยาม**
+   *
+   * `…freeze_row_times` ปิดไม่ให้ไคลเอนต์ตั้ง `created_at`/`updated_at`/`updated_by_user` เอง
+   * ด้วย **column grant** (P4 ยิงจริง 6 ทางเข้ารวม `upsert` ทั้งสองแบบ — ถูกปฏิเสธหมด)
+   *
+   * 🔴 **แต่ `security definer` รันด้วยสิทธิ์ของ *เจ้าของฟังก์ชัน* ซึ่งถือ grant ระดับตารางเต็ม**
+   * → รั้วคอลัมน์ไม่มีผลข้างในนั้นเลยสักนิด · ฟังก์ชันที่รับ payload ตรง ๆ แล้วส่งต่อ
+   *   จะเขียนคอลัมน์ที่รั้วห้ามไว้ได้ทันที **โดยไม่มีด่านไหนส่งเสียง**
+   *
+   * 🎯 วันนี้ยังไม่รั่ว **เพราะลายเซ็นของฟังก์ชันที่มีอยู่มันแคบ ไม่ใช่เพราะรั้วกัน** —
+   *   รูปเดียวกับ `E1-AC8` (ปลอดภัยเพราะ provider ที่เปิดอยู่ ไม่ใช่เพราะกติกา)
+   *
+   * ⚠️ **`E3` คือการเพิ่ม RPC เป็นชุด** — ถ้าไม่มีด่านนี้ มันคือการรื้อรั้วทีละท่อนโดยไม่มีใครนับ
+   */
+  it("🔴 รายชื่อ security definer ต้องไม่เปลี่ยน — RPC ใหม่ต้องถูกตรวจก่อนขึ้นทะเบียน", () => {
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+    const found = new Set<string>();
+    const re =
+      /create\s+(?:or\s+replace\s+)?function\s+((?:app|public)\.\w+)\s*\([\s\S]*?\)\s*returns([\s\S]*?)(?:\$\$|\bas\b)/gi;
+    for (const m of src.matchAll(re)) {
+      if (m[2].toLowerCase().includes("security definer")) found.add(m[1]);
+    }
+    expect(found.size, "อ่านฟังก์ชันไม่เจอเลย — regex หรือรูปแบบไฟล์เปลี่ยน").toBeGreaterThan(5);
+    expect(
+      [...found].sort(),
+      "มี security definer ตัวใหม่ หรือหายไป\n" +
+        "  🔴 ถามก่อนขึ้นทะเบียน: **ฟังก์ชันตัวใหม่รับคอลัมน์ที่ column grant ห้ามไว้หรือเปล่า**\n" +
+        "     (`created_at` · `updated_at` · `updated_by_user` · หรือ `id` ของตารางไหนก็ตาม)\n" +
+        "  ข้างในฟังก์ชัน definer **รั้วคอลัมน์ไม่มีผล** — ต้องกันที่ลายเซ็น ไม่ใช่หวังให้ grant กัน",
+    ).toEqual([
+      "app.assert_trip_has_owner",
+      "app.bootstrap_trip_owner",
+      "app.can_read_trip",
+      "app.can_write_trip",
+      "app.handle_new_user",
+      "app.shares_trip_with",
+      "app.trip_owner_count",
+      "app.trip_role",
+      "public.client_writable_timestamps",
+      "public.create_trip",
+      "public.unsafe_state_clear",
+      "public.unsafe_state_reason",
+      "public.unsafe_state_set",
+    ]);
+  });
+
   it("🔴 เงื่อนไขของ policy ต้องไม่เปลี่ยน — ชื่อเดิมแต่กว้างขึ้น คือเคสที่รายชื่ออย่างเดียวมองไม่เห็น", () => {
     // 🔴 `P-35` (P1 พบ): `using (app.can_read_trip(id) or created_by = auth.uid())`
     //    **ชื่อเดิม · จำนวนเดิม · รายชื่อเดิม · แต่ `created_by` กลายเป็นแหล่งสิทธิ์ที่สอง**
