@@ -84,9 +84,19 @@ export async function GET(
     headers: {
       "Content-Type": upstream.headers.get("Content-Type") ?? "application/octet-stream",
       "Content-Length": upstream.headers.get("Content-Length") ?? "",
-      // 🔴 `private` ไม่ใช่ `public` — ไฟล์ตั๋วเป็นของผู้ใช้รายคน · ห้าม edge/CDN เสิร์ฟข้ามคน
-      //    `max-age` สั้นเพราะสิทธิ์เปลี่ยนได้ (ถูกถอดออกจากทริป) และ HTTP cache ไม่รู้เรื่องนั้นเลย
-      "Cache-Control": "private, max-age=60, must-revalidate",
+      // 🔴 `private, no-store` — **แก้จาก `max-age=60` หลัง P3 ตัดสินใช้ `networkFirst`** (26 ส.ค. 2026)
+      //
+      // `private` อย่างเดียวไม่พอ และนี่คือเหตุผลที่เจอตอนเอาสองดีไซน์มาวางทับกัน:
+      // P3 เลือก `networkFirst` เพราะ **`cacheFirst` = คนที่ถูกถอดจากทริปยังเปิดตั๋วเก่าได้ทั้งที่มีเน็ต**
+      // → `networkFirst` ยิง `fetch()` จริงก่อนเสมอ แล้วได้ `404` ตรง ๆ ตอนสิทธิ์ถูกถอด
+      //
+      // 🔴 **แต่ `fetch()` ของ SW เดินผ่าน HTTP cache ของเบราว์เซอร์ก่อนถึง route นี้**
+      //    `max-age=60` จึงแปลว่า **หลังถอดสิทธิ์แล้ว ยังเปิดตั๋วได้อีกไม่เกิน 60 วินาที ทั้งที่ออนไลน์**
+      //    — ซึ่งเป็นเคสที่ P3 บอกเองว่า *"ไม่มีเหตุผลให้ยอมรับ"* ต่างจากเคสออฟไลน์ที่ยอมรับได้
+      //
+      // 🎯 `no-store` ปิดเฉพาะ **HTTP cache** · **Cache Storage ของ SW ไม่สนใจ `Cache-Control` เลย**
+      //    → ออฟไลน์ยังใช้ได้เหมือนเดิม · ออนไลน์การถอดสิทธิ์มีผลทันที **ได้ทั้งสองอย่าง ไม่ต้องเลือก**
+      "Cache-Control": "private, no-store",
       // กันไม่ให้ไฟล์ที่ผู้ใช้อัปโหลดถูกตีความเป็น HTML แล้วรันในโดเมนเรา
       "X-Content-Type-Options": "nosniff",
       "Content-Disposition": "inline",
