@@ -6,6 +6,7 @@ import {
   migrationFiles,
   stripComments,
   tablesFromMigrations,
+  effectiveFunctions,
 } from "./_helpers";
 
 /**
@@ -520,6 +521,102 @@ describe("ความครบของ matrix — ตรวจตัวรา�
         "ตารางที่ไม่มี policy สักตัว และไม่มีเคสไหนพูดถึงเลย\n" +
           "  🔴 **ไม่มี policy = ไม่มีชั้นที่สอง** — ถ้ามีคน grant กลับ ไม่มีอะไรกรองให้เลย\n" +
           "  → ต้องมีเคสยืนยันว่า `anon`/`authenticated` ถูกปฏิเสธครบทั้ง 4 verb",
+      ).toEqual([]);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC12 — invariant ที่ถามว่า 'ยังถูกใช้อยู่ไหม' ต้องไม่นับแถวที่ถูกลบแล้ว", () => {
+    /**
+     * `soft delete` ทำให้แถวที่ผู้ใช้ *ลบไปแล้ว* ยังอยู่ในตาราง → **invariant ที่นับแถวดิบ
+     * จะนับของที่หน้าจอไม่แสดงแล้ว** แล้วผู้ใช้จะเจอ *"ลบไม่ได้เพราะยังมีของใช้อยู่"*
+     * บนหน้าจอที่ว่างเปล่า **โดยไม่มีอะไรอธิบายได้เลยว่าทำไม**
+     *
+     * 🎯 **ตระกูลนี้กัดโปรเจกต์นี้มาแล้ว 2 ครั้ง:** `trip_hotels` ที่ถูกลบแล้วยังกันช่วงวัน (`D76`)
+     * และ `assert_day_has_no_stops` ฉบับแรกที่ไม่กรอง — **ทั้งคู่ถูกแก้ทีหลัง ไม่ใช่ถูกกันไว้ก่อน**
+     *
+     * 🔴 **และเคสนี้ต้องอ่าน *นิยามล่าสุด* ของฟังก์ชัน ไม่ใช่ที่เจอครั้งแรก**
+     * ผมเพิ่งพลาดข้อนี้เองตอนไล่ `AC12`: อ่าน `assert_day_has_no_stops` จากไฟล์ที่สร้างมัน
+     * แล้วสรุปว่าไม่กรอง **ทั้งที่ไฟล์ที่รันทีหลัง `create or replace` ไปแล้วพร้อมตัวกรอง**
+     * → **ไฟล์บอกว่า *เคยเขียนว่าอะไร* ไม่ได้บอกว่า *ตอนนี้เป็นอะไร*** — เหตุผลเดียวกับที่
+     *   `policyMapOrdered()` มีอยู่สำหรับ policy · ตัวนี้คือคู่ของมันสำหรับฟังก์ชัน
+     */
+    /** ตารางที่มี `deleted_at` — จาก `create table` และ `alter table … add column` */
+    function softDeletableTables(): Set<string> {
+      const out = new Set<string>();
+      for (const f of migrationFiles) {
+        const sql = stripComments(readFileSync(f, "utf8"));
+        for (const m of sql.matchAll(
+          /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_0-9]+)\s*\(([\s\S]*?)\n\);/gi,
+        )) {
+          if (/^\s*deleted_at\s/m.test(m[2])) out.add(m[1].toLowerCase());
+        }
+        for (const m of sql.matchAll(
+          /alter\s+table\s+public\.([a-z_0-9]+)\s+add\s+column\s+deleted_at\b/gi,
+        )) {
+          out.add(m[1].toLowerCase());
+        }
+      }
+      return out;
+    }
+
+    it("ด้านบวกของตัวดึงเอง — ต้องหา invariant กับตาราง soft-delete เจอจริง", () => {
+      const fns = effectiveFunctions();
+      const asserts = [...fns.keys()].filter((k) => k.startsWith("app.assert_"));
+      expect(asserts.length, "หาฟังก์ชัน invariant ไม่เจอเลย — เคสข้างล่างจะวนศูนย์รอบแล้วเขียว").toBeGreaterThan(2);
+      expect(softDeletableTables().size, "หาตารางที่มี `deleted_at` ไม่เจอเลย").toBeGreaterThan(3);
+      // นิยามล่าสุดต้องชนะจริง — `assert_day_has_no_stops` ถูก `create or replace` ทีหลังพร้อมตัวกรอง
+      expect(
+        fns.get("app.assert_day_has_no_stops") ?? "",
+        "ตัวอ่าน 'นิยามล่าสุดชนะ' ไม่ทำงาน — มันคืนฉบับแรกที่ยังไม่มีตัวกรอง",
+      ).toContain("deleted_at is null");
+    });
+
+    /** ตัวตัดสินตัวจริง — **เคสทั้งสองข้างล่างเรียกตัวนี้ ไม่ใช่เขียนซ้ำ** (`E0` ข้อ 5) */
+    function unfiltered(fns: Map<string, string>, soft: Set<string>): string[] {
+      const bad: string[] = [];
+      for (const [name, body] of fns) {
+        if (!name.startsWith("app.assert_")) continue;
+        const reads = [...body.matchAll(/from\s+public\.([a-z_0-9]+)/gi)].map((m) => m[1].toLowerCase());
+        const softReads = reads.filter((t) => soft.has(t));
+        if (softReads.length > 0 && !/deleted_at\s+is\s+null/i.test(body)) {
+          bad.push(`${name} → อ่าน ${[...new Set(softReads)].join(", ")} โดยไม่กรอง deleted_at`);
+        }
+      }
+      return bad;
+    }
+
+    it("🔴 ตัวตัดสินทำงาน 2 ทิศ — ไม่งั้นเคสข้างล่างเขียวได้โดยไม่เคยจับอะไรเลย", () => {
+      const soft = new Set(["trip_stops"]);
+      // ด้านบวก: อ่านตาราง soft-delete โดยไม่กรอง ต้องถูกจับ
+      expect(
+        unfiltered(new Map([["app.assert_x", "select 1 from public.trip_stops where trip_day_id = old.id"]]), soft),
+      ).toHaveLength(1);
+      // ด้านลบ ①: กรองแล้ว ต้องไม่ถูกจับ
+      expect(
+        unfiltered(
+          new Map([["app.assert_x", "select 1 from public.trip_stops where a = b and deleted_at is null"]]),
+          soft,
+        ),
+      ).toEqual([]);
+      // ด้านลบ ②: ตารางที่ไม่มี `deleted_at` เลย ไม่ต้องกรอง — ไม่ใช่ความผิด
+      expect(
+        unfiltered(new Map([["app.assert_x", "select 1 from public.trips where id = old.id"]]), soft),
+      ).toEqual([]);
+      // ด้านลบ ③: ฟังก์ชันที่ไม่ใช่ invariant ไม่อยู่ในขอบเขตข้อนี้
+      expect(
+        unfiltered(new Map([["app.can_read_trip", "select 1 from public.trip_stops"]]), soft),
+      ).toEqual([]);
+    });
+
+    it("🔴 ทุก invariant ที่อ่านตาราง soft-delete ต้องกรอง `deleted_at is null`", () => {
+      const bad = unfiltered(effectiveFunctions(), softDeletableTables());
+      expect(
+        bad,
+        "invariant นับแถวที่ผู้ใช้ลบไปแล้วว่ายัง 'ถูกใช้อยู่'\n" +
+          "  🔴 อาการที่ผู้ใช้เจอ: **ลบไม่ได้ โดยหน้าจอไม่มีอะไรค้างให้เห็นเลย** และไม่มีทางแก้จากใน UI\n" +
+          "  · ถ้า invariant ตัวนั้น *ตั้งใจ* นับรวมของที่ลบแล้ว ให้เขียนเหตุผลกำกับแล้วมาคุยกัน\n" +
+          "    **แต่ค่าเริ่มต้นต้องเป็นกรองออก** เพราะตระกูลนี้กัดมาแล้ว 2 ครั้งในโปรเจกต์นี้",
       ).toEqual([]);
     });
   });

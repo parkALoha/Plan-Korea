@@ -236,3 +236,28 @@ export function tripScopedTables(): string[] {
   }
   return [...alive].filter((t) => /^\s*trip_id\s/m.test(cols.get(t) ?? "")).sort();
 }
+
+/**
+ * นิยาม **ล่าสุด** ของทุกฟังก์ชัน — `create or replace` ที่รันทีหลังชนะ
+ *
+ * 🔴 **คู่ของ `policyMapOrdered()` แต่สำหรับฟังก์ชัน** · เหตุผลเดียวกันเป๊ะ:
+ * **ไฟล์บอกว่า *เคยเขียนว่าอะไร* ไม่ได้บอกว่า *ตอนนี้เป็นอะไร***
+ * · เกิดจริง 25 ส.ค. 2026: P4 อ่าน `app.assert_day_has_no_stops` จากไฟล์ที่สร้างมัน
+ *   แล้วสรุปว่ามันไม่กรอง `deleted_at` **ทั้งที่ไฟล์ที่รันทีหลัง replace ไปแล้วพร้อมตัวกรอง**
+ *   → เกือบรายงานบั๊กที่ถูกแก้ไปแล้ว · **ตรวจกับฐานจริงคือสิ่งที่กันไว้ ไม่ใช่การอ่านให้ละเอียดขึ้น**
+ * ⚠️ **ยังไม่ใช่สภาพของฐาน** — คือสภาพของ*ไฟล์เมื่อรันครบ* · ใครแก้ฟังก์ชันจากแดชบอร์ด ตัวนี้ไม่เห็น
+ */
+export function effectiveFunctions(): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const f of migrationFiles) {
+    const sql = readFileSync(f, "utf8");
+    for (const m of sql.matchAll(
+      /create\s+(?:or\s+replace\s+)?function\s+((?:app|public)\.\w+)\s*\(/gi,
+    )) {
+      const rest = sql.slice(m.index ?? 0);
+      const end = rest.indexOf("\n$$;");
+      out.set(m[1].toLowerCase(), stripComments(end > 0 ? rest.slice(0, end) : rest.slice(0, 4000)));
+    }
+  }
+  return out;
+}
