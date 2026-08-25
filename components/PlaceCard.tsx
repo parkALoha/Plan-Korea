@@ -5,6 +5,7 @@ import type { Place } from "@/data/places";
 import type { PlaceNote } from "@/lib/supabase";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
 import { photoUrlAtWidth } from "@/lib/photoUrl";
+import { useSignedFiles } from "@/hooks/useSignedFiles";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
@@ -35,9 +36,18 @@ export function PlaceCard({
   const queryKey = placeQueryKey(place);
   const photos = usePlacePhotos(queryKey);
   // รูปที่เราอัปโหลดเองมาก่อนรูปจาก Google เสมอ — ลากกลับคลังแล้วยังจำได้ว่าที่นี่คือที่ไหน
-  // (คนละ URL คนละที่มา: ของเราอยู่ Supabase Storage ตรงๆ · ของ Google ผ่าน /api/place-photo ที่รับ ?w=)
+  // (คนละ URL คนละที่มา: ของเราอยู่ Supabase Storage ตรงๆ ต้องเซ็นก่อนแสดง (E2-AC13 ②) · ของ Google
+  // ผ่าน /api/place-photo ที่รับ ?w= ซึ่งไม่เกี่ยวกับ bucket นี้เลย ไม่ต้องเซ็น)
   const googlePhoto = photos?.[0];
-  const photoSrc = stashedNote?.photo_url ?? (googlePhoto ? photoUrlAtWidth(googlePhoto, 400) : null);
+  const signedOwnPhotos = useSignedFiles([stashedNote?.photo_url]);
+  // undefined (ยังเซ็นไม่เสร็จ) และ null (เซ็นไม่สำเร็จ) ตกไปที่ fallback เดียวกับตอน "ไม่มีรูป" โดยตั้งใจ
+  // — การ์ดนี้มีทางออกที่มีความหมายอยู่แล้ว (ไอคอนหมวดหมู่) ต่างจาก BookingsPanel/BookingEditModal ที่
+  // ไม่มี fallback ที่สื่อความหมายมาก่อน ป้าย "📷 รูปของเรา" ด้านล่างยังคงอิง stashedNote?.photo_url ตรงๆ
+  // ไม่อิงผลเซ็น จึงยังบอกอยู่ว่า "มีรูปของเรา" แม้ตอนนี้ยังโหลด/เปิดไม่ได้ก็ตาม ไม่ใช่การกลืนเงียบทั้งหมด
+  const ownPhotoSigned = stashedNote?.photo_url ? signedOwnPhotos.get(stashedNote.photo_url) : undefined;
+  const photoSrc =
+    (typeof ownPhotoSigned === "string" ? ownPhotoSigned : null) ??
+    (googlePhoto ? photoUrlAtWidth(googlePhoto, 400) : null);
   const details = usePlaceDetails(queryKey);
   const hoursLabel = dayDate ? weekdayHoursLabel(details?.openingHours, dayDate) : null;
 
