@@ -373,4 +373,38 @@ d="$(mk)"; mkmigsql "$d" "-- ไม่มี create policy ในไฟล์น
 $GUARDBLK"
 check "cache-lockdown ไม่ฟ้องคำที่อยู่ในคอมเมนต์" pass "$d"
 
+# ── ด่าน dynamic-from ───────────────────────────────────────────────────────────
+# 🔴 ด่านนี้เจอของจริงตั้งแต่รันครั้งแรก และสอนผมว่าสมมติฐานผมผิด (ดูหัว check-dynamic-from.py)
+DYN="$(cd "$(dirname "$0")" && pwd)/check-dynamic-from.py"
+dynchk() {  # dynchk <ชื่อ> <pass|fail> <เนื้อไฟล์>
+  name="$1"; want="$2"; d="$(mktemp -d)"
+  printf '%s\n' "$3" > "$d/x.ts"
+  if DYNAMIC_FROM_ALLOWED=/dev/null "$DYN" "$d/x.ts" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  rm -rf "$d"
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got · check-dynamic-from.py ใช้การไม่ได้"; rc=1; return 1
+}
+
+dynchk "dynamic-from จับชื่อตารางที่เป็นตัวแปร" fail 'supabase.from(t).select("*");'
+dynchk "dynamic-from ผ่านเมื่อชื่อตารางเป็นสตริงตรง" pass 'supabase.from("trips").select("*");'
+dynchk "dynamic-from ไม่ฟ้อง Array.from ที่ขึ้นบรรทัดใหม่" pass 'const q = Array.from(
+  byQuery.keys()
+);'
+# 🔴 เคสที่ฉบับแรกฟ้องผิด — receiver อยู่คนละบรรทัด
+dynchk "dynamic-from ไม่ฟ้อง storage เชนหลายบรรทัด" pass 'const x = await supabase.storage
+  .from(BUCKET)
+  .createSignedUrl(k, 60);'
+dynchk "dynamic-from ไม่ฟ้องชื่อตารางที่อยู่ในคอมเมนต์" pass '// เดิมเขียนเป็น supabase.from(...) แล้วลืม predicate
+supabase.from("trips").select("*");'
+
+# ไฟล์ในรายการอนุญาต ต้องผ่านแม้ใช้ตัวแปร
+d="$(mktemp -d)"; printf 'supabase.from(name);\n' > "$d/db.ts"
+al="$(mktemp)"; printf '%s\n' "$(basename "$d")/db.ts" > "$al"
+if DYNAMIC_FROM_ALLOWED="$al" "$DYN" "$d/db.ts" >/dev/null 2>&1; then
+  echo "🔴 dynamic-from: ไฟล์นอกรายการ (พาธไม่ตรง) ไม่ควรผ่าน"; rc=1
+else
+  echo "✅ dynamic-from: เทียบพาธแบบตรงตัว ไม่ใช่แค่ชื่อไฟล์ — ได้ fail ตามคาด"
+fi
+rm -rf "$d" "$al"
+
 exit $rc

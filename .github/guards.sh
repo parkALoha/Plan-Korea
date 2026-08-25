@@ -360,6 +360,24 @@ if [ -f "$DREADME" ]; then
   fi
 fi
 
+# ── ชื่อตารางที่ส่งให้ `.from()` ต้องเป็นสตริงตรง (P4 ชี้ · D81) ──────────────────
+# 🔴 ทิศของ P4: ด่านที่อ่าน "สตริงตรง" อย่างเดียว จะ **ปล่อยผ่าน** ของที่มันไม่รู้จัก
+#    → ชื่อตารางที่เป็นตัวแปร ทำให้ด่าน*ทุกตัว*ที่อ่านชื่อตารางตาบอดกับจุดนั้นพร้อมกัน
+#    ด่านนี้ทำให้ **ของที่ไม่รู้จัก = แดง** · ไฟล์ที่อนุญาต (helper) อยู่ใน dynamic-from-allowed
+DYNFROM="$(cd "$(dirname "$0")" && pwd)/check-dynamic-from.py"
+if [ -d "$ROOT/lib" ] && [ -f "$DYNFROM" ]; then
+  srcs=""
+  while IFS= read -r f; do
+    [ -n "$f" ] && srcs="$srcs $f"
+  done < <(find "$ROOT/lib" "$ROOT/app" "$ROOT/hooks" "$ROOT/components" "$ROOT/data" \
+             \( -name '*.ts' -o -name '*.tsx' \) -not -path '*/__tests__/*' \
+             -not -path '*/node_modules/*' 2>/dev/null | sort)
+  if [ -n "$srcs" ]; then
+    # shellcheck disable=SC2086
+    python3 "$DYNFROM" $srcs || fail=1
+  fi
+fi
+
 # ── ข้อมูล (ไม่ใช่ด่าน): HEAD กับ origin ห่างกันแค่ไหน ────────────────────────────
 # 🔴 ปัญหาจริง 25 ส.ค. 2026: CI แดงค้าง ~2 ชม. ขณะที่ทุกเครื่องเขียวสนิท
 #    ตัวแก้เขียนเสร็จแล้วแต่ **นอนค้างในเครื่อง ไม่ได้ push** พร้อมอีก 10 ตัว
