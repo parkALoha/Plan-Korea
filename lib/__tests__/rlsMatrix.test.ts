@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { readEnvKey } from "./_helpers";
+import { readEnvKey, requireLiveCreds } from "./_helpers";
 
 /**
  * Test matrix ของ RLS — DoD พิเศษของ E1 (ใช้ต่อใน E2)
@@ -538,15 +538,13 @@ describe("keyRole — ด่านกันหยิบคีย์ผิดใ�
 // ───────────────────────────────────────────────────────────────────────────
 describe("การรันชุดสด", () => {
   it("ถ้าบังคับไว้ ต้องมี creds ครบ", () => {
-    if (process.env.RLS_MATRIX_REQUIRED === "1") {
-      expect(hasCreds, "RLS_MATRIX_REQUIRED=1 แต่ไม่มี SUPABASE URL/ANON/SERVICE_ROLE ครบ").toBe(true);
-    } else if (!hasCreds) {
-      console.warn(
-        "\n⚠️  ข้ามชุดสดของ RLS matrix เพราะไม่มี creds — **นี่ไม่ใช่การผ่าน**\n" +
-          "    ตั้ง NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY\n" +
-          "    ของโปรเจกต์ staging แล้วรันใหม่ · ปิด E1 ไม่ได้จนกว่าชุดนี้จะรันจริง\n",
-      );
-    }
+    // ใช้ด่านตัวเดียวกับทุกชุดสด (`_helpers`) — สองชุดที่ต่างกันนิดเดียวจะทำให้
+    // ไฟล์หนึ่งถูกบังคับ อีกไฟล์หลุด ซึ่งเกิดขึ้นแล้วจริงกับ `authProviders.test.ts`
+    requireLiveCreds(hasCreds, "RLS matrix (สด)", [
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ]);
   });
 });
 
@@ -1330,6 +1328,29 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
       const { data } = await A.from("trip_days").select("id").eq("trip_id", tripB);
       expect(data, "A ไม่ได้เป็นสมาชิก tripB แต่เห็นวันของมัน").toEqual([]);
+    });
+
+    it("🔴 คนนอกเพิ่มวันเข้าทริปของคนอื่นไม่ได้ — `with check` ฝั่ง INSERT (กิ่งที่ยังไม่มีใครเดิน)", async () => {
+      // เคส "ย้ายวันไปทริปที่ไม่ได้เป็นสมาชิก" ข้างบนเดินกิ่ง UPDATE · กิ่ง INSERT เป็นคนละทาง
+      // 🔴 ถ้ากิ่งนี้หลุด คนนอกจะ **สร้างข้อมูลในทริปคนอื่น** ได้ ซึ่งแย่กว่าอ่านได้
+      //    เพราะเจ้าของทริปจะเห็นวันที่ตัวเองไม่ได้สร้าง โดยไม่มีอะไรบอกว่ามาจากไหน
+      const { error } = await A.from("trip_days").insert({ trip_id: tripB, date: "2026-10-19" });
+      expect(error?.code, `A เพิ่มวันเข้าทริปของ B ได้: ${error?.message ?? "ไม่มี error"}`).toBe(
+        "42501",
+      );
+    });
+
+    it("🔴 ไม่มีใครลบวันได้ แม้แต่ owner — `D18`: ไม่มี policy DELETE คือเข้าไม่ถึง ไม่ใช่ซ่อนปุ่ม", async () => {
+      // ⚠️ DELETE ที่ถูก RLS กรองคืน 200 ไม่มี error → เช็ค error อย่างเดียวคือเช็คผิดทาง
+      //    ต้องอ่านซ้ำถึงจะรู้ว่าแถวยังอยู่จริงไหม (รูปเดียวกับเคส UPDATE ข้างบน)
+      // 🎯 เคสนี้ตรึง **การไม่มีอยู่โดยตั้งใจ** — ถ้าวันหนึ่งมีคนเติม policy DELETE เข้ามา
+      //    เคสนี้จะแดง และนั่นคือสิ่งที่ควรเกิด ไม่ใช่สิ่งที่ต้องแก้ให้ผ่าน
+      const { data: before } = await A.from("trip_days").select("id").eq("trip_id", tripD);
+      expect(before, "ต้องมีวันอยู่ก่อน ไม่งั้นเคสนี้เขียวเพราะไม่มีอะไรให้ลบ").not.toHaveLength(0);
+
+      await A.from("trip_days").delete().eq("trip_id", tripD);
+      const { data: after } = await A.from("trip_days").select("id").eq("trip_id", tripD);
+      expect(after?.length, "owner ลบวันได้ = มี policy DELETE ที่ไม่ควรมี").toBe(before?.length);
     });
 
     it("🔴 anon ไม่ได้อะไรเลยจาก trip_days", async () => {

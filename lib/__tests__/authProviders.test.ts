@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readEnvKey } from "./_helpers";
+import { readEnvKey, requireLiveCreds } from "./_helpers";
 
 /**
  * `E1-AC8` — เงื่อนไขความปลอดภัยของการผูกบัญชี · เจ้าของ: P4-QA/Sec (25 ส.ค. 2026)
@@ -51,11 +51,13 @@ async function authSettings(): Promise<Settings> {
 }
 
 describe("การรันชุดนี้", () => {
-  it("ไม่มี creds = ข้าม ไม่ใช่ผ่าน", () => {
-    if (!hasCreds) {
-      console.warn("\n⚠️  ข้าม E1-AC8 เพราะไม่มี SUPABASE URL/ANON — **นี่ไม่ใช่การผ่าน**\n");
-    }
-    expect(true).toBe(true);
+  it("🔴 ถ้าบังคับไว้ ต้องมี creds ครบ — ไม่ใช่ข้ามเงียบ ๆ", () => {
+    // ฉบับแรกของไฟล์นี้เขียน `expect(true).toBe(true)` = **จริงเสมอ ไม่ว่าอะไรจะเกิดขึ้น**
+    // และไม่ครอบ `RLS_MATRIX_REQUIRED` เลย → 3 เคสข้างล่างข้ามเงียบแม้ CI สั่งบังคับ
+    requireLiveCreds(hasCreds, "E1-AC8 (auth providers)", [
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    ]);
   });
 });
 

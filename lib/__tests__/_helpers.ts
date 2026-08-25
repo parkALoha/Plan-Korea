@@ -77,3 +77,37 @@ export function stripTsComments(src: string): string {
 export function readEnvKey(name: string): string {
   return (process.env[name] ?? "").trim();
 }
+
+/**
+ * ด่านเดียวของทุกชุดที่ต้องใช้ฐานจริง — **ห้ามมีสองชุด** (`D67`)
+ *
+ * 🔴 ปัญหาที่มันแก้: `vitest` **ไม่โหลด `.env.local` ให้** · `npx vitest run` เปล่า ๆ จึงขึ้น
+ * `224 passed | 59 skipped` ซึ่ง **อ่านเหมือนผ่านสบาย ๆ** ทั้งที่ชุดสดไม่ได้รันเลยสักเคส
+ * · ตัวเลข "ผ่าน" ที่ใหญ่กว่าตัวเลข "ข้าม" ทำให้สายตาไม่สะดุด — เป็นรูปที่ `E0` เตือนไว้ทั้งข้อ
+ *
+ * 🎯 **และรูนี้เกิดกับไฟล์ที่ P4 เขียนเองเมื่อวาน**: `authProviders.test.ts` มีด่านของตัวเอง
+ * ที่เขียนว่า `expect(true).toBe(true)` — **จริงเสมอ ไม่ว่าอะไรจะเกิดขึ้น**
+ * `rlsMatrix` มีด่านที่ทำงานจริง แต่**ครอบแค่ไฟล์ตัวเอง** → ไฟล์ที่สองจึงหลุดทั้งไฟล์
+ *
+ * ⚠️ ชื่อ env ยังเป็น `RLS_MATRIX_REQUIRED` ทั้งที่ตอนนี้ครอบมากกว่าเมทริกซ์ — **จงใจไม่เปลี่ยน**
+ * เพราะ CI ตั้งค่าไว้แล้วด้วยชื่อนี้ · เปลี่ยนชื่อ = ด่านหายไปเงียบ ๆ ในรอบที่ CI ยังไม่ได้แก้ตาม
+ */
+export function requireLiveCreds(hasCreds: boolean, label: string, needed: string[]): void {
+  if (process.env.RLS_MATRIX_REQUIRED === "1") {
+    if (!hasCreds) {
+      throw new Error(
+        `RLS_MATRIX_REQUIRED=1 แต่ "${label}" ไม่มี creds ครบ\n` +
+          `  ต้องมี: ${needed.join(" · ")}\n` +
+          `  🔴 ชุดนี้ **ข้าม ไม่ใช่ผ่าน** — และ "ข้าม" อ่านเป็นเขียวได้ใน CI`,
+      );
+    }
+    return;
+  }
+  if (!hasCreds) {
+    console.warn(
+      `\n⚠️  ข้ามชุดสด "${label}" เพราะไม่มี creds — **นี่ไม่ใช่การผ่าน**\n` +
+        `    ต้องมี: ${needed.join(" · ")}\n` +
+        `    รันแบบนี้: set -a && . ./.env.local && set +a && npx vitest run\n`,
+    );
+  }
+}
