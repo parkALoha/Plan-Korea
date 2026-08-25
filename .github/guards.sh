@@ -319,6 +319,27 @@ if [ "${#mds[@]}" -gt 0 ]; then
   fi
 fi
 
+# ── ตารางแคชต้องไม่มี policy / grant ให้ฝั่ง client (P-33) ────────────────────────
+# 🔴 migration เขียนคอมเมนต์ไว้เองว่า "ไม่มี create policy ในไฟล์นี้เลย และนั่นคือของที่ต้องตรวจ"
+#    **คอมเมนต์ไม่ใช่ด่าน** — ตรงนี้คือคนที่บังคับประโยคนั้น
+# ⚠️ ครึ่งฝั่งไฟล์เท่านั้น · สิทธิ์ที่มาทาง default privileges / role สืบทอด / definer
+#    **มองไม่เห็น** ต้องวัดที่ฐาน (ชุด rlsMatrix) — รายละเอียดในหัว check-cache-lockdown.py
+LOCKDOWN="$(cd "$(dirname "$0")" && pwd)/check-cache-lockdown.py"
+LOCKLIST="${CACHE_TABLES_FILE:-$(cd "$(dirname "$0")" && pwd)/no-policy-tables}"
+if [ -d "$MIGDIR" ]; then
+  lmigs=""
+  for f in "$MIGDIR"/*.sql; do [ -e "$f" ] && lmigs="$lmigs $f"; done
+  if [ -n "$lmigs" ]; then
+    if [ ! -f "$LOCKDOWN" ] || [ ! -f "$LOCKLIST" ]; then
+      echo "🔴 cache-lockdown: หาสคริปต์หรือไฟล์รายชื่อไม่เจอ — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+      fail=1
+    # shellcheck disable=SC2086
+    elif ! python3 "$LOCKDOWN" "$LOCKLIST" $lmigs; then
+      fail=1
+    fi
+  fi
+fi
+
 # ── ทุก `D<n>` ที่อ้างถึง ต้องมีนิยามใน docs/engine/README.md ──────────────────────
 # ⚠️ **ขอบเขตแคบ อ่านก่อนนับว่าครอบคลุม:** จับได้แค่ "อ้างถึง D ที่ไม่มีอยู่"
 #    🔴 **จับกล่องที่ค้างเป็นเท็จไม่ได้เลย** ซึ่งคือปัญหาจริงของ `D71`

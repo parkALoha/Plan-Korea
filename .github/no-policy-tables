@@ -1,0 +1,14 @@
+# ตารางที่ต้อง "ไม่มี policy และไม่มี grant ให้ anon/authenticated" ตลอดไป (P-33)
+#
+# 🔴 รายชื่ออยู่ในไฟล์เพื่อให้ **การถอดตารางออกจากรายการ = การปิดการป้องกัน ที่มีคน review เห็น**
+#    ถ้าฝังไว้ในสคริปต์ การลบบรรทัดเดียวจะกลายเป็นการแก้โค้ดที่ไม่มีใครสังเกต
+#
+# ⚠️ แคช 4 ใบนี้ **ไม่มี policy สักตัวโดยตั้งใจ** + `revoke all from public, anon, authenticated`
+#    ผลข้างเคียงที่ตั้งใจ: ไม่มีใครเขียนได้เลยจากฝั่ง client · ฝั่งเซิร์ฟเวอร์ยังเป็น `Q3` ที่เปิดอยู่
+#    → migration ใหม่ที่เผลอ `create policy` หรือ `grant … to authenticated` บนตารางพวกนี้
+#      จะเปิดรูกลับ **เงียบสนิท** เพราะไม่มีอะไรฟ้อง
+
+place_details_cache
+place_details_local_cache
+place_photo_cache
+travel_time_cache

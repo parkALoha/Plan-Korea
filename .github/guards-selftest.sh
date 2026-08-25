@@ -331,4 +331,46 @@ check "decision-refs ไม่นับการอ้างในเนื้�
 d="$(mk)"; mkdocs "$d" 'ไม่มีอะไรเลย' 'ดู `D1` ประกอบ'
 check "decision-refs README ที่ไม่มีนิยามเลย ต้องไม่ผ่าน" fail "$d"
 
+# ── ด่าน cache-lockdown (P-33) ──────────────────────────────────────────────────
+# 🔴 กับดัก false positive 3 อันในไฟล์จริง: `revoke … from anon, authenticated` ·
+#    `grant … to service_role` · และ **คอมเมนต์ที่เขียนคำว่า `create policy`**
+#    ถ้าด่านแดงใส่ของพวกนี้ มันจะถูกปิดถาวรตั้งแต่วันแรก (P-35)
+LOCKLIST_T="$(cd "$(dirname "$0")" && pwd)/no-policy-tables"
+mkmigsql() {
+  mkdir -p "$1/supabase-platform/supabase/migrations"
+  printf '%s\n' "$2" > "$1/supabase-platform/supabase/migrations/20990909000000_x.sql"
+  printf '# ไม่ยกเว้นอะไร\n' > "$1/.github/migration-guard-exempt"
+}
+GUARDBLK="do \$guard\$ begin perform 1 from app.project_identity where ref = 'pmvxwcimjebogjfimzqy'; end \$guard\$;"
+
+# ㊱ create policy บนตารางแคช -> ต้องโดนจับ
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+create policy p on public.place_photo_cache for select using (true);"
+check "cache-lockdown จับ create policy บนตารางแคช" fail "$d"
+
+# ㊲ grant ให้ authenticated -> ต้องโดนจับ
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+grant insert on public.travel_time_cache to authenticated;"
+check "cache-lockdown จับ grant ให้ authenticated" fail "$d"
+
+# ㊳ ปิด RLS -> ต้องโดนจับ
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+alter table public.place_details_cache disable row level security;"
+check "cache-lockdown จับการปิด RLS" fail "$d"
+
+# ㊴ revoke จาก anon/authenticated **ต้องไม่โดนจับ** — นี่คือ statement จริงในไฟล์ P1
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+revoke all on public.place_details_cache from public, anon, authenticated;"
+check "cache-lockdown ไม่ฟ้อง revoke จาก anon/authenticated" pass "$d"
+
+# ㊵ grant ให้ service_role **ต้องไม่โดนจับ** — ข้อยกเว้นที่ 5 ที่ P1 อนุมัติแล้ว
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+grant select, insert, delete on public.place_photo_cache to service_role;"
+check "cache-lockdown ไม่ฟ้อง grant ให้ service_role" pass "$d"
+
+# ㊶ คอมเมนต์ที่เขียนคำว่า create policy **ต้องไม่โดนจับ**
+d="$(mk)"; mkmigsql "$d" "-- ไม่มี create policy ในไฟล์นี้เลย · grant execute to authenticated ก็ไม่ปิดฝั่งเขียน
+$GUARDBLK"
+check "cache-lockdown ไม่ฟ้องคำที่อยู่ในคอมเมนต์" pass "$d"
+
 exit $rc
