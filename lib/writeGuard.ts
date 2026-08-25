@@ -13,19 +13,60 @@ import { showToast } from "./toast";
  * ที่เดาไว้ ตรงไปตรงมากว่าการเขียน rollback รายฟิลด์ให้ครบทุก action และไม่มีทาง state ค้างเพี้ยน
  */
 
-/** รูปร่างผลลัพธ์ร่วมของ query builder ทั้ง insert/update/delete/upsert ของ supabase-js */
-type WriteResult = { error: unknown };
+/**
+ * รูปร่างผลลัพธ์ร่วมของ query builder ทั้ง insert/update/delete/upsert ของ supabase-js
+ *
+ * 🔴 **`data` ถูกเพิ่ม 25 ส.ค. 2026 (P2 รายงาน · P4 ออกแบบทางแก้ · P1 ลง)**
+ *
+ * ฉบับเดิมเป็น `{ error: unknown }` เท่านั้น — **มันไม่ได้ลืมเช็คจำนวนแถว มันไม่มีทางรู้จำนวนแถว**
+ * และนั่นทำให้เคสที่ควรแดง เขียนไม่ได้เลยจนกว่ารูปข้อมูลจะเปลี่ยน
+ *
+ * ปัญหาที่มันเปิดไว้:
+ * > **UPDATE/DELETE ที่ถูก RLS กรองออก คืน `200` · ไม่มี `error` · แตะ 0 แถว**
+ * > ทุกชั้นเหนือขึ้นไปอ่านว่าสำเร็จ · หน้าจอโชว์ค่าที่เดาไว้ค้างจนกว่าจะรีโหลด
+ *
+ * 🎯 **นี่ไม่ใช่บั๊กของใครสักคน มันคือรูปร่างของ API ที่ทำให้ "ถูกปฏิเสธ" กับ "สำเร็จ" หน้าตาเหมือนกัน**
+ * — และมันกัด P1 เองภายในชั่วโมงเดียวกับที่ P2 รายงานเข้ามา (เคสเทสต์ที่ให้ `editor` แก้ตารางของ
+ * `owner` แล้ว assert `error` เป็น null → เขียว แล้วไปแดงบรรทัดถัดไปด้วยอาการที่อ่านเหมือน trigger พัง)
+ * **คนที่รู้เรื่องนี้ดีที่สุดในทีมยังพลาด → ทางแก้ต้องอยู่ที่ contract ไม่ใช่ที่วินัย**
+ */
+type WriteResult = { error: unknown; data?: unknown[] | null };
+
+/**
+ * ผลลัพธ์นี้นับว่าล้มหรือไม่
+ *
+ * 🔴 **`data` ที่ไม่มีมา ≠ `data` ที่เป็น `[]`** — และความต่างนี้คือทั้งหมดของการแก้ครั้งนี้:
+ *   · `{ error: null }` (ไม่ได้เรียก `.select()`) → **สำเร็จ** — 67 จุดที่มีอยู่วันนี้จึงไม่กระทบเลยสักจุด
+ *   · `{ error: null, data: [] }` (เรียก `.select()` แล้วไม่ได้แถวกลับมา) → **ล้ม**
+ * 🎯 จุดไหนเติม `.select()` ได้การป้องกันทันทีโดยไม่ต้องรอใคร · **`E3` กลายเป็นการเก็บกวาด ไม่ใช่เงื่อนไขเริ่มต้น**
+ */
+function isFailed(r: WriteResult, allowNoRows: boolean): boolean {
+  if (r.error) return true;
+  if (allowNoRows) return false;
+  return Array.isArray(r.data) && r.data.length === 0;
+}
 
 export async function writeGuard(
   /** สิ่งที่ผู้ใช้เพิ่งทำ ในภาษาที่เขาเข้าใจ เช่น "เพิ่มจุดแวะ" — ใช้ต่อท้ายข้อความ toast */
   label: string,
   /** รับได้ทั้งคำขอเดียวและ Promise.all หลายคำขอ (เช่น จัดลำดับใหม่ที่เขียนทีละแถวทั้งวัน)
    *  — พังแถวเดียวก็ถือว่าพังทั้งชุด เพราะลำดับที่เขียนไม่ครบคือลำดับที่ผิด */
-  run: () => PromiseLike<WriteResult | WriteResult[]>
+  run: () => PromiseLike<WriteResult | WriteResult[]>,
+  /**
+   * ⚠️ **"0 แถวคือเรื่องปกติสำหรับการกระทำนี้"** — ใช้กับการลบที่ไม่มีก็ไม่เป็นไร
+   * (เช่น ลบแถวที่อาจถูกลบไปแล้วโดยอีกเครื่องหนึ่ง)
+   *
+   * 🔴 **ต้องระบุที่จุดเรียก ไม่ใช่ค่าตั้งต้น** — ถ้าเป็นค่าตั้งต้น ช่องที่เพิ่งปิดจะเปิดกลับทันที
+   * และเปิดกลับแบบที่ไม่มีใครเห็น เพราะไม่มีใครต้องพิมพ์อะไรเพิ่มเลย
+   */
+  options?: { allowNoRows?: boolean }
 ): Promise<boolean> {
+  const allowNoRows = options?.allowNoRows === true;
   try {
     const result = await run();
-    const failed = Array.isArray(result) ? result.some((r) => r.error) : result.error;
+    const failed = Array.isArray(result)
+      ? result.some((r) => isFailed(r, allowNoRows))
+      : isFailed(result, allowNoRows);
     if (!failed) return true;
     reportWriteFailure(label);
     return false;
