@@ -2181,4 +2181,275 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — catalog: ตารางชนิดที่สอง (สาธารณะ อ่านอย่างเดียว)", () => {
+    /**
+     * คลังไม่มีข้อมูลผู้ใช้เลยสักแถว · คำถามจึงไม่ใช่ *"สมาชิกคนไหนเห็นอะไร"* แต่คือ
+     * **"ไคลเอนต์เขียนมันได้ไหม"** — ซึ่งเป็นคำถามที่เมทริกซ์เดิมไม่เคยถามกับตารางไหนเลย
+     *
+     * 🔴 **`fingerprint` จับได้ถ้ามีคนเติม policy ฝั่งเขียนให้คลัง แต่มันบอกแค่ "มีอะไรเปลี่ยน"**
+     * เคสพวกนี้ถามตรง ๆ ว่า *"คลังยังเขียนจากไคลเอนต์ไม่ได้อยู่ไหม"* — คนละคำถาม
+     *
+     * ⚠️ **ต้องยืนยันว่าถูกปฏิเสธ *เพราะสิทธิ์* (`42501`) ไม่ใช่เพราะ payload ผิด**
+     * ตอนสำรวจ ผมเขียนโพรบที่ส่งคอลัมน์ผิด แล้วได้ `PGRST204`/`42703` กลับมา
+     * **ซึ่งอ่านเหมือน "ถูกปฏิเสธ" ทั้งที่ไม่เคยไปถึงด่านสิทธิ์เลย** — บทเรียนเดียวกับเคส anon-insert
+     */
+    const CATALOG = [
+      "catalog_countries",
+      "catalog_cities",
+      "catalog_places",
+      "catalog_place_names",
+    ] as const;
+
+    it.each(CATALOG)("🔴 authenticated เขียน %s ไม่ได้ — ต้องถูกปฏิเสธเพราะสิทธิ์", async (t) => {
+      // payload ถูกตามสคีมาโดยตั้งใจ เพื่อให้ถ้าหลุดด่านสิทธิ์ มันจะไปตายที่อื่น ไม่ใช่ตายก่อนถึงด่าน
+      const payload: Record<string, unknown> =
+        t === "catalog_countries"
+          ? { id: "qq", name_th: `x${stamp}`, name_en: `x${stamp}` }
+          : t === "catalog_cities"
+            ? { country_id: "qq", name_th: "x", name_en: "x", lat: 1, lng: 1, timezone: "UTC" }
+            : t === "catalog_places"
+              ? { city_id: ids.a, category: "x", lat: 1, lng: 1 }
+              : { place_id: ids.a, city_id: ids.a, locale: "th", name: "x" };
+      const { error } = await A.from(t).insert(payload);
+      expect(error?.code, `เขียน ${t} ได้ หรือถูกปฏิเสธด้วยเหตุอื่น: ${error?.message}`).toBe("42501");
+    });
+
+    it.each(CATALOG)("anon อ่าน %s ไม่ได้ — คลังเปิดให้เฉพาะคนที่ล็อกอิน", async (t) => {
+      const { error } = await D.from(t).select("*").limit(1);
+      expect(error?.code).toBe("42501");
+    });
+
+    it.each(CATALOG)("ด้านบวก: authenticated อ่าน %s ได้ — คลังต้องใช้งานได้จริง", async (t) => {
+      const { error } = await A.from(t).select("*").limit(1);
+      expect(error, `อ่านคลังไม่ได้ = ฟีเจอร์ค้นสถานที่ตายทั้งฟีเจอร์: ${error?.message}`).toBeNull();
+    });
+  });
+
+  describe("🔴 E2 — FK ประกอบของ catalog_place_names · กิ่ง UPDATE", () => {
+    /**
+     * FK `(city_id, place_id) → catalog_places(city_id, id)` กัน *ชื่อของเมือง X + สถานที่ของเมือง Y*
+     * · P1 ทดสอบกิ่ง **INSERT** ไว้แล้ว · **กิ่ง UPDATE เป็นคนละทางและยังไม่มีใครเดิน**
+     *   (บทเรียนเดียวกับ `trip_days`: ย้ายแถวทีหลัง ไม่ใช่สร้างแถวผิดตั้งแต่ต้น)
+     *
+     * ⚠️ ใช้ `service_role` เพราะไคลเอนต์เขียนคลังไม่ได้ (เคสข้างบนพิสูจน์แล้ว)
+     *    → นี่คือการทดสอบ **ความถูกต้องของข้อมูล** ไม่ใช่ของสิทธิ์
+     * 🔴 `id` ของประเทศเป็น `[a-z]{2}` เท่านั้น — เลือก `zz` (ISO สงวนไว้ให้ใช้เอง ไม่ชนของจริง)
+     *    และ **ลบก่อนสร้างทุกครั้ง** เผื่อรอบก่อนตายกลางคัน
+     */
+    // 🔴 `id` ของประเทศเป็น `[a-z]{2}` — **namespace มีแค่ 676 ค่า และบล็อกอื่นในไฟล์นี้ใช้ `zz`/`zy` แล้ว**
+    //    ผมเลือก `zz` ตอนแรกแล้ว**ชนกับบล็อกของ P1 จริง** — ทั้งสองบล็อกล้ม 12 เคสถูกข้ามเงียบ ๆ
+    //    ⚠️ `xq` อยู่ในช่วง `XA–XZ` ที่ ISO 3166 สงวนให้ใช้เอง — ไม่ชนของจริงและไม่ชนบล็อกอื่น
+    const CO = "xq";
+    let cityA = "";
+    let cityB = "";
+    let placeA = "";
+
+    beforeAll(async () => {
+      await admin.from("catalog_countries").delete().eq("id", CO);
+      const mkCity = (n: string) => ({
+        country_id: CO,
+        name_th: `เมือง${n}${stamp}`.slice(0, 40),
+        name_en: `City${n}${stamp}`.slice(0, 40),
+        lat: 1,
+        lng: 1,
+        timezone: "Asia/Bangkok",
+      });
+      const e1 = await admin
+        .from("catalog_countries")
+        .insert({ id: CO, name_th: `ทดสอบ${stamp}`.slice(0, 40), name_en: `Test${stamp}`.slice(0, 40) });
+      if (e1.error) throw new Error(`สร้างประเทศ fixture ไม่ได้: ${e1.error.message}`);
+      const a = await admin.from("catalog_cities").insert(mkCity("A")).select("id").single();
+      const b = await admin.from("catalog_cities").insert(mkCity("B")).select("id").single();
+      if (a.error || b.error) throw new Error(`สร้างเมือง fixture ไม่ได้: ${a.error?.message ?? b.error?.message}`);
+      cityA = a.data.id;
+      cityB = b.data.id;
+      const pl = await admin
+        .from("catalog_places")
+        .insert({ city_id: cityA, category: "test", lat: 1, lng: 1 })
+        .select("id")
+        .single();
+      if (pl.error) throw new Error(`สร้างสถานที่ fixture ไม่ได้: ${pl.error.message}`);
+      placeA = pl.data.id;
+      const nm = await admin
+        .from("catalog_place_names")
+        .insert({ place_id: placeA, city_id: cityA, locale: "th", name: `ชื่อ${stamp}` });
+      if (nm.error) throw new Error(`สร้างชื่อ fixture ไม่ได้: ${nm.error.message}`);
+    });
+
+    afterAll(async () => {
+      // 🔴 **ลบลูกก่อนพ่อ** — `catalog_cities.country_id … on delete restrict`
+      //    ฉบับแรกลบแต่ประเทศ → ติด restrict → **ล้มเงียบ** เพราะไม่ได้ดู error
+      //    → รอบถัดไป `beforeAll` ชนคีย์ซ้ำ → ทั้งบล็อก **ถูกข้าม ไม่ใช่แดง** และ "142 ผ่าน 4 ข้าม"
+      //      อ่านเหมือนผ่านสบาย ๆ · **เป็นบั๊กเดียวกับที่ afterAll ของ trips เคยเป็น และผมทำซ้ำเอง**
+      const { data: cities } = await admin.from("catalog_cities").select("id").eq("country_id", CO);
+      const cityIds = (cities ?? []).map((c) => c.id as string);
+      if (cityIds.length > 0) {
+        // `catalog_place_names` หายเองด้วย cascade จาก `catalog_places`
+        await admin.from("catalog_places").delete().in("city_id", cityIds);
+        await admin.from("catalog_cities").delete().in("id", cityIds);
+      }
+      const { error } = await admin.from("catalog_countries").delete().eq("id", CO);
+      // 🔴 ดังไว้ ไม่เงียบ — เก็บกวาดที่ล้มเงียบทำให้รอบถัดไปถูกข้ามโดยไม่มีใครรู้ว่าทำไม
+      if (error) console.warn(`\n⚠️  เก็บ fixture คลัง (${CO}) ไม่สำเร็จ: ${error.message}\n`);
+    });
+
+    it("ต้องมีแถวชื่ออยู่จริงก่อน — ไม่งั้นเคสข้างล่างเขียวเพราะไม่มีอะไรให้ย้าย", async () => {
+      const { data } = await admin.from("catalog_place_names").select("city_id").eq("place_id", placeA);
+      expect(data).toHaveLength(1);
+    });
+
+    it("🔴 ย้าย city_id ของชื่อไปเมืองอื่นไม่ได้ — กิ่ง UPDATE ของ FK ประกอบ", async () => {
+      const { error } = await admin
+        .from("catalog_place_names")
+        .update({ city_id: cityB })
+        .eq("place_id", placeA);
+      expect(error?.code, "ย้ายได้ = ชื่อของเมืองหนึ่งไปเกาะสถานที่ของอีกเมือง").toBe("23503");
+
+      // อ่านซ้ำ — UPDATE ที่ถูกปฏิเสธกับ UPDATE ที่ไม่เจอแถว หน้าตาต่างกันแค่ตรงนี้
+      const { data } = await admin.from("catalog_place_names").select("city_id").eq("place_id", placeA);
+      expect(data?.[0]?.city_id, "แถวถูกย้ายไปแล้วทั้งที่ error ขึ้น").toBe(cityA);
+    });
+
+    it("🔴 ค้นชื่อแบบบางส่วนได้จริง — index ที่ *มีอยู่* กับที่ *ทำงาน* เป็นคนละเรื่อง", async () => {
+      // `catalog_place_names_trgm_idx` ถูกสร้างไว้ **แต่ไม่มีเคสไหนพิสูจน์ว่าค้นได้** (P1 ชี้เอง)
+      // ⚠️ **ขอบเขตที่เคสนี้พิสูจน์ได้จริง:** การค้นแบบบางส่วน *คืนผลถูก*
+      //    มัน **ไม่ได้พิสูจน์ว่า planner ใช้ index ตัวนั้น** — ข้อนั้นต้อง `explain` ซึ่งต้องผ่าน SQL Editor
+      //    → ถ้า index ถูกลบทิ้ง เคสนี้จะยังเขียว (ช้าลงเฉย ๆ) · จดไว้ ไม่ใช่แกล้งว่าครอบ
+      const needle = `${stamp}`.slice(-4);
+      const { data, error } = await admin
+        .from("catalog_place_names")
+        .select("name")
+        .eq("place_id", placeA)
+        .ilike("name", `%${needle}%`);
+      expect(error).toBeNull();
+      expect(data, `ค้น "%${needle}%" ไม่เจอชื่อที่เพิ่งสร้าง`).toHaveLength(1);
+    });
+
+    it("(เทียบ) กิ่ง INSERT ยังกันเหมือนเดิม", async () => {
+      const { error } = await admin
+        .from("catalog_place_names")
+        .insert({ place_id: placeA, city_id: cityB, locale: "en", name: `X${stamp}` });
+      expect(error?.code).toBe("23503");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — `custom_places` + `custom_place_names`: สถานที่ของผู้ใช้ (D53 · D75)", () => {
+    /**
+     * ✅ **ชุดนี้เขียนก่อน `db push` ตามกฎข้อ 2** — ต่างจากชุด `catalog_places` ที่ P1 เผลอทำสลับ
+     *
+     * ตารางนี้คือ **คลังของผู้เช่า** — รูปทรงเหมือนคลังกลาง แต่โมเดลความปลอดภัยตรงข้ามกัน
+     * 🎯 **และนั่นคือเหตุผลทั้งหมดของ `D75`**: ชื่อของมันอยู่ตารางแยกจาก `catalog_place_names`
+     * เพราะตารางเดียวจะบังคับให้ policy เดียวรับใช้ทั้ง `using (true)` และเงื่อนไขผูก `trip_members`
+     * ด้วย `or` — **และบั๊กใน `or` นั้นครั้งเดียวคือชื่อสถานที่ในทริปคนอื่นรั่ว**
+     */
+    let tripC = "", cityC = "", cc3 = "zx", placeC = "";
+
+    beforeAll(async () => {
+      const t = await A.rpc("create_trip", {
+        p_title: `custom-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripC = t.data.id as string;
+
+      const inv = await A.from("trip_members").insert({ trip_id: tripC, user_id: ids.b, role: "editor" });
+      if (inv.error) throw new Error(`เชิญ B: ${inv.error.message}`);
+      const inv2 = await A.from("trip_members").insert({ trip_id: tripC, user_id: ids.c, role: "viewer" });
+      if (inv2.error) throw new Error(`เชิญ C: ${inv2.error.message}`);
+
+      await admin.from("catalog_cities").delete().eq("country_id", cc3);
+      await admin.from("catalog_countries").delete().eq("id", cc3);
+      await admin.from("catalog_countries").insert({ id: cc3, name_th: "ทดสอบสาม", name_en: "T3" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: cc3, name_th: "เมืองC", name_en: "CityC", lat: 37, lng: 127, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      cityC = ci.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", cc3);
+      await admin.from("catalog_countries").delete().eq("id", cc3);
+    });
+
+    it("ด้านบวก: editor เพิ่มสถานที่ของตัวเองได้ และอ่านกลับได้", async () => {
+      const { data, error } = await B.from("custom_places")
+        .insert({ trip_id: tripC, city_id: cityC, category: "cafe", lat: 37.1, lng: 127.1 })
+        .select("id,added_by_user").single();
+      expect(error, `editor เพิ่มสถานที่ไม่ได้: ${error?.message}`).toBeNull();
+      placeC = data!.id as string;
+      expect(data?.added_by_user, "ไม่รู้ว่าใครเพิ่ม = คอลัมน์ที่ E1-AC5 มีไว้เพื่อสิ่งนี้ไม่ทำงาน").toBe(ids.b);
+    });
+
+    it("ด้านบวก: viewer อ่านสถานที่ของทริปได้ แต่เพิ่มไม่ได้", async () => {
+      const r = await C.from("custom_places").select("id").eq("trip_id", tripC);
+      expect(r.error).toBeNull();
+      expect(r.data, "viewer เปิดมาไม่เห็นสถานที่ที่ทีมเพิ่มไว้").not.toHaveLength(0);
+
+      const w = await C.from("custom_places")
+        .insert({ trip_id: tripC, city_id: cityC, category: "x", lat: 1, lng: 1 });
+      expect(w.error?.code, `viewer เพิ่มสถานที่ได้: ${w.error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("🔴 คนนอกทริปมองไม่เห็นสถานที่ของทริปนั้น — คลังของผู้เช่า ไม่ใช่คลังกลาง", async () => {
+      // สร้างทริปของ B เองแล้วดูว่า A (ไม่ใช่สมาชิก) เห็นไหม
+      const t2 = await B.rpc("create_trip", {
+        p_title: `outsider-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      expect(t2.error).toBeNull();
+      const mk = await B.from("custom_places")
+        .insert({ trip_id: t2.data.id, city_id: cityC, category: "secret", lat: 2, lng: 2 });
+      expect(mk.error, `B เพิ่มสถานที่ในทริปตัวเองไม่ได้: ${mk.error?.message}`).toBeNull();
+
+      const seen = await A.from("custom_places").select("id").eq("trip_id", t2.data.id);
+      expect(seen.data, "A ไม่ได้เป็นสมาชิกแต่เห็นสถานที่ของทริป B").toEqual([]);
+    });
+
+    it("🔴 D75 — ชื่ออยู่ตารางของตัวเอง และผูกกับทริปเดียวกันเสมอ", async () => {
+      const ok = await B.from("custom_place_names")
+        .insert({ trip_id: tripC, place_id: placeC, locale: "th", name: "ร้านลับ", priority: 1 });
+      expect(ok.error, `เพิ่มชื่อไม่ได้: ${ok.error?.message}`).toBeNull();
+
+      // `D70` — ติดป้ายชื่อด้วย `trip_id` ของทริปอื่นไม่ได้ แม้จะเป็นทริปที่ B เขียนได้เอง
+      const t3 = await B.rpc("create_trip", {
+        p_title: `other-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const bad = await B.from("custom_place_names")
+        .insert({ trip_id: t3.data.id, place_id: placeC, locale: "en", name: "Wrong", priority: 1 });
+      expect(
+        bad.error?.code,
+        `ผูกชื่อข้ามทริปสำเร็จ: ${bad.error?.message ?? "ไม่มี error"}`,
+      ).toBe("23503");
+    });
+
+    it("🔴 `priority` ซ้ำไม่ได้ · และลบอันดับ 1 แล้วอันดับ 2 ขึ้นแทนเอง", async () => {
+      const dup = await B.from("custom_place_names")
+        .insert({ trip_id: tripC, place_id: placeC, locale: "th", name: "ซ้ำ", priority: 1 });
+      expect(dup.error?.code, `priority ซ้ำได้: ${dup.error?.message ?? "ไม่มี error"}`).toBe("23505");
+
+      const two = await B.from("custom_place_names")
+        .insert({ trip_id: tripC, place_id: placeC, locale: "th", name: "ชื่อรอง", priority: 2 });
+      expect(two.error).toBeNull();
+      await B.from("custom_place_names")
+        .delete().eq("place_id", placeC).eq("locale", "th").eq("priority", 1);
+      const { data } = await B.from("custom_place_names")
+        .select("name").eq("place_id", placeC).eq("locale", "th").order("priority").limit(1);
+      expect(data?.[0]?.name, "ลบอันดับ 1 แล้วไม่มีชื่อไหนขึ้นแทน").toBe("ชื่อรอง");
+    });
+
+    it("🔴 anon ไม่ได้อะไรเลยจากทั้งสองตาราง", async () => {
+      const p = await D.from("custom_places").select("id");
+      const n = await D.from("custom_place_names").select("name");
+      expect(p.data ?? [], "anon อ่าน custom_places ได้").toEqual([]);
+      expect(n.data ?? [], "anon อ่าน custom_place_names ได้").toEqual([]);
+    });
+
+    it("🔴 ไคลเอนต์ตั้ง `added_by_user` เองไม่ได้ — สวมรอยว่าคนอื่นเป็นคนเพิ่ม", async () => {
+      const { error } = await B.from("custom_places")
+        .insert({ trip_id: tripC, city_id: cityC, category: "fake", lat: 3, lng: 3, added_by_user: ids.a });
+      expect(error?.code, `ตั้ง added_by_user ได้: ${error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+  });
+
 });
