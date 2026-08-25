@@ -274,7 +274,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   // 🔴 เพิ่ม `trip_days` 25 ส.ค. 2026 (`E2`) — **ตารางเนื้อหาตัวแรกของโปรเจกต์**
   //    ก่อนหน้านี้ทุกตารางเป็นตารางสิทธิ์/ตัวตน ซึ่งเขียนได้เฉพาะ `owner`
   //    → `editor` กับ `viewer` ไม่เคยมีที่ให้ต่างกัน (`P-46`) · ตารางนี้คือที่แรก
-  const TABLES = ["profiles", "trips", "trip_members", "trip_days"] as const;
+  const TABLES = ["profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings"] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
     "A_owner",
@@ -314,7 +314,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       const verbs = policiedVerbs(t);
       expect(verbs.length, `อ่าน policy ของ ${t} ไม่เจอเลย — regex หรือชื่อตารางเปลี่ยน`).toBeGreaterThan(0);
       expect(verbs.every((v) => (VERBS as readonly string[]).includes(v)), `${t} มี verb นอกลิสต์: ${verbs}`).toBe(true);
-      if (t !== "trip_members") {
+      // 🔴 ทะเบียนตารางที่ **ตั้งใจ** ให้ลบได้ · ที่เหลือมี DELETE เมื่อไหร่ต้องมาเถียงกันที่นี่ก่อน
+      //    ฉบับเดิมเขียนเป็นข้อยกเว้นตัวเดียว (`trip_members`) ซึ่งอ่านไม่ออกว่าเป็นทะเบียน
+      //    · `trip_members` — ถอดสมาชิก/ลาออกเอง · `trip_plans` — ผู้ใช้ลบแผนจริง (usePlans.ts:157)
+      //    ⚠️ เติมชื่อลงที่นี่ = ประกาศว่า "ลบแล้วหายจริง ยอมรับได้" · ถ้าคำตอบคือ soft delete
+      //       ทางที่ถูกคือ **ไม่เติม** แล้วไปทำ `deleted_at` (`E2-AC12`) แทน
+      const MAY_DELETE = ["trip_members", "trip_plans"];
+      if (!MAY_DELETE.includes(t)) {
         expect(verbs, `${t} มี policy DELETE แล้ว — ตั้งใจหรือเปล่า`).not.toContain("delete");
       }
     }
@@ -345,6 +351,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "profiles.profiles_update",
       // 🔴 3 ตัวนี้เพิ่ม 25 ส.ค. 2026 พร้อม `trip_days` — ไล่กิ่งแล้วทั้งสามก่อนแก้ค่านี้
       //    (`_select` → viewer อ่านได้ · `_insert`/`_update` → viewer เขียนไม่ได้ · `with check` → ย้ายวันข้ามทริปไม่ได้)
+      "trip_day_plan_settings.tdps_insert",
+      "trip_day_plan_settings.tdps_select",
+      "trip_day_plan_settings.tdps_update",
       "trip_days.trip_days_insert",
       "trip_days.trip_days_select",
       "trip_days.trip_days_update",
@@ -352,6 +361,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "trip_members.trip_members_insert",
       "trip_members.trip_members_select",
       "trip_members.trip_members_update",
+      // 🔴 `trip_plans_delete` เป็น policy DELETE ตัวแรกของ `E2` — เป็นการตัดสินใจ ไม่ใช่การคัดลอก
+      //    (ผู้ใช้ลบแผนจริงวันนี้ · ลบแผนสุดท้ายถูกกันด้วย constraint trigger ไม่ใช่ด้วย policy)
+      "trip_plans.trip_plans_delete",
+      "trip_plans.trip_plans_insert",
+      "trip_plans.trip_plans_select",
+      "trip_plans.trip_plans_update",
       "trips.trips_insert",
       "trips.trips_select",
       "trips.trips_update",
@@ -403,7 +418,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     for (const [key, body] of policyMap()) {
       if (body.includes("can_write_trip")) content.add(key.split(".")[0]);
     }
-    expect([...content].sort()).toEqual(["trip_days"]);
+    expect([...content].sort()).toEqual(["trip_day_plan_settings", "trip_days", "trip_plans"]);
   });
 
   it("🔴 เงื่อนไขของ policy ต้องไม่เปลี่ยน — ชื่อเดิมแต่กว้างขึ้น คือเคสที่รายชื่ออย่างเดียวมองไม่เห็น", () => {
@@ -415,12 +430,15 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
-    // 🔴 อัปเดต 25 ส.ค. 2026 (`1463dca6…` → `badfb2d0…`) — เพิ่ม `trip_days` 3 policy
+    // 🔴 อัปเดต 25 ส.ค. 2026 รอบ 2 (`badfb2d0…` → `b039fbcc…`) — เพิ่มชั้นแผน 7 policy
+    //    (`trip_plans` 4 ตัว รวม **DELETE ตัวแรกของ `E2`** · `trip_day_plan_settings` 3 ตัว)
+    //    ทุกตัวมีเคสสดของตัวเองแล้ว รวมเคส `D70` ที่พิสูจน์ว่า **FK ประกอบ** เป็นตัวปฏิเสธ ไม่ใช่ RLS
+    // 🔴 อัปเดตรอบ 1 (`1463dca6…` → `badfb2d0…`) — เพิ่ม `trip_days` 3 policy
     //    **ไล่กิ่งก่อนแล้วค่อยเปลี่ยนค่า ไม่ใช่เปลี่ยนค่าให้เขียว:** ทั้งสามกิ่งมีเคสสดของตัวเองแล้ว
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "badfb2d0c7276f19",
+      "b039fbcc8eccda66",
     );
   });
 });
@@ -1382,6 +1400,167 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     it("🔴 วันซ้ำในทริปเดียวกันไม่ได้ — `trip_stops.day_id` จะชี้ได้สองที่ถ้าปล่อย", async () => {
       const { error } = await A.from("trip_days").insert({ trip_id: tripD, date: day1 });
       expect(error?.code, `เพิ่มวันซ้ำสำเร็จ: ${error?.message ?? "ไม่มี error เลย"}`).toBe("23505");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — ชั้นแผน: trip_plans + trip_day_plan_settings (D52 · D69 · D70)", () => {
+    /**
+     * ทริปของบล็อกนี้แยกจากบล็อกอื่นด้วยเหตุผลเดียวกับบล็อก `trip_days`:
+     * เคสที่นี่ **ลบแผน** และ **สลับ `is_active`** ซึ่งถ้าไปทำกับ fixture ร่วม
+     * ลำดับการรันจะกลายเป็นส่วนหนึ่งของผล
+     *
+     * `tripQ` มีไว้ข้อเดียว: เป็น**ทริปที่สองที่ A เขียนได้** เพื่อพิสูจน์ `D70`
+     * — ถ้าใช้ทริปที่ A เขียนไม่ได้ RLS จะปฏิเสธก่อน แล้วเราจะไม่รู้เลยว่า FK ประกอบทำงานไหม
+     * 🎯 **นี่คือจุดที่เคสส่วนใหญ่พลาด: มันพิสูจน์ว่า *อะไรบางอย่าง* ปฏิเสธ ไม่ใช่ว่า *ตัวที่เราสร้าง* ปฏิเสธ**
+     */
+    let tripP = "";
+    let tripQ = "";
+    let planP = "";
+    let dayP = "";
+    let dayQ = "";
+
+    const mkTrip = async (title: string) => {
+      const { data, error } = await A.rpc("create_trip", {
+        p_title: `${title}-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (error) throw new Error(`สร้างทริป ${title} ไม่ได้: ${error.message}`);
+      return data.id as string;
+    };
+
+    const mkDay = async (trip: string, date: string) => {
+      const { data, error } = await A.from("trip_days")
+        .insert({ trip_id: trip, date })
+        .select("id")
+        .single();
+      if (error) throw new Error(`สร้างวัน ${date} ไม่ได้: ${error.message}`);
+      return data.id as string;
+    };
+
+    beforeAll(async () => {
+      tripP = await mkTrip("plans-P");
+      tripQ = await mkTrip("plans-Q");
+      dayP = await mkDay(tripP, "2026-10-12");
+      dayQ = await mkDay(tripQ, "2026-10-12");
+
+      const { error: e1 } = await A.from("trip_members").insert({
+        trip_id: tripP, user_id: ids.b, role: "editor",
+      });
+      if (e1) throw new Error(`เชิญ B เป็น editor ไม่ได้: ${e1.message}`);
+
+      const { error: e2 } = await A.from("trip_members").insert({
+        trip_id: tripP, user_id: ids.c, role: "viewer",
+      });
+      if (e2) throw new Error(`เชิญ C เป็น viewer ไม่ได้: ${e2.message}`);
+
+      const { data, error } = await A.from("trip_plans")
+        .insert({ trip_id: tripP, name: "แผน A", is_active: true })
+        .select("id")
+        .single();
+      if (error) throw new Error(`สร้างแผน A ไม่ได้: ${error.message}`);
+      planP = data.id as string;
+    });
+
+    describe("ด้านบวก — precondition", () => {
+      it("editor สร้างแผนเพิ่มได้", async () => {
+        const { error } = await B.from("trip_plans").insert({ trip_id: tripP, name: "แผน B" });
+        expect(error, `editor สร้างแผนไม่ได้: ${error?.message}`).toBeNull();
+      });
+
+      it("viewer อ่านแผนได้", async () => {
+        const { data, error } = await C.from("trip_plans").select("name").eq("trip_id", tripP);
+        expect(error).toBeNull();
+        expect(data, "viewer เปิดมาไม่เห็นแผนสักใบ").not.toHaveLength(0);
+      });
+
+      it("🔴 D70 ด้านบวก — คู่ที่ถูกต้อง (แผนกับวันของทริปเดียวกัน) ต้องเขียนได้", async () => {
+        const { error } = await A.from("trip_day_plan_settings").insert({
+          trip_id: tripP, plan_id: planP, trip_day_id: dayP, start_time: "08:30",
+        });
+        expect(
+          error,
+          `คู่ที่ถูกต้องยังเขียนไม่ได้: ${error?.message}\n` +
+            "  ถ้าข้อนี้แดง เคส D70 ด้านลบข้างล่างจะเขียวเพราะไม่มีใครเขียนอะไรได้เลย",
+        ).toBeNull();
+      });
+    });
+
+    it("🔴 D70 — แผนของทริปหนึ่ง + วันของอีกทริปหนึ่ง ต้องเขียนลงไปไม่ได้", async () => {
+      // A เขียนได้ทั้ง tripP และ tripQ → RLS ไม่ใช่ตัวที่ปฏิเสธข้อนี้ · FK ประกอบต่างหาก
+      const { error } = await A.from("trip_day_plan_settings").insert({
+        trip_id: tripP, plan_id: planP, trip_day_id: dayQ,
+      });
+      expect(
+        error?.code,
+        `จับคู่ข้ามทริปสำเร็จ: ${error?.message ?? "ไม่มี error เลย"}\n` +
+          "  = แถวที่พ่อสองคนอยู่คนละทริป · และ cascade ของแผนจะลบของทริปอื่นได้",
+      ).toBe("23503");
+    });
+
+    it("🔴 D52 — สองแผน active ในทริปเดียวกันไม่ได้", async () => {
+      const { error } = await A.from("trip_plans").insert({
+        trip_id: tripP, name: "แผน C", is_active: true,
+      });
+      expect(
+        error?.code,
+        `มีแผน active สองใบพร้อมกัน: ${error?.message ?? "ไม่มี error เลย"}`,
+      ).toBe("23505");
+    });
+
+    it("🔴 viewer สร้างแผนไม่ได้", async () => {
+      const { error } = await C.from("trip_plans").insert({ trip_id: tripP, name: "แผนของ viewer" });
+      expect(error?.code, `viewer สร้างแผนได้: ${error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("🔴 viewer เขียนตั้งค่ารายวันไม่ได้", async () => {
+      const { error } = await C.from("trip_day_plan_settings").insert({
+        trip_id: tripP, plan_id: planP, trip_day_id: dayP, start_time: "09:00",
+      });
+      expect(error?.code, `viewer เขียนตั้งค่ารายวันได้: ${error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("🔴 viewer ลบแผนไม่ได้", async () => {
+      await C.from("trip_plans").delete().eq("trip_id", tripP).eq("name", "แผน B");
+      const { data } = await A.from("trip_plans").select("name").eq("trip_id", tripP);
+      expect(data?.map((r) => r.name), "viewer ลบแผนสำเร็จ").toContain("แผน B");
+    });
+
+    it("start_time ที่ไม่ใช่ HH:MM ต้องถูกปฏิเสธที่ฐาน ไม่ใช่ไปพังตอนคำนวณเวลาทั้งวัน", async () => {
+      const { error } = await A.from("trip_day_plan_settings")
+        .update({ start_time: "8am" })
+        .eq("plan_id", planP)
+        .eq("trip_day_id", dayP);
+      expect(error?.code, `รับค่าเวลาที่ผิดรูปแบบ: ${error?.message ?? "ไม่มี error"}`).toBe("23514");
+    });
+
+    it("🔴 คนนอกอ่านแผนของทริปที่ตัวเองไม่ได้อยู่ ไม่ได้", async () => {
+      const { data } = await B.from("trip_plans").select("id").eq("trip_id", tripQ);
+      expect(data, "B ไม่ได้เป็นสมาชิก tripQ แต่เห็นแผนของมัน").toEqual([]);
+    });
+
+    // 🔴 ต้องอยู่ท้ายสุดของบล็อก — มันลบแผนจนเหลือใบเดียว
+    describe("ทริปต้องมีแผนเหลืออย่างน้อย 1 เสมอ (รูปแบบเดียวกับ P-19)", () => {
+      it("ด้านบวก: editor ลบแผนที่ไม่ใช่ใบสุดท้ายได้", async () => {
+        const { error } = await B.from("trip_plans")
+          .delete()
+          .eq("trip_id", tripP)
+          .eq("name", "แผน B");
+        expect(error, `ลบแผนที่ไม่ใช่ใบสุดท้ายไม่ได้: ${error?.message}`).toBeNull();
+        const { data } = await A.from("trip_plans").select("name").eq("trip_id", tripP);
+        expect(data?.map((r) => r.name)).not.toContain("แผน B");
+      });
+
+      it("🔴 ลบแผนใบสุดท้ายไม่ได้ — ทริปที่ไม่มีแผนคือทริปที่เปิดมาแล้วไม่มีอะไรเลย", async () => {
+        const { error } = await A.from("trip_plans").delete().eq("trip_id", tripP);
+        expect(
+          error,
+          "ลบแผนใบสุดท้ายสำเร็จ = ทริปกลายเป็นใบเปล่าที่ผู้ใช้กู้เองไม่ได้",
+        ).not.toBeNull();
+        const { data } = await A.from("trip_plans").select("id").eq("trip_id", tripP);
+        expect(data, "แผนหายไปทั้งที่ trigger ควรกันไว้").toHaveLength(1);
+      });
     });
   });
 
