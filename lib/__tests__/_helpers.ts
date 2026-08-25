@@ -151,6 +151,8 @@ export const TEST_COUNTRY_CODES = {
   tripContent: "zt",
   /** บล็อก `trip_hotels` (`D51`) — P1 */
   tripHotels: "zs",
+  /** บล็อกข้อความ error ของ soft-delete RPC (`P-53`) — P4 */
+  rpcMessages: "xr",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */

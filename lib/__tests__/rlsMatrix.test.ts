@@ -3020,6 +3020,182 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 P-53 — ข้อความ error ต้องต่างเฉพาะกับคนที่รู้ความต่างนั้นอยู่แล้ว", () => {
+    /**
+     * `…150942` แก้ soft-delete RPC ทั้ง 6 ตัวให้แยกด้วย **`can_read_trip`** ไม่ใช่ `can_write_trip`
+     * บล็อกนี้พิสูจน์ว่ามันจริง **และต้องยิง 2 ทิศ ทิศเดียวไม่พอ**
+     *
+     * | ใคร | ต้องได้ | ถ้าได้ผิด แปลว่า |
+     * |---|---|---|
+     * | `viewer` (อ่านได้ เขียนไม่ได้) | *"ไม่มีสิทธิ์แก้"* | คนที่**เห็นแถวอยู่แล้ว**ถูกบอกว่าไม่มีแถว = หน้าจอโกหกเขา |
+     * | คนนอก · id จริง | *"ไม่พบ"* | 🔴 **existence oracle** — เดา id ถูกแล้วรู้ว่ามีจริง |
+     * | คนนอก · id มั่ว | *"ไม่พบ"* **ตัวเดียวกันเป๊ะ** | ถ้าต่างแม้แต่ไบต์เดียว = oracle เหมือนเดิม |
+     *
+     * 🔴 **ทิศที่คนลืมคือทิศแรก** และการลืมมันทำให้ทุกเคสของทิศที่สองเขียวสวย:
+     * แก้ให้ *ทุกคน* ได้ *"ไม่พบ"* → ไม่มี oracle จริง ๆ **แต่ viewer จะเจอเว็บที่บอกว่า
+     * รายการที่เขากำลังมองอยู่ตรงหน้าไม่มีอยู่** · เป็นรูปเดียวกับ `P-44`: ปฏิเสธทุกคน = ปลอดภัยและใช้ไม่ได้
+     *
+     * 🎯 **เทียบทั้ง 4 ฟิลด์ ไม่ใช่แค่ `message`** — PostgREST คืน `code`/`message`/`details`/`hint`
+     * ช่องรั่วที่เหลืออยู่ได้สบายคือ `details` ที่หลุดมาต่างกันโดยไม่มีใครดู
+     *
+     * ⚠️ **`B` เป็นคนนอกของบล็อกนี้โดยตั้งใจ — ไม่เชิญเข้าทริป**
+     * บล็อกเนื้อหาอื่นเชิญ `B` เป็น editor กับ `C` เป็น viewer หมด จึง**ไม่มีคนนอกให้ยิงเลยสักบล็อก**
+     * ซึ่งคือเหตุผลที่ช่องนี้ไม่เคยถูกวัดมาก่อน
+     */
+    const ccQ = TEST_COUNTRY_CODES.rpcMessages;
+    const FAKE_ID = "00000000-0000-4000-8000-000000000000";
+    let tripQ = "", planQ = "", dayQ = "", cityQ = "", catQ = "", myQ = "";
+
+    /** id ของแถวจริงในแต่ละตาราง · เติมใน `beforeAll` */
+    const rows: Record<string, string> = {};
+
+    /** ชื่อ RPC → ข้อความ "ไม่พบ" ที่มันใช้ (ต่างกันต่อตาราง ซึ่งไม่รั่วเพราะคนเลือก RPC เองอยู่แล้ว) */
+    const RPCS = [
+      ["soft_delete_checklist_item", "checklist_items"],
+      ["soft_delete_place_note", "place_notes"],
+      ["soft_delete_booking", "bookings"],
+      ["soft_delete_trip_hotel", "trip_hotels"],
+      ["soft_delete_trip_stop", "trip_stops"],
+      ["soft_delete_custom_place", "custom_places"],
+    ] as const;
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccQ);
+      await admin.from("catalog_countries").delete().eq("id", ccQ);
+      await admin.from("catalog_countries").insert({ id: ccQ, name_th: "ทดสอบข้อความ", name_en: "MSG" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccQ, name_th: "เมืองQ", name_en: "CityQ", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      cityQ = ci.data.id as string;
+      const cp = await admin.from("catalog_places")
+        .insert({ city_id: cityQ, category: "sight", lat: 35, lng: 129 })
+        .select("id").single();
+      if (cp.error) throw new Error(`seed place: ${cp.error.message}`);
+      catQ = cp.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `msg-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripQ = t.data.id as string;
+
+      // 🔴 เชิญ `C` เป็น viewer เท่านั้น · **`B` ไม่ถูกเชิญ** — นั่นคือทั้งหมดที่บล็อกนี้ต้องการ
+      const inv = await A.from("trip_members").insert({ trip_id: tripQ, user_id: ids.c, role: "viewer" });
+      if (inv.error) throw new Error(`เชิญ C: ${inv.error.message}`);
+
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripQ).eq("is_active", true).single();
+      if (pl.error) throw new Error(`หาแผน: ${pl.error.message}`);
+      planQ = pl.data.id as string;
+
+      const dy = await A.from("trip_days").insert({ trip_id: tripQ, date: "2026-10-12" }).select("id").single();
+      if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
+      dayQ = dy.data.id as string;
+
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripQ, city_id: cityQ, category: "cafe", lat: 35.1, lng: 129.1 })
+        .select("id").single();
+      if (mp.error) throw new Error(`custom place: ${mp.error.message}`);
+      myQ = mp.data.id as string;
+      rows.custom_places = myQ;
+
+      const mk = async (table: string, payload: Record<string, unknown>) => {
+        const { data, error } = await A.from(table).insert(payload).select("id").single();
+        if (error) throw new Error(`seed ${table}: ${error.message}`);
+        rows[table] = data.id as string;
+      };
+      await mk("checklist_items", { trip_id: tripQ, text: `รายการ ${stamp}` });
+      await mk("place_notes", { trip_id: tripQ, plan_id: planQ, catalog_place_id: catQ, note: `โน้ต ${stamp}` });
+      await mk("bookings", { trip_id: tripQ, category: "flight", title: `เที่ยวบิน ${stamp}` });
+      await mk("trip_hotels", {
+        trip_id: tripQ, city_id: cityQ, hotel_name: `โรงแรม ${stamp}`,
+        check_in: "2026-10-12", check_out: "2026-10-14",
+      });
+      await mk("trip_stops", {
+        trip_id: tripQ, plan_id: planQ, trip_day_id: dayQ,
+        kind: "place", catalog_place_id: catQ, rank: "m",
+      });
+    });
+
+    afterAll(async () => {
+      // 🔴 ลบลูกก่อนพ่อ — `catalog_places` เป็น `on delete restrict` จาก `catalog_cities`
+      //    (ผมเคยพลาดข้อนี้มาแล้วในบล็อกคลัง แล้วรอบถัดไปชนคีย์ซ้ำ → เคส "ข้าม" ที่อ่านเป็นเขียว)
+      await admin.from("trips").delete().eq("id", tripQ);
+      await admin.from("catalog_places").delete().eq("id", catQ);
+      await admin.from("catalog_cities").delete().eq("country_id", ccQ);
+      const { error } = await admin.from("catalog_countries").delete().eq("id", ccQ);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก P-53 ไม่สำเร็จ: ${error.message}\n`);
+    });
+
+    // ── ด้านบวก: ถ้าตรงนี้แดง เคสข้างล่างวัดความว่างเปล่า ────────────────────
+    it("ด้านบวก: แถวจริงถูกสร้างครบทั้ง 6 ตาราง", () => {
+      const missing = RPCS.filter(([, table]) => !rows[table]).map(([, table]) => table);
+      expect(missing, "ไม่มีแถวให้ยิง → เคสด้านลบทั้งหมดจะเขียวเพราะไม่มีอะไรให้เห็น").toEqual([]);
+    });
+
+    it.each(RPCS)("🔴 %s — viewer ต่างจากคนนอก · คนนอกกับ id มั่วต้องเหมือนกันเป๊ะ", async (rpc, table) => {
+      const shape = (e: { code?: string; message?: string; details?: string; hint?: string } | null) =>
+        JSON.stringify({ code: e?.code, message: e?.message, details: e?.details, hint: e?.hint });
+
+      const viewer = await C.rpc(rpc, { p_id: rows[table] });
+      const outsiderReal = await B.rpc(rpc, { p_id: rows[table] });
+      const outsiderFake = await B.rpc(rpc, { p_id: FAKE_ID });
+
+      // ทั้งสามต้องล้ม — ถ้าตัวไหนสำเร็จ นั่นคือปัญหาที่ใหญ่กว่าเรื่องข้อความ
+      for (const [who, r] of [["viewer", viewer], ["คนนอก/id จริง", outsiderReal], ["คนนอก/id มั่ว", outsiderFake]] as const) {
+        expect(r.error, `${who} ลบสำเร็จ — นี่ไม่ใช่ปัญหาข้อความแล้ว แต่เป็นสิทธิ์`).not.toBeNull();
+      }
+
+      // ① ทิศที่คนลืม — viewer ต้อง**ไม่**ถูกบอกว่าไม่มีแถว
+      expect(
+        viewer.error!.message,
+        "viewer ถูกบอกว่า 'ไม่พบ' ทั้งที่เขาเห็นแถวนั้นอยู่บนหน้าจอ\n" +
+          "  🔴 นี่คือรูปของ `P-44`: ปฏิเสธทุกคนเหมือนกันหมด = เคสด้านลบเขียวครบ และเว็บโกหกผู้ใช้",
+      ).toContain("ไม่มีสิทธิ์");
+
+      // ② คนนอกต้องได้ 'ไม่พบ' — ไม่ใช่ 'ไม่มีสิทธิ์' ที่ยืนยันว่า id นั้นมีจริง
+      expect(
+        outsiderReal.error!.message,
+        "คนนอกถูกบอกว่า 'ไม่มีสิทธิ์' → ยืนยันว่า id ที่เขาเดามีอยู่จริง = existence oracle",
+      ).toContain("ไม่พบ");
+
+      // ③ ข้อที่แข็งที่สุด — เทียบทั้งก้อน ไม่ใช่แค่ข้อความ
+      expect(
+        shape(outsiderFake.error),
+        `${rpc}: id จริงกับ id มั่ว ให้ผลไม่เหมือนกันสำหรับคนนอก\n` +
+          "  → ความต่างนั้นเองคือคำตอบว่า id ไหนมีอยู่จริง ไม่ว่ามันจะอยู่ในฟิลด์ไหน",
+      ).toBe(shape(outsiderReal.error));
+
+      // ④ viewer กับคนนอกต้องต่างกันจริง — ไม่ใช่ผ่าน ① ② ด้วยความบังเอิญของ substring
+      expect(viewer.error!.message).not.toBe(outsiderReal.error!.message);
+
+      // ⑤ ไม่มีอะไรถูกลบจริงระหว่างทาง — RPC ที่ `raise` แล้วยัง `update` ทันเป็นไปได้
+      //    ถ้าลำดับในฟังก์ชันสลับ · **ข้อความถูกแต่ของหายไปแล้ว** คืออาการที่ไม่มีใครไปดู
+      //
+      // 🔴 **วัดด้วยสายตาของเจ้าของ ไม่ใช่ `service_role`** ด้วยเหตุผล 2 ข้อ:
+      //    ① policy ฝั่งอ่านของตระกูล `D76` กรอง `deleted_at is null` อยู่แล้ว
+      //       → "ยังเห็นอยู่" คือคำตอบเดียวกับ "ยังไม่ถูกลบ" **และตรงกับสิ่งที่ผู้ใช้เจอจริง**
+      //    ② `custom_places` เป็นตารางเนื้อหา **ใบเดียวที่ไม่มี grant ให้ `service_role` เลย**
+      //       (ทุกใบอื่นมี `select, delete` ตามข้อยกเว้นที่ 4) → `admin.from(...).single()`
+      //       คืน `data: null` เพราะ **ไม่มีสิทธิ์** ไม่ใช่เพราะ **ไม่มีแถว**
+      //       ⚠️ ถ้าเช็คแบบ `expect(data?.deleted_at).toBeNull()` มันจะ**เขียวด้วยเหตุผลที่ผิด**ทันที
+      //          — รายงาน P1 แล้ว · เก็บกวาดยังทำงานเพราะ cascade จาก `trips` ไม่ใช่เพราะ grant
+      const seen = await A.from(table).select("id").eq("id", rows[table]);
+      expect(seen.error?.message ?? null, `${table}: เจ้าของอ่านไม่ได้ — เคสนี้วัดอะไรไม่ได้`).toBeNull();
+      expect(seen.data, `${table}: RPC ล้มแต่แถวหายไปจากสายตาเจ้าของแล้ว`).toHaveLength(1);
+    });
+
+    it("ด้านบวก: เจ้าของลบได้จริงทั้ง 6 ตัว — ไม่งั้นเคสข้างบนอาจเขียวเพราะ RPC พังทั้งตัว", async () => {
+      const failed: string[] = [];
+      for (const [rpc, table] of RPCS) {
+        const { error } = await A.rpc(rpc, { p_id: rows[table] });
+        if (error) failed.push(`${rpc}: ${error.message}`);
+      }
+      expect(failed, "เจ้าของลบไม่ได้ → ข้อความ 'ไม่มีสิทธิ์/ไม่พบ' ข้างบนอาจมาจาก RPC ที่พังเฉย ๆ").toEqual([]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 P-55 / D78 — ตรึงพฤติกรรมวันนี้: ประวัติตายพร้อมบัญชีคนเพิ่ม", () => {
     /**
      * 🔴 **เคสในบล็อกนี้ตรึงสิ่งที่เรา *ไม่* ต้องการ ไม่ใช่สิ่งที่เราต้องการ**
