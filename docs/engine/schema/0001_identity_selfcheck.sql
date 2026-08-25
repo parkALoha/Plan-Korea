@@ -168,7 +168,21 @@ select email, count(*) as user_rows, min(created_at) as first_seen, max(created_
  having count(*) > 1;
 -- 🔴 ต้องได้ 0 แถว
 
--- 9.2 ดูว่าผู้ใช้ 1 คนถือ identity กี่ provider — ที่ถูกคือ 1 แถว user + 2 แถว identity
+-- 9.2 ดูว่าผู้ใช้ 1 คนถือ identity กี่ provider
+--
+-- 🔴 **แก้ 25 ส.ค. 2026 — ค่าที่คาดไว้เดิม (`identity_rows = 2`) ผิด และผมเป็นคนเขียนเอง**
+--   ฉบับเดิมเขียนว่า *"ที่ถูกคือ 1 แถว user + 2 แถว identity · providers = {email, google}"*
+--   **วัดจริงแล้วได้ `identity_rows = 1` (google อย่างเดียว) ทั้งที่ `AC7` ผ่าน**
+--
+--   🎯 **Supabase ไม่สร้าง identity ใหม่เมื่อผู้ใช้ที่มีอยู่แล้ว (สร้างจาก OAuth) ล็อกอินด้วย magic link**
+--      มันแมตช์ที่ `auth.users.email` แล้วออก session ให้เลย — **ไม่มีเหตุการณ์ "link" เกิดขึ้น**
+--
+--   ⚠️ **ชนิดของความพลาด: AC ถูกเขียนขึ้นเพื่อตอบคำถามที่ยังไม่มีใครวัด
+--      แล้ววิธีวัดของมันเข้ารหัสคำตอบที่เดาไว้ลงไปด้วย** — เครื่องมือวัด 3 ตัว
+--      (ข้อนี้ · `listUsers()` ของ P4 · หน้า `/account` ของ P2) **เข้ารหัสข้อสมมติเดียวกันหมด**
+--   🔴 **และเราโชคดีที่เดาผิดในทิศที่ปลอดภัย** — เดา 2 ได้ 1 → อ่านเป็น "ยังไม่ผ่าน" → ไปตรวจต่อ
+--      **ถ้าเดากลับทาง (คาด 1 แล้วของจริงให้ 2) เราจะติ๊กผ่านทันทีบน AC ที่ล้มจริง**
+--      และอาการคือ *"ทริปหายทั้งใบ"* ที่ `AC7` เขียนไว้เองว่ากลัวที่สุด
 select u.email,
        count(distinct u.id)      as user_rows,
        count(i.id)               as identity_rows,
@@ -177,7 +191,9 @@ select u.email,
   left join auth.identities i on i.user_id = u.id
  group by u.email
  order by u.email;
--- ✅ ที่ต้องการ: user_rows = 1 · identity_rows = 2 · providers = {email, google}
+-- ✅ ที่ต้องการ: user_rows = 1 · identity_rows = 1 · providers = {google}
+--    🔴 **`AC7` ไม่ได้วัดที่จำนวน identity — วัดที่ `auth.users.id` ต้องเป็นตัวเดิม และต้องมี user แถวเดียว**
+--    ถ้าเห็น `user_rows = 2` เมื่อไหร่ = เคสหายนะที่ `AC7` มีไว้กัน **หยุดทั้งเฟส**
 
 -- 9.3 ทุก auth.users ต้องมี profiles ตรงกัน 1:1 — พิสูจน์ว่า trigger handle_new_user ทำงาน
 --     🔴 เคสด้านบวกคู่กับ 9.1: ถ้า 9.1 ได้ 0 เพราะยังไม่มีใครสมัครเลย ข้อนี้จะฟ้อง
@@ -186,6 +202,10 @@ select (select count(*) from auth.users)     as auth_users,
        (select count(*) from auth.users u
           where not exists (select 1 from public.profiles p where p.id = u.id)) as users_without_profile;
 -- ✅ auth_users = profiles · users_without_profile = 0 · และ auth_users ต้อง > 0
+--    🔴 **ยังไม่เคยถูกวัดโดยใครเลย (25 ส.ค. 2026)** — `service_role` มีแค่ `select, delete on public.trips`
+--       (`…222206`) **ไม่มีสิทธิ์บน `profiles`** → ยิงจาก API ไม่ได้ · P4 เลือก**ไม่ขอ grant เพิ่ม** เพราะ `D38` ควรแคบไว้
+--    → **ต้องรันข้อนี้ใน SQL Editor** พร้อมรอบเดียวกับ mutation test
+--    ⚠️ **จนกว่าจะรัน ให้บันทึกว่า `AC7` ผ่านด้วยหลักฐาน 9.1 + id ตรง · ข้อ 9.3 ยังไม่ถูกวัด** ไม่ใช่ "วัดครบแล้ว"
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 10. 🔴 P-26 — ทริปที่เพิ่งสร้างต้องมองเห็นได้ใน `returning` ของคำสั่งเดียวกัน

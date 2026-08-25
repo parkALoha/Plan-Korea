@@ -68,3 +68,19 @@ create policy trips_select on public.trips
 -- create policy trips_select on public.trips
 --   for select to authenticated
 --   using (created_by = (select auth.uid()));   -- 🔴 เจ้าของเท่านั้น สมาชิกคนอื่นตกหมด
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  ก้อน S — `selfcheck 9.3` · รันพร้อมกันในรอบเดียว (ไม่ใช่ mutation)     ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+-- 🔴 ข้อนี้ **ยังไม่เคยถูกวัดโดยใครเลย** — `service_role` ไม่มีสิทธิ์บน `profiles`
+--    (grant ของ `…222206` แคบไว้ตั้งใจตาม `D38`) จึงยิงจาก API ไม่ได้
+--    · P4 เลือกไม่ขอ grant เพิ่ม แล้วเอามารวมรอบนี้แทน — **ครั้งเดียวจบ ไม่รบกวนซ้ำ**
+-- ✅ ที่ต้องการ: auth_users = profiles · users_without_profile = 0 · auth_users > 0
+--    🔴 ถ้า users_without_profile > 0 = trigger `handle_new_user` ไม่ทำงาน
+--       → คนที่สมัครใหม่จะไม่มีโปรไฟล์ และจะเข้าทริปไม่ได้เลย
+
+select (select count(*) from auth.users)      as auth_users,
+       (select count(*) from public.profiles) as profiles,
+       (select count(*) from auth.users u
+          where not exists (select 1 from public.profiles p where p.id = u.id)) as users_without_profile;
