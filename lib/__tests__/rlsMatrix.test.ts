@@ -3020,6 +3020,157 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 P-55 / D78 — ตรึงพฤติกรรมวันนี้: ประวัติตายพร้อมบัญชีคนเพิ่ม", () => {
+    /**
+     * 🔴 **เคสในบล็อกนี้ตรึงสิ่งที่เรา *ไม่* ต้องการ ไม่ใช่สิ่งที่เราต้องการ**
+     *
+     * `column-map.md` เขียนเหตุผลของ `legacy_added_by` ไว้เองว่าสตริงเดิมคือ
+     * **ข้อมูลเดียวที่บอกได้ว่าใครเพิ่มอะไร "ห้ามทิ้ง"** · แต่คอลัมน์นั้นอยู่บนตาราง
+     * ที่รับ**แถวใหม่**ด้วย และแถวใหม่ไม่มีสตริงเดิมให้เก็บ
+     * → **ประวัติรอดสำหรับแถวที่ย้ายมา และตายสำหรับแถวที่เกิดใหม่ — สลับข้างกับสัญชาตญาณพอดี**
+     *
+     * `on delete set null` ทำงานถูกทุกตัวอักษร · ไม่มี error ไม่มีคำเตือน · แถวยังอยู่ครบ
+     * **หน้าจอจะบอกว่า "ไม่มีใครเพิ่มรายการนี้" ซึ่งไม่เคยเป็นความจริงเลยสักวินาที**
+     *
+     * ⚠️ **ถ้าบล็อกนี้แดง แปลว่าน่าจะมีคนแก้ถูกแล้ว ไม่ใช่มีคนทำพัง**
+     *    → ไปอ่าน `D78` ข้อ ② กับ `Q4` ก่อนแตะอะไร **แล้วลบบล็อกนี้ทิ้งทั้งบล็อก อย่าแก้ให้มันเขียว**
+     *    เหตุผลที่ต้องมีทั้งที่รู้ว่าจะถูกลบ: `D78` ข้อ ② ลงมือไม่ได้จนกว่า `Q4` จะปิด
+     *    (**เขียนชื่อคนที่ลบบัญชีไปแล้ว ถอนกลับไม่ได้** จึงเป็นการตัดสินใจของผู้ใช้ ไม่ใช่ของเรา)
+     *    ระหว่างนั้นการสูญเสียนี้ **ไม่มีอะไรบันทึกไว้ในโค้ดเลยสักบรรทัด**
+     *
+     * 🎯 **สิ่งที่บล็อกนี้เพิ่มจากที่ P1 ขอ: ไม่ใช่คอลัมน์เดียว — เป็น 3 และช่องที่ 3 ต่างชนิด**
+     *    ยิงจริงแล้วบน engine-dev · ลบบัญชีเดียว หายพร้อมกันหมด:
+     *      · `added_by_user`   → null · **มี** `legacy_added_by` ให้ลง
+     *      · `checked_by_user` → null · **มี** `legacy_checked_by` ให้ลง
+     *      · `updated_by_user` → null · 🔴 **ไม่มี `legacy_updated_by` อยู่ที่ไหนเลยทั้งสคีมา**
+     *    → **ทางแก้ของ `D78` ข้อ ② ครอบได้ 2 ใน 3** · ตัวที่ 3 ไม่ใช่ "ยังไม่ได้ทำ" แต่คือ
+     *      **ไม่มีที่ให้ลง** — และมันจะเงียบต่อไปแม้หลังแก้ `D78` เสร็จ ถ้าไม่มีใครจดไว้ตรงนี้
+     */
+    let tripP = "";
+    let itemP = "";
+    let ghostId = "";
+    let ghost: SupabaseClient;
+
+    beforeAll(async () => {
+      /**
+       * 🔴 **สร้างผู้ใช้เองตรงนี้ ไม่เรียก `makeUser`** — เพราะเคสนี้**ลบเขาเป็นส่วนหนึ่งของการทดสอบ**
+       * `makeUser` ลงทะเบียนใน `ids` ซึ่ง `afterAll` หลักจะไล่ `deleteUser` ทุกตัว
+       * → จะได้ `console.warn` "ลบผู้ใช้ทดสอบไม่สำเร็จ" ทุกรอบ ทั้งที่ทุกอย่างถูกต้อง
+       * **คำเตือนที่ดังทุกรอบโดยไม่มีอะไรผิด คือวิธีสอนคนให้เลิกอ่านคำเตือน**
+       */
+      const email = `rls-ghost-${stamp}@example.test`;
+      const password = `pw-${stamp}-ghost`;
+      const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+      if (created.error) throw new Error(`สร้างผู้ใช้ผีไม่ได้: ${created.error.message}`);
+      ghostId = created.data.user!.id;
+      ghost = testClient(ANON);
+      const signIn = await ghost.auth.signInWithPassword({ email, password });
+      if (signIn.error) throw new Error(`ล็อกอินผีไม่ได้: ${signIn.error.message}`);
+
+      // ทริปของบล็อกนี้เอง — ผีเป็นแค่ `editor` ไม่ใช่เจ้าของ
+      // 🔴 ข้อนี้**จำเป็นต่อการมีอยู่ของเคส** ไม่ใช่รายละเอียด: ถ้าผีเป็นเจ้าของ
+      //    `deleteUser` จะชน `trips.created_by … on delete restrict` แล้วลบไม่ออก (`P-28`)
+      //    → **ช่องนี้เปิดเฉพาะกับคนที่ไม่ใช่เจ้าของ ซึ่งคือคนส่วนใหญ่ในทริปที่มีหลายคน**
+      const t = await A.rpc("create_trip", {
+        p_title: `ghost-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริปของบล็อก P-55 ไม่ได้: ${t.error.message}`);
+      tripP = t.data.id as string;
+      const inv = await A.from("trip_members").insert({
+        trip_id: tripP,
+        user_id: ghostId,
+        role: "editor",
+      });
+      if (inv.error) throw new Error(`เชิญผีเป็น editor ไม่ได้: ${inv.error.message}`);
+    });
+
+    afterAll(async () => {
+      // เผื่อเคสล้มกลางคันก่อนถึงขั้นลบ — ผีต้องไม่ค้างในฐานของกลาง
+      // ทริปเป็นของ `A` จึงถูกเก็บกวาดโดย `afterAll` หลักตาม `created_by` อยู่แล้ว
+      if (!ghostId) return;
+      const { error } = await admin.auth.admin.deleteUser(ghostId);
+      // ปกติเคสที่ 3 ลบไปแล้ว → ตรงนี้ error เป็นเรื่องธรรมดา **จึงเงียบโดยตั้งใจ**
+      // ต่างจาก `afterAll` หลักที่ต้องดัง เพราะที่นั่น "ลบไม่ออก" คือความผิดปกติจริง
+      if (error && !/not.?found|does not exist/i.test(error.message)) {
+        console.warn(`\n⚠️  ลบผู้ใช้ผี ${ghostId} ไม่สำเร็จ: ${error.message}\n`);
+      }
+    });
+
+    it("ด้านบวก: ผี (editor) เพิ่มรายการได้ · เซิร์ฟเวอร์เติมชื่อคนเพิ่มให้เอง", async () => {
+      const { data, error } = await ghost
+        .from("checklist_items")
+        .insert({ trip_id: tripP, text: `ของผี ${stamp}`, category: "เอกสาร" })
+        .select("id, added_by_user, legacy_added_by")
+        .single();
+      expect(error?.message ?? null, "ผีเพิ่มรายการไม่ได้ — เคสข้างล่างจะไม่ได้พิสูจน์อะไรเลย").toBeNull();
+      itemP = data!.id as string;
+      expect(data!.added_by_user, "trigger `stamp_added_by` ไม่ได้เติมค่า").toBe(ghostId);
+      expect(data!.legacy_added_by, "แถวที่เกิดใหม่ไม่มีสตริงเดิม — นี่คือรากของ P-55").toBeNull();
+    });
+
+    it("ด้านบวก: ผีติ๊กรายการของตัวเอง → ทั้ง 3 คอลัมน์ชี้ไปที่ผีพร้อมกัน", async () => {
+      const upd = await ghost.from("checklist_items").update({ is_checked: true }).eq("id", itemP);
+      expect(upd.error?.message ?? null).toBeNull();
+
+      const { data } = await admin
+        .from("checklist_items")
+        .select("added_by_user, checked_by_user, updated_by_user")
+        .eq("id", itemP)
+        .single();
+      // ทั้งสามถูกเติมโดย trigger ฝั่งเซิร์ฟเวอร์ — ไคลเอนต์ไม่มีสิทธิ์คอลัมน์ไหนเลย
+      expect(data!.added_by_user).toBe(ghostId);
+      expect(data!.checked_by_user).toBe(ghostId);
+      expect(data!.updated_by_user).toBe(ghostId);
+    });
+
+    it("ลบบัญชีผีได้ เพราะเขาไม่ใช่เจ้าของทริป (ต่างจาก `P-28`)", async () => {
+      const { error } = await admin.auth.admin.deleteUser(ghostId);
+      expect(
+        error?.message ?? null,
+        "ลบไม่ออก → สมมติฐานของบล็อกนี้ผิด ไปตรวจว่ามี FK ตัวใหม่เป็น `restrict` หรือเปล่า",
+      ).toBeNull();
+    });
+
+    it("🔴 ตรึง: แถวอยู่ต่อ แต่ไม่เหลืออะไรบอกได้เลยว่าใครเพิ่ม/ใครติ๊ก/ใครแก้", async () => {
+      const { data, error } = await admin
+        .from("checklist_items")
+        .select(
+          "id, text, added_by_user, legacy_added_by, checked_by_user, legacy_checked_by, updated_by_user",
+        )
+        .eq("id", itemP)
+        .maybeSingle();
+
+      expect(error?.message ?? null).toBeNull();
+      // ① แถวต้องไม่หายไปกับบัญชี — ถ้าหาย แปลว่ามีใครเปลี่ยน FK เป็น cascade
+      //    ซึ่งแย่กว่า `P-55` อีกชั้น: ของในทริปของคนอื่นหายเพราะคนที่สามลบบัญชีตัวเอง
+      expect(data, "แถวหายไปพร้อมบัญชี — นั่นไม่ใช่ P-55 แต่เป็นของที่แย่กว่า").not.toBeNull();
+      expect(data!.text).toContain(stamp);
+
+      // ② สิ่งที่บล็อกนี้ตรึงไว้ — **ทั้งหมดนี้คือของที่เราอยากให้เปลี่ยน**
+      const lost = Object.entries({
+        added_by_user: data!.added_by_user,
+        legacy_added_by: data!.legacy_added_by,
+        checked_by_user: data!.checked_by_user,
+        legacy_checked_by: data!.legacy_checked_by,
+        updated_by_user: data!.updated_by_user,
+      })
+        .filter(([, v]) => v !== null)
+        .map(([k, v]) => `${k}=${v}`);
+
+      expect(
+        lost,
+        "มีคอลัมน์ที่ยังเก็บประวัติไว้ได้หลังลบบัญชี\n" +
+          "  🟢 **ถ้าคุณเพิ่งลงมือตาม `D78` ข้อ ② นี่คือผลที่ต้องการ — ลบบล็อกนี้ทิ้งทั้งบล็อก**\n" +
+          "  ⚠️ **อย่าแก้ตัวเลขให้เคสเขียว** บล็อกนี้มีไว้เพื่อถูกลบ ไม่ใช่เพื่อถูกดูแล\n" +
+          "  · และตรวจ `updated_by_user` แยกต่างหาก: มันไม่มี `legacy_updated_by` ให้ลง\n" +
+          "    ทางแก้ของ `D78` ข้อ ② จึงครอบมันไม่ได้ **ต้องเพิ่มคอลัมน์ก่อน**",
+      ).toEqual([]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2 — แคช 4 ใบ: ชั้น ③ ของ `P-33` (ไคลเอนต์ต้องแตะไม่ได้เลยสักทาง)", () => {
     /**
      * แคชไม่มี policy สักตัว และถูก `revoke all from public, anon, authenticated`
