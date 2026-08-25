@@ -44,6 +44,10 @@ create policy trips_select on public.trips
   for select to authenticated
   using (app.can_read_trip(id));
 
+-- 🟢 เก็บธง — **ก้อน R ต้องลบธงเสมอ** ไม่งั้นเมทริกซ์จะเตือนทุกรอบจนกว่าจะเก็บ
+--    (ซึ่งเป็นพฤติกรรมที่ต้องการ: ลืมคืนค่า = ดังทุกรอบ ไม่ใช่เงียบ)
+delete from app.unsafe_state;
+
 
 -- ╔═══════════════════════════════════════════════════════════════════════╗
 -- ║  ก้อน A — หละหลวมเกินไป · 🔴 อย่ารันถ้ายังไม่ได้เก็บก้อน R ไว้          ║
@@ -53,6 +57,12 @@ create policy trips_select on public.trips
 -- create policy trips_select on public.trips
 --   for select to authenticated
 --   using (true);            -- 🔴 นี่คือสิ่งที่ `E2-AC2` มีไว้จับ · ห้ามค้างไว้เกิน 1 รอบเทสต์
+--
+-- -- 🔴 ปักธงว่าฐานกำลังไม่ปลอดภัย — **วางพร้อมก้อนนี้เสมอ อย่าแยก**
+-- insert into app.unsafe_state (reason, note)
+-- values ('mutation-test', 'trips_select ถูกทำให้หละหลวม/เข้มเกินโดยตั้งใจ — ผลเทสต์รอบนี้ไม่มีความหมาย')
+-- on conflict (singleton) do update set reason = excluded.reason, note = excluded.note, started_at = now();
+-- 
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════╗
@@ -68,6 +78,12 @@ create policy trips_select on public.trips
 -- create policy trips_select on public.trips
 --   for select to authenticated
 --   using (created_by = (select auth.uid()));   -- 🔴 เจ้าของเท่านั้น สมาชิกคนอื่นตกหมด
+--
+-- -- 🔴 ปักธงว่าฐานกำลังไม่ปลอดภัย — **วางพร้อมก้อนนี้เสมอ อย่าแยก**
+-- insert into app.unsafe_state (reason, note)
+-- values ('mutation-test', 'trips_select ถูกทำให้หละหลวม/เข้มเกินโดยตั้งใจ — ผลเทสต์รอบนี้ไม่มีความหมาย')
+-- on conflict (singleton) do update set reason = excluded.reason, note = excluded.note, started_at = now();
+-- 
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════╗
