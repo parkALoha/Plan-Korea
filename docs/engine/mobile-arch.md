@@ -865,3 +865,32 @@ backfill ไม่ได้** = เสีย**ข้อมูล** ไม่ใ�
 | 5 | 🟡 **trigger ต้องมี `when (old.* is distinct from new.*)`** (11.2) | แก้ทีหลังได้ ราคาถูก |
 | 6 | 🟡 **`id` ต้อง `uuid` หรือ `text COLLATE "C"`** (11.6) | เปลี่ยนชนิด PK ทีหลัง = migration ใหญ่ |
 | 7 | ✅ **ไม่ต้องมี `client_updated_at`** (11.1) · **ไม่ต้องมี `deleted_by_user`** (11.4) · **ไม่ต้องมีนโยบาย purge tombstone** (11.5) | — |
+
+---
+
+### 11.10 🔴 ตรวจของที่ลงจริงแล้ว — trigger ครอบครึ่งเดียวของพื้นผิว (25 ส.ค. 2026)
+
+> P1 ถามซ้ำเรื่อง `updated_at` ตอน `trip_days` ลง `engine-dev` แล้ว (`7f985e3`) และกำลังจะก๊อป
+> trigger ตัวเดียวกันลงอีก ~10 ตาราง · ผมไปอ่าน DDL ที่ลงจริงแทนที่จะตอบจากเอกสาร **แล้วเจอรูนี้**
+
+**ที่ลงจริง** (`20260825110903_e2_trip_days.sql:172` · `20260824043822_identity.sql:442`):
+```sql
+create or replace function app.touch_updated_at() ... begin new.updated_at := now(); return new; end;
+create trigger trip_days_touch before update on public.trip_days ...
+grant select, insert, update on public.trip_days to authenticated;
+```
+
+🔴 **`before update` ไม่ยิงตอน `INSERT` · และ `default now()` ใช้ก็ต่อเมื่อไคลเอนต์ *ไม่ส่ง* คอลัมน์นั้นมา**
+ตรวจแล้วทั้ง repo: **ไม่มี `before insert` trigger สักตัว · ไม่มี column-level grant/revoke สักบรรทัด**
+→ `grant … insert …` เป็นระดับตาราง = **ไคลเอนต์ตั้ง `created_at` และ `updated_at` เองได้เต็มที่ตอนสร้างแถว**
+
+**ผลที่เป็นจริงวันนี้ ไม่ต้องรอ offline ไม่ต้องรอ mobile:**
+- แถวที่เกิดจากเครื่องนาฬิกาผิด **เกิดมาพร้อม `updated_at` ที่ผิด** → **ชนะ LWW ตั้งแต่วินาทีแรกจนกว่าจะมีคนแก้แถวนั้น**
+  (ถ้ามีคนแก้ trigger จะซ่อมให้ · **ถ้าไม่มีใครแก้ มันผิดตลอดไป**)
+- `created_at` **ไม่มีอะไรซ่อมเลยสักชั้น** — เชื่อมกับ §11.3: `useChecklist.ts:14` เรียงด้วยค่านี้
+
+⚠️ **เคสสดที่ P1 รันยืนยัน (client ส่งปี 2000 แล้วถูกทับ) เป็นเคส `UPDATE`** — ด้านที่ trigger ครอบอยู่แล้ว
+**ด้าน `INSERT` ยังไม่มีใครลอง** · เป็นรูปแบบเดิมของทีมนี้: ของที่ผ่านเพราะทดสอบด้านที่มันครอบ
+
+📌 **แม่แบบมีอยู่แล้วในไฟล์ของ P1 เอง** — `app.freeze_created_by()` (`identity.sql:378`) คือท่าเดียวกันเป๊ะ
+📌 **ราคาของการแก้ตอนนี้ = 1 ฟังก์ชัน · ราคาหลังก๊อปไป 10 ตาราง = 10 migration + backfill ที่คำนวณย้อนหลังไม่ได้**
