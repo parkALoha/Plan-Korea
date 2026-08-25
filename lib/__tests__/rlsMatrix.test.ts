@@ -271,7 +271,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
    * ⚠️ และเคสเดิม `expect(3 * 4 * 4).toBe(48)` **เป็นการคูณเลขให้ตัวเองดู** — จริงเสมอ
    * ไม่ว่าเมทริกซ์จะทดสอบอะไรหรือไม่ทดสอบอะไร · **เขียวที่แปลว่า "ไม่ได้ตรวจ" ในรูปที่บริสุทธิ์ที่สุด**
    */
-  const TABLES = ["profiles", "trips", "trip_members"] as const;
+  // 🔴 เพิ่ม `trip_days` 25 ส.ค. 2026 (`E2`) — **ตารางเนื้อหาตัวแรกของโปรเจกต์**
+  //    ก่อนหน้านี้ทุกตารางเป็นตารางสิทธิ์/ตัวตน ซึ่งเขียนได้เฉพาะ `owner`
+  //    → `editor` กับ `viewer` ไม่เคยมีที่ให้ต่างกัน (`P-46`) · ตารางนี้คือที่แรก
+  const TABLES = ["profiles", "trips", "trip_members", "trip_days"] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
     "A_owner",
@@ -340,6 +343,11 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "profiles.profiles_insert",
       "profiles.profiles_select",
       "profiles.profiles_update",
+      // 🔴 3 ตัวนี้เพิ่ม 25 ส.ค. 2026 พร้อม `trip_days` — ไล่กิ่งแล้วทั้งสามก่อนแก้ค่านี้
+      //    (`_select` → viewer อ่านได้ · `_insert`/`_update` → viewer เขียนไม่ได้ · `with check` → ย้ายวันข้ามทริปไม่ได้)
+      "trip_days.trip_days_insert",
+      "trip_days.trip_days_select",
+      "trip_days.trip_days_update",
       "trip_members.trip_members_delete",
       "trip_members.trip_members_insert",
       "trip_members.trip_members_select",
@@ -348,6 +356,54 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "trips.trips_select",
       "trips.trips_update",
     ]);
+  });
+
+  /** verb ของ policy · อ่านจากตัว body ที่ `policyMap()` normalize มาแล้ว */
+  function verbOf(body: string): string | null {
+    return body.match(/^\s*for (\w+)/)?.[1] ?? null;
+  }
+
+  /**
+   * 🔴 `P-46` ในรูปที่**เครื่องตรวจได้** ไม่ใช่รูปที่ต้องมีคนจำได้
+   *
+   * `D61` วัดไว้ว่า `editor` กับ `viewer` มีสิทธิ์เท่ากันเป๊ะใน `E1` — **ซึ่งถูกต้องสำหรับ `E1`**
+   * เพราะไม่มีตารางเนื้อหาสักตัว ทุก policy ฝั่งเขียนจึงเป็น `owner` ล้วน
+   * มันกลายเป็นบั๊กในวินาทีที่ตารางเนื้อหาตัวแรกเกิด และวิธีที่มันจะเกิดคือ **การคัดลอกบรรทัดที่ถูก**:
+   *
+   * > คนเขียนตารางถัดไปคัดลอก `using (app.can_read_trip(trip_id))` จาก policy `_select` ที่อยู่เหนือมัน
+   * > ไปวางใน `_insert`/`_update` **ซึ่งอ่านแล้วดูถูกต้องทุกตัวอักษร**
+   * > → `viewer` แก้แผนได้ทั้งทริป · และ**ไม่มีเคสไหนแดง** เพราะเคสทั้งหมดถามว่า *คนนอก* ทำอะไรไม่ได้
+   *
+   * 🎯 ด่านนี้ไม่ต้องรู้จักตารางใหม่ล่วงหน้า — มันอ่านจากไฟล์ที่รันจริง จึงครอบของที่ยังไม่ถูกเขียน
+   */
+  it("🔴 policy ฝั่ง 'เขียน' ต้องไม่ตัดสินด้วย can_read_trip — ไม่งั้น viewer แก้ได้ทั้งทริป", () => {
+    const offenders: string[] = [];
+    for (const [key, body] of policyMap()) {
+      const verb = verbOf(body);
+      if (!verb || verb === "select") continue;
+      if (body.includes("can_read_trip")) offenders.push(`${key} (for ${verb})`);
+    }
+    expect(
+      offenders,
+      "policy ฝั่งเขียนที่กรองด้วยสิทธิ์ **อ่าน** — สมาชิกอ่านอย่างเดียวจะเขียนได้ทันที\n" +
+        "  ทางแก้คือเปลี่ยนเป็น app.can_write_trip() **ไม่ใช่เพิ่มชื่อลงข้อยกเว้นของด่านนี้**",
+    ).toEqual([]);
+  });
+
+  /**
+   * ทะเบียนตารางเนื้อหา — **ประตูที่บังคับให้ตารางใหม่ต้องมาไล่กิ่งก่อน**
+   *
+   * ตารางไหนมี policy ฝั่งเขียนที่อ้าง `can_write_trip` = ตารางที่ `editor`/`viewer` ต่างกันจริง
+   * → ต้องมีเคสสด **2 ทิศ** ของมันในไฟล์นี้: `editor` เขียนได้ · `viewer` เขียนไม่ได้
+   * ⚠️ **ด่านนี้พิสูจน์ไม่ได้ว่าเคสถูกเขียนจริง** มันบังคับแค่ให้ *มีคนตัดสินใจ* ตอนเพิ่มตาราง
+   *    (ถ้าแดง: ไปเพิ่มเคส 2 ทิศก่อน **แล้วค่อย**เติมชื่อลงลิสต์นี้ — ไม่ใช่เติมชื่อให้เขียวแล้วจบ)
+   */
+  it("🔴 ตารางเนื้อหาต้องขึ้นทะเบียน — ตารางใหม่ที่ยังไม่มีเคส 2 ทิศ ต้องไม่ผ่านเงียบ ๆ", () => {
+    const content = new Set<string>();
+    for (const [key, body] of policyMap()) {
+      if (body.includes("can_write_trip")) content.add(key.split(".")[0]);
+    }
+    expect([...content].sort()).toEqual(["trip_days"]);
   });
 
   it("🔴 เงื่อนไขของ policy ต้องไม่เปลี่ยน — ชื่อเดิมแต่กว้างขึ้น คือเคสที่รายชื่ออย่างเดียวมองไม่เห็น", () => {
@@ -359,8 +415,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดต 25 ส.ค. 2026 (`1463dca6…` → `badfb2d0…`) — เพิ่ม `trip_days` 3 policy
+    //    **ไล่กิ่งก่อนแล้วค่อยเปลี่ยนค่า ไม่ใช่เปลี่ยนค่าให้เขียว:** ทั้งสามกิ่งมีเคสสดของตัวเองแล้ว
+    //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
+    //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "1463dca61733d293",
+      "badfb2d0c7276f19",
     );
   });
 });
@@ -1160,6 +1220,147 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       // และ B ที่ยังเป็นสมาชิกต้องยังเห็น — กันเคส "เขียวเพราะทริปหายไปเฉย ๆ"
       const { data: bSees } = await B.from("trips").select("id").eq("id", trip.id);
       expect(bSees, "B ก็ไม่เห็น = ทริปหาย ไม่ใช่ RLS กรอง → เคสบนพิสูจน์ไม่ได้").toHaveLength(1);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — trip_days: ตารางเนื้อหาตัวแรก · และเคสแรกที่ editor ≠ viewer (P-46)", () => {
+    /**
+     * ทำไมบล็อกนี้สร้างทริปของตัวเอง ไม่ใช้ `tripA`:
+     * เคสอื่นพึ่งสมาชิกภาพของ `tripA` อยู่ (บล็อก `trip_members` เชิญ/ถอด `C` เข้าออก)
+     * ถ้ามาใช้ร่วมกัน ลำดับการรันจะกลายเป็นส่วนหนึ่งของผล — ซึ่งเป็นวิธีที่เมทริกซ์เขียวหลอกได้เงียบที่สุด
+     *
+     * 🔴 **เคสด้านบวกของ `editor` ต้องมี ไม่ใช่มีแต่ด้านลบของ `viewer`** (`P-44`)
+     * ถ้า `can_write_trip` เขียนผิดจนปฏิเสธทุกคน เคสด้านลบจะเขียวครบทั้งแผง
+     * โดยที่ **ไม่มีใครแก้แผนได้เลยทั้งแพลตฟอร์ม** — อาการที่ผู้ใช้เจอคือ "เว็บพัง" ไม่ใช่ "ปลอดภัยดี"
+     */
+    let tripD = "";
+    const day1 = "2026-10-12";
+    const day2 = "2026-10-13";
+
+    beforeAll(async () => {
+      const { data, error } = await A.rpc("create_trip", {
+        p_title: `days-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (error) throw new Error(`สร้างทริปของบล็อก trip_days ไม่ได้: ${error.message}`);
+      tripD = data.id as string;
+
+      const { error: e1 } = await A.from("trip_members").insert({
+        trip_id: tripD,
+        user_id: ids.b,
+        role: "editor",
+      });
+      if (e1) throw new Error(`เชิญ B เป็น editor ไม่ได้: ${e1.message}`);
+
+      const { error: e2 } = await A.from("trip_members").insert({
+        trip_id: tripD,
+        user_id: ids.c,
+        role: "viewer",
+      });
+      if (e2) throw new Error(`เชิญ C เป็น viewer ไม่ได้: ${e2.message}`);
+    });
+
+    // ── ด้านบวก — precondition ของทั้งบล็อก ────────────────────────────────
+    describe("ด้านบวก — ถ้าตรงนี้แดง เคสด้านลบข้างล่างไม่ได้พิสูจน์อะไรเลย", () => {
+      it("owner เพิ่มวันได้", async () => {
+        const { error } = await A.from("trip_days").insert({ trip_id: tripD, date: day1 });
+        expect(error, `owner เพิ่มวันไม่ได้: ${error?.message}`).toBeNull();
+      });
+
+      it("🔴 editor เพิ่มวันได้ — กิ่งที่ทำให้ `editor` มีความหมายต่างจาก `viewer` เป็นครั้งแรก", async () => {
+        const { error } = await B.from("trip_days").insert({ trip_id: tripD, date: day2 });
+        expect(
+          error,
+          `editor เพิ่มวันไม่ได้: ${error?.message}\n` +
+            "  ถ้าข้อนี้แดง อย่าเพิ่งดีใจกับเคส viewer ข้างล่าง — มันจะเขียวเพราะไม่มีใครเขียนได้เลย",
+        ).toBeNull();
+      });
+
+      it("🔴 viewer อ่านวันได้ — คนที่ถูกเชิญมาดูแผน ต้องเห็นแผน (P-44)", async () => {
+        const { data, error } = await C.from("trip_days").select("date").eq("trip_id", tripD);
+        expect(error).toBeNull();
+        expect(
+          data,
+          "viewer เปิดมาเจอหน้าเปล่า = ฟีเจอร์หลักตายโดยที่ข้ออ้างความปลอดภัยยังจริงทุกข้อ",
+        ).toHaveLength(2);
+      });
+    });
+
+    // ── ด้านลบ ──────────────────────────────────────────────────────────────
+    it("🔴 viewer เพิ่มวันไม่ได้ — เคสที่ `P-46` มีอยู่เพื่อข้อนี้ข้อเดียว", async () => {
+      const { error } = await C.from("trip_days").insert({ trip_id: tripD, date: "2026-10-14" });
+      expect(
+        error?.code,
+        `viewer เพิ่มวันได้: ${error?.message ?? "ไม่มี error เลย"}\n` +
+          "  = policy ฝั่งเขียนกรองด้วยสิทธิ์อ่าน · บทบาท 'ดูอย่างเดียว' ไม่มีอยู่จริง",
+      ).toBe("42501");
+    });
+
+    it("🔴 viewer แก้วันไม่ได้ — UPDATE ที่ถูก RLS กรองคืน 200 ต้องอ่านซ้ำถึงจะรู้ผลจริง", async () => {
+      await C.from("trip_days")
+        .update({ timezone: "Pacific/Kiritimati" })
+        .eq("trip_id", tripD)
+        .eq("date", day1);
+      const { data } = await A.from("trip_days")
+        .select("timezone")
+        .eq("trip_id", tripD)
+        .eq("date", day1)
+        .single();
+      expect(data?.timezone, "viewer แก้วันสำเร็จ").toBeNull();
+    });
+
+    it("🔴 ย้ายวันไปทริปที่ตัวเองไม่ใช่สมาชิก ไม่ได้ — กิ่งที่มีแต่ `with check` เท่านั้นที่กัน", async () => {
+      // A เขียน `tripD` ได้ (owner) → `using` ผ่าน · แต่เขียน `tripB` ไม่ได้ → `with check` ต้องปฏิเสธ
+      // ตัด `with check` ออกเมื่อไหร่ ข้อนี้จะเป็นทางลากทั้งวัน (พร้อมจุดแวะ) เข้าไปในทริปของคนอื่น
+      const { error } = await A.from("trip_days")
+        .update({ trip_id: tripB })
+        .eq("trip_id", tripD)
+        .eq("date", day1);
+      expect(
+        error?.code,
+        `ย้ายวันข้ามทริปสำเร็จ: ${error?.message ?? "ไม่มี error เลย"}`,
+      ).toBe("42501");
+    });
+
+    it("🔴 คนนอกอ่านวันของทริปที่ตัวเองไม่ได้อยู่ ไม่ได้ (cross-tenant read)", async () => {
+      const { error: mkErr } = await B.from("trip_days").insert({ trip_id: tripB, date: day1 });
+      expect(mkErr, "B เพิ่มวันในทริปตัวเองไม่ได้").toBeNull();
+
+      const { data } = await A.from("trip_days").select("id").eq("trip_id", tripB);
+      expect(data, "A ไม่ได้เป็นสมาชิก tripB แต่เห็นวันของมัน").toEqual([]);
+    });
+
+    it("🔴 anon ไม่ได้อะไรเลยจาก trip_days", async () => {
+      const { data, error } = await D.from("trip_days").select("id");
+      // ได้ `[]` (RLS กรอง) หรือถูกปฏิเสธที่ชั้นสิทธิ์ — ทั้งสองทางรับได้ แต่ต้องไม่ใช่ "ได้แถวมา"
+      expect(data ?? [], `anon อ่าน trip_days ได้: ${error?.message ?? ""}`).toEqual([]);
+    });
+
+    it("🔴 E2-AC9 — `updated_at` ที่ client ส่งมาต้องถูกเซิร์ฟเวอร์ทับ (D7)", async () => {
+      const fake = "2000-01-01T00:00:00.000Z";
+      const { error } = await A.from("trip_days")
+        .update({ timezone: "Asia/Seoul", updated_at: fake })
+        .eq("trip_id", tripD)
+        .eq("date", day2);
+      expect(error).toBeNull();
+
+      const { data } = await A.from("trip_days")
+        .select("updated_at,timezone")
+        .eq("trip_id", tripD)
+        .eq("date", day2)
+        .single();
+      expect(data?.timezone, "การแก้ไม่ผ่าน → ข้อนี้ไม่ได้วัด updated_at").toBe("Asia/Seoul");
+      expect(
+        new Date(data!.updated_at as string).getUTCFullYear(),
+        "client เขียน updated_at ทับได้ = เครื่องที่นาฬิกาผิดชนะ last-write-wins ตลอดกาล",
+      ).toBeGreaterThan(2020);
+    });
+
+    it("🔴 วันซ้ำในทริปเดียวกันไม่ได้ — `trip_stops.day_id` จะชี้ได้สองที่ถ้าปล่อย", async () => {
+      const { error } = await A.from("trip_days").insert({ trip_id: tripD, date: day1 });
+      expect(error?.code, `เพิ่มวันซ้ำสำเร็จ: ${error?.message ?? "ไม่มี error เลย"}`).toBe("23505");
     });
   });
 
