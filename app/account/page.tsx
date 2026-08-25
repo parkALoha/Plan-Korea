@@ -46,23 +46,26 @@ export default async function AccountPage() {
         </div>
       </dl>
 
-      {/* 🔴 E1-AC7 — ข้อความนี้อ่านผลจากของจริง ไม่ได้เดา และไม่สรุปแทนคนอ่าน */}
+      {/*
+        🔴 D64 — เดิมหน้านี้ตัดสิน "ผ่าน/ไม่ผ่าน" เองด้วยการนับ providers.length แล้วรอให้ได้ 2
+        ข้อสมมตินั้นผิด: Supabase แมตช์ที่ auth.users.email แล้วออก session ให้บัญชีเดิมทันที
+        ไม่สร้าง identity ใหม่ — magic link เข้าบัญชีที่มี Google อยู่แล้วจะเห็น provider เดียวตลอดกาล
+        แม้ AC7 จะผ่านจริงแล้วก็ตาม (ผู้ใช้จริงเกือบล็อกอินซ้ำเพราะเชื่อข้อความเดิม)
+
+        ⚠️ **ห้ามกลับไปตัดสินผ่าน/ไม่ผ่านด้วยค่าที่เห็นจากฝั่งนี้อีก** — client เห็นได้แค่ session ของ
+        ตัวเอง ไม่มีทางรู้ว่าฐานข้อมูลมี auth.users กี่แถวจริง ซึ่งเป็นครึ่งหนึ่งของเกณฑ์ (AC7 ข้อ 2)
+        หน้าที่ตัดสินโดยเห็นข้อมูลไม่ครบ อันตรายกว่าหน้าที่แค่รายงานค่าให้คนเทียบเอง
+      */}
       <div className="mt-4 rounded-lg border border-line bg-surface-soft p-3 text-xs text-content-soft">
-        {providers.length >= 2 ? (
-          <>
-            <strong className="text-content">E1-AC7 ผ่าน:</strong> อีเมลเดียวกัน ล็อกอินได้หลายทาง
-            โดยเป็น <strong className="text-content">บัญชีเดียวกัน</strong> — user id ด้านบนคือตัวเดิม
-          </>
-        ) : (
-          <>
-            <strong className="text-content">E1-AC7 ยังวัดไม่ได้:</strong> เห็นแค่{" "}
-            {providers.length} ทาง · ต้องออกจากระบบแล้วเข้าใหม่ด้วย
-            <strong className="text-content"> อีกทางหนึ่ง โดยใช้อีเมลเดิม</strong> แล้วกลับมาดูหน้านี้
-            <br />
-            🔴 ถ้ากลับมาแล้ว <strong className="text-content">user id เปลี่ยน</strong> = ได้ 2 บัญชี
-            = <strong className="text-content">ไม่ผ่าน</strong> ต้องหยุดแล้วบอกทีม
-          </>
-        )}
+        <strong className="text-content">E1-AC7 — เทียบค่านี้กับค่าอ้างอิงของทีม ห้ามอ่านหน้านี้อย่างเดียว:</strong>
+        <br />
+        ① <strong className="text-content">user id</strong> ด้านบนต้องตรงกับที่ทีมมีให้ทุกตัวอักษร
+        <br />
+        ② ฐานข้อมูลต้องมี <strong className="text-content">user แถวเดียว</strong> สำหรับอีเมลนี้ —
+        หน้านี้เช็คข้อนี้เองไม่ได้ ต้องให้ทีมตรวจจากฝั่งฐานข้อมูล
+        <br />
+        จำนวน/รายชื่อ provider ด้านบนเป็นแค่ข้อมูลประกอบ **ไม่ใช่ตัวตัดสิน** — ล็อกอินบัญชีเดิมด้วยทางที่
+        เคยผูกไว้แล้วซ้ำ ก็โชว์ provider เดียวได้ตามปกติ ไม่ได้แปลว่ายังไม่ผ่าน
       </div>
 
       <p className="mt-4 text-xs text-content-soft">
