@@ -319,6 +319,26 @@ if [ "${#mds[@]}" -gt 0 ]; then
   fi
 fi
 
+# ── ทุก `D<n>` ที่อ้างถึง ต้องมีนิยามใน docs/engine/README.md ──────────────────────
+# ⚠️ **ขอบเขตแคบ อ่านก่อนนับว่าครอบคลุม:** จับได้แค่ "อ้างถึง D ที่ไม่มีอยู่"
+#    🔴 **จับกล่องที่ค้างเป็นเท็จไม่ได้เลย** ซึ่งคือปัญหาจริงของ `D71`
+#    ของจริงต้องรอทะเบียนคำถาม `Q<n>` (P8 ออกแบบ) — รายละเอียดในหัว check-decision-refs.py
+DREFS="$(cd "$(dirname "$0")" && pwd)/check-decision-refs.py"
+DREADME="$ROOT/docs/engine/README.md"
+if [ -f "$DREADME" ]; then
+  dmds=""
+  while IFS= read -r f; do
+    [ -n "$f" ] && dmds="$dmds $f"
+  done < <(find "$ROOT/docs/engine" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+  if [ ! -f "$DREFS" ]; then
+    echo "🔴 decision-refs: หา check-decision-refs.py ไม่เจอ — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+    fail=1
+  # shellcheck disable=SC2086
+  elif ! python3 "$DREFS" "$DREADME" $dmds; then
+    fail=1
+  fi
+fi
+
 # ── ข้อมูล (ไม่ใช่ด่าน): HEAD กับ origin ห่างกันแค่ไหน ────────────────────────────
 # 🔴 ปัญหาจริง 25 ส.ค. 2026: CI แดงค้าง ~2 ชม. ขณะที่ทุกเครื่องเขียวสนิท
 #    ตัวแก้เขียนเสร็จแล้วแต่ **นอนค้างในเครื่อง ไม่ได้ push** พร้อมอีก 10 ตัว
