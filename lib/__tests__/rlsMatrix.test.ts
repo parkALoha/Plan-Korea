@@ -3020,6 +3020,97 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC11 — ถามฐานว่าประตูบานไหนเปิดอยู่ (`table_exposure`)", () => {
+    /**
+     * ด่านที่อ่านไฟล์ migration จับได้ทุกอย่างที่**ถูกเขียนลงไฟล์** และนั่นคือขอบเขตของมัน
+     * P7 ชี้ 2 บานที่ไฟล์มองไม่เห็นตามนิยาม: **view ที่ไม่ตั้ง `security_invoker`**
+     * (รันด้วยสิทธิ์เจ้าของ → ข้าม `revoke` ทั้งชุด) และ **สมาชิกภาพใน publication**
+     * (เพิ่มจาก dashboard ได้โดยไม่ผ่านไฟล์สักไฟล์ → รีวิว migration มองไม่เห็นตลอดกาล)
+     *
+     * 🔴 **เกณฑ์ผ่านไม่ใช่ "0 แถว"** — ประโยคนั้นเคยอยู่ในคอมเมนต์ของฟังก์ชันและมัน**เท็จ**
+     * `service_role` มีสิทธิ์บนแคชจริง ๆ (ข้อยกเว้นที่ 5) และมันควรโผล่มา
+     * → เกณฑ์คือ **ไม่มีแถวที่ `grantee` เป็น `anon`/`authenticated`/`PUBLIC` และไม่มีแถว `MISSING`**
+     */
+    const CACHES = [
+      "place_details_cache",
+      "place_details_local_cache",
+      "place_photo_cache",
+      "travel_time_cache",
+    ];
+    const CLIENT_ROLES = ["anon", "authenticated", "PUBLIC"];
+    type Door = { table_name: string; door: string; grantee: string; detail: string };
+
+    const exposure = async (tables: string[]): Promise<Door[]> => {
+      const { data, error } = await admin.rpc("table_exposure", { p_tables: tables });
+      if (error) throw new Error(`เรียก table_exposure ไม่ได้: ${error.message}`);
+      return data as Door[];
+    };
+
+    it("🔴 แคช 4 ใบ — ไม่มีประตูสำหรับไคลเอนต์เลยสักบาน ทั้ง 5 ทาง", async () => {
+      const rows = await exposure(CACHES);
+      const open = rows.filter((r) => CLIENT_ROLES.includes(r.grantee));
+      expect(
+        open.map((r) => `${r.table_name} · ${r.door} · ${r.grantee} · ${r.detail}`),
+        "มีทางเข้าถึงแคชจากฝั่งไคลเอนต์\n" +
+          "  · `view` = มีคนสร้าง view ทับโดยไม่ตั้ง `security_invoker` (P7 บาน ③)\n" +
+          "  · `publication` = มีคนกดเพิ่มเข้า Realtime จาก dashboard (P7 บาน ④)\n" +
+          "  · `column-grant` = ลอกรูป `grant insert (col, …)` ของตารางอื่นมาใส่แคช",
+      ).toEqual([]);
+    });
+
+    it("🔴 ไม่มีชื่อไหนเป็น `MISSING` — ไม่งั้นเคสข้างบนตรวจตารางที่ไม่มีอยู่", async () => {
+      const rows = await exposure(CACHES);
+      expect(
+        rows.filter((r) => r.door === "MISSING").map((r) => r.table_name),
+        "ชื่อตารางในเคสนี้ resolve ไม่ได้ — พิมพ์ผิด หรือถูก rename ไปแล้ว\n" +
+          "  🔴 ก่อนมี `MISSING` ทั้งสองกรณีคืน 0 แถว **ซึ่งอ่านเป็น 'ปิดสนิท'**",
+      ).toEqual([]);
+    });
+
+    it("🔴 ด้านบวกของสัญญาณเตือน — ชื่อที่ไม่มีอยู่ ต้องดัง ไม่ใช่เงียบ", async () => {
+      // `P-21` — ถ้าตัวเตือนพัง เคสข้างบนจะเขียวตลอดกาลโดยไม่มีใครรู้
+      const ghost = `ตารางที่ไม่มีจริง_${stamp}`;
+      const rows = await exposure([ghost]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].door, "ชื่อที่ resolve ไม่ได้กลับเงียบ = ด่านนี้ตรวจความว่างเปล่า").toBe("MISSING");
+    });
+
+    it("ด้านบวก: `catalog_places` ต้องเห็นประตูของ `authenticated` จริง", async () => {
+      // ตารางที่ **ควร** เปิดให้อ่าน — ถ้าตรงนี้ว่าง แปลว่าตัวตรวจคืนว่างเสมอ
+      const rows = await exposure(["catalog_places"]);
+      expect(
+        rows.filter((r) => r.grantee === "authenticated").length,
+        "คลังสาธารณะไม่มีประตูให้ `authenticated` เลย → ตัวตรวจไม่ได้ตรวจ หรือคลังอ่านไม่ได้จริง",
+      ).toBeGreaterThan(0);
+    });
+
+    it("🔴 สิทธิ์ของ `service_role` บนแคช = 3 verb เป๊ะตามข้อยกเว้นที่ 5", async () => {
+      /**
+       * 🎯 **เคสนี้ตรึงบทเรียนว่า `grant` คือการ *เพิ่ม* ไม่ใช่การ *กำหนด***
+       * ข้อยกเว้นที่ 5 เขียน `select, insert, delete` · คำสั่ง `grant` ก็เขียนตามนั้นถูก
+       * แต่ Supabase แจกสิทธิ์พื้นฐานให้ `service_role` ตอน `create table` อยู่แล้ว
+       * → ถ้าไม่ `revoke` ก่อน ของจริงจะมากกว่าที่ทะเบียนเขียนไว้ **โดยไม่มีบรรทัดไหนผิด**
+       * ⚠️ **ห้ามอ่านจำนวนแทนรายการ** — `7` ไม่ใช่ `ALL` (`ALL` = 8 เพราะมี `UPDATE`)
+       *    การนับตัวเลขทำให้สรุปผิดได้ทั้งสองทิศ **ลิสต์ชื่อเท่านั้นที่ตอบได้**
+       */
+      const rows = await exposure(CACHES);
+      for (const t of CACHES) {
+        const verbs = rows
+          .filter((r) => r.table_name === t && r.grantee === "service_role" && r.door === "grant")
+          .map((r) => r.detail)
+          .sort();
+        expect(
+          verbs,
+          `${t}: สิทธิ์ของ service_role ไม่ตรงกับข้อยกเว้นที่ 5 ที่จดไว้ใน TEAM.md\n` +
+            "  · **มีเกิน** → `grant` ถูกใช้โดยไม่ `revoke all from service_role` ก่อน\n" +
+            "    ระวัง `TRUNCATE`: มัน **ข้าม RLS · ข้าม policy · ไม่ยิง row trigger** และฐานนี้ไม่มี PITR\n" +
+            "  · **มีขาด** → ชุดทดสอบวาง fixture ของตัวเองไม่ได้ แล้วเคสแคชจะเขียวเพราะตารางว่าง",
+        ).toEqual(["DELETE", "INSERT", "SELECT"]);
+      }
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 D78 — ขอบเขตของ `preserve_authorship` ต้องมีคนตัดสิน ไม่ใช่ผลข้างเคียงของการตั้งชื่อ", () => {
     /**
      * `authorship_columns()` จับคู่ด้วย **รูปของชื่อล้วน ๆ**: `<x>_by_user` (uuid) + `legacy_<x>_by` (text)
