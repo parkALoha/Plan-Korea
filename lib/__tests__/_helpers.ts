@@ -157,6 +157,8 @@ export const TEST_COUNTRY_CODES = {
   updateBranches: "xs",
   /** บล็อกกวาดคนนอกทุกตาราง (`E2-AC1`) — P4 */
   outsiderSweep: "xt",
+  /** บล็อกคลังลูกใหม่ `catalog_country_contacts` · `catalog_place_access` (`P-60`) — P1 */
+  catalogChildren: "xu",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */

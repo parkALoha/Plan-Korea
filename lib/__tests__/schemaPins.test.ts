@@ -156,6 +156,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "bookings.bookings_update",
       "catalog_cities.catalog_cities_select",
       "catalog_countries.catalog_countries_select",
+      // 🔴 เพิ่ม 25 ส.ค. (P1 · `P-60`) — คลังลูกจาก `data/emergency.ts` · `data/airportAccess.ts`
+      //    ไล่กิ่งแล้ว: อ่านได้ทุกคนที่ล็อกอิน · **ไม่มี policy ฝั่งเขียนสักตัว** · anon ไม่มีทางเข้า
+      //    เคสอยู่ที่ `rlsMatrix.test.ts` บล็อก "คลังลูก" — ด้านบวก + ด้านลบ 3 verb
+      //    ⚠️ **ต้องถูกเติมเข้ารายชื่อของ `E2-AC2` ด้วย ไม่ใช่ผ่านเพราะขึ้นต้นด้วย `catalog_`** (`D48`)
+      "catalog_country_contacts.catalog_country_contacts_select",
+      "catalog_place_access.catalog_place_access_select",
       "catalog_place_names.catalog_place_names_select",
       "catalog_places.catalog_places_select",
       // 🔴 คลัง**ของผู้เช่า** — ครบ 4 verb ต่างจากคลังกลางที่มีแต่ `select` (`D75`)
@@ -412,7 +418,11 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "871a35aaced9c739",
+      // 🔴 แก้ 25 ส.ค. (P1 · `P-60`) — ไล่กิ่งแล้วก่อนเปลี่ยนค่านี้ ตามที่ข้อความของด่านสั่ง
+      //    ที่เปลี่ยนคือ **เพิ่ม 2 policy ใหม่** (`catalog_country_contacts_select` · `catalog_place_access_select`)
+      //    ทั้งคู่เป็น `for select to authenticated using (true)` — รูปเดียวกับคลังกลางอีก 4 ใบเป๊ะ
+      //    **ไม่มี policy เดิมตัวไหนถูกแก้เงื่อนไข** (ยืนยันจากรายชื่อข้างบนที่เพิ่มอย่างเดียว ไม่มีตัวหาย)
+      "59e8fee6172690dc",
     );
   });
 

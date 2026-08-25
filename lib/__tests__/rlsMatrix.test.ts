@@ -1966,6 +1966,110 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  /**
+   * `P-60` — คลังลูก 2 ใบที่มาจาก `data/emergency.ts` และ `data/airportAccess.ts`
+   *
+   * 🔴 **ทั้งคู่ต้องอยู่ในรายชื่อที่ `E2-AC2` ระบุชื่อ ไม่ใช่ผ่านเพราะขึ้นต้นด้วย `catalog_`** (`D48`)
+   *    — และเคสนี้คือสิ่งที่ทำให้ *"อยู่ในรายชื่อ"* แปลว่าอะไรจริง ๆ: **อ่านได้ทุกคน · เขียนไม่ได้เลย**
+   *
+   * 🎯 **สองทิศ ไม่ใช่ทิศเดียว** — เคส "เขียนไม่ได้" อย่างเดียวจะเขียวเท่ากันถ้าตารางเข้าไม่ถึงเลย
+   */
+  describe("🔴 E2 — คลังลูก: `catalog_country_contacts` · `catalog_place_access` (`P-60`)", () => {
+    const cc = TEST_COUNTRY_CODES.catalogChildren;
+    let cityId = "";
+    let placeId = "";
+    let contactId = "";
+    let accessId = "";
+
+    /**
+     * 🔴 เก็บกวาดของค้างก่อนเสมอ — **ไม่ใช่ความระมัดระวัง แต่เป็นสิ่งที่เคสนี้สอนผมเมื่อกี้**
+     *
+     * รอบแรกที่ผมรัน `beforeAll` ล้มกลางคัน แล้ว `afterAll` เก็บกวาดไม่ออก
+     * (`catalog_cities.country_id … on delete restrict` — ลบประเทศไม่ได้ถ้าเมืองยังอยู่)
+     * → แถวค้าง → รอบถัดไป `beforeAll` ล้มด้วยคีย์ซ้ำ → **บล็อกนี้ "ข้าม" ทุกรอบตลอดกาล**
+     *
+     * 🎯 และมันโผล่เป็น **`Failed Suites 1`** ขณะที่บรรทัดสรุปพิมพ์ว่า `487 passed | 3 skipped`
+     *    — **`F1` ของ P4 ซ้ำรอยเป๊ะ** · ผมเกือบรายงานเขียวเพราะ grep ของผมเองมองไม่เห็นบรรทัดนั้น
+     */
+    async function purge() {
+      const { data: cities } = await admin.from("catalog_cities").select("id").eq("country_id", cc);
+      for (const c of cities ?? []) {
+        await admin.from("catalog_places").delete().eq("city_id", c.id as string);
+        await admin.from("catalog_cities").delete().eq("id", c.id as string);
+      }
+      await admin.from("catalog_country_contacts").delete().eq("country_id", cc);
+      await admin.from("catalog_countries").delete().eq("id", cc);
+    }
+
+    beforeAll(async () => {
+      await purge();
+      await admin.from("catalog_countries").insert({ id: cc, name_th: "ทดสอบลูกคลัง", name_en: "CatalogChildren" });
+      const city = await admin.from("catalog_cities").insert({
+        country_id: cc, name_th: "เมืองลูกคลัง", name_en: "ChildCity", lat: 1, lng: 1, timezone: "UTC",
+      }).select("id").single();
+      if (city.error) throw new Error(`สร้างเมืองไม่ได้: ${city.error.message}`);
+      cityId = city.data!.id as string;
+      const place = await admin.from("catalog_places").insert({
+        city_id: city.data!.id, category: "transfer", source: "transfer",
+        transfer_kind: "airport", lat: 1, lng: 1,
+      }).select("id").single();
+      if (place.error) throw new Error(`สร้างสถานที่ไม่ได้: ${place.error.message}`);
+      placeId = place.data!.id as string;
+
+      const contact = await admin.from("catalog_country_contacts").insert({
+        country_id: cc, label: "สายด่วนทดสอบ", local_number: "119",
+      }).select("id").single();
+      if (contact.error) throw new Error(`สร้างเบอร์ฉุกเฉินไม่ได้: ${contact.error.message}`);
+      contactId = contact.data!.id as string;
+
+      const access = await admin.from("catalog_place_access").insert({
+        place_id: placeId, label: "รถไฟทดสอบ", minutes: 43, from_label: "สถานีทดสอบ",
+      }).select("id").single();
+      if (access.error) throw new Error(`สร้างเส้นทางเข้าเมืองไม่ได้: ${access.error.message}`);
+      accessId = access.data!.id as string;
+    });
+
+    // 🔴 **ต้องลบตามลำดับพ่อลูก** — `catalog_cities`/`catalog_places` เป็น `on delete restrict`
+    //    ฉบับแรกของผมลบ place แล้วลบ country ทันที · **เมืองค้างอยู่ตรงกลาง ลบประเทศจึงไม่ออก**
+    //    และมันล้มเงียบ เพราะ `afterAll` ไม่ได้ตรวจผล
+    afterAll(purge);
+
+    it("ด้านบวก: ทุกคนที่ล็อกอินอ่านคลังลูกได้ — ถ้าข้อนี้แดง เคสด้านลบไม่ได้พิสูจน์อะไร", async () => {
+      const c = await A.from("catalog_country_contacts").select("label, local_number").eq("id", contactId).single();
+      expect(c.error?.message ?? null, "อ่านเบอร์ฉุกเฉินไม่ได้").toBeNull();
+      expect(c.data!.local_number).toBe("119");
+
+      const a = await B.from("catalog_place_access").select("label, minutes").eq("id", accessId).single();
+      expect(a.error?.message ?? null, "อ่านเส้นทางเข้าเมืองไม่ได้").toBeNull();
+      expect(a.data!.minutes).toBe(43);
+    });
+
+    it("🔴 ผู้ใช้เขียนคลังลูกไม่ได้ทั้ง 3 verb · anon ไม่ได้อะไรเลย", async () => {
+      for (const t of ["catalog_country_contacts", "catalog_place_access"] as const) {
+        const id = t === "catalog_country_contacts" ? contactId : accessId;
+        const upd = await A.from(t).update({ label: "แก้ชื่อ" }).eq("id", id);
+        expect(upd.error?.code, `ผู้ใช้แก้ ${t} ได้`).toBe("42501");
+        const del = await A.from(t).delete().eq("id", id);
+        expect(del.error?.code, `ผู้ใช้ลบ ${t} ได้`).toBe("42501");
+        const sel = await D.from(t).select("id").eq("id", id);
+        expect((sel.data ?? []).length, `anon อ่าน ${t} ได้`).toBe(0);
+      }
+      const insC = await A.from("catalog_country_contacts").insert({ country_id: cc, label: "ปลอม", local_number: "1" });
+      expect(insC.error?.code, "ผู้ใช้เพิ่มเบอร์ฉุกเฉินได้").toBe("42501");
+      const insA = await A.from("catalog_place_access").insert({ place_id: placeId, label: "ปลอม", minutes: 1, from_label: "x" });
+      expect(insA.error?.code, "ผู้ใช้เพิ่มเส้นทางได้").toBe("42501");
+    });
+
+    it("🔴 `transfer_kind` ตั้งได้เฉพาะเมื่อ `source='transfer'` — ชุดค่าที่ขัดกันเขียนลงไปไม่ได้", async () => {
+      const bad = await admin.from("catalog_places").update({ source: "curated" }).eq("id", placeId);
+      expect(
+        bad.error?.message ?? null,
+        "เปลี่ยนเป็น curated ทั้งที่ยังมี transfer_kind ได้ — check ไม่ทำงาน",
+      ).not.toBeNull();
+    });
+  });
+
   describe("🔴 E2 — คลังสถานที่: `catalog_places` + `catalog_place_names` (D55 · D70)", () => {
     /**
      * ⚠️ **เคสชุดนี้ไม่เคยถูกเห็นแดงก่อน apply — P1 เผลอ `db push` ก่อนเขียนเคส**
