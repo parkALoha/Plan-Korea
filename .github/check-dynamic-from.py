@@ -33,10 +33,52 @@
 import re
 import sys
 
-# `.from(` พร้อมตัวที่อยู่ข้างหน้าบนบรรทัดเดียวกัน — ใช้แยกว่าใครเป็นผู้รับ
-CALL = re.compile(r"([A-Za-z0-9_$.\]\)]*)\.from\(\s*")
+CALL = re.compile(r"\.from\s*\(")
 # ผู้รับที่ไม่ใช่ตาราง: JS builtin กับ Storage API
 BUILTIN = re.compile(r"(^|[^A-Za-z0-9_$])(Array|Buffer|Object)$")
+RECV = re.compile(r"([A-Za-z0-9_$\.\]\)]+)\s*$", re.S)
+LITERAL = re.compile(r"[\"\'`]([a-z0-9_]+)[\"\'`]")
+
+
+def strip_comments(src: str) -> str:
+    """คืนซอร์สที่ **คอมเมนต์ถูกแทนด้วยช่องว่าง** โดยความยาวและเลขบรรทัดไม่เปลี่ยน
+
+    🔴 ต้องรู้ว่าอยู่ในสตริงหรือไม่ · ฉบับแรกใช้ `re.sub(r"//.*$", "", line)` ทีละบรรทัด
+       → `"https://…"` มี `//` อยู่ข้างใน **regex จึงกลืนโค้ดจริงที่เหลือทั้งบรรทัด**
+       ผลคือ `supabase.from(t)` ที่ตามหลัง URL บนบรรทัดเดียวกัน **หลุดเงียบ**
+    🎯 ทีมนี้จ่ายค่าบทเรียนนี้ไปแล้วครั้งหนึ่งที่ `lib/__tests__/_helpers.ts` (`stripTsComments`)
+       ซึ่งเขียนกำกับไว้เองว่า *"ตัดแบบไร้เดียงสาจะกิน `//` ใน `https://` แล้วกลืนโค้ดจริง
+       → จับของจริงไม่เจอ ซึ่งเป็นทิศที่แย่กว่าจับผิด"*
+       🔴 **แต่มันอยู่คนละภาษา (TS) กับที่นี่ (Python) — บทเรียนที่จ่ายแล้วไม่ข้ามไปอีกฝั่งเอง**
+    """
+    out = list(src)
+    i, n, state = 0, len(src), None
+    while i < n:
+        c = src[i]
+        nxt = src[i + 1] if i + 1 < n else ""
+        if state is None:
+            if c == "/" and nxt == "/":
+                state, out[i], out[i + 1] = "//", " ", " "; i += 2; continue
+            if c == "/" and nxt == "*":
+                state, out[i], out[i + 1] = "/*", " ", " "; i += 2; continue
+            if c in "\"'`":
+                state = c
+            i += 1; continue
+        if state == "//":
+            if c == "\n": state = None
+            else: out[i] = " "
+            i += 1; continue
+        if state == "/*":
+            if c == "*" and nxt == "/":
+                out[i], out[i + 1], state = " ", " ", None; i += 2; continue
+            if c != "\n": out[i] = " "
+            i += 1; continue
+        if c == "\\":
+            i += 2; continue
+        if c == state:
+            state = None
+        i += 1
+    return "".join(out)
 
 
 def scan(path: str) -> list:
@@ -44,33 +86,24 @@ def scan(path: str) -> list:
         src = open(path, encoding="utf-8").read()
     except OSError:
         return []
-    lines = src.split("\n")
+    code = strip_comments(src)
     hits = []
-    for line_no, line in enumerate(lines, 1):
-        # ตัดคอมเมนต์บรรทัดเดียวออกก่อน — ไฟล์จริงมีคอมเมนต์ที่เขียน `supabase.from(...)`
-        # เป็นตัวอย่างประกอบ (lib/writeGuard.ts:8) ถ้าไม่ตัดจะแดงใส่คำอธิบาย
-        code = re.sub(r"//.*$", "", line)
-        code = re.sub(r"^\s*\*.*$", "", code)
-        for m in CALL.finditer(code):
-            recv = m.group(1)
-            if BUILTIN.search(recv):
-                continue
-            if ".storage" in recv:
-                continue
-            if not recv:
-                # 🔴 เชนหลายบรรทัด: `supabase.storage\n  .from(BUCKET)`
-                #    ผู้รับอยู่บรรทัดก่อนหน้า — ฉบับแรกดูแค่บรรทัดเดียวจึงฟ้อง Storage ผิด 2 จุด
-                #    (เจอตอนรันจริงครั้งแรก ไม่ใช่ตอนอ่านโค้ดซ้ำ)
-                back = " ".join(lines[max(0, line_no - 4):line_no - 1])
-                if ".storage" in back:
-                    continue
-            rest = code[m.end():]
-            lit = re.match(r'["\'`]([a-z0-9_]+)["\'`]', rest)
-            if lit:
-                hits.append((line_no, recv, "literal", lit.group(1)))
-                continue
-            if rest == "":
-                continue          # อาร์กิวเมนต์ขึ้นบรรทัดใหม่ · ผู้รับไม่ใช่ตาราง ผ่านมาถึงนี่ไม่ได้
+    for m in CALL.finditer(code):
+        before = code[max(0, m.start() - 200):m.start()]
+        rm = RECV.search(before)
+        recv = rm.group(1).rstrip(".") if rm else ""
+        if BUILTIN.search(recv) or ".storage" in recv or recv.endswith("storage"):
+            continue
+        # 🔴 อาร์กิวเมนต์อาจขึ้นบรรทัดใหม่ (prettier ตัดเองเมื่อคอลัมน์ยาว)
+        #    ฉบับแรก `continue` ทิ้งเมื่อท้ายบรรทัดว่าง พร้อมคอมเมนต์ที่อ้างว่า
+        #    "ผู้รับไม่ใช่ตาราง ผ่านมาถึงนี่ไม่ได้" — **ข้ออ้างนั้นไม่จริง** และคอมเมนต์
+        #    คือสิ่งที่ทำให้มันรอดรีวิว เพราะคนอ่านไม่ต้องตรวจสมมติฐานเอง
+        rest = code[m.end():m.end() + 200].lstrip()
+        line_no = code.count("\n", 0, m.start()) + 1
+        lit = LITERAL.match(rest)
+        if lit:
+            hits.append((line_no, recv, "literal", lit.group(1)))
+        else:
             hits.append((line_no, recv or "(ไม่มีผู้รับ)", "dynamic", rest[:40]))
     return hits
 
