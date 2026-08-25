@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -289,17 +290,51 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     }
   });
 
-  it("🔴 จำนวน policy ต้องตรงกับที่เมทริกซ์นี้เคยไล่กิ่งไว้ — เพิ่ม policy ต้องมาทบทวนที่นี่", () => {
-    // 🎯 `P-48`: รายการกิ่งหมดอายุทุกครั้งที่มีคนเปลี่ยนทางที่โค้ดเดิน
-    //    เอกสารบังคับตัวเองไม่ได้ · เลขที่ตรึงไว้บังคับได้
-    //    ⚠️ ขึ้นเลขนี้ได้ **หลังไล่กิ่งของ policy ใหม่แล้วเท่านั้น** ไม่ใช่เพื่อให้ผ่าน
-    const policies = migrationFiles
-      .flatMap((f) => readFileSync(f, "utf8").split("\n"))
-      .filter((line) => line.startsWith("create policy"));
-    expect(
-      policies.length,
-      "จำนวน policy เปลี่ยนไปจาก 10 — ไล่กิ่งของตัวใหม่ให้ครบก่อน แล้วค่อยขึ้นเลขนี้",
-    ).toBe(10);
+  /**
+   * แผนที่ `ตาราง.ชื่อ` → เงื่อนไขที่ normalize แล้ว · **เอาการประกาศครั้งสุดท้าย**
+   * เพราะนั่นคือสิ่งที่เหลืออยู่ในฐานหลัง migration ทุกตัวรันจบ
+   */
+  function policyMap(): Map<string, string> {
+    const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
+    const out = new Map<string, string>();
+    for (const m of src.matchAll(/create policy\s+(\S+)\s+on\s+public\.(\w+)([\s\S]*?);/g)) {
+      const body = stripComments(m[3]).replace(/\s+/g, " ").trim().toLowerCase();
+      out.set(`${m[2]}.${m[1]}`, body); // ประกาศทีหลังทับของเดิม — ตรงกับที่ Postgres ทำ
+    }
+    return out;
+  }
+
+  it("🔴 รายชื่อ policy ต้องไม่เปลี่ยน — เพิ่ม/ลบ/เปลี่ยนชื่อ ต้องมาไล่กิ่งก่อน", () => {
+    // 🎯 `P-48` เดิมนับ **จำนวนคำสั่ง `create policy`** ซึ่งเป็นพร็อกซี ไม่ใช่ของจริง:
+    //    P1 ประกาศ `trips_select` ซ้ำเพื่อให้ฐานตรงกับไฟล์ → **ไม่มี policy ใหม่สักตัว**
+    //    แต่ด่านนับได้ 11 แล้วแดง · **ด่านที่แดงใส่การเปลี่ยนแปลงที่ไม่ได้เปลี่ยนสิ่งที่มันวัด
+    //    จะถูกทำให้เงียบด้วยการขึ้นเลข และครั้งถัดไปมันจะไม่กัดอะไรเลย**
+    expect([...policyMap().keys()].sort()).toEqual([
+      "profiles.profiles_insert",
+      "profiles.profiles_select",
+      "profiles.profiles_update",
+      "trip_members.trip_members_delete",
+      "trip_members.trip_members_insert",
+      "trip_members.trip_members_select",
+      "trip_members.trip_members_update",
+      "trips.trips_insert",
+      "trips.trips_select",
+      "trips.trips_update",
+    ]);
+  });
+
+  it("🔴 เงื่อนไขของ policy ต้องไม่เปลี่ยน — ชื่อเดิมแต่กว้างขึ้น คือเคสที่รายชื่ออย่างเดียวมองไม่เห็น", () => {
+    // 🔴 `P-35` (P1 พบ): `using (app.can_read_trip(id) or created_by = auth.uid())`
+    //    **ชื่อเดิม · จำนวนเดิม · รายชื่อเดิม · แต่ `created_by` กลายเป็นแหล่งสิทธิ์ที่สอง**
+    //    → ด่านที่นับชื่อจับไม่ได้เลย · ต้องตรึง**เนื้อ**ไม่ใช่แค่**ป้าย**
+    //    ⚠️ แดงข้อนี้ = ไปไล่กิ่งของ policy ที่เปลี่ยน **แล้วค่อยอัปเดตค่านี้** ไม่ใช่อัปเดตให้ผ่าน
+    const fingerprint = createHash("sha256")
+      .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
+      .digest("hex")
+      .slice(0, 16);
+    expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
+      "1463dca61733d293",
+    );
   });
 });
 
@@ -1014,6 +1049,58 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     it("🔴 A สร้างแถว profiles ให้คนอื่นไม่ได้ (profiles_insert · ไม่มีเคสเลยทั้งสองทิศ)", async () => {
       const { error } = await A.from("profiles").insert({ id: ids.b, display_name: `fake-${stamp}` });
       expect(error, "A แทรกแถว profiles ของ B ได้").not.toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 P-35 — created_by ต้องไม่เป็นแหล่งสิทธิ์ที่สอง (P-15 ในรูปที่เงียบที่สุด)", () => {
+    /**
+     * 🎯 **เคสนี้เกิดจากคำถามของ P1 ที่ว่า "ถ้าก้อนคืนค่าถูกพิมพ์กว้างกว่าเดิมล่ะ"**
+     *
+     * ถ้า `trips_select` กลายเป็น `using (app.can_read_trip(id) or created_by = auth.uid())`
+     * **เคสทั้ง 67 ตัวก่อนหน้านี้ยังเขียวครบ**:
+     *   · เจ้าของเห็นทริปตัวเอง → ผ่านทั้งสองแบบ
+     *   · สมาชิกเห็น → ผ่านทั้งสองแบบ
+     *   · **คนนอกไม่เห็น → ผ่านทั้งสองแบบ เพราะ `created_by` ไม่ได้ช่วยคนนอก**
+     *
+     * 🔴 คนเดียวที่ผลต่างคือ **คนสร้างที่ถูกถอดออกจาก `trip_members` แล้ว** — และไม่มีเคสไหนถามถึงเขาเลย
+     * → `created_by` กลายเป็นสิทธิ์ถาวรที่ถอดไม่ได้ **ผ่านช่องที่หลักฐานความปลอดภัยหลักของเรามองไม่เห็น**
+     *
+     * ⚠️ เคส `viewer ที่เพิ่งถูกเชิญ` จับทิศ *"เข้มเกินไป"* ได้ · **ทิศ "กว้างเกินไป" ไม่มีอะไรจับ จนถึงเคสนี้**
+     */
+    it("🔴 คนสร้างทริปที่ถูกถอดออกจาก trip_members แล้ว ต้องอ่านทริปตัวเองไม่ได้", async () => {
+      // ใช้ทริปใหม่ ไม่แตะ tripA — เคสอื่นพึ่งสมาชิกภาพของ tripA อยู่
+      const { data: trip, error: mkErr } = await A.rpc("create_trip", {
+        p_title: `p35-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      expect(mkErr).toBeNull();
+
+      // ต้องมี owner คนที่ 2 ก่อน ไม่งั้น A ลาออกไม่ได้ (P-19 กันทริปไม่มี owner)
+      const { error: invErr } = await A.from("trip_members").insert({
+        trip_id: trip.id,
+        user_id: ids.b,
+        role: "owner",
+      });
+      expect(invErr, "เชิญ B เป็น owner คนที่ 2 ไม่ได้").toBeNull();
+
+      const { error: outErr } = await A.from("trip_members")
+        .delete()
+        .eq("trip_id", trip.id)
+        .eq("user_id", ids.a);
+      expect(outErr).toBeNull();
+
+      // ถึงตรงนี้ A ยังเป็น `created_by` ของทริปนี้อยู่ แต่ไม่ใช่สมาชิกแล้ว
+      const { data } = await A.from("trips").select("id").eq("id", trip.id);
+      expect(
+        data,
+        "คนสร้างที่ถูกถอดออกแล้วยังอ่านทริปได้ = created_by เป็นแหล่งสิทธิ์ที่สอง (P-15 พัง)",
+      ).toEqual([]);
+
+      // และ B ที่ยังเป็นสมาชิกต้องยังเห็น — กันเคส "เขียวเพราะทริปหายไปเฉย ๆ"
+      const { data: bSees } = await B.from("trips").select("id").eq("id", trip.id);
+      expect(bSees, "B ก็ไม่เห็น = ทริปหาย ไม่ใช่ RLS กรอง → เคสบนพิสูจน์ไม่ได้").toHaveLength(1);
     });
   });
 
