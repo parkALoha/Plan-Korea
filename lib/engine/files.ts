@@ -34,9 +34,29 @@ import { BOOKING_FILES_BUCKET, storageKeyOf } from "./storageKey";
 
 export { storageKeyOf, BOOKING_FILES_BUCKET } from "./storageKey";
 
-/** เผื่อไว้ก่อนหมดอายุจริง — เซ็นใหม่ก่อนถึงเส้น ไม่ใช่ตอนพัง */
-const RENEW_MARGIN_MS = 60_000;
-const DEFAULT_TTL_SECONDS = 60 * 60;
+/**
+ * 🔴 **TTL สั้นเท่ากันทุกเส้นทาง — มติที่ `ux-flows.md §12.2` บันทึกไว้ (P7 พิสูจน์ · P1 ยืนยัน)**
+ *
+ * ฉบับแรกผมเขียน `60 * 60` **โดยไม่ได้ไปอ่านมติที่ตัวเองเป็นคนขอให้บันทึก** · P2 จับได้ตอนต่อสาย
+ * > `createSignedUrl` **เปิดได้โดยไม่ต้องล็อกอิน ไม่ผ่าน policy เลย**
+ * > → **signed URL คือ bearer credential · TTL ยาว = การเก็บ credential ไว้เฉย ๆ**
+ * > ไม่ว่าจะเก็บใน state / localStorage / cache
+ *
+ * 🎯 **1 ชั่วโมง ไม่ได้แปลว่า "หมดอายุใน 1 ชั่วโมง" — มันแปลว่า URL ที่หลุดออกไป
+ *    เปิดไฟล์ตั๋วของผู้ใช้ได้อีก 1 ชั่วโมง จากเครื่องไหนก็ได้ ไม่ต้องล็อกอิน**
+ * · และมันขัดกับงาน private bucket ทั้งก้อนที่เพิ่งปิดไปเมื่อวาน (`E2-AC5` · `D12`)
+ *
+ * ⚠️ ทางที่ **ไม่** เอา: ยืด TTL เพื่อให้แคชง่ายขึ้น · ทางที่ถูกคือ **ต่ออายุ** ไม่ใช่ **ยืด**
+ */
+const DEFAULT_TTL_SECONDS = 90;
+
+/**
+ * เซ็นใหม่ก่อนถึงเส้น ไม่ใช่ตอนพัง
+ * 🔴 **ต้องน้อยกว่า `DEFAULT_TTL_SECONDS` อย่างมีนัย** ไม่งั้นทุกครั้งที่เรียกจะถือว่าหมดอายุแล้ว
+ *    → เซ็นใหม่ทุกครั้ง (ปลอดภัย แต่ยิง `createSignedUrl` ทิ้งเปล่าทุกการ render)
+ * · 90s TTL − 30s margin = **หน้าต่างใช้ซ้ำ 60 วินาที** ซึ่งยาวพอสำหรับหนึ่งหน้าจอ
+ */
+const RENEW_MARGIN_MS = 30_000;
 
 const signed = new Map<string, { url: string; expiresAt: number }>();
 
