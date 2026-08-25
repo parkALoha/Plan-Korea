@@ -16,8 +16,14 @@ run="$(gh run list --repo "$REPO" --branch "$BR" --limit 1 \
         --json databaseId,headSha,conclusion,status,displayTitle 2>/dev/null)"
 [ -z "$run" ] || [ "$run" = "[]" ] && { echo "🔴 ไม่พบ CI run ของ branch '$BR'"; exit 2; }
 
-sha="$(printf '%s' "$run"  | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["headSha"])')"
-concl="$(printf '%s' "$run"| python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["conclusion"] or json.load(sys.stdin)[0].get("status",""))' 2>/dev/null || echo "?")"
+# 🔴 อ่าน stdin ครั้งเดียวแล้วพิมพ์ทั้งสองค่า — ฉบับแรกเรียก json.load(sys.stdin) สองครั้ง
+#    ในบรรทัดเดียว ครั้งที่สองได้สตรีมว่างแล้ว throw → ตกไปที่ `|| echo "?"`
+#    อาการ: run ที่ยังวิ่งอยู่ (conclusion ว่าง) แสดงเป็น `?` แทนที่จะเป็น `in_progress`
+read -r sha concl <<EOF
+$(printf '%s' "$run" | python3 -c 'import json,sys
+r = json.load(sys.stdin)[0]
+print(r["headSha"], r.get("conclusion") or r.get("status") or "unknown")')
+EOF
 head="$(git rev-parse HEAD)"
 
 echo "CI ล่าสุดของ '$BR': $concl"
