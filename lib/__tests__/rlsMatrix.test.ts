@@ -3474,6 +3474,174 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 D81 — `trip_stops` รับเหตุการณ์: constraint ต้องกันครึ่งชุดและกันข้ามชนิด", () => {
+    /**
+     * `D81` ยุบ `day.events` เข้า `trip_stops` แทนที่จะสร้างตารางที่สาม — **+20 คอลัมน์ · 5 constraint**
+     *
+     * 🔴 **ทิศที่สำคัญที่สุดไม่ใช่ "เหตุการณ์เขียนได้ไหม" แต่คือ "แถวที่ไม่ใช่เหตุการณ์ ถือของของเหตุการณ์ได้ไหม"**
+     * ถ้ารั่ว จุดแวะธรรมดาจะถือ `flight_no` ได้ แล้ว **หน้าที่พิมพ์เอกสารให้ ตม. จะอ่านเจอเที่ยวบิน
+     * บนแถวที่ไม่ใช่เที่ยวบิน โดยไม่มีอะไรค้านเลยสักชั้น**
+     *
+     * 🎯 **และ "ครึ่งชุด" อันตรายกว่า "ไม่มีเลย"** — ฟิลด์บิน 3 จาก 5 ไม่ใช่ error ที่ไหนเลย
+     * มันคือ**ช่องว่างที่ถูกพิมพ์ลงเอกสารจริง** · `flight_fields_complete` จึงบังคับ 5 หรือ 0 ไม่มีระหว่างกลาง
+     *
+     * ⚠️ **P1 ขอให้ผมไม่เชื่อเขาเป็นพิเศษที่ `event_flags_only_on_events`** เพราะ
+     * `day_offset`/`is_alert`/`time_is_flexible` เป็น `not null default` → **`num_nonnulls` นับไม่ได้**
+     * (`false` กับ `0` เป็นค่าที่ไม่ใช่ null) จึงต้องแยกเป็น check ตัวที่สอง
+     * → ผมยิงทั้งสามคอลัมน์แยกกัน (`6a`–`6c`) **กันครบทั้งสาม** · และยิงฝั่งบวกว่าเหตุการณ์ยังตั้งค่าได้
+     */
+    const ccE = TEST_COUNTRY_CODES.stopEvents;
+    let tripE = "", planE = "", dayE = "", catE = "";
+    let rank = 100;
+
+    const EV = { fixed_start_time: "08:00", title: "ทดสอบเหตุการณ์", icon: "✈️" };
+    const FLIGHT = {
+      flight_no: "VN409", flight_from_code: "BKK", flight_to_code: "ICN",
+      flight_from_en: "Bangkok", flight_to_en: "Seoul",
+    };
+    const LAYOVER = {
+      layover_baggage: "through-checked", layover_immigration: "none",
+      layover_leaves_airport: false, layover_terminal_change: false,
+    };
+
+    beforeAll(async () => {
+      await purgeCountry(ccE);
+      await admin.from("catalog_countries").insert({ id: ccE, name_th: "ทดสอบเหตุการณ์", name_en: "EVT" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccE, name_th: "เมืองE", name_en: "CityE", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      const cp = await admin.from("catalog_places")
+        .insert({ city_id: ci.data.id, category: "sight", lat: 35, lng: 129 })
+        .select("id").single();
+      if (cp.error) throw new Error(`seed place: ${cp.error.message}`);
+      catE = cp.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `evt-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripE = t.data.id as string;
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripE).eq("is_active", true).single();
+      planE = pl.data!.id as string;
+      const dy = await A.from("trip_days").insert({ trip_id: tripE, date: "2026-10-12" }).select("id").single();
+      if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
+      dayE = dy.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("trips").delete().eq("id", tripE);
+      const error = await purgeCountry(ccE);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก D81 ไม่สำเร็จ: ${error}\n`);
+    });
+
+    /** ยิง insert หนึ่งครั้ง แล้วเก็บกวาดถ้ามันผ่าน — **เคสข้างล่างเรียกตัวนี้ทุกตัว** (`E0` ข้อ 5) */
+    async function attempt(row: Record<string, unknown>) {
+      const r = await A.from("trip_stops")
+        .insert({ trip_id: tripE, plan_id: planE, trip_day_id: dayE, rank: `r${rank++}`, ...row })
+        .select("id");
+      if (!r.error && r.data?.[0]) await admin.from("trip_stops").delete().eq("id", r.data[0].id as string);
+      return r.error?.code ?? null;
+    }
+
+    // 🔴 ด้านบวกต้องมาก่อน — ถ้าเขียนเหตุการณ์ที่ถูกต้องไม่ได้เลย เคสด้านลบทั้งแผงจะเขียว
+    //    เพราะ **ทุกอย่างถูกปฏิเสธ** ไม่ใช่เพราะ constraint แม่นยำ (`P-44`)
+    describe("ด้านบวก — เหตุการณ์ที่ถูกต้องต้องเขียนได้", () => {
+      it("เหตุการณ์ทั่วไป ไม่ต้องมี `event_kind` (มันเป็น optional จริง ๆ)", async () => {
+        expect(await attempt({ kind: "event", ...EV })).toBeNull();
+      });
+      it("เที่ยวบินครบชุด 5 ฟิลด์", async () => {
+        expect(await attempt({ kind: "event", ...EV, event_kind: "flight", ...FLIGHT })).toBeNull();
+      });
+      it("เหตุการณ์ตั้ง `day_offset`/`is_alert` ได้ (สิ่งที่ check ตัวที่สองต้องไม่ห้าม)", async () => {
+        expect(await attempt({ kind: "event", ...EV, day_offset: 3, is_alert: true })).toBeNull();
+      });
+    });
+
+    describe("🔴 ด้านลบ — แถวที่ไม่ใช่เหตุการณ์ ต้องถือของของเหตุการณ์ไม่ได้เลย", () => {
+      it("จุดแวะธรรมดาถือ `flight_no` ไม่ได้", async () => {
+        expect(
+          await attempt({ kind: "place", catalog_place_id: catE, ...FLIGHT }),
+          "จุดแวะธรรมดาถือเที่ยวบินได้ — เอกสารสำหรับ ตม. จะอ่านเจอโดยไม่มีอะไรค้าน",
+        ).toBe("23514");
+      });
+
+      // 🔴 สามข้อนี้คือจุดที่ P1 บอกว่าตัวเองพลาดได้มากที่สุด — `num_nonnulls` มองไม่เห็นคอลัมน์
+      //    ที่มี `not null default` จึงต้องมี check ตัวที่สองแยก · ยิงทีละคอลัมน์ ไม่ยิงรวม
+      it.each(["day_offset", "is_alert", "time_is_flexible"])(
+        "🔴 จุดแวะธรรมดาตั้ง `%s` ไม่ได้ (check ตัวที่สอง · `num_nonnulls` มองไม่เห็น)",
+        async (col) => {
+          const value = col === "day_offset" ? 1 : true;
+          expect(
+            await attempt({ kind: "place", catalog_place_id: catE, [col]: value }),
+            `${col} หลุดจาก check ตัวที่สอง — คอลัมน์ที่มี default ไม่ถูก num_nonnulls นับ`,
+          ).toBe("23514");
+        },
+      );
+    });
+
+    describe("🔴 ด้านลบ — ครึ่งชุด และข้ามชนิด", () => {
+      it("เที่ยวบินครึ่งชุด (3 จาก 5) เขียนไม่ลง", async () => {
+        expect(
+          await attempt({
+            kind: "event", ...EV, event_kind: "flight",
+            flight_no: "VN1", flight_from_code: "BKK", flight_to_code: "ICN",
+          }),
+          "ครึ่งชุดผ่าน — **ช่องว่างจะถูกพิมพ์ลงเอกสารจริงโดยไม่มี error ที่ไหนเลย**",
+        ).toBe("23514");
+      });
+
+      it("`event_kind='layover'` ใส่ฟิลด์เที่ยวบินไม่ได้ (else-branch ต้องบังคับ 0)", async () => {
+        expect(await attempt({ kind: "event", ...EV, event_kind: "layover", ...LAYOVER, ...FLIGHT })).toBe("23514");
+      });
+
+      it("`event_kind='flight'` ใส่ฟิลด์ช่วงต่อเครื่องด้วยไม่ได้", async () => {
+        expect(await attempt({ kind: "event", ...EV, event_kind: "flight", ...FLIGHT, ...LAYOVER })).toBe("23514");
+      });
+
+      it("🔴 `event_kind` ว่าง แต่ใส่ฟิลด์เที่ยวบินครบ ต้องเขียนไม่ลง", async () => {
+        // `null = 'flight'` คืน NULL ไม่ใช่ true → ต้องตกไป else-branch ที่บังคับ 0
+        // ⚠️ ถ้า CASE เขียนผิดจนคืน NULL ทั้งก้อน **check จะผ่าน** เพราะ NULL ไม่ใช่ false
+        expect(
+          await attempt({ kind: "event", ...EV, ...FLIGHT }),
+          "เที่ยวบินไม่มีชนิดกำกับ — CASE คืน NULL แล้ว check ปล่อยผ่าน",
+        ).toBe("23514");
+      });
+
+      it("เหตุการณ์ต้องมี `icon`/`title`/`fixed_start_time` ครบ", async () => {
+        expect(await attempt({ kind: "event", fixed_start_time: "08:00", title: "x" })).toBe("23514");
+      });
+
+      it("เหตุการณ์ชี้สถานที่ได้ทางเดียว — `catalog_place_id` + `place_ref` พร้อมกันไม่ได้", async () => {
+        expect(await attempt({ kind: "event", ...EV, catalog_place_id: catE, place_ref: "hotel" })).toBe("23514");
+      });
+
+      it("`kind='transfer'` ยังต้องมีสถานที่ 1 ที่เหมือนเดิม (D81 ไม่ได้ทำให้หลวมลง)", async () => {
+        expect(await attempt({ kind: "transfer" })).toBe("23514");
+      });
+    });
+
+    it("🔴 ย้ายแถวข้ามทริปด้วย `update` ไม่ได้ — `trip_id` ไม่อยู่ใน column grant ฝั่ง update", async () => {
+      const mine = await A.from("trip_stops")
+        .insert({ trip_id: tripE, plan_id: planE, trip_day_id: dayE, rank: "zz", kind: "event", ...EV })
+        .select("id").single();
+      expect(mine.error?.message ?? null).toBeNull();
+
+      const other = await A.rpc("create_trip", {
+        p_title: `evt2-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const moved = await A.from("trip_stops").update({ trip_id: other.data.id }).eq("id", mine.data!.id);
+      expect(
+        moved.error?.code,
+        "ย้ายจุดแวะข้ามทริปได้ — แถวจะโผล่ในทริปของคนอื่นโดย RLS ไม่ได้ถูกละเมิดสักข้อ",
+      ).toBe("42501");
+
+      await admin.from("trips").delete().eq("id", other.data.id);
+      await admin.from("trip_stops").delete().eq("id", mine.data!.id);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2-AC1 — คนนอกอ่านอะไรของทริป A ไม่ได้เลย **ทุกตารางที่ผูกกับทริป**", () => {
     /**
      * **`US-E2` เขียนไว้ตรงตัว:** *"ในฐานะผู้ใช้ C ฉันต้องไม่สามารถอ่านหรือแก้อะไรของทริป A ได้เลย

@@ -159,6 +159,8 @@ export const TEST_COUNTRY_CODES = {
   outsiderSweep: "xt",
   /** บล็อกคลังลูกใหม่ `catalog_country_contacts` · `catalog_place_access` (`P-60`) — P1 */
   catalogChildren: "xu",
+  /** บล็อก `D81` — `trip_stops` รับเหตุการณ์ · P4 */
+  stopEvents: "xv",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */
