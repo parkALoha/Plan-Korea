@@ -383,6 +383,79 @@ describe("การรันชุดสด", () => {
   });
 });
 
+/**
+ * ตารางที่ **ยังมีอยู่** ตามที่ไฟล์ migration บอก — `create` เพิ่ม · `drop` หัก
+ *
+ * 🔴 **ฉบับแรกของผมอ่านแต่ `create table`** → ตารางที่สร้างแล้วลบทีหลังถูกนับว่ายังอยู่
+ * · P1 เจอทันทีจากเคส `MISSING` (`rls_force_probe` ที่เขาสร้างแล้วลบ) **และเคสนั้นแดงเพราะกลไก
+ *   ทำงานถูก ไม่ใช่เพราะฐานผิด** · เขาแก้ให้แล้ว — ฉบับนี้แก้ต่ออีก 2 ข้อที่ยังเหลือ
+ *
+ * ⚠️ **① ต้องเดินตามลำดับในไฟล์ ไม่ใช่ "create ทั้งหมดก่อน แล้วค่อย drop ทั้งหมด"**
+ *    `drop` แล้ว `create` ใหม่ในไฟล์เดียวกันคือสำนวนปกติของ migration
+ *    → แบบเดิมจะได้ผลลัพธ์ว่า *"ไม่มีตารางนี้"* ทั้งที่มันมีอยู่ **แล้วเคส `TRUNCATE` จะข้ามมันไปเงียบ ๆ**
+ *    🎯 ทิศนี้แย่กว่าที่ P1 เจอ: ของเขาแดงผิด (ดัง) **ของนี้ตรวจไม่ครบ (เงียบ)**
+ * ⚠️ **② `drop table` รับหลายชื่อคั่นด้วยจุลภาค** — `drop table public.a, public.b;`
+ *    regex ที่จับชื่อเดียวจะหักออกแค่ตัวแรก
+ *
+ * 📌 วันนี้ทั้งสองข้อยังไม่กัด (มี `drop` จริงแค่ตัวเดียวและอยู่ไฟล์ของมันเอง)
+ *    **เขียนกันไว้เพราะสำนวนพวกนี้จะมาแน่ และตอนมันมาจะไม่มีใครนึกถึงไฟล์นี้**
+ */
+export function tablesFromMigrations(sources?: string[]): string[] {
+  const alive = new Set<string>();
+  const bodies = sources ?? migrationFiles.map((f) => readFileSync(f, "utf8"));
+  for (const raw of bodies) {
+    const sql = stripComments(raw);
+    // จับ `create|drop table [if …] public.a[, public.b…]` **เรียงตามที่ปรากฏจริง**
+    for (const m of sql.matchAll(
+      /\b(create|drop)\s+table\s+(?:if\s+not\s+exists\s+|if\s+exists\s+)?((?:public\.[a-z_][a-z0-9_]*\s*,?\s*)+)/gi,
+    )) {
+      const verb = m[1].toLowerCase();
+      for (const n of m[2].matchAll(/public\.([a-z_][a-z0-9_]*)/gi)) {
+        const name = n[1].toLowerCase();
+        if (verb === "create") alive.add(name);
+        else alive.delete(name);
+      }
+    }
+  }
+  return [...alive].sort();
+}
+
+describe("tablesFromMigrations — ตัวสแกนที่เคสอื่นพึ่ง ต้องถูกยิงเอง (กฎ E0 ข้อ 1–2)", () => {
+  // 🔴 ถ้าตัวนี้พังเงียบ เคส `TRUNCATE` จะตรวจตารางน้อยลงเรื่อย ๆ **โดยยังเขียวทุกรอบ**
+  it("create เพิ่ม · drop หัก · เรียงตามลำดับที่ปรากฏ", () => {
+    expect(tablesFromMigrations(["create table public.a (id int);"])).toEqual(["a"]);
+    expect(tablesFromMigrations(["create table public.a (id int); drop table public.a;"])).toEqual([]);
+    // 🔴 สำนวน "ลบแล้วสร้างใหม่" — ต้องได้ว่า **มีอยู่** · ฉบับที่ทำ create ก่อน drop จะได้ว่าไม่มี
+    expect(
+      tablesFromMigrations(["drop table if exists public.a; create table public.a (id int);"]),
+      "ลบแล้วสร้างใหม่ในไฟล์เดียวกัน ต้องนับว่ามีอยู่",
+    ).toEqual(["a"]);
+    // ข้ามไฟล์ก็ต้องเรียงตามลำดับไฟล์
+    expect(tablesFromMigrations(["create table public.a (id int);", "drop table public.a;"])).toEqual([]);
+  });
+
+  it("🔴 `drop table` หลายชื่อคั่นจุลภาค ต้องหักออกทุกตัว ไม่ใช่แค่ตัวแรก", () => {
+    expect(
+      tablesFromMigrations([
+        "create table public.a (id int); create table public.b (id int); create table public.c (id int);",
+        "drop table if exists public.a, public.b;",
+      ]),
+    ).toEqual(["c"]);
+  });
+
+  it("ด้านลบ: `drop table` ในคอมเมนต์ rollback ต้องไม่ถูกนับ", () => {
+    // ทุกไฟล์ migration มีบล็อก rollback ที่เขียน `drop table …` ไว้เป็นคอมเมนต์
+    // ถ้าตัวตัดคอมเมนต์พัง ตารางจะหายจากลิสต์ทั้งยวง **แล้วเคส TRUNCATE จะเขียวโดยไม่ตรวจอะไร**
+    expect(
+      tablesFromMigrations(["create table public.a (id int);\n--   drop table if exists public.a;"]),
+    ).toEqual(["a"]);
+  });
+
+  it("ด้านบวกกับของจริง: อ่านจากทรีแล้วต้องได้ตารางจำนวนสมเหตุสมผล", () => {
+    expect(tablesFromMigrations().length).toBeGreaterThan(15);
+  });
+});
+
 describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -3202,30 +3275,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
        *    และมันเชื่อได้เพราะเคส "ฐานกับทรีตรงกัน" ข้างบนพิสูจน์ไปแล้วว่าสองฝั่งเป็นชุดเดียวกัน
        *    ⚠️ ถ้าเคสนั้นแดง เคสนี้ก็ไม่มีความหมาย — **มันพึ่งกันโดยตั้งใจ**
        */
-      /**
-       * 🔴 **แก้ 25 ส.ค. 2026 (P1) — ต้องหัก `drop table` ออกด้วย ไม่ใช่รวมทุก `create table`**
-       * ตัวสแกนฉบับแรกอ่านแต่ `create table` → **ตารางที่ถูกสร้างแล้วลบในภายหลัง จะถูกนับว่ายังอยู่**
-       * แล้วเคส `MISSING` ข้างล่างจะแดงใส่ของที่ถูกต้อง
-       * · เจอจริงทันที: `rls_force_probe` (ตารางทดลองตอบคำถาม `force RLS` ของ P5 · สร้างแล้ว
-       *   ลบในคอมมิตถัดไปตามที่เขียนกำกับไว้) — **เคสนี้แดงเพราะกลไกทำงานถูก ไม่ใช่เพราะฐานผิด**
-       * 🎯 และมันเป็นรูปเดียวกับที่ตัวสแกนนี้มีไว้จับพอดี: **"อ่านจากเจตนาที่เขียนไว้ ไม่ใช่จากของที่มีอยู่"**
-       *   — ไฟล์บอกว่า *เคยสร้าง* ไม่ได้บอกว่า *ยังอยู่* · `drop` คือส่วนที่หายไปจากคำถาม
-       */
-      const created = new Set<string>();
-      for (const f of migrationFiles) {
-        const sql = stripComments(readFileSync(f, "utf8"));
-        for (const m of sql.matchAll(
-          /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi,
-        )) {
-          created.add(m[1].toLowerCase());
-        }
-        for (const m of sql.matchAll(
-          /drop\s+table\s+(?:if\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi,
-        )) {
-          created.delete(m[1].toLowerCase());
-        }
-      }
-      const tables = [...created].sort();
+      const tables = tablesFromMigrations();
 
       // ด้านบวกของตัวดึงรายชื่อเอง — regex ที่พังจะให้ลิสต์ว่าง แล้วเคสนี้เขียวโดยไม่ตรวจอะไร
       expect(tables.length, "ดึงชื่อตารางจากไฟล์ migration ไม่ได้เลย").toBeGreaterThan(15);
