@@ -86,11 +86,21 @@ export function BookingEditModal({
   useEffect(() => {
     if (!fileUrl) return;
     let cancelled = false;
-    signStoredFile(fileUrl).then((url) => {
-      if (!cancelled) setSignedResult({ fileUrl, url });
-    });
+
+    function run() {
+      signStoredFile(fileUrl).then((url) => {
+        if (!cancelled) setSignedResult({ fileUrl, url });
+      });
+    }
+
+    run();
+    // ต่ออายุเงียบๆ ก่อน TTL 90 วินาทีหมด (§12.2/P-65) — โมดัลนี้เปิดค้างระหว่างแก้ฟิลด์อื่นได้นานกว่านั้น
+    // เคลียร์ตอน unmount ซึ่งครอบคลุมตอนปิดโมดัลด้วย เพราะ parent unmount component นี้ทันทีที่ onClose
+    // (ไม่มีทางที่ onClose ถูกเรียกแล้ว component ยังค้างอยู่ต่อ)
+    const timer = setInterval(run, 30_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [fileUrl]);
   const signedFileUrl = signedResult?.fileUrl === fileUrl ? signedResult.url : undefined;
