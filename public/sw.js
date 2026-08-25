@@ -103,6 +103,12 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   // ห้ามแตะด่าน PIN เด็ดขาด — ต้องคุยกับเซิร์ฟเวอร์จริงเสมอ
   if (url.pathname.startsWith("/api/unlock") || url.pathname === "/unlock") return;
+  // E6-AC8: /auth/callback เป็น one-shot redirect ที่เขียนคุกกี้ session (app/auth/callback/route.ts)
+  // — `isStorable()` ที่กัน response.redirected อยู่แล้วน่าจะกันไม่ให้ถูกแคชทับได้อยู่แล้ว แต่ตัวมันเอง
+  // ยังเสี่ยงบั๊กคนละแบบที่ SW เจอกับ redirect เสมอ: `fetch(request)` ตาม redirect ในตัวเองจนจบแล้วส่ง
+  // response ปลายทางกลับไปที่ URL เดิม (URL bar ค้างที่ /auth/callback แต่เนื้อหาเป็นหน้าอื่น) — ปัญหา
+  // ชนิดเดียวกับที่ /unlock ถูกยกเว้นไว้ตั้งแต่แรก จึงยกเว้นเหมือนกัน ไม่ใช่เพิ่งคิดขึ้นใหม่
+  if (url.pathname.startsWith("/auth/callback")) return;
   // ของ dev server (HMR/RSC payload) ปล่อยผ่านทั้งหมด
   if (url.pathname.startsWith("/_next/hmr") || url.searchParams.has("_rsc")) return;
 
