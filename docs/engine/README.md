@@ -2119,6 +2119,56 @@ policy `trip_members: owner invites` ให้ owner เขียนเท่า
 
 ---
 
+### 🔴 `D70` — ตารางที่มีพ่อสองคน: ทำให้ "พ่อคนละทริป" **เขียนลงไปไม่ได้** แทนที่จะทดสอบว่ามันไม่เกิด (P1 · 25 ส.ค. 2026)
+
+**เจอตอนเขียน `trip_day_plan_settings` ตาม `D69`** แล้วต้องตอบว่า policy ของมันเกาะอะไร
+
+ตารางกลุ่มนี้อ้างพ่อ **สองคนที่ต้องเป็นทริปเดียวกัน** — แต่ไม่มีอะไรบอกฐานว่าต้องเป็นทริปเดียวกัน:
+
+| ตาราง | พ่อคนที่ 1 | พ่อคนที่ 2 |
+|---|---|---|
+| `trip_day_plan_settings` (`D69`) | `plan_id` → `trip_plans` | `trip_day_id` → `trip_days` |
+| **`trip_stops`** (`D36` — `plan_id` อยู่คู่กัน ไม่ลบ) | `plan_id` → `trip_plans` | `trip_day_id` → `trip_days` |
+
+**แบบใน [`rls-policies.sql:666`](schema/rls-policies.sql) เกาะพ่อคนเดียว:** `using (app.can_read_day(trip_day_id))`
+🔴 **`plan_id` ไม่ถูกตรวจโดยอะไรเลยสักชั้น** → แถวที่จับคู่ *แผนของทริป X กับวันของทริป Y* เขียนลงไปได้ และ **ทุก policy เขียวหมด**
+
+**ผลที่จับต้องได้ ไม่ใช่ข้อกังวลลอย ๆ — และมันไม่ใช่รอยรั่วของการ*อ่าน*:**
+> ลบแผนในทริป X → `on delete cascade` วิ่งลงไป → **ลบจุดแวะที่นั่งอยู่ในวันของทริป Y**
+> 🔴 **RLS ไม่มีผลกับ cascade** · คนของทริป Y ไม่ได้ทำอะไรผิด ไม่มี log ฝั่งเขา และไม่มี policy ไหนถูกละเมิด
+
+#### ทางที่แบบเดิมเลือก และเหตุผลที่มันไม่พอ
+
+[`rls-policies.sql:300`](schema/rls-policies.sql) ปฏิเสธการให้ลูกถือ `trip_id` เอง ด้วยเหตุผลว่า
+*"จะเกิดสภาพ `trip_stops.trip_id` ไม่ตรงกับ `trip_days.trip_id` ของ `trip_day_id` เดียวกัน = tenant ปลอมที่ policy ตรวจไม่เจอ · ยอมจ่ายค่า join แล้วมีแหล่งความจริงเดียวดีกว่า"*
+
+**เหตุผลนั้นถูกทุกคำ — แต่ตอบคำถามที่แคบกว่าปัญหา** มันเทียบ *"ถือ `trip_id` เปล่า ๆ"* กับ *"ไม่ถือเลย"*
+🎯 **ทางที่สามไม่ถูกพิจารณา: ถือ `trip_id` แล้ว *บังคับ* ให้มันตรงกับพ่อทั้งสองคนด้วย FK ประกอบ**
+
+#### ตัดสิน: FK ประกอบ — ความไม่ตรงกันกลายเป็นสิ่งที่ **เขียนลงไปไม่ได้**
+
+```sql
+-- พ่อทั้งสองเปิดคีย์คู่ให้ลูกอ้างได้
+alter table public.trip_days  add constraint trip_days_trip_id_id_key  unique (trip_id, id);
+alter table public.trip_plans add constraint trip_plans_trip_id_id_key unique (trip_id, id);
+
+-- ลูกถือ trip_id · และ trip_id ตัวเดียวกันนั้นถูกใช้ในทั้งสอง FK
+foreign key (trip_id, plan_id)     references public.trip_plans(trip_id, id) on delete cascade,
+foreign key (trip_id, trip_day_id) references public.trip_days (trip_id, id) on delete cascade
+```
+
+**สิ่งที่ได้มาพร้อมกัน 3 อย่าง:**
+1. **พ่อคนละทริป = ฐานปฏิเสธตั้งแต่ `insert`** — ไม่ใช่ *"ไม่มีเคสไหนทำ"* แต่เป็น *"ทำไม่ได้"* · เป็นคำตอบชนิดที่ `P-44` เรียกร้อง เพราะ **กิ่งที่ไม่มีอยู่ ไม่ต้องมีใครเดินไปถึง**
+2. **`E2-AC3` ผ่านจริง** (*ทุกตารางเนื้อหามี `trip_id` และมี FK จริง*) โดย**ไม่**เปิดช่อง tenant ปลอมที่ข้อความข้างบนกลัว — เพราะ `trip_id` ไม่ใช่ค่าอิสระอีกต่อไป มันถูกผูกกับพ่อทั้งสอง
+3. **policy สั้นลงและเร็วขึ้น** — `app.can_write_trip(trip_id)` ตรง ๆ ไม่ต้อง `app.can_write_day()` ที่ join ทุกแถว
+
+⚠️ **ราคาที่จ่าย และต้องรู้ว่าจ่าย:** พ่อทั้งสองต้องมี unique `(trip_id, id)` ซึ่งซ้ำซ้อนกับ PK ในทางตรรกะ (index เพิ่มตารางละ 1)
+· **ยอมจ่าย** — index หนึ่งตัวถูกกว่าการมีสภาพที่ policy มองไม่เห็นและ cascade ข้ามผู้เช่าได้
+
+🔴 **ใช้กับ `trip_stops` ด้วยตอนเขียน — ไม่ใช่แค่ `trip_day_plan_settings`** · และตารางไหนที่มีพ่อสองคนหลังจากนี้ ให้ถือว่าข้อนี้บังคับ
+
+---
+
 ### D5 — จำนวน API route คือ **13 ตัว ไม่ใช่ 12**
 `geocode` `keep-alive` `place-autocomplete` `place-details` `place-name` `place-nearby` `place-photo`
 `place-photos` `place-search` `travel-time` `unlock` `weather` `youtube-video`
