@@ -317,3 +317,42 @@ export function authorshipPairsFromMigrations(): Array<[string, string, string]>
   }
   return out;
 }
+
+/**
+ * เนื้อของ constraint ตามสภาพ **หลัง migration ทุกไฟล์รันจบ** — `add` ทีหลังชนะ · `drop` ลบทิ้ง
+ *
+ * 🔴 **คู่ที่สามของ `policyMapOrdered()` และ `effectiveFunctions()`** — เหตุผลเดียวกันทั้งสามตัว:
+ * **ไฟล์บอกว่า *เคยเขียนว่าอะไร* ไม่ได้บอกว่า *ตอนนี้เป็นอะไร*** · `D81` `drop constraint` แล้ว
+ * `add` ใหม่สองตัวในไฟล์เดียว — อ่านตัวแรกที่เจอจะได้นิยามที่ตายไปแล้ว
+ */
+export function effectiveConstraint(table: string, name: string): string | null {
+  let body: string | null = null;
+  for (const f of migrationFiles) {
+    const sql = stripComments(readFileSync(f, "utf8"));
+    for (const stmt of sql.split(";")) {
+      if (!new RegExp(`alter\\s+table\\s+(?:only\\s+)?public\\.${table}\\b`, "i").test(stmt)) continue;
+      if (new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${name}\\b`, "i").test(stmt)) body = null;
+      const add = new RegExp(`add\\s+constraint\\s+${name}\\b([\\s\\S]*)$`, "i").exec(stmt);
+      if (add) body = add[1];
+    }
+  }
+  return body;
+}
+
+/**
+ * ชื่อคอลัมน์ที่ปรากฏใน constraint — **จับด้วยขอบเขตคำ ไม่ใช่ substring**
+ *
+ * 🔴 **ข้อนี้คือทั้งหมดที่ทำให้ตัวจับนี้ใช้ได้หรือใช้ไม่ได้** (P1 ชี้จุดอ่อนนี้เอง ตอนเสนอรูป):
+ * ถ้าจับด้วย substring ธรรมดา `day_offset` จะ match ใน `day_offset_extra` ด้วย
+ * → **คอลัมน์ใหม่จะถูกนับว่า "ถูกครอบแล้ว" ทั้งที่ไม่มี constraint ไหนครอบมันเลย**
+ * · 🎯 **และมันเงียบพอดีในทิศที่แย่ที่สุด: มองไม่เห็น = ผ่าน** — เหมือนด่าน `.from(` ของ P6
+ * · `\b` ของ JS นับ `_` เป็นอักขระของคำ → `\bday_offset\b` ไม่ match ใน `day_offset_extra` ตามที่ต้องการ
+ *   **แต่ข้อนี้ต้องมีเคสยืนยัน ไม่ใช่เชื่อ** — ดูเคสด้านบวกในบล็อก `D81`
+ */
+export function columnsNamedIn(body: string, candidates: readonly string[]): Set<string> {
+  const found = new Set<string>();
+  for (const c of candidates) {
+    if (new RegExp(`\\b${c}\\b`).test(body)) found.add(c);
+  }
+  return found;
+}

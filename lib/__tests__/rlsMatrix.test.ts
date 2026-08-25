@@ -11,6 +11,8 @@ import {
   tablesFromMigrations,
   tripScopedTables,
   authorshipPairsFromMigrations,
+  effectiveConstraint,
+  columnsNamedIn,
 } from "./_helpers";
 
 /**
@@ -3619,6 +3621,86 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
       it("`kind='transfer'` ยังต้องมีสถานที่ 1 ที่เหมือนเดิม (D81 ไม่ได้ทำให้หลวมลง)", async () => {
         expect(await attempt({ kind: "transfer" })).toBe("23514");
+      });
+    });
+
+
+    describe("🔴 คอลัมน์ที่ 21 ต้องถูกตัดสิน ไม่ใช่ถูกลืม", () => {
+      /**
+       * `event_columns_only_on_events` ระบุชื่อคอลัมน์ **17 ชื่อที่คนพิมพ์** · `event_flags_only_on_events` อีก 3
+       * → **วันที่มีคอลัมน์ที่ 21 ไม่มีอะไรบังคับให้คนเติมชื่อลงไป** และรูปที่มันพังคือ
+       *   *"คอลัมน์ใหม่ของเหตุการณ์ ไปโผล่บนจุดแวะธรรมดาได้"* — **รูเดิมที่ constraint นี้มีอยู่เพื่อปิดพอดี**
+       *
+       * 🔴 **ไม่ใช้ทะเบียน และเหตุผลเป็นของ P1:** ทะเบียนของทีมอีก 3 ตัวเป็นรายการของ*ข้อยกเว้น* โตช้ามาก
+       * **ทะเบียนคอลัมน์จะเป็นรายการของ*ของปกติ*** → โตทุกครั้งที่มีงาน → กลายเป็นขั้นตอนที่คนลืม
+       * แล้วจบที่ **คนเติมชื่อลงลิสต์เพื่อให้เขียว โดยไม่ได้ตัดสินอะไรเลย** ซึ่งคือสิ่งที่ทะเบียนมีไว้บังคับ
+       *
+       * ✅ **รูปที่ใช้แทน:** `คอลัมน์สดทั้งหมด − ชื่อที่ปรากฏใน constraint จริง − ลิสต์แช่แข็งก่อน D81 = ว่าง`
+       *   ① **ลิสต์ที่เหลือไม่โตอีกแล้ว** — เป็นสภาพ ณ วันที่ `D81` ลง **ข้อเท็จจริงทางประวัติศาสตร์ ไม่ใช่ของที่ต้องดูแล**
+       *   ② ฝั่ง "ของใหม่" อ่านจาก **constraint ที่บังคับจริง** ไม่ใช่จากลิสต์ที่คนพิมพ์ → `P-63`
+       *   ③ **ทางเดียวที่ทำให้คอลัมน์ที่ 21 เขียวคือใส่มันเข้า check ตัวใดตัวหนึ่ง** = ตัดสินจริง
+       *
+       * 🎯 **คอลัมน์สดมาจากฐาน ไม่ใช่จากไฟล์** — คอลัมน์ที่ถูกเพิ่มจากแดชบอร์ดโดยไม่ผ่าน migration
+       *   จะโผล่ที่นี่ และไม่มี constraint ไหนครอบมัน → **แดง** · ถ้าอ่านจากไฟล์ทั้งสองฝั่ง มันจะมองไม่เห็น
+       */
+      /** สภาพของ `trip_stops` **ก่อน** `D81` — แช่แข็ง ไม่ต้องอัปเดตอีก */
+      const PRE_D81_COLUMNS = [
+        "added_by_user", "catalog_place_id", "created_at", "custom_place_id", "deleted_at",
+        "dwell_minutes", "id", "intercity_from", "intercity_mode", "intercity_to", "kind",
+        "legacy_added_by", "note", "photo_path", "plan_id", "rank", "transfer_target_label",
+        "transfer_target_time", "travel_mode", "trip_day_id", "trip_id", "updated_at",
+        "updated_by_user", "visited_at",
+      ] as const;
+
+      it("🔴 ด้านบวกของ *ตัวจับ* — ชื่อที่ขึ้นต้นเหมือนกันต้องไม่ถูกนับว่าถูกครอบ", () => {
+        /**
+         * 🔴 **เคสนี้สำคัญกว่าเคสข้างล่าง** — จุดอ่อนของการจับชื่อในข้อความคือ substring
+         * ถ้ามันจับแบบ substring `day_offset_extra` จะ "ถูกครอบ" เพราะ body มีคำว่า `day_offset`
+         * → **คอลัมน์ใหม่ผ่านเงียบ ๆ ในทิศที่ P1 กลัวพอดี** และเคสข้างล่างจะเขียวตลอดกาล
+         */
+        const body = "kind = 'event' or (day_offset = 0 and not is_alert and not time_is_flexible)";
+        const got = columnsNamedIn(body, ["day_offset", "day_offset_extra", "is_alert", "alert", "time_is_flexible"]);
+        expect([...got].sort(), "ตัวจับนับชื่อที่ไม่ได้อยู่ใน constraint ว่าถูกครอบ").toEqual([
+          "day_offset", "is_alert", "time_is_flexible",
+        ]);
+        expect(got.has("day_offset_extra"), "`day_offset_extra` ถูกนับว่าถูกครอบ เพราะจับแบบ substring").toBe(false);
+        expect(got.has("alert"), "`alert` ถูกนับเพราะเป็นส่วนหนึ่งของ `is_alert`").toBe(false);
+      });
+
+      it("🔴 ทุกคอลัมน์ของ `trip_stops` ต้องถูกตัดสินแล้ว — ไม่มีตัวไหนหลุดทั้งสองฝั่ง", async () => {
+        // ① คอลัมน์สดจากฐาน — ต้องมีแถวก่อน ไม่งั้นอ่านชื่อคอลัมน์ไม่ได้เลย (`P-21`)
+        const row = await A.from("trip_stops")
+          .insert({ trip_id: tripE, plan_id: planE, trip_day_id: dayE, rank: "col", kind: "event", ...EV })
+          .select("*").single();
+        expect(row.error?.message ?? null, "สร้างแถวตัวอย่างไม่ได้ — อ่านรายชื่อคอลัมน์สดไม่ได้").toBeNull();
+        const live = Object.keys(row.data as Record<string, unknown>).sort();
+        await admin.from("trip_stops").delete().eq("id", (row.data as { id: string }).id);
+        expect(live.length, "อ่านคอลัมน์สดได้น้อยผิดปกติ").toBeGreaterThan(40);
+
+        // ② constraint ที่บังคับจริง — ตามลำดับ `drop`/`add` (D81 drop แล้ว add ใหม่ในไฟล์เดียว)
+        const colsBody = effectiveConstraint("trip_stops", "trip_stops_event_columns_only_on_events");
+        const flagsBody = effectiveConstraint("trip_stops", "trip_stops_event_flags_only_on_events");
+        expect(colsBody, "หา constraint `event_columns_only_on_events` ไม่เจอ").not.toBeNull();
+        expect(flagsBody, "หา constraint `event_flags_only_on_events` ไม่เจอ").not.toBeNull();
+        // ถ้า body ว่าง ตัวจับจะไม่ match อะไรเลย แล้วเคสจะแดงมั่ว — กันไว้ให้ข้อความบอกสาเหตุถูก
+        expect(colsBody!.length, "body ของ constraint สั้นผิดปกติ").toBeGreaterThan(80);
+
+        const covered = new Set([
+          ...columnsNamedIn(colsBody!, live),
+          ...columnsNamedIn(flagsBody!, live),
+          ...PRE_D81_COLUMNS,
+        ]);
+        const undecided = live.filter((c) => !covered.has(c));
+
+        expect(
+          undecided,
+          "มีคอลัมน์บน `trip_stops` ที่ไม่มี constraint ไหนครอบ และไม่ได้มีมาก่อน `D81`\n" +
+            "  🔴 ถ้ามันเป็นคอลัมน์ของ *เหตุการณ์* → จุดแวะธรรมดาจะถือมันได้ **ซึ่งคือรูที่ constraint นี้มีอยู่เพื่อปิด**\n" +
+            "  · ของเหตุการณ์ที่ nullable → ใส่ชื่อลงใน `event_columns_only_on_events`\n" +
+            "  · ของเหตุการณ์ที่ `not null default` → ใส่ลงใน `event_flags_only_on_events`\n" +
+            "    (**`num_nonnulls` มองไม่เห็นคอลัมน์ที่มี default** — `false`/`0` ไม่ใช่ null)\n" +
+            "  · ไม่ใช่ของเหตุการณ์ → **มาคุยกัน** อย่าเติมลง `PRE_D81_COLUMNS` ลิสต์นั้นแช่แข็งแล้ว",
+        ).toEqual([]);
       });
     });
 
