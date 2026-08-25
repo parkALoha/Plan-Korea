@@ -279,6 +279,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   const TABLES = [
     "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
     "catalog_countries", "catalog_cities", "catalog_places", "catalog_place_names",
+    "custom_places", "custom_place_names",
   ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
@@ -324,7 +325,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    · `trip_members` — ถอดสมาชิก/ลาออกเอง · `trip_plans` — ผู้ใช้ลบแผนจริง (usePlans.ts:157)
       //    ⚠️ เติมชื่อลงที่นี่ = ประกาศว่า "ลบแล้วหายจริง ยอมรับได้" · ถ้าคำตอบคือ soft delete
       //       ทางที่ถูกคือ **ไม่เติม** แล้วไปทำ `deleted_at` (`E2-AC12`) แทน
-      const MAY_DELETE = ["trip_members", "trip_plans"];
+      // `custom_places`/`custom_place_names` — ผู้ใช้ลบสถานที่ที่ตัวเองเพิ่มได้จริงวันนี้
+      // 🔴 และลบสถานที่ที่ยังอยู่ในแผนไม่ได้ **เพราะ `trip_stops.custom_place_id` เป็น `restrict`**
+      //    — กันด้วย FK ไม่ใช่ด้วยเคสที่แดงทีหลัง (บทเรียนจาก `D73`)
+      const MAY_DELETE = ["trip_members", "trip_plans", "custom_places", "custom_place_names"];
       if (!MAY_DELETE.includes(t)) {
         expect(verbs, `${t} มี policy DELETE แล้ว — ตั้งใจหรือเปล่า`).not.toContain("delete");
       }
@@ -357,6 +361,15 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "catalog_countries.catalog_countries_select",
       "catalog_place_names.catalog_place_names_select",
       "catalog_places.catalog_places_select",
+      // 🔴 คลัง**ของผู้เช่า** — ครบ 4 verb ต่างจากคลังกลางที่มีแต่ `select` (`D75`)
+      "custom_place_names.custom_place_names_delete",
+      "custom_place_names.custom_place_names_insert",
+      "custom_place_names.custom_place_names_select",
+      "custom_place_names.custom_place_names_update",
+      "custom_places.custom_places_delete",
+      "custom_places.custom_places_insert",
+      "custom_places.custom_places_select",
+      "custom_places.custom_places_update",
       "profiles.profiles_insert",
       "profiles.profiles_select",
       "profiles.profiles_update",
@@ -429,7 +442,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     for (const [key, body] of policyMap()) {
       if (body.includes("can_write_trip")) content.add(key.split(".")[0]);
     }
-    expect([...content].sort()).toEqual(["trip_day_plan_settings", "trip_days", "trip_plans"]);
+    expect([...content].sort()).toEqual([
+      "custom_place_names", "custom_places",
+      "trip_day_plan_settings", "trip_days", "trip_plans",
+    ]);
   });
 
   /**
@@ -488,6 +504,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 5 (`9dfaba9e…` → `be2d37ba…`) — `custom_places` + `custom_place_names` 8 policy
+    //    ครบ 4 verb ทั้งสองตาราง · ทุกกิ่งมีเคสสด (editor เขียนได้ · viewer อ่านได้เขียนไม่ได้ · คนนอกไม่เห็น)
     // 🔴 อัปเดตรอบ 4 (`f9c74ff5…` → `9dfaba9e…`) — คลังครบ 4 ตาราง (`places` · `place_names`)
     //    ทั้งสองเป็น `select` + `using (true)` เหมือนสองตัวแรก · **ไม่มีฝั่งเขียนเลยสักตัว**
     // 🔴 อัปเดตรอบ 3 (`b039fbcc…` → `f9c74ff5…`) — เพิ่มตารางคลัง 2 policy
@@ -501,7 +519,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "9dfaba9eaeb3724a",
+      "be2d37ba910e691a",
     );
   });
 });

@@ -97,8 +97,8 @@
 | `id` | คงเดิม |  |
 | `added_by` | `added_by_user uuid → profiles(id)` **+ คง `legacy_added_by text` ไว้ครบ** | E1-AC5 · D19 — สตริงเดิมเป็นข้อมูลเดียวที่บอกได้ว่าใครเพิ่มอะไรในทริปจริง **ห้ามทิ้ง** |
 | `city` | `city_id → catalog.cities` | B6 |
-| `name_th` | `place_names(place_id, locale, name)` | B6 — เลิกฝังภาษาไว้ในชื่อคอลัมน์ · เพิ่มภาษาใหม่ไม่ต้อง migration |
-| `name_en` | `place_names(...)` | B6 |
+| `name_th` | **`custom_place_names`**`(place_id, locale, name, priority)` | B6 · 🔴 **`D75`** — เป็นตาราง**ใบของ `custom_places`** ไม่ใช่ `catalog_place_names` (พ่อคนละโมเดลความปลอดภัย) |
+| `name_en` | `custom_place_names(...)` | B6 · `D75` |
 | `category` | คงเดิม |  |
 | `lat` | คงเดิม |  |
 | `lng` | คงเดิม |  |
@@ -106,7 +106,7 @@
 | `description` | คงเดิม |  |
 | `created_at` | คงเดิม |  |
 | `google_place_id` | คงเดิม |  |
-| `name_ko` | `place_names(...)` | B6 |
+| `name_ko` | `custom_place_names(...)` | B6 · `D75` |
 
 ## `hidden_places` → `hidden_places`
 
