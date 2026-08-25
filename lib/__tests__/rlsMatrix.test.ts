@@ -278,7 +278,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   //    ต่างจากตารางอื่นทั้งหมดใน `public` ซึ่งเป็นข้อมูลผู้เช่าที่ RLS ผูกกับ `trip_members`
   const TABLES = [
     "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
-    "catalog_countries", "catalog_cities",
+    "catalog_countries", "catalog_cities", "catalog_places", "catalog_place_names",
   ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
@@ -355,6 +355,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    เติม policy ฝั่งเขียนให้คลังเมื่อไหร่ = ผู้ใช้แก้คลังกลางได้ ต้องเป็นการตัดสินใจ
       "catalog_cities.catalog_cities_select",
       "catalog_countries.catalog_countries_select",
+      "catalog_place_names.catalog_place_names_select",
+      "catalog_places.catalog_places_select",
       "profiles.profiles_insert",
       "profiles.profiles_select",
       "profiles.profiles_update",
@@ -486,6 +488,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 4 (`f9c74ff5…` → `9dfaba9e…`) — คลังครบ 4 ตาราง (`places` · `place_names`)
+    //    ทั้งสองเป็น `select` + `using (true)` เหมือนสองตัวแรก · **ไม่มีฝั่งเขียนเลยสักตัว**
     // 🔴 อัปเดตรอบ 3 (`b039fbcc…` → `f9c74ff5…`) — เพิ่มตารางคลัง 2 policy
     //    ทั้งคู่เป็น `using (true)` **โดยตั้งใจและระบุชื่อไว้** (`D74`) — คลังเป็นข้อมูลสาธารณะ
     //    ⚠️ ถ้าวันหนึ่ง fingerprint เปลี่ยนเพราะมีคนเติม policy **ฝั่งเขียน** ให้คลัง นั่นคือคนละเรื่องกันสิ้นเชิง
@@ -497,7 +501,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "f9c74ff53a5a33ac",
+      "9dfaba9eaeb3724a",
     );
   });
 });
@@ -2048,6 +2052,132 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     it("🔴 ลบประเทศที่ยังมีเมืองอยู่ไม่ได้ (`restrict`) — เมืองกำพร้าคือเมืองที่ไม่มีประเทศ", async () => {
       const { error } = await admin.from("catalog_countries").delete().eq("id", cc);
       expect(error?.code, `ลบประเทศที่มีเมืองได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — คลังสถานที่: `catalog_places` + `catalog_place_names` (D55 · D70)", () => {
+    /**
+     * ⚠️ **เคสชุดนี้ไม่เคยถูกเห็นแดงก่อน apply — P1 เผลอ `db push` ก่อนเขียนเคส**
+     * ผิดกฎข้อ 2 ของรายการที่ P1 เป็นคนดูแลเอง (*"ต้องเห็นมันแดงก่อน"*) · **เขียนไว้แทนที่จะเงียบ**
+     * สิ่งที่แบกน้ำหนักแทนในชุดนี้คือ **คู่สองทิศทุกข้อ**: ทางที่ถูกต้องต้องผ่าน และทางที่ผิดต้องถูกปฏิเสธ
+     * **ด้วยรหัสข้อผิดพลาดที่ระบุ** — constraint ที่ไม่มีอยู่จะทำให้ครึ่งหลังแดงทันที
+     * 📌 ครั้งหน้าเขียนเคสก่อน push — ราคาของการทำผิดลำดับคือหลักฐานที่อ่อนกว่าที่ควรเป็น
+     */
+    const cc2 = "zy";
+    let cityA = "", cityB = "", placeA = "";
+
+    const mkCity = async (slug: string, lat: number) => {
+      const { data, error } = await admin
+        .from("catalog_cities")
+        .insert({ country_id: cc2, legacy_slug: slug, name_th: slug, name_en: slug, lat, lng: 100, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (error) throw new Error(`seed city ${slug}: ${error.message}`);
+      return data.id as string;
+    };
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", cc2);
+      await admin.from("catalog_countries").delete().eq("id", cc2);
+      const co = await admin.from("catalog_countries")
+        .insert({ id: cc2, name_th: "ทดสอบสอง", name_en: "Testland2" });
+      if (co.error) throw new Error(`seed country: ${co.error.message}`);
+
+      cityA = await mkCity(`ca-${stamp}`.slice(0, 40), 35);
+      cityB = await mkCity(`cb-${stamp}`.slice(0, 40), 36);
+
+      const pl = await admin.from("catalog_places")
+        .insert({ city_id: cityA, legacy_slug: `pl-${stamp}`.slice(0, 60), category: "food", source: "curated", weather_sensitivity: "mixed", lat: 35, lng: 100 })
+        .select("id").single();
+      if (pl.error) throw new Error(`seed place: ${pl.error.message}`);
+      placeA = pl.data.id as string;
+
+      const nm = await admin.from("catalog_place_names")
+        .insert({ place_id: placeA, city_id: cityA, locale: "th", name: "ตลาดกลางคืน", priority: 1 });
+      if (nm.error) throw new Error(`seed name: ${nm.error.message}`);
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_places").delete().in("city_id", [cityA, cityB]);
+      await admin.from("catalog_cities").delete().eq("country_id", cc2);
+      await admin.from("catalog_countries").delete().eq("id", cc2);
+    });
+
+    it("ด้านบวก: ผู้ใช้ที่ล็อกอินอ่านสถานที่และชื่อได้", async () => {
+      const pl = await A.from("catalog_places").select("category,weather_sensitivity").eq("id", placeA).single();
+      expect(pl.error, `อ่านสถานที่ไม่ได้: ${pl.error?.message}`).toBeNull();
+      expect(pl.data?.weather_sensitivity).toBe("mixed");
+
+      const nm = await A.from("catalog_place_names").select("name").eq("place_id", placeA);
+      expect(nm.data, "ชื่ออ่านไม่ได้ = ทุกที่ที่แสดงชื่อสถานที่พัง").toHaveLength(1);
+    });
+
+    it("🔴 D70 — ชื่อของสถานที่ในเมือง A จะถูกติดป้ายเมือง B ไม่ได้", async () => {
+      // `admin` เขียนได้ทั้งสองเมือง → **FK ประกอบเป็นตัวปฏิเสธ ไม่ใช่สิทธิ์**
+      const { error } = await admin.from("catalog_place_names")
+        .insert({ place_id: placeA, city_id: cityB, locale: "en", name: "Wrong City", priority: 1 });
+      expect(
+        error?.code,
+        `จับคู่ข้ามเมืองสำเร็จ: ${error?.message ?? "ไม่มี error"}\n` +
+          "  = ค้นชื่อแบบจำกัดเมืองก่อนจะคืนผลของเมืองอื่น ซึ่งคือปัญหาที่ city_id ถูก denormalize มาเพื่อแก้",
+      ).toBe("23503");
+    });
+
+    it("🔴 D55 — `priority` ซ้ำใน (place, locale) เดียวกันไม่ได้ · เสมอกันไม่ได้", async () => {
+      const { error } = await admin.from("catalog_place_names")
+        .insert({ place_id: placeA, city_id: cityA, locale: "th", name: "ชื่อที่สอง", priority: 1 });
+      expect(error?.code, `priority ซ้ำเขียนลงได้: ${error?.message ?? "ไม่มี error"}`).toBe("23505");
+    });
+
+    it("ด้านบวกของ `priority`: ชื่อที่สองในภาษาเดียวกันเพิ่มได้ ถ้าลำดับไม่ชน", async () => {
+      const ins = await admin.from("catalog_place_names")
+        .insert({ place_id: placeA, city_id: cityA, locale: "th", name: "ชื่อเล่น", priority: 2 });
+      expect(ins.error, `เพิ่มชื่อที่สองไม่ได้: ${ins.error?.message}`).toBeNull();
+
+      // 🎯 หัวใจของ `priority`: **ลบตัวที่ 1 แล้วตัวที่ 2 กลายเป็น primary เอง ไม่ต้องเขียนอะไรเลย**
+      await admin.from("catalog_place_names")
+        .delete().eq("place_id", placeA).eq("locale", "th").eq("priority", 1);
+      const { data } = await admin.from("catalog_place_names")
+        .select("name,priority").eq("place_id", placeA).eq("locale", "th").order("priority").limit(1);
+      expect(
+        data?.[0]?.name,
+        "ลบชื่ออันดับ 1 แล้วไม่มีชื่อไหนเป็น primary = สถานะที่ `is_primary` ปล่อยผ่าน แต่ `priority` ต้องไม่",
+      ).toBe("ชื่อเล่น");
+    });
+
+    it("🔴 `weather_sensitivity` รับได้ 3 ค่าเท่านั้น — ห้ามให้ Copilot เดาเอง", async () => {
+      const { error } = await admin.from("catalog_places")
+        .insert({ city_id: cityA, category: "culture", weather_sensitivity: "maybe", lat: 1, lng: 1 });
+      expect(error?.code, `รับค่าที่ไม่มีในรายการ: ${error?.message ?? "ไม่มี error"}`).toBe("23514");
+    });
+
+    it("🔴 `legacy_slug` ซ้ำไม่ได้ — E7 join ด้วยคอลัมน์นี้", async () => {
+      const { error } = await admin.from("catalog_places")
+        .insert({ city_id: cityA, legacy_slug: `pl-${stamp}`.slice(0, 60), category: "food", lat: 1, lng: 1 });
+      expect(error?.code, `slug ซ้ำเขียนลงได้: ${error?.message ?? "ไม่มี error"}`).toBe("23505");
+    });
+
+    it("🔴 ผู้ใช้เขียนคลังสถานที่ไม่ได้ · anon ไม่ได้อะไรเลย", async () => {
+      const ins = await A.from("catalog_places")
+        .insert({ city_id: cityA, category: "fake", lat: 1, lng: 1 });
+      expect(ins.error?.code, `ผู้ใช้เพิ่มสถานที่ได้: ${ins.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      const anon = await D.from("catalog_place_names").select("name");
+      expect(anon.data ?? [], "anon อ่านชื่อสถานที่ได้").toEqual([]);
+    });
+
+    it("🔴 ลบเมืองที่ยังมีสถานที่อยู่ไม่ได้ (`restrict`) · แต่ลบสถานที่แล้วชื่อหายตาม (`cascade`)", async () => {
+      const city = await admin.from("catalog_cities").delete().eq("id", cityA);
+      expect(city.error?.code, `ลบเมืองที่มีสถานที่ได้: ${city.error?.message ?? "ไม่มี error"}`).toBe("23503");
+
+      const p2 = await admin.from("catalog_places")
+        .insert({ city_id: cityB, category: "temp", lat: 2, lng: 2 }).select("id").single();
+      expect(p2.error).toBeNull();
+      await admin.from("catalog_place_names")
+        .insert({ place_id: p2.data!.id, city_id: cityB, locale: "th", name: "ชั่วคราว", priority: 1 });
+      await admin.from("catalog_places").delete().eq("id", p2.data!.id);
+      const left = await admin.from("catalog_place_names").select("name").eq("place_id", p2.data!.id);
+      expect(left.data, "ลบสถานที่แล้วชื่อยังค้าง = แถวกำพร้าที่ไม่มีใครเห็น").toEqual([]);
     });
   });
 
