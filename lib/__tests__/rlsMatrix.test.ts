@@ -280,7 +280,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
     "catalog_countries", "catalog_cities", "catalog_places", "catalog_place_names",
     "custom_places", "custom_place_names", "trip_stops", "bookings",
-    "checklist_items", "place_notes", "hidden_places",
+    "checklist_items", "place_notes", "hidden_places", "trip_hotels",
   ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
@@ -420,6 +420,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "trip_days.trip_days_insert",
       "trip_days.trip_days_select",
       "trip_days.trip_days_update",
+      "trip_hotels.trip_hotels_insert",
+      "trip_hotels.trip_hotels_select",
+      "trip_hotels.trip_hotels_update",
       "trip_members.trip_members_delete",
       "trip_members.trip_members_insert",
       "trip_members.trip_members_select",
@@ -506,7 +509,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     expect([...content].sort()).toEqual([
       "bookings", "checklist_items", "custom_place_names", "custom_places",
       "hidden_places", "place_notes",
-      "trip_day_plan_settings", "trip_days", "trip_plans", "trip_stops",
+      "trip_day_plan_settings", "trip_days", "trip_hotels", "trip_plans", "trip_stops",
     ]);
   });
 
@@ -569,6 +572,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.soft_delete_checklist_item",
       "public.soft_delete_custom_place",
       "public.soft_delete_place_note",
+      "public.soft_delete_trip_hotel",
       "public.soft_delete_trip_stop",
       "public.unsafe_state_clear",
       "public.unsafe_state_reason",
@@ -585,6 +589,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 11 (`329ba089…` → `871a35aa…`) — `trip_hotels` 3 policy (`D51` + `D76`)
     // 🔴 อัปเดตรอบ 10 (`35d64de3…` → `329ba089…`) — `checklist_items` · `place_notes` · `hidden_places`
     //    `hidden_places` มี DELETE โดยตั้งใจ · อีกสองตัวไม่มี (`D76`)
     // 🔴 อัปเดตรอบ 9 (`2a759c27…` → `35d64de3…`) — `bookings` 3 policy (ไม่มี DELETE · `D76`)
@@ -612,7 +617,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "329ba089738804ee",
+      "871a35aaced9c739",
     );
   });
 });
@@ -3249,6 +3254,129 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         const v = await C.from("hidden_places").insert({ trip_id: tripK, catalog_place_id: catK });
         expect(v.error?.code).toBe("42501");
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — `trip_hotels`: `D51` ที่รอ `D76` มาตั้งแต่ต้น", () => {
+    /**
+     * ✅ เขียนก่อน `db push`
+     *
+     * `D51` ตัดสินไว้ตั้งแต่ 24 ส.ค. ว่า **`leg_id` ที่เป็นค่าคำนวณต้องหายไป** — ใบจองที่พัก
+     * ผูกกับ **ช่วงวันที่ของตัวเอง** (`check_in` / `check_out`) แทน
+     * > *"คืนนี้นอนที่ไหน" = แถวที่ `check_in <= วันนั้น < check_out`*
+     * 🔴 และ `D51` เขียนไว้เองว่าต้องมี **exclusion constraint กันช่วงวันซ้อนกัน**
+     *    **เขียนไม่ได้จนกว่าตระกูลนี้จะมี `deleted_at`** — ซึ่งคือเหตุผลที่ P7 บังคับให้ `D76` ตัดสินก่อน
+     *
+     * 🎯 **เคสที่สำคัญที่สุดของบล็อกนี้คือเคสสุดท้าย** — ที่พักที่ถูกลบไปแล้ว **ต้องไม่กันช่วงวัน**
+     * ถ้ากัน ผู้ใช้จะจองที่พักคืนเดิมใหม่ไม่ได้ตลอดกาล โดยที่หน้าจอไม่มีอะไรอยู่ตรงนั้นเลย
+     */
+    let tripH = "", cityH = "";
+    const ccH = TEST_COUNTRY_CODES.tripHotels;
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccH);
+      await admin.from("catalog_countries").delete().eq("id", ccH);
+      await admin.from("catalog_countries").insert({ id: ccH, name_th: "ทดสอบแปด", name_en: "T8" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccH, name_th: "เมืองH", name_en: "CityH", lat: 37, lng: 127, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      cityH = ci.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `hotel-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripH = t.data.id as string;
+      await A.from("trip_members").insert({ trip_id: tripH, user_id: ids.b, role: "editor" });
+      await A.from("trip_members").insert({ trip_id: tripH, user_id: ids.c, role: "viewer" });
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_countries").delete().eq("id", ccH);
+    });
+
+    it("ด้านบวก: editor เพิ่มที่พักพร้อมช่วงวันได้", async () => {
+      const { error } = await B.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: `โรงแรม A ${stamp}`,
+        check_in: "2026-10-11", check_out: "2026-10-14",
+      });
+      expect(error, `เพิ่มที่พักไม่ได้: ${error?.message}`).toBeNull();
+    });
+
+    it("ด้านบวก: ช่วงวันที่ต่อกันพอดี (เช็คเอาต์วันเดียวกับเช็คอินอันถัดไป) ต้องได้", async () => {
+      const { error } = await B.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: `โรงแรม B ${stamp}`,
+        check_in: "2026-10-14", check_out: "2026-10-17",
+      });
+      expect(
+        error,
+        `ช่วงวันต่อกันพอดีถูกปฏิเสธ: ${error?.message}\n` +
+          "  🔴 = ใช้ `[]` แทน `[)` · ย้ายโรงแรมวันไหนก็ชนกันหมด ซึ่งเป็นเรื่องปกติของทุกทริป",
+      ).toBeNull();
+    });
+
+    it("🔴 D51 — ช่วงวันซ้อนกันในทริปเดียวไม่ได้ (นอน 2 ที่คืนเดียวกัน)", async () => {
+      const { error } = await B.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: `ซ้อน ${stamp}`,
+        check_in: "2026-10-12", check_out: "2026-10-13",
+      });
+      expect(
+        error?.code,
+        `ที่พักซ้อนช่วงวันเขียนลงได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  = 'คืนนี้นอนที่ไหน' ตอบได้สองคำตอบ และไม่มีอะไรบอกว่าอันไหนจริง",
+      ).toBe("23P01");
+    });
+
+    it("ด้านบวก: ทริปคนละใบ ช่วงวันซ้อนกันได้ตามปกติ", async () => {
+      const t2 = await A.rpc("create_trip", {
+        p_title: `hotel2-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const { error } = await A.from("trip_hotels").insert({
+        trip_id: t2.data.id, city_id: cityH, hotel_name: `คนละทริป ${stamp}`,
+        check_in: "2026-10-12", check_out: "2026-10-13",
+      });
+      expect(error, `ทริปคนละใบยังชนกัน = exclusion ไม่ได้แยกตามทริป: ${error?.message}`).toBeNull();
+    });
+
+    it("🔴 `check_out` ต้องหลัง `check_in`", async () => {
+      const { error } = await B.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: `ย้อนเวลา ${stamp}`,
+        check_in: "2026-10-20", check_out: "2026-10-19",
+      });
+      expect(error?.code, `ช่วงวันย้อนหลังเขียนได้: ${error?.message ?? "ไม่มี error"}`).toBe("23514");
+    });
+
+    it("🔴 viewer เพิ่มที่พักไม่ได้ · anon ไม่ได้อะไรเลย", async () => {
+      const v = await C.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: "x", check_in: "2026-10-18", check_out: "2026-10-19",
+      });
+      expect(v.error?.code).toBe("42501");
+      const anon = await D.from("trip_hotels").select("hotel_name");
+      expect(anon.data ?? []).toEqual([]);
+    });
+
+    it("🔴 **เคสที่ `D76` ถูกบังคับให้ตัดสินก่อนเพราะข้อนี้** — ที่พักที่ถูกลบแล้วต้องไม่กันช่วงวัน", async () => {
+      const mk = await B.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: `จะถูกลบ ${stamp}`,
+        check_in: "2026-10-18", check_out: "2026-10-20",
+      }).select("id").single();
+      expect(mk.error, `เพิ่มที่พักไม่ได้: ${mk.error?.message}`).toBeNull();
+
+      const del = await B.rpc("soft_delete_trip_hotel", { p_id: mk.data!.id });
+      expect(del.error, `ลบที่พักไม่ได้: ${del.error?.message}`).toBeNull();
+
+      const again = await B.from("trip_hotels").insert({
+        trip_id: tripH, city_id: cityH, hotel_name: `จองใหม่ ${stamp}`,
+        check_in: "2026-10-18", check_out: "2026-10-20",
+      });
+      expect(
+        again.error,
+        `จองที่พักคืนเดิมใหม่ไม่ได้: ${again.error?.message}\n` +
+          "  🔴 = exclusion ไม่มี `where (deleted_at is null)` → ที่พักที่ผู้ใช้มองไม่เห็นแล้ว\n" +
+          "     ยังกันช่วงวันอยู่ตลอดกาล และไม่มีอะไรบนหน้าจออธิบายได้เลยว่าทำไม",
+      ).toBeNull();
     });
   });
 

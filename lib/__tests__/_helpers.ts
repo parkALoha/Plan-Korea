@@ -147,4 +147,6 @@ export const TEST_COUNTRY_CODES = {
   bookings: "zu",
   /** บล็อก `checklist_items` · `place_notes` · `hidden_places` — P1 */
   tripContent: "zt",
+  /** บล็อก `trip_hotels` (`D51`) — P1 */
+  tripHotels: "zs",
 } as const;
