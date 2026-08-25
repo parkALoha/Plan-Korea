@@ -161,6 +161,8 @@ export const TEST_COUNTRY_CODES = {
   catalogChildren: "xu",
   /** บล็อก `D81` — `trip_stops` รับเหตุการณ์ · P4 */
   stopEvents: "xv",
+  /** บล็อก `search_place_names()` (`D56`) — P4 */
+  placeSearch: "xw",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */

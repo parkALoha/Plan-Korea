@@ -3643,6 +3643,164 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 D56/E2 — `search_place_names()`: `invoker` ที่ไม่มีการตรวจสิทธิ์เลยสักบรรทัด", () => {
+    /**
+     * 🔴 **ฟังก์ชันนี้เป็น `security invoker` และ *ไม่มีโค้ดตรวจสิทธิ์อยู่ในตัวมันเลย***
+     * มันพึ่ง RLS ของ `trip_stops` ล้วน ๆ ผ่าน `exists (...)` → **ถ้า RLS ไม่ครอบตรงไหน มันรั่วเงียบ**
+     * · นั่นทำให้เคสแรกของบล็อกนี้ไม่ใช่เคสฟีเจอร์ **แต่เป็นเคสความปลอดภัย**
+     *
+     * 🎯 **และ `invoker` คือทางเลือกที่ถูกสำหรับฟังก์ชันชนิดนี้** — `definer` จะแปลว่าต้องเขียน
+     * การตรวจสิทธิ์เองทุกบรรทัด แล้วเราจะได้แหล่งความจริงที่สองที่ต้องคอยให้ตรงกับ RLS (`P-15`)
+     * · ราคาของมันคือ **ต้องมีเคสยืนยันว่า RLS ครอบจริง** ไม่ใช่เชื่อว่าครอบ
+     *
+     * ⚠️ **สองเจตนา (`identify`/`discover`) กลับทิศกันสองข้อ และผิดข้างแล้วยังดูปกติทั้งคู่:**
+     * `picker_hidden` — `identify` ไม่กรอง (สนามบินคือจุดแวะจริง) · `discover` กรอง
+     * ของที่อยู่ในทริปแล้ว — `identify` คืน (มันคือสิ่งที่ถาม) · `discover` ตัดออก
+     */
+    const ccR = TEST_COUNTRY_CODES.placeSearch;
+    let tripR = "", cityR = "", inTrip = "", hiddenP = "", freeP = "", myR = "";
+
+    beforeAll(async () => {
+      await purgeCountry(ccR);
+      await admin.from("catalog_countries").insert({ id: ccR, name_th: "ทดสอบค้นหา", name_en: "SRCH" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccR, name_th: "เมืองR", name_en: "CityR", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      cityR = ci.data.id as string;
+
+      const mkPlace = async (pickerHidden: boolean, name: string) => {
+        const p = await admin.from("catalog_places")
+          .insert({ city_id: cityR, category: "sight", lat: 35, lng: 129, picker_hidden: pickerHidden })
+          .select("id").single();
+        if (p.error) throw new Error(`seed place: ${p.error.message}`);
+        const n = await admin.from("catalog_place_names")
+          .insert({ place_id: p.data.id, city_id: cityR, name, locale: "th" });
+        if (n.error) throw new Error(`seed name: ${n.error.message}`);
+        return p.data.id as string;
+      };
+      inTrip = await mkPlace(false, `ทงแดมุนในทริป ${stamp}`);
+      hiddenP = await mkPlace(true, `ทงแดมุนซ่อน ${stamp}`);
+      freeP = await mkPlace(false, `ทงแดมุนอิสระ ${stamp}`);
+
+      const t = await A.rpc("create_trip", {
+        p_title: `srch-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripR = t.data.id as string;
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripR).eq("is_active", true).single();
+      const dy = await A.from("trip_days").insert({ trip_id: tripR, date: "2026-10-12" }).select("id").single();
+      if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
+      const base = { trip_id: tripR, plan_id: pl.data!.id, trip_day_id: dy.data.id };
+
+      await A.from("trip_stops").insert({ ...base, rank: "a", kind: "place", catalog_place_id: inTrip });
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripR, city_id: cityR, category: "cafe", lat: 35.1, lng: 129.1 })
+        .select("id").single();
+      if (mp.error) throw new Error(`custom place: ${mp.error.message}`);
+      myR = mp.data.id as string;
+      await A.from("custom_place_names")
+        .insert({ trip_id: tripR, place_id: myR, locale: "th", name: `ร้านลับ ${stamp}` });
+      await A.from("trip_stops").insert({ ...base, rank: "b", kind: "place", custom_place_id: myR });
+    });
+
+    afterAll(async () => {
+      await admin.from("trips").delete().eq("id", tripR);
+      const error = await purgeCountry(ccR);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อกค้นหาไม่สำเร็จ: ${error}\n`);
+    });
+
+    type Hit = { source: string; place_id: string };
+    const search = async (
+      c: SupabaseClient,
+      args: Record<string, unknown>,
+    ): Promise<{ rows: Hit[]; code: string | null }> => {
+      const r = await c.rpc("search_place_names", { p_trip_id: tripR, ...args });
+      return { rows: (r.data ?? []) as Hit[], code: r.error?.code ?? null };
+    };
+
+    it("🔴 ① คนนอกเรียกด้วย `p_trip_id` ของ A ต้องได้ 0 แถว — ฟังก์ชันไม่มีด่านของตัวเอง", async () => {
+      const mine = await search(A, { p_query: "ทงแดมุน", p_intent: "identify" });
+      // ด้านบวกต้องมาก่อน: ถ้าเจ้าของก็ได้ 0 เคสด้านลบไม่ได้พิสูจน์อะไร (`P-44`)
+      expect(mine.rows.length, "เจ้าของค้นของตัวเองไม่เจอ — เคสด้านลบข้างล่างไม่มีความหมาย").toBeGreaterThan(0);
+
+      const outsider = await search(B, { p_query: "ทงแดมุน", p_intent: "identify" });
+      expect(
+        outsider.rows,
+        "คนนอกค้นเจอสถานที่ในทริปของคนอื่น\n" +
+          "  🔴 ฟังก์ชันเป็น `invoker` และไม่มีการตรวจสิทธิ์ในตัวเลย — ถ้าข้อนี้แดง แปลว่า\n" +
+          "     RLS ของ `trip_stops` ไม่ได้ครอบเส้นทางที่ `exists (...)` เดิน",
+      ).toEqual([]);
+    });
+
+    it("🔴 ② `p_intent` ที่ไม่ใช่สองค่านั้น ต้อง raise ไม่ใช่คืน 0 แถว", async () => {
+      // 🎯 0 แถวอ่านเหมือน "ไม่เจอ" — ซึ่งคือสิ่งที่คนเรียกจะเชื่อ แล้วเขียนจุดเรียกผิดต่อไปเงียบ ๆ
+      for (const bad of ["nope", "", "IDENTIFY", null]) {
+        const r = await search(A, { p_query: "ทงแดมุน", p_intent: bad });
+        expect(r.code, `p_intent=${JSON.stringify(bad)} ไม่ raise — คืน ${r.rows.length} แถวแทน`).not.toBeNull();
+      }
+    });
+
+    it("🔴 ③ `picker_hidden` — `discover` ต้องไม่คืน · `identify` ต้องคืน (กลับทิศกัน)", async () => {
+      const disc = await search(A, { p_query: "ทงแดมุน", p_intent: "discover", p_city_id: cityR });
+      expect(
+        disc.rows.some((r) => r.place_id === hiddenP),
+        "`discover` คืนสถานที่ที่ถูกซ่อนจากตัวเลือก",
+      ).toBe(false);
+      expect(disc.rows.some((r) => r.place_id === freeP), "`discover` ไม่คืนของที่ควรคืน").toBe(true);
+    });
+
+    it("🔴 ④ `discover` ตัดของที่อยู่ในทริปแล้วออก · `identify` ไม่ตัด", async () => {
+      const disc = await search(A, { p_query: "ทงแดมุน", p_intent: "discover", p_city_id: cityR });
+      expect(disc.rows.some((r) => r.place_id === inTrip), "`discover` เสนอของที่อยู่ในทริปแล้ว").toBe(false);
+
+      const idf = await search(A, { p_query: "ทงแดมุน", p_intent: "identify" });
+      expect(idf.rows.some((r) => r.place_id === inTrip), "`identify` ไม่คืนของที่อยู่ในทริป").toBe(true);
+    });
+
+    it("🔴 ⑤ `identify` ต้องเจอสถานที่ที่ผู้ใช้เพิ่มเอง ไม่ใช่แค่คลังกลาง", async () => {
+      const r = await search(A, { p_query: "ร้านลับ", p_intent: "identify" });
+      expect(
+        r.rows.some((x) => x.source === "custom" && x.place_id === myR),
+        "`identify` มองไม่เห็น custom place — *ทุกอย่างที่ทริปอ้างถึง* ต้องรวมของที่ผู้ใช้เพิ่มเองด้วย",
+      ).toBe(true);
+    });
+
+    it("🔴 ⑥ จุดแวะที่ถูกลบแล้ว ต้องไม่นับว่า 'อยู่ในทริป' ทั้งสองขา", async () => {
+      // สร้างจุดแวะชี้ `freeP` แล้วลบ → `discover` ต้องยังเสนอ `freeP` · `identify` ต้องไม่คืน
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripR).eq("is_active", true).single();
+      const dy = await A.from("trip_days").select("id").eq("trip_id", tripR).limit(1).single();
+      const st = await A.from("trip_stops")
+        .insert({ trip_id: tripR, plan_id: pl.data!.id, trip_day_id: dy.data!.id, rank: "zzz", kind: "place", catalog_place_id: freeP })
+        .select("id").single();
+      expect(st.error?.message ?? null).toBeNull();
+
+      const beforeDelete = await search(A, { p_query: "ทงแดมุน", p_intent: "discover", p_city_id: cityR });
+      expect(beforeDelete.rows.some((r) => r.place_id === freeP), "ยังไม่ลบ แต่ `discover` ยังเสนออยู่").toBe(false);
+
+      const del = await A.rpc("soft_delete_trip_stop", { p_id: st.data!.id });
+      expect(del.error?.message ?? null).toBeNull();
+
+      const afterDelete = await search(A, { p_query: "ทงแดมุน", p_intent: "discover", p_city_id: cityR });
+      expect(
+        afterDelete.rows.some((r) => r.place_id === freeP),
+        "ลบจุดแวะแล้ว แต่ `discover` ยังไม่เสนอสถานที่นั้นกลับมา\n" +
+          "  🔴 = แถวที่ผู้ใช้ลบไปแล้วยังบังคับพฤติกรรมอยู่ · ตระกูลเดียวกับที่พัก `D76` ที่กันช่วงวันตลอดกาล",
+      ).toBe(true);
+
+      const idf = await search(A, { p_query: "ทงแดมุน", p_intent: "identify" });
+      expect(idf.rows.some((r) => r.place_id === freeP), "`identify` ยังคืนจุดแวะที่ถูกลบแล้ว").toBe(false);
+    });
+
+    it("🔴 ⑦ คำค้นว่าง/ช่องว่างล้วน ต้องได้ 0 แถว ไม่ใช่ทั้งคลัง", async () => {
+      for (const q of ["", "   ", "\t"]) {
+        const r = await search(A, { p_query: q, p_intent: "discover", p_city_id: cityR });
+        expect(r.rows, `คำค้น ${JSON.stringify(q)} คืน ${r.rows.length} แถว`).toEqual([]);
+      }
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2-AC1 — คนนอกอ่านอะไรของทริป A ไม่ได้เลย **ทุกตารางที่ผูกกับทริป**", () => {
     /**
      * **`US-E2` เขียนไว้ตรงตัว:** *"ในฐานะผู้ใช้ C ฉันต้องไม่สามารถอ่านหรือแก้อะไรของทริป A ได้เลย
