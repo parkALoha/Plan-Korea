@@ -2469,7 +2469,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      * เพราะตารางเดียวจะบังคับให้ policy เดียวรับใช้ทั้ง `using (true)` และเงื่อนไขผูก `trip_members`
      * ด้วย `or` — **และบั๊กใน `or` นั้นครั้งเดียวคือชื่อสถานที่ในทริปคนอื่นรั่ว**
      */
-    let tripC = "", cityC = "", cc3 = TEST_COUNTRY_CODES.customPlaces, placeC = "";
+    const cc3 = TEST_COUNTRY_CODES.customPlaces;
+    let tripC = "", cityC = "", placeC = "";
 
     beforeAll(async () => {
       const t = await A.rpc("create_trip", {
