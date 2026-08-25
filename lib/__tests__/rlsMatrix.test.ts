@@ -17,7 +17,10 @@ import {
  * คือชนิดของบั๊กที่เอกสารความปลอดภัยของเราจัดเป็นหมวดจับยากที่สุด:
  *   ครอบ    = `profiles` · `trips` · `trip_members` (3 ตารางของ E1) ผ่าน **PostgREST ด้วย JWT จริง**
  *             ซึ่งเป็นเส้นทางเดียวกับที่ browser ใช้ → วัด RLS ตามที่ผู้ใช้จะเจอจริง
- *   ไม่ครอบ = ตารางเนื้อหาของ E2 (ยังไม่มี) · Storage · Realtime
+ *   ไม่ครอบ = Realtime
+ *           · ⚠️ **ข้อความเดิมเขียนว่าไม่ครอบ "ตารางเนื้อหาของ E2" กับ "Storage" — หมดอายุแล้ว**
+ *             `E2` ลงตารางเนื้อหาครบ และ `E2-AC5` เพิ่มเคส Storage ที่วัดจากข้างนอกด้วย `fetch()` แล้ว
+ *             (25 ส.ค. 2026 · P4) — ขอบเขตที่เขียนไว้แคบกว่าของจริง **อ่านแล้วเลิกตรวจ** ซึ่งคือ `D35`
  *           · **การต่อ Postgres ตรง** — ตั้งใจไม่ทำ เพราะ service role มี BYPASSRLS
  *             จะทำให้ทุกเคสผ่านโดยไม่ได้ทดสอบ RLS เลยสักข้อ
  *
@@ -3013,6 +3016,181 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           "  🔴 = exclusion ไม่มี `where (deleted_at is null)` → ที่พักที่ผู้ใช้มองไม่เห็นแล้ว\n" +
           "     ยังกันช่วงวันอยู่ตลอดกาล และไม่มีอะไรบนหน้าจออธิบายได้เลยว่าทำไม",
       ).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — แคช 4 ใบ: ชั้น ③ ของ `P-33` (ไคลเอนต์ต้องแตะไม่ได้เลยสักทาง)", () => {
+    /**
+     * แคชไม่มี policy สักตัว และถูก `revoke all from public, anon, authenticated`
+     * → **ไม่ใช่ "RLS กรองให้เห็น 0 แถว" แต่คือ "ไม่มีสิทธิ์แตะตารางเลย"** — คนละกลไก
+     *   จึงต้อง assert `42501` **ไม่ใช่ `data === []`** · ถ้าเจอ `[]` แปลว่าด่านเปลี่ยนชั้นไปแล้ว
+     *
+     * 🔴 **กับดักข้อ 3 ของหัวไฟล์ ใช้กับบล็อกนี้แรงเป็นพิเศษ:**
+     * ตารางที่ **ว่างเปล่า** ทำให้เคสด้านลบทุกข้อเขียว **โดยไม่ได้พิสูจน์อะไรเลย**
+     * → `beforeAll` **seed ด้วย `service_role` ก่อน** และเคสแรกยืนยันว่าแถวอยู่จริง
+     *   ถ้าเคสนั้นแดง ทั้งบล็อกถือว่า inconclusive ไม่ใช่ pass
+     *
+     * 📌 `P-33` เขียนไว้ว่า *"`authenticated` ที่ไม่ใช่ใครเป็นพิเศษ ต้องถูกปฏิเสธครบ 4 verb"* —
+     *    แคชไม่มี `trip_id` จึงไม่มีคำถามว่า "สมาชิกคนไหน" · คำถามเดียวคือ **แตะได้ไหม**
+     */
+    const CACHES = [
+      "place_details_cache",
+      "place_details_local_cache",
+      "place_photo_cache",
+      "travel_time_cache",
+    ] as const;
+
+    const key = `p4-cache-${stamp}`;
+    const seedRow: Record<string, Record<string, unknown>> = {
+      place_details_cache: { maps_query: key },
+      place_details_local_cache: { maps_query: key, locale: "th" },
+      place_photo_cache: { maps_query: key },
+      travel_time_cache: {
+        from_place_id: `${key}-a`,
+        to_place_id: `${key}-b`,
+        travel_mode: "walk",
+        duration_minutes: 5,
+      },
+    };
+    /** คอลัมน์ที่ใช้ระบุแถวของรอบนี้ — ต่างกันตามตาราง */
+    const idCol: Record<string, string> = {
+      place_details_cache: "maps_query",
+      place_details_local_cache: "maps_query",
+      place_photo_cache: "maps_query",
+      travel_time_cache: "from_place_id",
+    };
+    const idVal = (t: string) => (t === "travel_time_cache" ? `${key}-a` : key);
+
+    beforeAll(async () => {
+      for (const t of CACHES) {
+        const { error } = await admin.from(t).insert(seedRow[t]);
+        if (error) throw new Error(`seed ${t} ไม่ได้ (ข้อยกเว้นที่ 5 ใช้ไม่ได้?): ${error.message}`);
+      }
+    });
+
+    afterAll(async () => {
+      for (const t of CACHES) {
+        const { error } = await admin.from(t).delete().eq(idCol[t], idVal(t));
+        if (error) console.warn(`\n⚠️  เก็บ fixture แคช ${t} ไม่สำเร็จ: ${error.message}\n`);
+      }
+    });
+
+    it.each(CACHES)("🔴 precondition — มีแถวอยู่จริงใน %s ก่อนเริ่มเคสด้านลบ", async (t) => {
+      const { data, error } = await admin.from(t).select(idCol[t]).eq(idCol[t], idVal(t));
+      expect(error, `service_role อ่าน ${t} ไม่ได้: ${error?.message}`).toBeNull();
+      expect(data, "ไม่มีแถว = เคสด้านลบข้างล่างเขียวเพราะตารางว่าง ไม่ใช่เพราะด่าน").toHaveLength(1);
+    });
+
+    it.each(CACHES)("🔴 authenticated แตะ %s ไม่ได้ครบทั้ง 4 verb", async (t) => {
+      const attempts: Array<[string, { error: { code?: string } | null }]> = [
+        ["select", await A.from(t).select(idCol[t]).limit(1)],
+        ["insert", await A.from(t).insert(seedRow[t])],
+        ["update", await A.from(t).update({ fetched_at: "2020-01-01T00:00:00Z" }).eq(idCol[t], idVal(t))],
+        ["delete", await A.from(t).delete().eq(idCol[t], idVal(t))],
+      ];
+      for (const [verb, r] of attempts) {
+        expect(
+          r.error?.code,
+          `${t} · ${verb} ไม่ได้ถูกปฏิเสธเพราะสิทธิ์ — ได้ ${r.error?.code ?? "ไม่มี error เลย"}`,
+        ).toBe("42501");
+      }
+    });
+
+    it.each(CACHES)("anon แตะ %s ไม่ได้", async (t) => {
+      const { error } = await D.from(t).select(idCol[t]).limit(1);
+      expect(error?.code).toBe("42501");
+    });
+
+    it.each(CACHES)("🔴 แถวใน %s ยังอยู่ครบหลังทุก verb — ไม่มีอันไหนสำเร็จบางส่วน", async (t) => {
+      // ปฏิเสธแล้วต้องไม่เหลือร่องรอย · `update`/`delete` ที่ "ถูกปฏิเสธ" แต่แก้แถวไปแล้วบางส่วน
+      // จะมองไม่เห็นเลยถ้าดูแต่ error
+      const { data } = await admin.from(t).select("fetched_at").eq(idCol[t], idVal(t));
+      expect(data, `แถวใน ${t} หายหลังไคลเอนต์ลอง delete`).toHaveLength(1);
+      expect(
+        String(data?.[0]?.fetched_at ?? "").startsWith("2020"),
+        `fetched_at ถูกไคลเอนต์ทับได้ ทั้งที่ update ขึ้น 42501`,
+      ).toBe(false);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC5 / D12 — Storage: ไฟล์การจองต้องเปิดจากข้างนอกไม่ได้", () => {
+    /**
+     * 🎯 **เกณฑ์จริงของ `E2-AC5` วัดจาก *ข้างนอก* เท่านั้น** — *"เปิด URL จากหน้าต่างที่ไม่ล็อกอิน"*
+     * → เคสพวกนี้ใช้ **`fetch()` ตรง ไม่ผ่าน supabase client** เพราะ client แนบ header ให้เอง
+     *   ทดสอบผ่าน client แล้วผ่าน **ไม่ได้แปลว่าลิงก์ที่หลุดออกไปจะเปิดไม่ได้**
+     *
+     * 🔴 และหัวไฟล์นี้เคยเขียนไว้เองว่า *"ไม่ครอบ … Storage"* — ตอนนี้มีของให้ครอบแล้ว
+     *
+     * ⚠️ **ตัวกันกับดักข้อ 3:** `400` จาก URL สาธารณะ **อาจแปลว่า "ไม่มีไฟล์" ก็ได้**
+     *    → มีเคสด้านบวกคู่กันเสมอ: เจ้าของโหลดได้ · signed URL เปิดได้ **แปลว่าไฟล์มีอยู่จริง**
+     */
+    const BUCKET = "booking-files";
+    let tripS = "";
+    let filePath = "";
+
+    beforeAll(async () => {
+      const { data: trip, error } = await A.rpc("create_trip", {
+        p_title: `storage-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (error) throw new Error(`สร้างทริปสำหรับเคส storage ไม่ได้: ${error.message}`);
+      tripS = trip.id;
+      filePath = `${tripS}/receipt-${stamp}.pdf`;
+      const up = await A.storage
+        .from(BUCKET)
+        .upload(filePath, new Blob([`ใบเสร็จ ${stamp}`], { type: "application/pdf" }), {
+          contentType: "application/pdf",
+        });
+      if (up.error) throw new Error(`เจ้าของทริปอัปโหลดไม่ได้: ${up.error.message}`);
+    });
+
+    afterAll(async () => {
+      const rm = await admin.storage.from(BUCKET).remove([filePath]);
+      if (rm.error) console.warn(`\n⚠️  ลบไฟล์ fixture ไม่สำเร็จ: ${rm.error.message}\n`);
+    });
+
+    it("ด้านบวก: เจ้าของทริปโหลดไฟล์ของตัวเองได้ — ถ้าข้อนี้แดง เคสด้านลบไม่ได้พิสูจน์อะไร", async () => {
+      const { data, error } = await A.storage.from(BUCKET).download(filePath);
+      expect(error, `เจ้าของโหลดไม่ได้: ${error?.message}`).toBeNull();
+      expect(data, "ไฟล์ไม่มีอยู่ = เคส 400 ข้างล่างเขียวเพราะไม่มีไฟล์ ไม่ใช่เพราะด่าน").toBeTruthy();
+    });
+
+    it("🔴 E2-AC5 — เปิด public URL จากข้างนอกโดยไม่ล็อกอิน ต้องไม่ได้ไฟล์", async () => {
+      const res = await fetch(`${URL_}/storage/v1/object/public/${BUCKET}/${filePath}`);
+      expect(
+        res.status,
+        "ลิงก์สาธารณะเปิดได้ = ใครที่ได้ลิงก์ไป เปิดใบเสร็จของคนอื่นได้ทันที",
+      ).toBeGreaterThanOrEqual(400);
+    });
+
+    it("🔴 เปิด object URL ตรง ๆ โดยไม่มี header ก็ต้องไม่ได้", async () => {
+      // เส้นนี้ต่างจากเส้น `/public/` — บัคเก็ต private กันเส้นแรก **ไม่ได้กันเส้นนี้โดยอัตโนมัติ**
+      const res = await fetch(`${URL_}/storage/v1/object/${BUCKET}/${filePath}`);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+    });
+
+    it("ด้านบวก: signed URL ที่เจ้าของสร้าง เปิดได้จริงจากข้างนอก", async () => {
+      // 🔴 คู่ตรงข้ามของเคสข้างบน — พิสูจน์ว่า `400` มาจากการกัน ไม่ใช่จากไฟล์ที่ไม่มี
+      const { data, error } = await A.storage.from(BUCKET).createSignedUrl(filePath, 60);
+      expect(error).toBeNull();
+      const res = await fetch(data!.signedUrl);
+      expect(res.status, "signed URL เปิดไม่ได้ = ผู้ใช้จริงดูไฟล์ตัวเองไม่ได้").toBe(200);
+    });
+
+    it("🔴 คนนอกทริปโหลดไฟล์ไม่ได้", async () => {
+      const { error } = await C.storage.from(BUCKET).download(filePath);
+      expect(error, "คนนอกโหลดไฟล์การจองของทริปคนอื่นได้").not.toBeNull();
+    });
+
+    it("🔴 คนนอกอัปโหลดเข้าโฟลเดอร์ของทริปคนอื่นไม่ได้", async () => {
+      // policy ผูกกับ segment แรกของ path ไม่ใช่กับ bucket — เคสนี้เดินเส้นนั้นโดยตรง
+      const { error } = await C.storage
+        .from(BUCKET)
+        .upload(`${tripS}/evil-${stamp}.pdf`, new Blob(["x"], { type: "application/pdf" }));
+      expect(error, "คนนอกวางไฟล์ในโฟลเดอร์ทริปคนอื่นได้").not.toBeNull();
     });
   });
 
