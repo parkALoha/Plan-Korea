@@ -143,4 +143,6 @@ export const TEST_COUNTRY_CODES = {
   catalogWriteGuard: "xq",
   /** บล็อก soft delete (`D76`) — P1 */
   softDelete: "zv",
+  /** บล็อก `bookings` — P1 */
+  bookings: "zu",
 } as const;

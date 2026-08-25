@@ -279,7 +279,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   const TABLES = [
     "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
     "catalog_countries", "catalog_cities", "catalog_places", "catalog_place_names",
-    "custom_places", "custom_place_names", "trip_stops",
+    "custom_places", "custom_place_names", "trip_stops", "bookings",
   ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
@@ -382,6 +382,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     expect([...policyMap().keys()].sort()).toEqual([
       // 🔴 คลัง: `select` ตัวเดียวต่อตาราง · **ไม่มีฝั่งเขียนเลยโดยตั้งใจ** (`D18`)
       //    เติม policy ฝั่งเขียนให้คลังเมื่อไหร่ = ผู้ใช้แก้คลังกลางได้ ต้องเป็นการตัดสินใจ
+      // 🔴 `bookings` ไม่มี policy DELETE — `D76` soft delete · ลบผ่าน RPC
+      "bookings.bookings_insert",
+      "bookings.bookings_select",
+      "bookings.bookings_update",
       "catalog_cities.catalog_cities_select",
       "catalog_countries.catalog_countries_select",
       "catalog_place_names.catalog_place_names_select",
@@ -489,7 +493,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       if (body.includes("can_write_trip")) content.add(key.split(".")[0]);
     }
     expect([...content].sort()).toEqual([
-      "custom_place_names", "custom_places",
+      "bookings", "custom_place_names", "custom_places",
       "trip_day_plan_settings", "trip_days", "trip_plans", "trip_stops",
     ]);
   });
@@ -549,6 +553,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    → แถวที่เพิ่งทำให้ตัวเองหายไป ไม่ผ่าน policy `SELECT` ของตัวเอง · **`P-26` กลับด้าน**
       //    คำตอบของคำถามข้างบน: รับ `p_id uuid` ตัวเดียว · ตั้ง `deleted_at` เท่านั้น
       //    · ถาม `app.can_write_trip()` ของคนเรียกเองก่อนทำอะไรทั้งสิ้น
+      "public.soft_delete_booking",
       "public.soft_delete_custom_place",
       "public.soft_delete_trip_stop",
       "public.unsafe_state_clear",
@@ -566,6 +571,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 9 (`2a759c27…` → `35d64de3…`) — `bookings` 3 policy (ไม่มี DELETE · `D76`)
     // 🔴 อัปเดตรอบ 8 (`01adb82c…` → `2a759c27…`) — **ค่าไม่ได้เปลี่ยนเพราะ policy เปลี่ยน**
     //    แต่เพราะตัวสแกนเพิ่งรู้จัก `drop policy` → policy ที่ถูกถอดออกไม่ถูกนับอีกต่อไป
     //    🎯 ค่าเดิมคือ fingerprint ของ**ไฟล์ทุกบรรทัดที่เคยเขียน** · ค่าใหม่คือของ**สภาพหลังรันจบ**
@@ -590,7 +596,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "2a759c273a47a876",
+      "35d64de3e07af763",
     );
   });
 });
@@ -2918,6 +2924,160 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         error?.message,
         "ลบแผนตั้งต้นใบเดียวได้ = trigger ไม่ครอบแผนที่ระบบสร้างให้",
       ).toContain("ทริปต้องมีแผนอย่างน้อย 1 แผน");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 ทางหนีของ assert_trip_has_plan — ลบทริปทั้งใบต้องไม่ติด invariant", () => {
+    /**
+     * `assert_trip_has_plan()` เขียนว่า:
+     * ```sql
+     * if exists (select 1 from public.trips where id = old.trip_id)
+     *    and not exists (select 1 from public.trip_plans where trip_id = old.trip_id)
+     * ```
+     * 🎯 **บรรทัด `exists(trips …)` คือทางหนี** — ตอนลบทริปทั้งใบ แผนถูก cascade ลบตาม
+     * ถ้าไม่มีเงื่อนไขนั้น trigger จะมองว่า *"ทริปนี้ไม่มีแผนแล้ว"* แล้วขัดการลบทริปทิ้ง
+     * → **ลบทริปไม่ได้เลยทั้งระบบ** และอาการจะโผล่เป็น error ที่ชี้ไปที่ `trip_plans`
+     *   ทั้งที่คนกดลบ *ทริป* — ตามกลับมาถึงบรรทัดนี้ยาก
+     *
+     * 🔴 **ไม่มีเคสไหนกันบรรทัดนั้นไว้** จนถึงเคสนี้ (P4 ยิงยืนยันด้วยมือก่อน 25 ส.ค. 2026)
+     * ⚠️ ใช้ `service_role` เพราะ **ไคลเอนต์ลบทริปไม่ได้** (ไม่มี `trips_delete` policy · `D18`)
+     *    → นี่คือการทดสอบ **ความถูกต้องของ invariant** ไม่ใช่ของสิทธิ์
+     */
+    it("service_role ลบทริปที่มีแผนอยู่ได้ — cascade ต้องไม่ถูก trigger ขัด", async () => {
+      const { data: trip, error: mkErr } = await A.rpc("create_trip", {
+        p_title: `cascade-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      expect(mkErr).toBeNull();
+
+      // ต้องมีแผนอยู่จริงก่อน ไม่งั้นเคสนี้เขียวเพราะไม่มีอะไรให้ trigger ขัด
+      const { data: plans } = await A.from("trip_plans").select("id").eq("trip_id", trip.id);
+      expect(plans, "ทริปใหม่ไม่มีแผน — เคสนี้พิสูจน์ทางหนีไม่ได้ (ดู P-54)").not.toHaveLength(0);
+
+      const { error } = await admin.from("trips").delete().eq("id", trip.id);
+      expect(
+        error,
+        `ลบทริปที่มีแผนไม่ได้ = ทางหนี exists(trips) หาย → ลบทริปไม่ได้ทั้งระบบ: ${error?.message}`,
+      ).toBeNull();
+
+      const { data: left } = await A.from("trips").select("id").eq("id", trip.id);
+      expect(left, "ทริปยังอยู่ทั้งที่ลบสำเร็จ").toEqual([]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — `bookings`: ของที่จ่ายเงินไปแล้ว (D51 · D73 · E2-AC13)", () => {
+    /**
+     * ✅ เขียนก่อน `db push`
+     *
+     * 🔴 **ใบจองคือของที่จ่ายเงินไปแล้ว** — เหตุผลข้อเดียวกับที่ `D51` ถอดมันออกจาก `leg_id`
+     * ที่เป็นค่าคำนวณ · และเป็นเหตุผลที่ P7 บอกว่าด่าน `D73` ต้องนับมันด้วย
+     *
+     * `E2-AC13` — `file_url` → **`file_path`** · ชื่อเดิมจะโกหกทันทีที่ bucket เป็น private
+     * P8 ชี้ว่า `AC5` *"ผ่านทันทีที่กดปิด bucket"* **และวินาทีเดียวกันนั้นทุกแถวเดิมชี้ไป URL ที่ตายแล้ว**
+     */
+    let tripB2 = "", dayB = "", bookingB = "";
+    const ccB = TEST_COUNTRY_CODES.bookings;
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccB);
+      await admin.from("catalog_countries").delete().eq("id", ccB);
+      await admin.from("catalog_countries").insert({ id: ccB, name_th: "ทดสอบหก", name_en: "T6" });
+
+      const t = await A.rpc("create_trip", {
+        p_title: `book-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripB2 = t.data.id as string;
+      await A.from("trip_members").insert({ trip_id: tripB2, user_id: ids.b, role: "editor" });
+      await A.from("trip_members").insert({ trip_id: tripB2, user_id: ids.c, role: "viewer" });
+
+      const d = await A.from("trip_days").insert({ trip_id: tripB2, date: "2026-10-14" }).select("id").single();
+      if (d.error) throw new Error(`สร้างวัน: ${d.error.message}`);
+      dayB = d.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_countries").delete().eq("id", ccB);
+    });
+
+    it("ด้านบวก: editor เพิ่มใบจองที่ผูกกับวันได้ และ `added_by_user` ถูกเซิร์ฟเวอร์เติม", async () => {
+      const { data, error } = await B.from("bookings")
+        .insert({ trip_id: tripB2, trip_day_id: dayB, category: "flight", title: `VN409 ${stamp}`, status: "booked" })
+        .select("id,added_by_user").single();
+      expect(error, `editor เพิ่มใบจองไม่ได้: ${error?.message}`).toBeNull();
+      bookingB = data!.id as string;
+      expect(data?.added_by_user).toBe(ids.b);
+    });
+
+    it("ด้านบวก: ใบจองที่ *ไม่* ผูกกับวันก็มีได้ — ตั๋วที่ยังไม่รู้วัน", async () => {
+      const { error } = await B.from("bookings")
+        .insert({ trip_id: tripB2, category: "hotel", title: `ยังไม่รู้วัน ${stamp}` });
+      expect(
+        error,
+        `ใบจองที่ไม่ผูกวันเขียนไม่ได้: ${error?.message}\n` +
+          "  · FK ประกอบที่มี null ต้องไม่ถูกบังคับ (MATCH SIMPLE) ไม่งั้นต้องรู้วันก่อนถึงจะจองได้",
+      ).toBeNull();
+    });
+
+    it("🔴 D70 — ใบจองผูกกับวันของทริปอื่นไม่ได้", async () => {
+      const t2 = await A.rpc("create_trip", {
+        p_title: `book-other-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const d2 = await A.from("trip_days").insert({ trip_id: t2.data.id, date: "2026-10-14" }).select("id").single();
+      const { error } = await A.from("bookings")
+        .insert({ trip_id: tripB2, trip_day_id: d2.data!.id, category: "x", title: "ข้ามทริป" });
+      expect(error?.code, `ผูกใบจองข้ามทริปได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
+    });
+
+    it("🔴 viewer เพิ่มใบจองไม่ได้ · anon ไม่เห็นอะไรเลย", async () => {
+      const ins = await C.from("bookings").insert({ trip_id: tripB2, category: "x", title: "y" });
+      expect(ins.error?.code, `viewer เพิ่มใบจองได้: ${ins.error?.message ?? "ไม่มี error"}`).toBe("42501");
+      const anon = await D.from("bookings").select("id");
+      expect(anon.data ?? [], "anon อ่านใบจองได้ — ในนั้นมีเลขที่จองจริง").toEqual([]);
+    });
+
+    it("🔴 E2-AC13 — คอลัมน์ชื่อ `file_path` ไม่ใช่ `file_url`", async () => {
+      const { error } = await B.from("bookings")
+        .update({ file_path: "trips/x/ticket.pdf", file_name: "ticket.pdf" }).eq("id", bookingB);
+      expect(error, `เขียน file_path ไม่ได้: ${error?.message}`).toBeNull();
+
+      const bad = await B.from("bookings").update({ file_url: "https://x" }).eq("id", bookingB);
+      expect(
+        bad.error,
+        "ยังมีคอลัมน์ `file_url` อยู่ = ชื่อจะโกหกทันทีที่ bucket เป็น private",
+      ).not.toBeNull();
+    });
+
+    it("🔴 D73 — ด่านต้องโตตาม: ลบวันที่ยังมี *ใบจอง* ผูกอยู่ ไม่ได้ (P7)", async () => {
+      const { error } = await admin.from("trip_days").delete().eq("id", dayB);
+      expect(
+        error,
+        "ลบวันที่มีใบจองสำเร็จ = cascade กินใบจองทิ้งเงียบ ๆ\n" +
+          "  🔴 ใบจองคือของที่จ่ายเงินไปแล้ว · ด่านที่รู้จักลูกไม่ครบคือด่านที่ครอบไม่ครบเงียบ ๆ",
+      ).not.toBeNull();
+    });
+
+    it("🔴 D76 — ลบใบจองผ่าน RPC · แถวยังอยู่ · หายจากสายตา", async () => {
+      const del = await B.rpc("soft_delete_booking", { p_id: bookingB });
+      expect(del.error, `ลบใบจองไม่ได้: ${del.error?.message}`).toBeNull();
+
+      const seen = await B.from("bookings").select("id").eq("id", bookingB);
+      expect(seen.data, "ลบแล้วยังเห็น").toEqual([]);
+
+      const row = await admin.from("bookings").select("deleted_at").eq("id", bookingB);
+      expect(row.data?.[0]?.deleted_at, "แถวหายจริง = ไม่ใช่ soft delete").not.toBeNull();
+    });
+
+    it("ด้านบวกของ D73: พอใบจองถูกลบหมดแล้ว ลบวันได้", async () => {
+      const { error } = await admin.from("trip_days").delete().eq("id", dayB);
+      expect(
+        error,
+        `ลบวันไม่ได้ทั้งที่ใบจองถูกลบหมดแล้ว: ${error?.message}\n` +
+          "  🔴 = ด่านนับ tombstone เป็นใบจองที่ยังอยู่ (กับดักเดียวกับที่ P7 เจอกับ trip_stops)",
+      ).toBeNull();
     });
   });
 
