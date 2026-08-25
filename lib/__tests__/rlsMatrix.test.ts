@@ -274,7 +274,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   // 🔴 เพิ่ม `trip_days` 25 ส.ค. 2026 (`E2`) — **ตารางเนื้อหาตัวแรกของโปรเจกต์**
   //    ก่อนหน้านี้ทุกตารางเป็นตารางสิทธิ์/ตัวตน ซึ่งเขียนได้เฉพาะ `owner`
   //    → `editor` กับ `viewer` ไม่เคยมีที่ให้ต่างกัน (`P-46`) · ตารางนี้คือที่แรก
-  const TABLES = ["profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings"] as const;
+  // 🔴 เพิ่มตารางคลัง 25 ส.ค. — **ตารางชนิดที่สองของระบบ**: ข้อมูลสาธารณะที่ผู้ใช้เขียนไม่ได้
+  //    ต่างจากตารางอื่นทั้งหมดใน `public` ซึ่งเป็นข้อมูลผู้เช่าที่ RLS ผูกกับ `trip_members`
+  const TABLES = [
+    "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
+    "catalog_countries", "catalog_cities",
+  ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
     "A_owner",
@@ -346,6 +351,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    แต่ด่านนับได้ 11 แล้วแดง · **ด่านที่แดงใส่การเปลี่ยนแปลงที่ไม่ได้เปลี่ยนสิ่งที่มันวัด
     //    จะถูกทำให้เงียบด้วยการขึ้นเลข และครั้งถัดไปมันจะไม่กัดอะไรเลย**
     expect([...policyMap().keys()].sort()).toEqual([
+      // 🔴 คลัง: `select` ตัวเดียวต่อตาราง · **ไม่มีฝั่งเขียนเลยโดยตั้งใจ** (`D18`)
+      //    เติม policy ฝั่งเขียนให้คลังเมื่อไหร่ = ผู้ใช้แก้คลังกลางได้ ต้องเป็นการตัดสินใจ
+      "catalog_cities.catalog_cities_select",
+      "catalog_countries.catalog_countries_select",
       "profiles.profiles_insert",
       "profiles.profiles_select",
       "profiles.profiles_update",
@@ -477,6 +486,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 3 (`b039fbcc…` → `f9c74ff5…`) — เพิ่มตารางคลัง 2 policy
+    //    ทั้งคู่เป็น `using (true)` **โดยตั้งใจและระบุชื่อไว้** (`D74`) — คลังเป็นข้อมูลสาธารณะ
+    //    ⚠️ ถ้าวันหนึ่ง fingerprint เปลี่ยนเพราะมีคนเติม policy **ฝั่งเขียน** ให้คลัง นั่นคือคนละเรื่องกันสิ้นเชิง
     // 🔴 อัปเดต 25 ส.ค. 2026 รอบ 2 (`badfb2d0…` → `b039fbcc…`) — เพิ่มชั้นแผน 7 policy
     //    (`trip_plans` 4 ตัว รวม **DELETE ตัวแรกของ `E2`** · `trip_day_plan_settings` 3 ตัว)
     //    ทุกตัวมีเคสสดของตัวเองแล้ว รวมเคส `D70` ที่พิสูจน์ว่า **FK ประกอบ** เป็นตัวปฏิเสธ ไม่ใช่ RLS
@@ -485,7 +497,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "b039fbcc8eccda66",
+      "f9c74ff53a5a33ac",
     );
   });
 });
@@ -1920,6 +1932,122 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           "     ถ้าใช่ → ลบวันหนึ่งวัน = ลบจุดแวะของวันนั้นทั้งหมด **โดย RLS ไม่มีผลและไม่มีอะไรส่งเสียง**\n" +
           "     ทางเลือกที่คุยไว้: soft delete ที่ `trip_days` · หรือให้ตัวปรับช่วงวันปฏิเสธวันที่ยังมีจุดแวะ",
       ).toBe(false);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — คลังภูมิศาสตร์: อ่านได้ทุกคน เขียนไม่ได้เลย (D54 · D74 · B6)", () => {
+    /**
+     * คลังเป็นตารางชนิดที่สองของระบบ: **ข้อมูลสาธารณะที่ผู้ใช้เขียนไม่ได้**
+     * ต่างจากทุกตารางอื่นใน `public` ซึ่งเป็นข้อมูลของผู้เช่าที่ RLS ผูกกับ `trip_members`
+     *
+     * 🔴 **เคสด้านบวกที่นี่สำคัญเป็นพิเศษ** — policy เป็น `using (true)` ตัวเดียว
+     * ถ้า `grant select` หายไป (หรือ `revoke ... from anon` เผลอกวาด `authenticated` ไปด้วย)
+     * **เคสด้านลบทั้งหมดจะเขียวครบ โดยที่ไม่มีใครอ่านคลังได้เลยทั้งแพลตฟอร์ม**
+     */
+    /**
+     * `zz` = ช่วง **user-assigned** ของ ISO 3166-1 (`AA` · `QM`–`QZ` · `XA`–`XZ` · `ZZ`)
+     * — ไม่ใช่ประเทศจริงและจะไม่มีวันเป็น จึงชนกับข้อมูลจริงไม่ได้ตามนิยาม
+     * 🔴 ฉบับแรกใช้ `` `t${stamp}`.slice(0,2) `` ซึ่งได้ `t1` → **ตัวเลขไม่ผ่าน `^[a-z]{2}$`**
+     * (`check` จับได้ทันทีที่รันครั้งแรก — ซึ่งคือสิ่งที่ `check` มีไว้ทำ)
+     */
+    const cc = "zz";
+    let cityId = "";
+
+    beforeAll(async () => {
+      // เก็บกวาดของรอบก่อนที่อาจค้าง (ฐานเป็นของกลาง · `zz` เป็นค่าคงที่ ไม่ใช่ค่าต่อรอบ)
+      await admin.from("catalog_cities").delete().eq("country_id", cc);
+      await admin.from("catalog_countries").delete().eq("id", cc);
+
+      const co = await admin
+        .from("catalog_countries")
+        .insert({ id: cc, name_th: "ทดสอบ", name_en: "Testland", nav_providers: ["google"] });
+      if (co.error) throw new Error(`seed country ไม่ได้: ${co.error.message}`);
+
+      const ci = await admin
+        .from("catalog_cities")
+        .insert({
+          country_id: cc,
+          legacy_slug: `city-${stamp}`.slice(0, 40),
+          name_th: "เมืองทดสอบ",
+          name_en: "Testville",
+          lat: 35.1,
+          lng: 129.0,
+          timezone: "Asia/Seoul",
+        })
+        .select("id")
+        .single();
+      if (ci.error) throw new Error(`seed city ไม่ได้: ${ci.error.message}`);
+      cityId = ci.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", cc);
+      await admin.from("catalog_countries").delete().eq("id", cc);
+    });
+
+    it("ด้านบวก: ผู้ใช้ที่ล็อกอินอ่านคลังได้ — ถ้าข้อนี้แดง เคสด้านลบข้างล่างไม่ได้พิสูจน์อะไร", async () => {
+      const { data, error } = await A.from("catalog_cities").select("name_th,lat,lng").eq("id", cityId);
+      expect(error, `อ่านคลังไม่ได้: ${error?.message}`).toBeNull();
+      expect(data, "คลังอ่านไม่ได้ = ทุกหน้าที่แสดงชื่อเมืองพังทั้งแพลตฟอร์ม").toHaveLength(1);
+    });
+
+    it("ด้านบวก: อ่านประเทศได้ และ `nav_providers` เป็นรายชื่อ ไม่ใช่ boolean", async () => {
+      const { data } = await A.from("catalog_countries").select("nav_providers").eq("id", cc).single();
+      expect(
+        data?.nav_providers,
+        "เพิ่ม provider ใหม่ต้องเป็น update ไม่ใช่ alter table (B6)",
+      ).toEqual(["google"]);
+    });
+
+    it("🔴 ผู้ใช้เขียนคลังไม่ได้ — ไม่มี policy ฝั่งเขียนสักตัว และ grant ก็ไม่ให้", async () => {
+      const ins = await A.from("catalog_cities").insert({
+        country_id: cc, name_th: "เมืองปลอม", name_en: "Fake", lat: 0, lng: 0, timezone: "UTC",
+      });
+      expect(ins.error?.code, `ผู้ใช้เพิ่มเมืองได้: ${ins.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      const upd = await A.from("catalog_cities").update({ name_th: "แก้ชื่อ" }).eq("id", cityId);
+      expect(upd.error?.code, `ผู้ใช้แก้คลังได้: ${upd.error?.message ?? "ไม่มี error"}`).toBe("42501");
+
+      const del = await A.from("catalog_cities").delete().eq("id", cityId);
+      expect(del.error?.code, `ผู้ใช้ลบคลังได้: ${del.error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("🔴 anon ไม่ได้อะไรเลยจากคลัง — เว็บนี้ต้องล็อกอินก่อน", async () => {
+      const { data, error } = await D.from("catalog_cities").select("id");
+      expect(data ?? [], `anon อ่านคลังได้: ${error?.message ?? ""}`).toEqual([]);
+    });
+
+    it("🔴 D54 — เมืองต้องมีพิกัดของตัวเอง ใส่ไม่ครบต้องเขียนลงไม่ได้", async () => {
+      const { error } = await admin.from("catalog_cities").insert({
+        country_id: cc, name_th: "ไม่มีพิกัด", name_en: "NoCoord", timezone: "UTC",
+      });
+      expect(
+        error?.code,
+        `เมืองที่ไม่มีพิกัดเขียนลงได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  = cityCenter() กลับไปเฉลี่ยจากลูก ซึ่งเป็นบั๊กที่ D54 ถูกเขียนขึ้นมาเพื่อปิด",
+      ).toBe("23502");
+    });
+
+    it("🔴 พิกัดนอกช่วงที่เป็นไปได้ ต้องถูกปฏิเสธ ไม่ใช่ไปโผล่บนแผนที่", async () => {
+      const { error } = await admin.from("catalog_cities").insert({
+        country_id: cc, name_th: "พิกัดพัง", name_en: "Bad", lat: 999, lng: 0, timezone: "UTC",
+      });
+      expect(error?.code, `รับ lat=999: ${error?.message ?? "ไม่มี error"}`).toBe("23514");
+    });
+
+    it("🔴 `legacy_slug` ซ้ำไม่ได้ — E7 join ด้วยคอลัมน์นี้ ซ้ำ = join ผิดแถวเงียบ ๆ", async () => {
+      const { error } = await admin.from("catalog_cities").insert({
+        country_id: cc,
+        legacy_slug: `city-${stamp}`.slice(0, 40),
+        name_th: "ซ้ำ", name_en: "Dup", lat: 1, lng: 1, timezone: "UTC",
+      });
+      expect(error?.code, `slug ซ้ำเขียนลงได้: ${error?.message ?? "ไม่มี error"}`).toBe("23505");
+    });
+
+    it("🔴 ลบประเทศที่ยังมีเมืองอยู่ไม่ได้ (`restrict`) — เมืองกำพร้าคือเมืองที่ไม่มีประเทศ", async () => {
+      const { error } = await admin.from("catalog_countries").delete().eq("id", cc);
+      expect(error?.code, `ลบประเทศที่มีเมืองได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
     });
   });
 
