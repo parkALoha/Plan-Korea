@@ -118,9 +118,15 @@
 | `hidden_by` | `hidden_by_user uuid` **+ `legacy_hidden_by text`** | เหตุผลเดียวกับ `added_by` |
 | `hidden_at` | คงเดิม |  |
 
-## `place_details_cache` → `place_details_cache`
+## `place_details_cache` → `place_details_cache` **+ `place_details_local_cache`** (`D77`)
 
 🔴 **ไม่มี `trip_id`** — เป็นข้อมูลของ Google ต่อสถานที่ ไม่ใช่ของทริป
+
+🔴 **แก้ 25 ส.ค. 2026 (`D77`) — แตกเป็น 2 ใบ เพราะสองคำตอบในตารางนี้ขัดกันเอง (`P-51` ตัวที่สอง)**
+· `locale` เขียนไว้ว่า **เป็นคีย์ร่วม** · ส่วน `rating`/`reviews`/`google_place_id` เขียนว่า **คงเดิม**
+· PK = `(maps_query, locale)` เมื่อไหร่ → **เรทติ้งของที่เดียวกันต่างกันได้ตามภาษา** โดยไม่มีบรรทัดไหนผิด
+· และ `locale` วันนี้ **nullable** — `null` อยู่ใน PK ไม่ได้
+→ เหตุผลเต็ม + หลักฐานจากโค้ดจริง: [`README.md` `D77`](README.md) · DDL: `20260825152400_e2_caches.sql`
 
 
 *11 คอลัมน์*  ·  **ไม่ได้กฎร่วม**
@@ -135,9 +141,14 @@
 | `user_rating_count` | คงเดิม |  |
 | `primary_type` | คงเดิม |  |
 | `reviews` | คงเดิม |  |
-| `name_local` | คงเดิม |  |
-| `address_local` | คงเดิม |  |
-| `locale` | คงเดิม | **เป็นคีย์ร่วม** — แคชแยกตามภาษาที่ขอ |
+| `name_local` | **`place_details_local_cache.name_local`** | 🔴 ย้ายใบ (`D77`) |
+| `address_local` | **`place_details_local_cache.address_local`** | 🔴 ย้ายใบ (`D77`) |
+| `locale` | **`place_details_local_cache.locale`** (`not null`) | 🔴 `D77` — เป็นคีย์ร่วมจริง แต่เป็นคีย์ของ**อีกใบ** ไม่ใช่ใบนี้ |
+
+📌 **`place_details_local_cache` เป็นตารางใหม่ที่ไม่มีของเดิมแมปมา** — คอลัมน์ทั้ง 4
+(`maps_query` · `locale` · `name_local` · `address_local`) มาจากตารางข้างบนทั้งหมด **บวก `fetched_at` ของตัวเอง**
+⚠️ **ไม่มี FK ไปหา `place_details_cache` โดยตั้งใจ** — มี FK เมื่อไหร่ `/api/place-name`
+จะขอ*ชื่ออย่างเดียว*ไม่ได้ ต้องยิง Google ขอ details ครบชุดก่อน ซึ่งคือค่าใช้จ่ายที่ `D77` เพิ่งเลิกจ่าย
 
 ## `place_notes` → `place_notes`
 
@@ -349,3 +360,34 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 > ⚠️ **เพราะข้อ 2 ตารางนี้จึงยัง*ไม่ใช่*ตัวเลขสุดท้าย — และนั่นคือเหตุผลที่มันไม่มีตัวเลขสรุปเขียนไว้ตรงนี้**
 > `E2-AC11` เกิดมาเพราะมีคนเขียนเลขที่ล้าสมัยลงเกณฑ์ · **การเขียนเลขใหม่ตอนที่ยังนับไม่ครบ คือความผิดพลาดเดียวกันรอบสอง**
+
+---
+
+### 📡 นับจาก **ฐานจริง** ไม่ใช่จากตารางออกแบบข้างบน (P1 · 25 ส.ค. 2026 · หลัง `D77`)
+
+> ตารางออกแบบข้างบนเขียนไว้ตอน DDL ยังไม่มีสักใบ · **ข้างล่างนี้คือสิ่งที่ *อยู่บน engine-dev จริง* ณ วันนี้**
+> 🔴 **ยังไม่ใช่ "ตัวหารสุดท้าย" เหมือนเดิมทุกตัวอักษร** — `E2-AC11` วัด *ณ วันปิด `E2`* และ `E2` ยังไม่ปิด
+> **เจ้าของเกณฑ์ยังเป็น P4** · บล็อกนี้เป็น**ข้อมูลเข้า** ไม่ใช่การตัดสินแทน (เหมือนตารางข้างบน)
+
+**22 ตารางใน `public` ที่ PostgREST มองเห็น** — ตารางออกแบบข้างบนเขียนไว้ **18**
+ส่วนต่าง 4 ใบมาจากมติที่ตัดสินหลังจากนั้น: `trip_day_plan_settings` (`D69`) · `custom_place_names` (`D75`)
+· `catalog_countries` (`D74`) · `place_details_local_cache` (`D77`)
+
+```
+bookings · catalog_cities · catalog_countries · catalog_place_names · catalog_places
+checklist_items · custom_place_names · custom_places · hidden_places
+place_details_cache · place_details_local_cache · place_notes · place_photo_cache
+profiles · travel_time_cache · trip_day_plan_settings · trip_days · trip_hotels
+trip_members · trip_plans · trip_stops · trips
+```
+
+**คำสั่งที่ใช้นับ — รันซ้ำได้ ไม่ต้องเชื่อรายการข้างบน** (ต้องมี `.env.local` ของ engine-dev):
+
+```bash
+node -e 'const fs=require("fs");const e=Object.fromEntries(fs.readFileSync(".env.local","utf8").split("\n").filter(Boolean).map(l=>{const i=l.indexOf("=");return[l.slice(0,i).trim(),l.slice(i+1).trim()]}));fetch(e.NEXT_PUBLIC_SUPABASE_URL+"/rest/v1/",{headers:{apikey:e.SUPABASE_SERVICE_ROLE_KEY,Authorization:"Bearer "+e.SUPABASE_SERVICE_ROLE_KEY}}).then(r=>r.json()).then(j=>{const t=Object.keys(j.definitions||{}).sort();console.log(t.length,t.join(" · "))})'
+```
+
+⚠️ **ข้อจำกัดของวิธีนับนี้ ต้องอ่านคู่กันเสมอ:** PostgREST แสดงเฉพาะตารางที่ **role ที่ยิงมี grant**
+· นับด้วย `service_role` จึงเห็นครบ **แต่ถ้าวันหนึ่งมีตารางที่ไม่ได้ grant ให้ `service_role` เลย มันจะหายไปจากรายการนี้เงียบ ๆ**
+🎯 **แคช 4 ใบของ `P-33` โผล่ในรายการนี้ได้เพราะข้อยกเว้นที่ 5 เท่านั้น** — ถ้าวันหนึ่งถอน grant นั้น
+**ตัวนับจะบอกว่า 18 โดยที่ตารางยังอยู่ครบ** · ตระกูลเดียวกับ `P-21` (*"สแกนแคบลง" กับ "สแกนความว่างเปล่า" ให้ผลเหมือนกันเป๊ะ*)
