@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { TEST_COUNTRY_CODES, migrationFiles, stripComments } from "./_helpers";
+import {
+  TEST_COUNTRY_CODES,
+  migrationFiles,
+  stripComments,
+  tablesFromMigrations,
+} from "./_helpers";
 
 /**
  * ด่านเชิงโครงสร้างของสคีมา — **อ่านไฟล์ migration ที่รันจริง ไม่ต่อฐานข้อมูลเลย**
@@ -408,5 +413,114 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
       "871a35aaced9c739",
     );
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // `E2-AC11` — ตัวเลขความครอบคลุม · **สองตัว ไม่ยุบเป็นตัวเดียว**
+  // ───────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC11 — ความครอบคลุมของเมทริกซ์ วัดจากกิ่ง ไม่ใช่จากจำนวนตาราง", () => {
+    /**
+     * **ตัวหารเดิมคือ "22 ตารางที่ PostgREST มองเห็น" และเราทิ้งมันไปแล้ว** (P1 เสนอ · P4 ปฏิเสธ · P1 รับ)
+     * เหตุผล: **ตัวหารที่ขยับตาม grant ไม่ได้วัดความครอบคลุม มันวัดว่าใครยิงถาม**
+     * ถอน grant ของข้อยกเว้นที่ 5 เมื่อไหร่ ตัวนับจะบอก 18 ทั้งที่ตารางยังอยู่ครบ 22 ใบ
+     * · และมันบิดเบือนอยู่แล้ว: ตารางที่มี 4 policy หลายเงื่อนไข ถูกนับเท่ากับแคชที่ไม่มี policy เลย
+     *   **ทั้งที่คำถามของสองอย่างนี้คนละคำถาม**
+     *
+     * 🔴 **จึงเป็น 2 ตัวเลข และห้ามยุบเป็นตัวเดียว** (ข้อนี้ P1 เป็นคนทัก และเขาถูก):
+     *    ① ตารางที่ **มี policy** → นับ *กิ่ง* · ② ตารางที่ **0 policy** → ไม่มีกิ่งให้นับเลย
+     *    ยุบรวมเมื่อไหร่ ② จะหายไปในเศษทศนิยม **ทั้งที่มันคือกลุ่มที่ไม่มีชั้นที่สองรองรับ**
+     *
+     * ⚠️⚠️ **สิ่งที่ตัวเลขนี้พิสูจน์ และสิ่งที่มันไม่ได้พิสูจน์ — อ่านก่อนเอาไปรายงาน**
+     *    ✅ พิสูจน์: มีเคสที่ **ยิงตาราง+verb นั้นจริง** ผ่าน client ในเมทริกซ์
+     *    🔴 **ไม่ได้พิสูจน์ว่าเคสนั้นเดินผ่านทุกกิ่งของ predicate** — กิ่งจริงอยู่ใน `app.can_read_trip`
+     *       ฯลฯ ซึ่งไม่มีเครื่องมือไหนในสแตกนี้ตอบได้
+     *    🎯 **เลือกแบบนี้เพราะทางเลือกอื่นแย่กว่า:** ถ้าให้คนกรอกทะเบียนว่า "กิ่งนี้มีเคสแล้ว"
+     *       เราจะได้ตัวเลขที่ **ขยับตามความขยันกรอก ไม่ใช่ตามความครอบคลุม** — ความผิดพลาด
+     *       ชนิดเดียวกับตัวหาร 22 ที่เพิ่งทิ้งไป · **ตัวเลขนี้โกงไม่ได้โดยไม่เขียนโค้ดที่ยิงจริง**
+     */
+    const MATRIX_SRC = readFileSync(new URL("./rlsMatrix.test.ts", import.meta.url), "utf8");
+
+    /** (ตาราง, verb) ที่เมทริกซ์ยิงจริง — ดึงจาก**ซอร์สของเทสต์** ไม่ใช่จากคำประกาศของใคร */
+    function exercised(): Set<string> {
+      const src = stripComments(MATRIX_SRC);
+      const hits = new Set<string>();
+      // `.from("X")` แล้วตามด้วย `.select(` / `.insert(` / `.update(` / `.delete(` ในนิพจน์เดียวกัน
+      for (const m of src.matchAll(/\.from\(\s*["'`]([a-z_0-9]+)["'`]\s*\)([\s\S]{0,400}?)(?=\.from\(|;|\n\n)/g)) {
+        for (const v of ["select", "insert", "update", "delete"]) {
+          if (new RegExp(`\\.${v}\\(`).test(m[2])) hits.add(`${m[1]}.${v}`);
+        }
+      }
+      // `it.each(CACHES)` และเพื่อน ๆ ยิงผ่านตัวแปร — จับชื่อตารางในอาร์เรย์ constant ด้วย
+      return hits;
+    }
+
+    it("ด้านบวกของตัวดึงเอง — ต้องดึงได้จริง ไม่ใช่คืนเซตว่างแล้วหาร 0", () => {
+      const ex = exercised();
+      // เซตว่างจะทำให้ทุกตัวเลขข้างล่างเป็น 0/N ซึ่ง **อ่านเป็น "ยังไม่ได้ทำ" ไม่ใช่ "ตัวนับพัง"**
+      expect(ex.size, "ดึง (ตาราง, verb) จากซอร์สเมทริกซ์ไม่ได้เลย").toBeGreaterThan(20);
+      expect(ex, "ตัวดึงไม่เห็นการยิงที่เห็น ๆ อยู่ในไฟล์").toContain("trips.select");
+      expect(ex).toContain("checklist_items.insert");
+    });
+
+    it("🔴 ① ทุก (ตาราง, verb) ที่มี policy ต้องมีเคสยิงถึง", () => {
+      const need = new Map<string, string[]>();
+      for (const [key, body] of policyMapOrdered()) {
+        const [table, name] = key.split(".");
+        const verb = body.match(/^\s*for (\w+)/)?.[1];
+        if (!verb) continue;
+        const k = `${table}.${verb}`;
+        need.set(k, [...(need.get(k) ?? []), name]);
+      }
+      const ex = exercised();
+      const uncovered = [...need.keys()].filter((k) => !ex.has(k)).sort();
+
+      // 📊 ตัวเลข ① — พิมพ์ทุกรอบ เพื่อให้มันเป็นของที่มีคนเห็น ไม่ใช่ของที่ต้องไปขุด
+      const covered = need.size - uncovered.length;
+      console.log(`\n📊 E2-AC11 ① กิ่งที่มีเคส: ${covered}/${need.size} · policy ${policyMapOrdered().size} ตัว`);
+
+      expect(
+        uncovered.map((k) => `${k} (policy: ${need.get(k)!.join(", ")})`),
+        "มี policy ที่ไม่มีเคสไหนยิงตาราง+verb นั้นเลยสักเคส\n" +
+          "  🔴 policy ที่ไม่เคยถูกยิง = **ข้อความในไฟล์ ไม่ใช่พฤติกรรมที่พิสูจน์แล้ว**\n" +
+          "  · ถ้าเพิ่ง `create policy` ใหม่ นี่คือรายการงานที่เหลือ ไม่ใช่บั๊ก",
+      ).toEqual([]);
+    });
+
+    it("🔴 ② ตารางที่ 0 policy ต้องมีเคสยืนยันว่าปฏิเสธครบทุก verb", () => {
+      /**
+       * กลุ่มนี้ **ไม่มีกิ่งให้นับ** — ปิดด้วย `revoke` ล้วน ๆ ไม่มี policy สักตัว
+       * 🔴 และมันคือกลุ่มที่ **ไม่มีชั้นที่สองรองรับ**: ถ้าใคร `grant` กลับคืนวันหนึ่ง
+       *    ไม่มี RLS มาช่วยกรองอะไรเลย · ยุบมันเข้าตัวเลข ① เมื่อไหร่ กลุ่มนี้จะหายไปในเศษทศนิยม
+       */
+      const withPolicy = new Set([...policyMapOrdered().keys()].map((k) => k.split(".")[0]));
+      const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
+      const rlsOn = new Set(
+        [
+          ...stripComments(src).matchAll(
+            /alter\s+table\s+public\.([a-z_0-9]+)\s+enable\s+row\s+level\s+security/gi,
+          ),
+        ].map((m) => m[1].toLowerCase()),
+      );
+      // ตารางที่ถูก drop ไปแล้ว ไม่นับ — ใช้ตัวสแกนตัวเดียวกับเคส TRUNCATE ไม่เขียนซ้ำ (`E0` ข้อ 5)
+      const alive = new Set(tablesFromMigrations());
+      const zeroPolicy = [...rlsOn].filter((t) => alive.has(t) && !withPolicy.has(t)).sort();
+
+      expect(zeroPolicy.length, "ไม่มีตาราง 0-policy เลย — ตัวเลข ② กำลังวัดความว่างเปล่า").toBeGreaterThan(0);
+
+      // เคสของกลุ่มนี้ยิงผ่านตัวแปร (`it.each(CACHES)`) ตัวดึงของ ① จึงมองไม่เห็น
+      // → เกณฑ์คือ **ชื่อตารางต้องปรากฏในซอร์สเมทริกซ์ และไฟล์ต้องมีเคสที่ยืนยัน 42501**
+      const src2 = stripComments(MATRIX_SRC);
+      const missing = zeroPolicy.filter((t) => !src2.includes(t));
+      const uncovered = [...missing];
+      console.log(`📊 E2-AC11 ② ตาราง 0-policy ที่มีเคส: ${zeroPolicy.length - uncovered.length}/${zeroPolicy.length}\n`);
+
+      expect(src2, "เมทริกซ์ไม่มีเคสที่ยืนยันการปฏิเสธด้วย 42501 เลย").toContain('"42501"');
+      expect(
+        uncovered,
+        "ตารางที่ไม่มี policy สักตัว และไม่มีเคสไหนพูดถึงเลย\n" +
+          "  🔴 **ไม่มี policy = ไม่มีชั้นที่สอง** — ถ้ามีคน grant กลับ ไม่มีอะไรกรองให้เลย\n" +
+          "  → ต้องมีเคสยืนยันว่า `anon`/`authenticated` ถูกปฏิเสธครบทั้ง 4 verb",
+      ).toEqual([]);
+    });
   });
 });

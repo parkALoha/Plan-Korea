@@ -8,6 +8,7 @@ import {
   readEnvKey,
   requireLiveCreds,
   stripComments,
+  tablesFromMigrations,
 } from "./_helpers";
 
 /**
@@ -383,42 +384,6 @@ describe("การรันชุดสด", () => {
   });
 });
 
-/**
- * ตารางที่ **ยังมีอยู่** ตามที่ไฟล์ migration บอก — `create` เพิ่ม · `drop` หัก
- *
- * 🔴 **ฉบับแรกของผมอ่านแต่ `create table`** → ตารางที่สร้างแล้วลบทีหลังถูกนับว่ายังอยู่
- * · P1 เจอทันทีจากเคส `MISSING` (`rls_force_probe` ที่เขาสร้างแล้วลบ) **และเคสนั้นแดงเพราะกลไก
- *   ทำงานถูก ไม่ใช่เพราะฐานผิด** · เขาแก้ให้แล้ว — ฉบับนี้แก้ต่ออีก 2 ข้อที่ยังเหลือ
- *
- * ⚠️ **① ต้องเดินตามลำดับในไฟล์ ไม่ใช่ "create ทั้งหมดก่อน แล้วค่อย drop ทั้งหมด"**
- *    `drop` แล้ว `create` ใหม่ในไฟล์เดียวกันคือสำนวนปกติของ migration
- *    → แบบเดิมจะได้ผลลัพธ์ว่า *"ไม่มีตารางนี้"* ทั้งที่มันมีอยู่ **แล้วเคส `TRUNCATE` จะข้ามมันไปเงียบ ๆ**
- *    🎯 ทิศนี้แย่กว่าที่ P1 เจอ: ของเขาแดงผิด (ดัง) **ของนี้ตรวจไม่ครบ (เงียบ)**
- * ⚠️ **② `drop table` รับหลายชื่อคั่นด้วยจุลภาค** — `drop table public.a, public.b;`
- *    regex ที่จับชื่อเดียวจะหักออกแค่ตัวแรก
- *
- * 📌 วันนี้ทั้งสองข้อยังไม่กัด (มี `drop` จริงแค่ตัวเดียวและอยู่ไฟล์ของมันเอง)
- *    **เขียนกันไว้เพราะสำนวนพวกนี้จะมาแน่ และตอนมันมาจะไม่มีใครนึกถึงไฟล์นี้**
- */
-export function tablesFromMigrations(sources?: string[]): string[] {
-  const alive = new Set<string>();
-  const bodies = sources ?? migrationFiles.map((f) => readFileSync(f, "utf8"));
-  for (const raw of bodies) {
-    const sql = stripComments(raw);
-    // จับ `create|drop table [if …] public.a[, public.b…]` **เรียงตามที่ปรากฏจริง**
-    for (const m of sql.matchAll(
-      /\b(create|drop)\s+table\s+(?:if\s+not\s+exists\s+|if\s+exists\s+)?((?:public\.[a-z_][a-z0-9_]*\s*,?\s*)+)/gi,
-    )) {
-      const verb = m[1].toLowerCase();
-      for (const n of m[2].matchAll(/public\.([a-z_][a-z0-9_]*)/gi)) {
-        const name = n[1].toLowerCase();
-        if (verb === "create") alive.add(name);
-        else alive.delete(name);
-      }
-    }
-  }
-  return [...alive].sort();
-}
 
 describe("tablesFromMigrations — ตัวสแกนที่เคสอื่นพึ่ง ต้องถูกยิงเอง (กฎ E0 ข้อ 1–2)", () => {
   // 🔴 ถ้าตัวนี้พังเงียบ เคส `TRUNCATE` จะตรวจตารางน้อยลงเรื่อย ๆ **โดยยังเขียวทุกรอบ**
@@ -3172,6 +3137,187 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           "  🔴 = exclusion ไม่มี `where (deleted_at is null)` → ที่พักที่ผู้ใช้มองไม่เห็นแล้ว\n" +
           "     ยังกันช่วงวันอยู่ตลอดกาล และไม่มีอะไรบนหน้าจออธิบายได้เลยว่าทำไม",
       ).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 กิ่งที่ตัวนับ `E2-AC11` หาเจอในรอบแรก — 5 policy ที่ไม่เคยถูกยิงเลย", () => {
+    /**
+     * ตัวนับ `E2-AC11` (ใน `schemaPins.test.ts`) รันครั้งแรกแล้วชี้มา 5 กิ่ง:
+     * `custom_places.update` · `custom_place_names.update` · `place_notes.update`
+     * · `trip_hotels.update` · `trip_day_plan_settings.select`
+     * **ทั้งห้าเขียนไว้ในไฟล์ครบ มี grant ครบ และไม่มีเคสไหนแตะเลยสักเคส**
+     *
+     * 🔴 **เคสด้านลบของ `update` ที่นี่ต้องอ่านค่ากลับ ไม่ใช่ดู error** — และข้อนี้สำคัญ:
+     * `authenticated` **มี column grant ครบ** → `viewer` ยิง `update` แล้ว **ไม่ได้ `42501`**
+     * RLS แค่กรองแถวออก → **PostgREST คืน "สำเร็จ" กับการอัปเดต 0 แถว**
+     * 🎯 เขียน `expect(error).not.toBeNull()` เมื่อไหร่ **เคสจะแดงทั้งที่ระบบทำงานถูก**
+     *    และถ้าเขียน `expect(error).toBeNull()` **มันจะเขียวทั้งที่ viewer แก้ได้จริงก็ตาม**
+     *    → **มีทางเดียวที่ตอบได้: อ่านแถวกลับมาดู**
+     *
+     * ⚠️ **`B` เป็นคนนอก ไม่ใช่ editor ในบล็อกนี้** — จึงได้ 3 persona ต่อกิ่ง:
+     * เจ้าของแก้ได้ · viewer แก้ไม่ได้ · คนนอกแก้ไม่ได้
+     */
+    const ccU = TEST_COUNTRY_CODES.updateBranches;
+    let tripU2 = "", planU = "", dayU = "", cityU = "", myU = "";
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccU);
+      await admin.from("catalog_countries").delete().eq("id", ccU);
+      await admin.from("catalog_countries").insert({ id: ccU, name_th: "ทดสอบอัปเดต", name_en: "UPD" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccU, name_th: "เมืองU", name_en: "CityU", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      cityU = ci.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `upd-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripU2 = t.data.id as string;
+      // เชิญ `C` เป็น viewer เท่านั้น — `B` เป็นคนนอกโดยตั้งใจ
+      const inv = await A.from("trip_members").insert({ trip_id: tripU2, user_id: ids.c, role: "viewer" });
+      if (inv.error) throw new Error(`เชิญ C: ${inv.error.message}`);
+
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripU2).eq("is_active", true).single();
+      if (pl.error) throw new Error(`หาแผน: ${pl.error.message}`);
+      planU = pl.data.id as string;
+      const dy = await A.from("trip_days").insert({ trip_id: tripU2, date: "2026-10-12" }).select("id").single();
+      if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
+      dayU = dy.data.id as string;
+
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripU2, city_id: cityU, category: "cafe", lat: 35.1, lng: 129.1, description: "เดิม" })
+        .select("id").single();
+      if (mp.error) throw new Error(`custom place: ${mp.error.message}`);
+      myU = mp.data.id as string;
+
+      const seeds: Array<[string, Record<string, unknown>]> = [
+        ["custom_place_names", { trip_id: tripU2, place_id: myU, locale: "th", name: "ชื่อเดิม" }],
+        ["place_notes", { trip_id: tripU2, plan_id: planU, custom_place_id: myU, note: "โน้ตเดิม" }],
+        ["trip_hotels", {
+          trip_id: tripU2, city_id: cityU, hotel_name: "โรงแรมเดิม",
+          check_in: "2026-10-12", check_out: "2026-10-14",
+        }],
+        ["trip_day_plan_settings", {
+          trip_id: tripU2, plan_id: planU, trip_day_id: dayU, start_time: "08:00",
+        }],
+      ];
+      for (const [table, row] of seeds) {
+        const { error } = await A.from(table).insert(row);
+        if (error) throw new Error(`seed ${table}: ${error.message}`);
+      }
+    });
+
+    afterAll(async () => {
+      await admin.from("trips").delete().eq("id", tripU2);
+      await admin.from("catalog_cities").delete().eq("country_id", ccU);
+      const { error } = await admin.from("catalog_countries").delete().eq("id", ccU);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก update ไม่สำเร็จ: ${error.message}\n`);
+    });
+
+    /**
+     * ตรรกะร่วมของทั้ง 5 กิ่ง — **เคสข้างล่างเรียกตัวนี้ ไม่ใช่ก๊อปกัน** (`E0` ข้อ 5)
+     *
+     * ⚠️ **แต่ *จุดเรียก* ต้องพิมพ์ชื่อตารางเป็นสตริงตรง ๆ ห้ามส่งผ่านตัวแปร** — และเหตุผลไม่ใช่สไตล์:
+     * ตัวนับ `E2-AC11` อ่าน `.from("X").update(` **จากซอร์ส** · `.from(table)` ที่ `table` เป็นตัวแปร
+     * มันมองไม่เห็น → เคสมีอยู่จริงแต่ถูกนับว่าไม่มี
+     * 🎯 **นี่คือข้อจำกัดที่ตั้งใจไว้แบบนั้น:** ตัวนับที่ตามตัวแปรได้ ต้องเดา และ**ตัวนับที่เดาได้ = ตัวนับที่โกงได้**
+     *    ทิศที่มันพลาดคือ **รายงานว่าครอบน้อยกว่าจริง** ซึ่งสั่งให้ไปทำงานเพิ่ม ไม่ใช่ปล่อยผ่าน
+     */
+    async function branchCase(
+      label: string,
+      was: string,
+      // 📌 `PromiseLike` ไม่ใช่ `Promise` — query builder ของ supabase-js เป็น thenable
+      //    ที่ยังไม่ถูก await จึงไม่มี `catch`/`finally` ให้ TypeScript เห็น
+      write: (c: SupabaseClient, value: string) => PromiseLike<{ error: { message: string } | null }>,
+      read: (c: SupabaseClient) => PromiseLike<{ data: Record<string, unknown> | null }>,
+      mine = "แก้โดยเจ้าของ",
+    ) {
+      const col = label.split(".")[1];
+      // ① ด้านบวก — ถ้าข้อนี้แดง เคสด้านลบข้างล่างไม่ได้พิสูจน์อะไร (`P-44`)
+      const ok = await write(A, mine);
+      expect(ok.error?.message ?? null, `เจ้าของแก้ ${label} ไม่ได้`).toBeNull();
+      expect((await read(A)).data![col]).toBe(mine);
+
+      // ② 🔴 viewer — **ต้องอ่านค่ากลับ ไม่ใช่ดู error**
+      const byViewer = await write(C, was);
+      expect(
+        (await read(A)).data![col],
+        `viewer แก้ ${label} ได้จริง (error = ${byViewer.error?.message ?? "ไม่มี"})\n` +
+          "  🔴 อย่าเปลี่ยนเคสนี้ไปเช็ค error — `authenticated` มี column grant ครบ\n" +
+          "     RLS กรองแถวออกเฉย ๆ **PostgREST คืนว่าสำเร็จกับการอัปเดต 0 แถว**",
+      ).toBe(mine);
+
+      // ③ คนนอก — แก้ไม่ได้ และต้องมองไม่เห็นแถวด้วย
+      await write(B, was);
+      expect((await read(A)).data![col], `คนนอกแก้ ${label} ได้`).toBe(mine);
+      expect((await read(B)).data, `คนนอกอ่าน ${label} ของทริปที่ไม่ได้อยู่ได้`).toBeNull();
+    }
+
+    it("🔴 custom_places.update — เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้", async () => {
+      await branchCase(
+        "custom_places.description",
+        "เดิม",
+        (c, v) => c.from("custom_places").update({ description: v }).eq("id", myU),
+        (c) => c.from("custom_places").select("description").eq("id", myU).maybeSingle(),
+      );
+    });
+
+    it("🔴 custom_place_names.update — เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้", async () => {
+      await branchCase(
+        "custom_place_names.name",
+        "ชื่อเดิม",
+        (c, v) => c.from("custom_place_names").update({ name: v }).eq("place_id", myU),
+        (c) => c.from("custom_place_names").select("name").eq("place_id", myU).maybeSingle(),
+      );
+    });
+
+    it("🔴 place_notes.update — เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้", async () => {
+      await branchCase(
+        "place_notes.note",
+        "โน้ตเดิม",
+        (c, v) => c.from("place_notes").update({ note: v }).eq("trip_id", tripU2),
+        (c) => c.from("place_notes").select("note").eq("trip_id", tripU2).maybeSingle(),
+      );
+    });
+
+    it("🔴 trip_hotels.update — เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้", async () => {
+      await branchCase(
+        "trip_hotels.hotel_name",
+        "โรงแรมเดิม",
+        (c, v) => c.from("trip_hotels").update({ hotel_name: v }).eq("trip_id", tripU2),
+        (c) => c.from("trip_hotels").select("hotel_name").eq("trip_id", tripU2).maybeSingle(),
+      );
+    });
+
+    it("🔴 trip_day_plan_settings.update — เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้", async () => {
+      // 🔴 ค่าต้องผ่าน `check (start_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')`
+      //    ฉบับแรกของเคสนี้ยัดสตริงภาษาไทยลงไปแล้วแดง — **และมันแดงถูก**
+      //    (`23514` ไม่ใช่เรื่องสิทธิ์ · ถ้าไม่ดูให้ดีจะสรุปว่า "เจ้าของแก้ไม่ได้" ซึ่งผิด)
+      await branchCase(
+        "trip_day_plan_settings.start_time",
+        "08:00",
+        (c, v) => c.from("trip_day_plan_settings").update({ start_time: v }).eq("trip_day_id", dayU),
+        (c) => c.from("trip_day_plan_settings").select("start_time").eq("trip_day_id", dayU).maybeSingle(),
+        "09:30",
+      );
+    });
+
+    it("🔴 trip_day_plan_settings.select — viewer อ่านได้ (กิ่งที่ไม่เคยถูกยิง) · คนนอกไม่ได้", async () => {
+      // 🎯 กิ่งนี้ต่างจาก 5 ตัวข้างบน: เป็นกิ่ง **ด้านอ่าน** และ `viewer` ต้อง **ผ่าน**
+      //    ถ้าไม่มีเคสนี้ `can_read_trip` พังแบบ "ปฏิเสธทุกคน" ได้โดยไม่มีอะไรแดง (`P-44`)
+      const asViewer = await C.from("trip_day_plan_settings")
+        .select("start_time, trip_day_id")
+        .eq("trip_day_id", dayU);
+      expect(asViewer.error?.message ?? null).toBeNull();
+      expect(asViewer.data, "viewer อ่านการตั้งค่าของวันไม่ได้ — หน้าจอเขาจะไม่มีเวลาเริ่มวัน").toHaveLength(1);
+
+      const asOutsider = await B.from("trip_day_plan_settings")
+        .select("start_time")
+        .eq("trip_day_id", dayU);
+      expect(asOutsider.data, "คนนอกอ่านการตั้งค่าของทริปที่ไม่ได้อยู่ได้").toEqual([]);
     });
   });
 

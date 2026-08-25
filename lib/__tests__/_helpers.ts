@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 /**
  * ของกลางที่ชุดเทสต์หลายไฟล์ใช้ร่วมกัน — **ไม่ใช่ไฟล์เทสต์** (vitest เก็บเฉพาะ `*.test.ts`)
@@ -153,6 +153,8 @@ export const TEST_COUNTRY_CODES = {
   tripHotels: "zs",
   /** บล็อกข้อความ error ของ soft-delete RPC (`P-53`) — P4 */
   rpcMessages: "xr",
+  /** บล็อกกิ่ง update ที่ตัวนับ `E2-AC11` หาเจอ — P4 */
+  updateBranches: "xs",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */
@@ -173,4 +175,41 @@ export const migrationFiles = readdirSync(MIGRATIONS_DIR)
  */
 export function stripComments(sql: string): string {
   return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
+
+/**
+ * ตารางที่ **ยังมีอยู่** ตามที่ไฟล์ migration บอก — `create` เพิ่ม · `drop` หัก
+ *
+ * 🔴 **ฉบับแรกของผมอ่านแต่ `create table`** → ตารางที่สร้างแล้วลบทีหลังถูกนับว่ายังอยู่
+ * · P1 เจอทันทีจากเคส `MISSING` (`rls_force_probe` ที่เขาสร้างแล้วลบ) **และเคสนั้นแดงเพราะกลไก
+ *   ทำงานถูก ไม่ใช่เพราะฐานผิด** · เขาแก้ให้แล้ว — ฉบับนี้แก้ต่ออีก 2 ข้อที่ยังเหลือ
+ *
+ * ⚠️ **① ต้องเดินตามลำดับในไฟล์ ไม่ใช่ "create ทั้งหมดก่อน แล้วค่อย drop ทั้งหมด"**
+ *    `drop` แล้ว `create` ใหม่ในไฟล์เดียวกันคือสำนวนปกติของ migration
+ *    → แบบเดิมจะได้ผลลัพธ์ว่า *"ไม่มีตารางนี้"* ทั้งที่มันมีอยู่ **แล้วเคส `TRUNCATE` จะข้ามมันไปเงียบ ๆ**
+ *    🎯 ทิศนี้แย่กว่าที่ P1 เจอ: ของเขาแดงผิด (ดัง) **ของนี้ตรวจไม่ครบ (เงียบ)**
+ * ⚠️ **② `drop table` รับหลายชื่อคั่นด้วยจุลภาค** — `drop table public.a, public.b;`
+ *    regex ที่จับชื่อเดียวจะหักออกแค่ตัวแรก
+ *
+ * 📌 วันนี้ทั้งสองข้อยังไม่กัด (มี `drop` จริงแค่ตัวเดียวและอยู่ไฟล์ของมันเอง)
+ *    **เขียนกันไว้เพราะสำนวนพวกนี้จะมาแน่ และตอนมันมาจะไม่มีใครนึกถึงไฟล์นี้**
+ */
+export function tablesFromMigrations(sources?: string[]): string[] {
+  const alive = new Set<string>();
+  const bodies = sources ?? migrationFiles.map((f) => readFileSync(f, "utf8"));
+  for (const raw of bodies) {
+    const sql = stripComments(raw);
+    // จับ `create|drop table [if …] public.a[, public.b…]` **เรียงตามที่ปรากฏจริง**
+    for (const m of sql.matchAll(
+      /\b(create|drop)\s+table\s+(?:if\s+not\s+exists\s+|if\s+exists\s+)?((?:public\.[a-z_][a-z0-9_]*\s*,?\s*)+)/gi,
+    )) {
+      const verb = m[1].toLowerCase();
+      for (const n of m[2].matchAll(/public\.([a-z_][a-z0-9_]*)/gi)) {
+        const name = n[1].toLowerCase();
+        if (verb === "create") alive.add(name);
+        else alive.delete(name);
+      }
+    }
+  }
+  return [...alive].sort();
 }
