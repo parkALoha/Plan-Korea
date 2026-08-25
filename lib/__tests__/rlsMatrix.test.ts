@@ -451,6 +451,32 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     return client;
   }
 
+
+  /**
+   * ล้างคลังทดสอบของรหัสประเทศหนึ่งให้เกลี้ยง — **ลูกก่อนพ่อ · เรียกได้ทั้งก่อนและหลัง**
+   *
+   * 🔴 **รูปเดิมที่ทุกบล็อกใช้คือ 2 บรรทัด: ลบเมือง แล้วลบประเทศ — และมันไม่พอ**
+   * `catalog_places → catalog_cities` เป็น `on delete restrict` → ถ้ารอบก่อนตายกลางคัน
+   * หลังสร้าง place ไว้ **เมืองจะลบไม่ออก → ประเทศลบไม่ออก → รอบถัดไปชนคีย์ซ้ำที่ `beforeAll`**
+   * → บล็อกนั้น**ข้ามทุกรอบตลอดกาล** จนกว่าจะมีคนไปล้างฐานด้วยมือ
+   *
+   * 🎯 **เรียกใน `beforeAll` ด้วย ไม่ใช่แค่ `afterAll` — รูปนี้ P1 เขียนก่อน (`purge()` ของเขา) และมันถูกกว่าของผม**
+   * ของผมเดิมล้างเฉพาะตอนจบ ซึ่งแปลว่า **รอบที่ตายกลางคันจะพิษต่อไปได้เรื่อย ๆ**
+   * · เก็บกวาดตอนเริ่มคือสิ่งที่ทำให้ชุดทดสอบ**หายเองได้** แทนที่จะต้องมีคนมาซ่อม
+   *
+   * 📌 ไม่ throw โดยตั้งใจ — คืนข้อความให้ผู้เรียกตัดสินใจ · `afterAll` ที่ล้มจะกลบผลของเคสที่เพิ่งรัน
+   */
+  async function purgeCountry(code: string): Promise<string | null> {
+    const cities = (await admin.from("catalog_cities").select("id").eq("country_id", code)).data ?? [];
+    const cityIds = cities.map((c) => c.id as string);
+    if (cityIds.length > 0) {
+      await admin.from("catalog_places").delete().in("city_id", cityIds);
+      await admin.from("catalog_cities").delete().in("id", cityIds);
+    }
+    const { error } = await admin.from("catalog_countries").delete().eq("id", code);
+    return error ? error.message : null;
+  }
+
   beforeAll(async () => {
     admin = testClient(SERVICE);
     D = testClient(ANON);
@@ -3290,8 +3316,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     let tripU2 = "", planU = "", dayU = "", cityU = "", myU = "";
 
     beforeAll(async () => {
-      await admin.from("catalog_cities").delete().eq("country_id", ccU);
-      await admin.from("catalog_countries").delete().eq("id", ccU);
+      await purgeCountry(ccU);
       await admin.from("catalog_countries").insert({ id: ccU, name_th: "ทดสอบอัปเดต", name_en: "UPD" });
       const ci = await admin.from("catalog_cities")
         .insert({ country_id: ccU, name_th: "เมืองU", name_en: "CityU", lat: 35, lng: 129, timezone: "Asia/Seoul" })
@@ -3340,9 +3365,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
     afterAll(async () => {
       await admin.from("trips").delete().eq("id", tripU2);
-      await admin.from("catalog_cities").delete().eq("country_id", ccU);
-      const { error } = await admin.from("catalog_countries").delete().eq("id", ccU);
-      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก update ไม่สำเร็จ: ${error.message}\n`);
+      const error = await purgeCountry(ccU);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก update ไม่สำเร็จ: ${error}\n`);
     });
 
     /**
@@ -3471,11 +3495,9 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     const ccS = TEST_COUNTRY_CODES.outsiderSweep;
     const SCOPED = tripScopedTables();
     let tripS = "";
-    let catS = "";
 
     beforeAll(async () => {
-      await admin.from("catalog_cities").delete().eq("country_id", ccS);
-      await admin.from("catalog_countries").delete().eq("id", ccS);
+      await purgeCountry(ccS);
       await admin.from("catalog_countries").insert({ id: ccS, name_th: "ทดสอบกวาด", name_en: "SWP" });
       const ci = await admin.from("catalog_cities")
         .insert({ country_id: ccS, name_th: "เมืองS", name_en: "CityS", lat: 35, lng: 129, timezone: "Asia/Seoul" })
@@ -3485,7 +3507,6 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         .insert({ city_id: ci.data.id, category: "sight", lat: 35, lng: 129 })
         .select("id").single();
       if (cp.error) throw new Error(`seed place: ${cp.error.message}`);
-      catS = cp.data.id as string;
 
       const t = await A.rpc("create_trip", {
         p_title: `sweep-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
@@ -3531,10 +3552,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       //    → ประเทศลบไม่ออก → รอบถัดไปชนคีย์ซ้ำที่ `beforeAll` **แล้วทั้งบล็อกจะขึ้นเป็น "ข้าม"**
       //    🎯 **`console.warn` ตัวนี้เองที่จับมันได้** — ถ้าเขียน `.catch(() => {})` จะเงียบจนกว่าจะพังรอบหน้า
       await admin.from("trips").delete().eq("id", tripS);
-      await admin.from("catalog_places").delete().eq("id", catS);
-      await admin.from("catalog_cities").delete().eq("country_id", ccS);
-      const { error } = await admin.from("catalog_countries").delete().eq("id", ccS);
-      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อกกวาดไม่สำเร็จ: ${error.message}\n`);
+      const error = await purgeCountry(ccS);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อกกวาดไม่สำเร็จ: ${error}\n`);
     });
 
     it("🔴 ตารางที่ผูกกับทริปทุกใบต้องมี fixture — ตารางใหม่ต้องแดง ไม่ใช่ถูกข้าม", async () => {
@@ -3819,8 +3838,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     ] as const;
 
     beforeAll(async () => {
-      await admin.from("catalog_cities").delete().eq("country_id", ccQ);
-      await admin.from("catalog_countries").delete().eq("id", ccQ);
+      await purgeCountry(ccQ);
       await admin.from("catalog_countries").insert({ id: ccQ, name_th: "ทดสอบข้อความ", name_en: "MSG" });
       const ci = await admin.from("catalog_cities")
         .insert({ country_id: ccQ, name_th: "เมืองQ", name_en: "CityQ", lat: 35, lng: 129, timezone: "Asia/Seoul" })
@@ -3880,10 +3898,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       // 🔴 ลบลูกก่อนพ่อ — `catalog_places` เป็น `on delete restrict` จาก `catalog_cities`
       //    (ผมเคยพลาดข้อนี้มาแล้วในบล็อกคลัง แล้วรอบถัดไปชนคีย์ซ้ำ → เคส "ข้าม" ที่อ่านเป็นเขียว)
       await admin.from("trips").delete().eq("id", tripQ);
-      await admin.from("catalog_places").delete().eq("id", catQ);
-      await admin.from("catalog_cities").delete().eq("country_id", ccQ);
-      const { error } = await admin.from("catalog_countries").delete().eq("id", ccQ);
-      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก P-53 ไม่สำเร็จ: ${error.message}\n`);
+      const error = await purgeCountry(ccQ);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อก P-53 ไม่สำเร็จ: ${error}\n`);
     });
 
     // ── ด้านบวก: ถ้าตรงนี้แดง เคสข้างล่างวัดความว่างเปล่า ────────────────────
