@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 /**
  * ของกลางที่ชุดเทสต์หลายไฟล์ใช้ร่วมกัน — **ไม่ใช่ไฟล์เทสต์** (vitest เก็บเฉพาะ `*.test.ts`)
  *
@@ -150,3 +152,23 @@ export const TEST_COUNTRY_CODES = {
   /** บล็อก `trip_hotels` (`D51`) — P1 */
   tripHotels: "zs",
 } as const;
+
+/** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */
+export const MIGRATIONS_DIR = resolve(process.cwd(), "supabase-platform/supabase/migrations");
+
+/** ไฟล์ migration ทั้งหมด · สแกนทั้งโฟลเดอร์ ไม่ระบุชื่อ — ตัวใหม่ถูกครอบเองโดยไม่ต้องแก้เทสต์ */
+export const migrationFiles = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => join(MIGRATIONS_DIR, f));
+
+/**
+ * ตัดคอมเมนต์ SQL ออกก่อน match — **ตัวเดียวของทั้งชุด** (`D67`)
+ *
+ * 🔴 matcher ที่อ่านทั้งไฟล์จะ **แดงใส่ไฟล์ที่อธิบายว่าทำไมสิ่งนั้นถึงต้องห้าม**
+ * แรงกดดันที่มันสร้างคือ *"ลบคอมเมนต์ทิ้งให้เทสต์เขียว"* = **ลบความรู้เพื่อให้ตัวเลขสวย**
+ * ⚠️ ข้อจำกัดที่รู้อยู่: `--` ที่อยู่**ข้างในสตริง**จะถูกตัดตามไปด้วย → อาการคือ **จับของจริงไม่เจอ**
+ */
+export function stripComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
