@@ -155,6 +155,8 @@ export const TEST_COUNTRY_CODES = {
   rpcMessages: "xr",
   /** บล็อกกิ่ง update ที่ตัวนับ `E2-AC11` หาเจอ — P4 */
   updateBranches: "xs",
+  /** บล็อกกวาดคนนอกทุกตาราง (`E2-AC1`) — P4 */
+  outsiderSweep: "xt",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */
@@ -212,4 +214,25 @@ export function tablesFromMigrations(sources?: string[]): string[] {
     }
   }
   return [...alive].sort();
+}
+
+/**
+ * ตารางที่ **ผูกกับทริป** — มีคอลัมน์ `trip_id` เป็นของตัวเอง
+ *
+ * 🎯 **แบ่งด้วยคุณสมบัติของสคีมา ไม่ใช่ด้วยรายชื่อที่พิมพ์ไว้** — ตารางเนื้อหาตัวใหม่ของ `E3`/`E5`
+ * จะเข้ารายการนี้เองทันทีที่มันมี `trip_id` **แล้วเคสกวาดคนนอกจะบังคับให้มีคนวาง fixture ให้มัน**
+ * · ถ้าใช้รายชื่อที่พิมพ์ไว้ ตารางใหม่จะได้รับการยกเว้นฟรีจากการที่ไม่มีใครนึกถึง — `P-21`
+ */
+export function tripScopedTables(): string[] {
+  const cols = new Map<string, string>();
+  const alive = new Set(tablesFromMigrations());
+  for (const f of migrationFiles) {
+    const sql = stripComments(readFileSync(f, "utf8"));
+    for (const m of sql.matchAll(
+      /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_0-9]+)\s*\(([\s\S]*?)\n\);/gi,
+    )) {
+      cols.set(m[1].toLowerCase(), m[2]);
+    }
+  }
+  return [...alive].filter((t) => /^\s*trip_id\s/m.test(cols.get(t) ?? "")).sort();
 }

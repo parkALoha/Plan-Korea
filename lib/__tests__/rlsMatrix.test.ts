@@ -9,6 +9,7 @@ import {
   requireLiveCreds,
   stripComments,
   tablesFromMigrations,
+  tripScopedTables,
 } from "./_helpers";
 
 /**
@@ -3318,6 +3319,151 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         .select("start_time")
         .eq("trip_day_id", dayU);
       expect(asOutsider.data, "คนนอกอ่านการตั้งค่าของทริปที่ไม่ได้อยู่ได้").toEqual([]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2-AC1 — คนนอกอ่านอะไรของทริป A ไม่ได้เลย **ทุกตารางที่ผูกกับทริป**", () => {
+    /**
+     * **`US-E2` เขียนไว้ตรงตัว:** *"ในฐานะผู้ใช้ C ฉันต้องไม่สามารถอ่านหรือแก้อะไรของทริป A ได้เลย
+     * ไม่ว่าจะพยายามทางไหน"* — บล็อกนี้คือข้อนั้น กวาดทีเดียวทุกตาราง
+     *
+     * 🎯 **รายชื่อตารางมาจาก *คุณสมบัติของสคีมา* ไม่ใช่จากรายชื่อที่พิมพ์ไว้** — "มีคอลัมน์ `trip_id`"
+     *    → ตารางเนื้อหาตัวใหม่ของ `E3`/`E5` เข้ารายการเองทันที **และเคสนี้จะแดงจนกว่าจะมีคนวาง fixture ให้**
+     *    ถ้าใช้รายชื่อที่พิมพ์ไว้ ตารางใหม่จะได้รับการยกเว้นฟรีจากการที่ไม่มีใครนึกถึง (`P-21`)
+     *
+     * 🔴 **เคสด้านบวกไม่ใช่ของแถม มันคือเงื่อนไขที่ทำให้เคสด้านลบมีความหมาย**
+     *    `C` เห็น 0 แถว **อ่านได้สองแบบเสมอ**: *"RLS กันได้"* หรือ *"ไม่มีข้อมูลให้เห็นตั้งแต่แรก"*
+     *    → ทุกตารางต้องผ่าน **A เห็น ≥1 แถว ในวินาทีเดียวกัน** ก่อน ไม่งั้นถือว่า**สรุปไม่ได้ ไม่ใช่ผ่าน**
+     *
+     * ⚠️ **ครอบเฉพาะ `select`** — และเป็นการเลือกที่ตั้งใจ ไม่ใช่ความขี้เกียจ:
+     *    `insert`/`update` แบบกวาดต้องส่ง payload ที่ถูกต้องของแต่ละตาราง · payload ผิดจะได้
+     *    `PGRST204`/`42703`/`23502` ซึ่ง **ไม่ใช่คำตอบเรื่องสิทธิ์** แล้วเคสจะเขียวด้วยเหตุผลที่ผิด
+     *    (ผมเคยรายงานผิดด้วยรูปนี้มาแล้วจริง) → ฝั่งเขียนถูกครอบรายตารางในบล็อกอื่นด้วย payload จริง
+     */
+    const ccS = TEST_COUNTRY_CODES.outsiderSweep;
+    const SCOPED = tripScopedTables();
+    let tripS = "";
+    let catS = "";
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", ccS);
+      await admin.from("catalog_countries").delete().eq("id", ccS);
+      await admin.from("catalog_countries").insert({ id: ccS, name_th: "ทดสอบกวาด", name_en: "SWP" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccS, name_th: "เมืองS", name_en: "CityS", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      const cp = await admin.from("catalog_places")
+        .insert({ city_id: ci.data.id, category: "sight", lat: 35, lng: 129 })
+        .select("id").single();
+      if (cp.error) throw new Error(`seed place: ${cp.error.message}`);
+      catS = cp.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `sweep-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripS = t.data.id as string;
+
+      // `trip_members` + `trip_plans` ถูกสร้างโดย `create_trip` แล้ว
+      const pl = await A.from("trip_plans").select("id").eq("trip_id", tripS).eq("is_active", true).single();
+      if (pl.error) throw new Error(`หาแผน: ${pl.error.message}`);
+      const planS = pl.data.id as string;
+      const dy = await A.from("trip_days").insert({ trip_id: tripS, date: "2026-10-12" }).select("id").single();
+      if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
+      const dayS = dy.data.id as string;
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripS, city_id: ci.data.id, category: "cafe", lat: 35.1, lng: 129.1 })
+        .select("id").single();
+      if (mp.error) throw new Error(`custom place: ${mp.error.message}`);
+      const myS = mp.data.id as string;
+
+      const rows: Array<[string, Record<string, unknown>]> = [
+        ["trip_day_plan_settings", { trip_id: tripS, plan_id: planS, trip_day_id: dayS, start_time: "08:00" }],
+        ["custom_place_names", { trip_id: tripS, place_id: myS, locale: "th", name: `ชื่อ ${stamp}` }],
+        ["trip_stops", { trip_id: tripS, plan_id: planS, trip_day_id: dayS, kind: "place", custom_place_id: myS, rank: "m" }],
+        ["place_notes", { trip_id: tripS, plan_id: planS, custom_place_id: myS, note: `โน้ต ${stamp}` }],
+        ["hidden_places", { trip_id: tripS, catalog_place_id: cp.data.id }],
+        ["checklist_items", { trip_id: tripS, text: `รายการ ${stamp}` }],
+        ["bookings", { trip_id: tripS, category: "flight", title: `เที่ยวบิน ${stamp}` }],
+        ["trip_hotels", {
+          trip_id: tripS, city_id: ci.data.id, hotel_name: `โรงแรม ${stamp}`,
+          check_in: "2026-10-12", check_out: "2026-10-14",
+        }],
+      ];
+      for (const [table, row] of rows) {
+        const { error } = await A.from(table).insert(row);
+        if (error) throw new Error(`seed ${table}: ${error.message}`);
+      }
+    });
+
+    afterAll(async () => {
+      // 🔴 ลบลูกก่อนพ่อ — `catalog_places → catalog_cities → catalog_countries` เป็น `on delete restrict`
+      //    ฉบับแรกของบล็อกนี้เขียน `.eq("city_id", null)` ซึ่ง**ลบอะไรไม่ได้เลย** → เมืองลบไม่ออก
+      //    → ประเทศลบไม่ออก → รอบถัดไปชนคีย์ซ้ำที่ `beforeAll` **แล้วทั้งบล็อกจะขึ้นเป็น "ข้าม"**
+      //    🎯 **`console.warn` ตัวนี้เองที่จับมันได้** — ถ้าเขียน `.catch(() => {})` จะเงียบจนกว่าจะพังรอบหน้า
+      await admin.from("trips").delete().eq("id", tripS);
+      await admin.from("catalog_places").delete().eq("id", catS);
+      await admin.from("catalog_cities").delete().eq("country_id", ccS);
+      const { error } = await admin.from("catalog_countries").delete().eq("id", ccS);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อกกวาดไม่สำเร็จ: ${error.message}\n`);
+    });
+
+    it("🔴 ตารางที่ผูกกับทริปทุกใบต้องมี fixture — ตารางใหม่ต้องแดง ไม่ใช่ถูกข้าม", async () => {
+      const empty: string[] = [];
+      for (const t of SCOPED) {
+        const { data, error } = await A.from(t).select("trip_id").eq("trip_id", tripS).limit(1);
+        if (error || !data || data.length === 0) empty.push(`${t}${error ? ` (${error.code})` : ""}`);
+      }
+      expect(
+        empty,
+        "ตารางที่ผูกกับทริป แต่บล็อกนี้ไม่มีแถวให้คนนอกลอง\n" +
+          "  🔴 **`C เห็น 0 แถว` บนตารางว่าง ไม่ได้พิสูจน์อะไรเลย** — เคสข้างล่างจะเขียวฟรี\n" +
+          "  → ถ้าเพิ่งเพิ่มตารางที่มี `trip_id` ให้เติม fixture ใน `beforeAll` ของบล็อกนี้",
+      ).toEqual([]);
+    });
+
+    it("🔴 คนนอกอ่านทุกตารางที่ผูกกับทริป ต้องได้ 0 แถว", async () => {
+      const leaked: string[] = [];
+      for (const t of SCOPED) {
+        const { data, error } = await C.from(t).select("trip_id").eq("trip_id", tripS);
+        // 🔴 `42501` (ไม่มีสิทธิ์) ก็ยอมรับได้ — แต่ **error อื่นคือ "ตอบไม่ได้" ไม่ใช่ "กันได้"**
+        if (error && error.code !== "42501") leaked.push(`${t} → ตอบไม่ได้: ${error.code} ${error.message}`);
+        else if (data && data.length > 0) leaked.push(`${t} → คนนอกเห็น ${data.length} แถว`);
+      }
+      expect(
+        leaked,
+        "คนนอกอ่านข้อมูลของทริปที่ไม่ได้อยู่ได้ — **นี่คือข้อความของ `US-E2` ทั้งประโยค**",
+      ).toEqual([]);
+    });
+
+    it("🔴 คนนอกอ่านทริปเองไม่ได้ · และ anon ก็ไม่ได้", async () => {
+      // `trips` ไม่มีคอลัมน์ `trip_id` (มันคือ `id`) จึงไม่อยู่ในรายการกวาด — ต้องมีเคสของตัวเอง
+      expect((await A.from("trips").select("id").eq("id", tripS)).data, "เจ้าของอ่านทริปตัวเองไม่ได้").toHaveLength(1);
+      expect((await C.from("trips").select("id").eq("id", tripS)).data, "คนนอกเห็นทริปของ A").toEqual([]);
+      expect((await D.from("trips").select("id").eq("id", tripS)).data ?? [], "anon เห็นทริปของ A").toEqual([]);
+    });
+
+    it("🔴 คนนอกลบแถวของทริป A ไม่ได้สักตาราง — และแถวต้องยังอยู่ครบหลังลอง", async () => {
+      // ฝั่ง `delete` กวาดได้จริงโดยไม่ต้องมี payload (ต่างจาก insert/update) จึงครอบตรงนี้ได้เลย
+      const before = new Map<string, number>();
+      for (const t of SCOPED) {
+        before.set(t, ((await A.from(t).select("trip_id").eq("trip_id", tripS)).data ?? []).length);
+      }
+      for (const t of SCOPED) await C.from(t).delete().eq("trip_id", tripS);
+
+      const damaged: string[] = [];
+      for (const t of SCOPED) {
+        const after = ((await A.from(t).select("trip_id").eq("trip_id", tripS)).data ?? []).length;
+        if (after !== before.get(t)) damaged.push(`${t}: ${before.get(t)} → ${after}`);
+      }
+      expect(
+        damaged,
+        "คนนอกลบข้อมูลของทริปที่ไม่ได้อยู่ได้\n" +
+          "  🔴 **อ่านจำนวนแถวกลับ ไม่ใช่ดู error** — `delete` ที่ RLS กรองแถวออกหมด\n" +
+          "     คืนว่า **สำเร็จ** กับการลบ 0 แถว ไม่มี error ให้ดูเลยสักตัว",
+      ).toEqual([]);
     });
   });
 
