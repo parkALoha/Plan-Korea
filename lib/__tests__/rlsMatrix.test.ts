@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { readEnvKey } from "./_helpers";
 
 /**
  * Test matrix ของ RLS — DoD พิเศษของ E1 (ใช้ต่อใน E2)
@@ -41,18 +42,6 @@ const migrationFiles = readdirSync(MIGRATIONS_DIR)
   .filter((f) => f.endsWith(".sql"))
   .map((f) => join(MIGRATIONS_DIR, f));
 
-/**
- * อ่านค่าจาก env แล้ว `.trim()` — **ที่เดียวในไฟล์ที่ยอมให้มีช่องว่างส่วนเกิน** (F2 · P4 พบ)
- *
- * 🔴 ทำไมต้อง trim ที่นี่ ไม่ใช่ใน `keyRole`: คีย์จริงไม่มีช่องว่างอยู่ในตัวมันเลย
- * ช่องว่างมาจาก**ทางเดินของค่า** (คัดลอกจาก dashboard · แปะเข้า GitHub Secrets · here-doc ใน shell)
- * `keyRole` จึงต้องเข้มไว้ — ของที่มีช่องว่างคือของที่ยังไม่ได้ทำความสะอาด **ไม่ใช่คีย์ที่ใช้ได้**
- * ⚠️ ถ้าย้าย trim เข้าไปใน `keyRole` ด่านจะยอมรับค่าที่ไม่เคยผ่านการทำความสะอาด และเราจะไม่รู้เลย
- * ว่ามีที่ไหนอีกในระบบที่ส่งคีย์แบบมี `\n` ต่อท้ายเข้ามา
- */
-function readEnvKey(name: string): string {
-  return (process.env[name] ?? "").trim();
-}
 
 /**
  * สร้าง client สำหรับเทสต์ — **ทุกที่ในไฟล์นี้ต้องผ่านตัวนี้ ห้ามเรียก `createClient` ตรง**
