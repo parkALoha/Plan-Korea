@@ -335,6 +335,14 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.soft_delete_place_note",
       "public.soft_delete_trip_hotel",
       "public.soft_delete_trip_stop",
+      // 🔴 เพิ่ม 25 ส.ค. (P1) — **ตัวตรวจสภาพปลายทาง จากประตูบานที่ 3/4 ที่ P7 ชี้**
+      //    (view ที่ไม่ได้ตั้ง `security_invoker` · สมาชิกภาพใน publication ที่ dashboard เปิดได้โดยไม่ผ่านไฟล์)
+      //    คำตอบของคำถามข้างบน: **ไม่รับคอลัมน์ของตารางไหนเลย** — พารามิเตอร์เดียวคือ `text[]` ของ*ชื่อตาราง*
+      //    · อ่านเฉพาะ `pg_catalog` · **ไม่แตะข้อมูลผู้ใช้สักไบต์** และไม่มี `insert`/`update`/`delete` ในตัวมัน
+      //    · `grant execute` ให้ **`service_role` เท่านั้น** — `authenticated` เรียกไม่ได้เลย
+      //    เหตุผลที่ต้องเป็น definer: มันต้องอ่าน `pg_policy`/`pg_publication_tables` ซึ่ง role ทดสอบไม่มีสิทธิ์ครบ
+      //    🎯 และตัวมันเองไม่ใช่ประตู: **คืนเมตาดาต้าว่าประตูบานไหนเปิด ไม่ได้เปิดบานไหนให้**
+      "public.table_exposure",
       "public.unsafe_state_clear",
       "public.unsafe_state_reason",
       "public.unsafe_state_set",
