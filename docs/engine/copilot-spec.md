@@ -212,7 +212,7 @@ P6 เปิดเอกสารจริงแล้ว: เพดาน Hobby
 | `estimate_reorder` | `suggestOrder()` + `routeDistanceKm()` `lib/optimizeRoute.ts` | `tripId, dayId, pinnedStopIds[]?` | `suggestedOrder[]`, `currentKm`, `suggestedKm`, `changed: boolean` · **ไม่เขียนอะไร** |
 | `get_departure_advice` | `computeDepartureAdvice()` `lib/departureAdvice.ts:42` | `tripId, dayId, stopId` (แถว `kind="transfer"`) | `mustArriveBy`, `shouldLeaveBy`, `plannedArrival`, `lateByMinutes`, `slackMinutes` |
 | `get_day_city_segments` | `buildDayCitySegments()` `lib/citySegments.ts:117` | `tripId, dayId` | `segments[]` = `{ city, stopCount, items[] }` |
-| `get_travel_time` | `fetchRealTravelTime()` + แคช `lib/travelProvider.ts:21` | `tripId, fromRef, toRef, mode` | `minutes`, `distanceMeters`, `source: "provider"\|"estimate"`, `asOf` · 🔴 **ต้องอ่านแคชผ่าน `security definer` ไม่ใช่ client ปกติ — ดู 10** |
+| `get_travel_time` | `fetchRealTravelTime()` + แคช `lib/travelProvider.ts:21` | `tripId, fromRef, toRef, mode` | `minutes`, `distanceMeters`, `source: "provider"\|"estimate"`, `asOf` · 🔴 **ทางเข้าแคชยังไม่มีคำตอบ (`Q3`) — `security definer` ที่ผมเคยเสนอ ใช้ไม่ได้แล้ว ดู 18.1** |
 | `find_places` | `searchPlacesText()` / `searchNearby()` `lib/googlePlaces.ts:69,179` | `tripId, query?, nearStopId?, includedTypes[]?, radiusMeters?` | `candidates[]` = `{ placeId, name, address, lat, lng, rating, openingHours, primaryType }` |
 | `get_place_details` | `getPlaceDetails()` `lib/googlePlaces.ts:226` | `tripId, googlePlaceId` | รายละเอียด + `regularOpeningHours` |
 | `get_bookings` | อ่าน `bookings` | `tripId, dayId?` | `title, category, status, date, time, bookByDaysBefore` · **ไม่มีฟิลด์ราคา** |
@@ -294,6 +294,9 @@ tool กลุ่มนี้ **ไม่แตะข้อมูลทริป
 2. ทุก proposal ต้องมี `preview` ที่ผ่าน `computeSchedule` **ของสถานะหลังเปลี่ยน** แนบมาด้วย
    คนจะได้เห็นว่าเวลาทั้งวันขยับยังไงก่อนกดยืนยัน ไม่ใช่เห็นแค่ "สลับ A กับ B"
 3. proposal หมดอายุใน 10 นาที และผูกกับ `updated_at` ของทุกแถวที่จะแก้ — ถ้าอีกคนแก้ก่อน ให้ปฏิเสธ
+   🔴 **แก้ 25 ส.ค. 2026 (`D79`) — ย่อหน้านี้เคยอ้างการรับประกันที่แรงกว่าที่กลไกให้จริง ดู 18.3**
+   `updated_at` คือ **"มีคนแก้แถวนี้"** ไม่ใช่ **"ไบต์ในแถวนี้เปลี่ยน"** · การเปลี่ยนที่มาจาก cascade
+   (`pg_trigger_depth() > 1`) **ไม่ stamp** → token นี้กันคนชนกัน **ไม่ได้กันทุกการเปลี่ยนแปลง**
    แล้วบอกว่า "แผนเปลี่ยนไปแล้วระหว่างที่คุยกัน ขอดูใหม่นะ" (เว็บนี้ sync สด 2 คน เคสนี้เกิดจริงแน่)
    ✅ **D7 ทำให้ด่านนี้แข็งขึ้นมาก** — พอ `updated_at` มาจาก DB trigger แทน client มันกลายเป็น
    concurrency token ที่เชื่อได้จริง · ของเดิมที่ client ส่งเวลาเครื่องตัวเองมา (20+ จุดใน 6 hook)
@@ -913,7 +916,7 @@ P1 ถามถูกจุดว่า *"ถ้าต้องมี vector ต
 
 | tool | แตะแคชยังไง | ต้องทำอะไรเพิ่ม |
 |---|---|---|
-| `get_travel_time` | อ่าน/เขียน `travel_time_cache` ตรง | เรียกผ่าน `security definer` แทน client ปกติ |
+| `get_travel_time` | อ่าน/เขียน `travel_time_cache` ตรง | ~~เรียกผ่าน `security definer`~~ 🔴 **ตกไปแล้ว 25 ส.ค. — ดู 18.1** · รอ `Q3` |
 | `get_day_schedule` | **ทางอ้อม** — `computeSchedule()` รับ callback `travelMinutesBetween` ที่ยิงแคชต่อ (**2.1** ข้อ 1) | เหมือนกัน · **ข้อนี้มองข้ามง่ายเพราะชื่อ tool ไม่มีคำว่า travel** |
 
 `check_opening_hours` / `find_places` / `get_place_details` แตะ `place_details_cache` ในรูปแบบเดียวกัน — เงื่อนไขเดียวกัน
@@ -1559,3 +1562,75 @@ const SCANNED = ["lib/auth", "app"];
 
 **เสนอ: สแกน `lib/` ทั้งก้อน ไม่ใช่ `lib/auth`** · โค้ดที่เสิร์ฟผู้ใช้ไม่ได้อยู่แค่ใน 2 โฟลเดอร์นั้น
 · 🔴 **ไฟล์ของ P4 — รายงานอย่างเดียว ไม่แก้** · ส่งผ่าน P1 ตามกติกา
+
+---
+
+## 18. `force row level security` + `D79` — ของใหม่วันนี้กระทบผมมากกว่าที่หัวข้อมันบอก (25 ส.ค. 2026)
+
+### 18.1 🔴 `force RLS` ปิดประตูของ P7 — **และมันคือประตูที่ผมบอกให้ tool เดินเข้า**
+
+P1 แจ้ง `force row level security` มาในฐานะข่าวว่าปิดประตู `definer` ได้ · **ผมตรวจแล้วมันไปไกลกว่านั้น**
+
+**สภาพจริงของแคชทั้ง 4 ใบวันนี้:** `enable RLS` + **`force RLS`** + **0 policy** + `revoke all`
+
+| ใครเข้า | ผล |
+|---|---|
+| `anon` / `authenticated` | ❌ ทั้ง grant และ RLS ปฏิเสธ |
+| **เจ้าของตาราง** (คือ role ที่ `security definer` มักรันเป็น) | ❌ **`force` ทำให้ต้องผ่าน policy · และไม่มี policy สักตัว** |
+| `service_role` | ✅ **BYPASSRLS ซึ่ง `force` ไม่แตะ** (ข้อยกเว้นที่ 5) |
+
+> 🔴 **`2.2` และ `10.1` ของผมเขียนไว้ว่า `get_travel_time` กับ `get_day_schedule` ต้อง "เรียกผ่าน `security definer`"**
+> **ทางนั้นตายแล้วตั้งแต่ `force RLS` ลง** — และมันตายด้วยเหตุผลที่ *ถูกต้อง* คือประตูนั้นไม่ควรเปิดตั้งแต่แรก
+> · แก้ทั้ง 2 จุดแล้วในคอมมิตเดียวกับหัวข้อนี้
+
+🔴 **และช่องหนีที่ดูชัดเจนถูกปิดไว้แล้วโดย P7 เอง** — กติกาที่เขาเขียนกำกับใน migration:
+> *"`security definer` ห้ามมีเจ้าของเป็น role ที่มี BYPASSRLS"*
+
+→ **ให้ฟังก์ชันเป็นของ `service_role` เพื่อให้มันอ่านแคชได้ = การถอย `force` ออกโดยเปลี่ยนที่ทำ**
+
+### 18.2 🔴 ผลกับ `Q3` ที่ยังไม่มีใครเขียน — **ตัวเลือก (ค) ตามที่บรรยายไว้ ใช้ไม่ได้**
+
+`cache_writer` ที่ P1 ร่างไว้คือ *role ที่ไม่มี BYPASSRLS + grant ทีละ verb*
+**แต่ grant กับ RLS เป็นคนละด่าน และต้องผ่านทั้งคู่:**
+
+> `cache_writer` เป็น role ธรรมดา → **RLS บังคับกับมันเหมือนทุกคน** → **0 policy = 0 แถว**
+> **grant ผ่านหมด แล้วโดนปฏิเสธที่ด่านถัดไป**
+
+→ ถ้าเดินทาง (ค) จริง **ต้องมี `create policy … to cache_writer` ด้วย** — ซึ่งแปลว่า
+**แคชจะไม่ใช่ "ตารางที่มี 0 policy" อีกต่อไป** และไฟล์ `e2_caches.sql:169` เขียนไว้เองว่า
+*"ไม่มี `create policy` ในไฟล์นี้เลยสักบรรทัด **และนั่นคือของที่ต้องตรวจว่ายังจริง**"*
+
+⚠️ **ไม่ใช่เหตุผลให้ทิ้ง (ค)** — policy ที่ระบุ role เดียวและตรวจได้ ยังดีกว่า BYPASSRLS ทั้งใบมาก
+**แต่มันเปลี่ยนสิ่งที่ P4 ต้องเฝ้า:** จาก *"ยืนยันว่า 0 policy"* เป็น *"ยืนยันว่ามี policy เดียว และมันชี้ role เดียว"*
+· 🔴 **ผมรันกับฐานไม่ได้ ข้อนี้จึงเป็นการอนุมานจากกลไก** — P1 ยืนยันได้ด้วยการ `grant` ให้ role ทดสอบสักตัวแล้ว `select` ดู
+  **ถ้าผมผิด ผมอยากรู้ก่อนที่ `Q3` จะถูกเขียนโดยอิงข้อนี้**
+
+### 18.3 `D79` — สเปกของผมอ้างการรับประกันที่แรงกว่าที่กลไกให้
+
+**`2.3` ข้อบังคับ 3** เขียนว่า proposal ผูกกับ `updated_at` ของทุกแถวที่จะแก้ แล้วเรียกมันว่า
+*"concurrency token ที่เชื่อได้จริง"* (หลัง `D7`) · **`D79` ทำให้ประโยคนั้นแคบลงกว่าที่เขียนไว้:**
+
+> `updated_at` = **"มีคนแก้แถวนี้"** · ไม่ใช่ **"ไบต์ในแถวนี้เปลี่ยน"**
+> การเปลี่ยนที่มาจาก cascade (`pg_trigger_depth() > 1`) **ไม่ stamp**
+
+**วันนี้ยังไม่กัด และผมตรวจแล้วว่าทำไม:** `on delete set null` ทั้งหมดในทรีชี้ที่
+`added_by_user` / `updated_by_user` / `checked_by_user` → `profiles(id)`
+**ไม่มีตัวไหนแตะคอลัมน์ที่ proposal อ่าน** (ลำดับ · วัน · เวลา · dwell)
+· และพฤติกรรมนี้ **ถูก** สำหรับผม — ข้อเสนอที่ค้างอยู่ไม่ควรถูกล้มเพราะมีคนลบบัญชีตัวเอง
+
+🔴 **สิ่งที่ต้องแก้จึงเป็น *ถ้อยคำ* ไม่ใช่ *กลไก*** — และเหตุผลที่ต้องแก้ทั้งที่ยังไม่กัด:
+
+> ประโยคที่บอกว่า *"กันได้ทุกการเปลี่ยนแปลง"* จะถูกคนต่อไปเชื่อ **ตอนที่มี cascade ตัวแรกที่แตะคอลัมน์จริง**
+> และตอนนั้นไม่มีอะไรดังขึ้นเลย — proposal จะ apply ทับการเปลี่ยนที่ token มองไม่เห็น
+> 🎯 **เป็น `D71` ในรูปของ *ขอบเขตการรับประกัน*: ถ้อยคำถูกตอนเขียน แล้วกลไกใต้มันแคบลง โดยถ้อยคำไม่ขยับ**
+
+**เงื่อนไขที่จะทำให้มันกัดจริง — เขียนไว้ให้ตรวจได้:**
+> มี cascade / `set null` / trigger ตัวไหนก็ตามที่แตะ **`rank` · `day_id` · `plan_id` · `dwell_minutes` ·
+> `start_time` ของ `trip_stops`/`trip_days`** — วันนั้น `2.3` ข้อ 3 ต้องกลับมาทบทวนทันที
+
+### 18.4 ✅ ข้อที่ P1 ขอให้จด — จดไว้แล้วก่อนที่เขาจะขอ
+
+P1 ขอให้ผมจดว่า **9.4 สร้างแรงกดดันให้ view นั้นน่าเขียน** · อยู่ใน **17.1** ตั้งแต่คอมมิต `5708e4c` แล้ว
+· และผมเห็นด้วยกับกรอบที่เขาให้: **มันเป็นข้อมูลที่คนอ่านทีหลังต้องมี ไม่ใช่การรับผิด**
+· 🎯 คนที่มาเจอ `9.4` ในอีกหกเดือนจะเจอข้อห้ามที่ไม่มีเหตุผลติดมา แล้ว *"ก็ join เอาสิ"* คือข้อสรุปที่สมเหตุสมผลที่สุดที่เขาจะได้
+  **17.1 มีอยู่เพื่อให้เขาเจอคำตอบตรงนั้น ไม่ใช่ให้เจอตอนรีวิว**
