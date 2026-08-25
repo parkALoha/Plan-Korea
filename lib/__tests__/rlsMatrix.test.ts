@@ -1624,11 +1624,11 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       });
       if (e2) throw new Error(`เชิญ C เป็น viewer ไม่ได้: ${e2.message}`);
 
+      // 🔴 `P-54` — `create_trip()` สร้าง `'แผน A'` (active) ให้แล้วตั้งแต่ 25 ส.ค.
+      //    fixture เดิมสร้างซ้ำแล้วชน `trip_plans_one_active` · **การที่มันชนคือหลักฐานว่าพฤติกรรมเปลี่ยนจริง**
       const { data, error } = await A.from("trip_plans")
-        .insert({ trip_id: tripP, name: "แผน A", is_active: true })
-        .select("id")
-        .single();
-      if (error) throw new Error(`สร้างแผน A ไม่ได้: ${error.message}`);
+        .select("id").eq("trip_id", tripP).eq("is_active", true).single();
+      if (error) throw new Error(`อ่านแผนตั้งต้นไม่ได้: ${error.message}`);
       planP = data.id as string;
     });
 
@@ -1668,7 +1668,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       ).toBe("23503");
     });
 
-    it("🔴 D52 — สองแผน active ในทริปเดียวกันไม่ได้", async () => {
+    it("🔴 D52 — สองแผน active ในทริปเดียวกันไม่ได้ (แผนตั้งต้นนับเป็นใบแรก)", async () => {
       const { error } = await A.from("trip_plans").insert({
         trip_id: tripP, name: "แผน C", is_active: true,
       });
@@ -1852,7 +1852,9 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     it("ด้านบวกที่ต้องไม่หายไป: UPDATE ปกติยังทำให้ updated_at ขยับเองโดยเซิร์ฟเวอร์", async () => {
       const before = await A.from("trip_plans").select("updated_at").eq("id", planT).single();
       await new Promise((r) => setTimeout(r, 1100));
-      const { error } = await A.from("trip_plans").update({ is_active: true }).eq("id", planT);
+      // 🔴 เคยใช้ `is_active: true` — ชนแผนตั้งต้นที่ `create_trip()` สร้างให้ (`P-54`)
+      //    เปลี่ยนมาแก้ `name` ซึ่งวัดสิ่งเดียวกัน (UPDATE ปกติต้องทำให้ `updated_at` ขยับ)
+      const { error } = await A.from("trip_plans").update({ name: `ชื่อใหม่ ${stamp}` }).eq("id", planT);
       expect(error, `แก้ is_active ไม่ได้: ${error?.message}`).toBeNull();
       const after = await A.from("trip_plans").select("updated_at").eq("id", planT).single();
       expect(
@@ -2871,6 +2873,51 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         del.error,
         "ลบสถานที่ที่ยังถูกใช้อยู่สำเร็จ = จุดแวะจะชี้ไปสถานที่ที่ผู้ใช้มองไม่เห็น",
       ).not.toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 P-54 — invariant ที่บังคับตอน *ออก* แต่ไม่บังคับตอน *เข้า* (P4 พบ)", () => {
+    /**
+     * `app.assert_trip_has_plan()` เขียนว่า *"ทริปต้องมีแผนอย่างน้อย 1 แผน"*
+     * และเคสของ P1 เขียนว่า *"ทริปที่ไม่มีแผนคือทริปที่เปิดมาแล้วไม่มีอะไรเลย"*
+     *
+     * 🔴 **แต่ P4 ยิงจริงแล้วพบว่า `create_trip()` สร้างทริปที่มี 0 แผน**
+     * → **นั่นคือสภาพของทุกทริปที่สร้างผ่านทางที่ตั้งใจให้ใช้**
+     * · trigger กันแค่ *ลบแผนใบสุดท้าย* — **ถ้าไม่เคยมีแผนเลย ไม่มีอะไรให้กัน**
+     *
+     * 🎯 **และเคสเดิมของ P1 เขียวเพราะ fixture สร้างแผนให้เอง** — มันทดสอบ invariant
+     * บนข้อมูลที่ถูกสร้างมาให้ผ่าน invariant นั้นพอดี **ส่วนทางสร้างจริงไม่ผ่าน**
+     * นี่คือ *"เขียวเพราะเราจัดฉากให้มันเขียว"* ในรูปที่อ่านไม่ออกจากตัวเคส
+     */
+    it("🔴 ทริปที่เพิ่งสร้าง ต้องมีแผนตั้งต้นมาแล้ว 1 แผน และเป็นแผนที่ใช้อยู่", async () => {
+      const t = await A.rpc("create_trip", {
+        p_title: `invariant-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      expect(t.error, `สร้างทริปไม่ได้: ${t.error?.message}`).toBeNull();
+
+      const { data, error } = await A.from("trip_plans")
+        .select("name,is_active").eq("trip_id", t.data.id);
+      expect(error).toBeNull();
+      expect(
+        data,
+        "ทริปที่เพิ่งสร้างมี 0 แผน = invariant ที่ trigger อ้างว่าคุ้มครอง เป็นเท็จตั้งแต่วินาทีแรก",
+      ).toHaveLength(1);
+      expect(
+        data?.[0]?.is_active,
+        "มีแผนแต่ไม่มีแผนไหนถูกใช้อยู่ = หน้าจอไม่รู้ว่าจะโชว์แผนไหน",
+      ).toBe(true);
+    });
+
+    it("ด้านบวกที่ต้องไม่หายไป: แผนตั้งต้นลบไม่ได้ถ้ามันเป็นใบเดียว", async () => {
+      const t = await A.rpc("create_trip", {
+        p_title: `invariant2-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const { error } = await A.from("trip_plans").delete().eq("trip_id", t.data.id);
+      expect(
+        error?.message,
+        "ลบแผนตั้งต้นใบเดียวได้ = trigger ไม่ครอบแผนที่ระบบสร้างให้",
+      ).toContain("ทริปต้องมีแผนอย่างน้อย 1 แผน");
     });
   });
 
