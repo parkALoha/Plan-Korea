@@ -279,7 +279,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   const TABLES = [
     "profiles", "trips", "trip_members", "trip_days", "trip_plans", "trip_day_plan_settings",
     "catalog_countries", "catalog_cities", "catalog_places", "catalog_place_names",
-    "custom_places", "custom_place_names",
+    "custom_places", "custom_place_names", "trip_stops",
   ] as const;
   const VERBS = ["select", "insert", "update", "delete"] as const;
   const PERSONAS = [
@@ -328,7 +328,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       // `custom_places`/`custom_place_names` — ผู้ใช้ลบสถานที่ที่ตัวเองเพิ่มได้จริงวันนี้
       // 🔴 และลบสถานที่ที่ยังอยู่ในแผนไม่ได้ **เพราะ `trip_stops.custom_place_id` เป็น `restrict`**
       //    — กันด้วย FK ไม่ใช่ด้วยเคสที่แดงทีหลัง (บทเรียนจาก `D73`)
-      const MAY_DELETE = ["trip_members", "trip_plans", "custom_places", "custom_place_names"];
+      // `trip_stops` — ผู้ใช้ลบจุดแวะจริงทุกวัน · `E2-AC12` (soft delete) ยังไม่ตัดสินทั้งตระกูล
+      // 🔴 เมื่อ `E2-AC12` ตัดสินแล้วว่าเป็น soft delete ชื่อนี้ต้องออกจากลิสต์ **ไม่ใช่อยู่ต่อ**
+      const MAY_DELETE = ["trip_members", "trip_plans", "custom_places", "custom_place_names", "trip_stops"];
       if (!MAY_DELETE.includes(t)) {
         expect(verbs, `${t} มี policy DELETE แล้ว — ตั้งใจหรือเปล่า`).not.toContain("delete");
       }
@@ -391,6 +393,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "trip_plans.trip_plans_insert",
       "trip_plans.trip_plans_select",
       "trip_plans.trip_plans_update",
+      "trip_stops.trip_stops_delete",
+      "trip_stops.trip_stops_insert",
+      "trip_stops.trip_stops_select",
+      "trip_stops.trip_stops_update",
       "trips.trips_insert",
       "trips.trips_select",
       "trips.trips_update",
@@ -444,7 +450,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     }
     expect([...content].sort()).toEqual([
       "custom_place_names", "custom_places",
-      "trip_day_plan_settings", "trip_days", "trip_plans",
+      "trip_day_plan_settings", "trip_days", "trip_plans", "trip_stops",
     ]);
   });
 
@@ -479,7 +485,14 @@ describe("ความครบของ matrix — ตรวจตัวรา�
         "     (`created_at` · `updated_at` · `updated_by_user` · หรือ `id` ของตารางไหนก็ตาม)\n" +
         "  ข้างในฟังก์ชัน definer **รั้วคอลัมน์ไม่มีผล** — ต้องกันที่ลายเซ็น ไม่ใช่หวังให้ grant กัน",
     ).toEqual([
+      // 🔴 เพิ่ม 2 ตัว 25 ส.ค. (P1) — **trigger ที่ยืนยันค่าคงที่ของฐาน ไม่ใช่สิทธิ์ของผู้ใช้**
+      //    คำตอบของคำถามข้างบน: **ทั้งคู่ไม่รับพารามิเตอร์เลย** (เป็น trigger function)
+      //    และไม่คืนข้อมูลออกไปสักไบต์ — คืน `null`/`old` แล้ว `raise` เท่านั้น
+      //    เหตุผลที่ต้องเป็น definer: invoker แปลว่า **ค่าคงที่ถูกบังคับกับบางคน และเงียบกับบางคน**
+      //    · และคนที่มันเงียบด้วยคือคนที่มีสิทธิ์มากที่สุด ซึ่งกลับด้านกับสิ่งที่ควรเป็น
+      "app.assert_day_has_no_stops",
       "app.assert_trip_has_owner",
+      "app.assert_trip_has_plan",
       "app.bootstrap_trip_owner",
       "app.can_read_trip",
       "app.can_write_trip",
@@ -504,6 +517,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 6 (`be2d37ba…` → `d223b58a…`) — `trip_stops` 4 policy
+    //    กิ่งที่ไล่แล้ว: editor เขียนได้ · viewer ถูกปฏิเสธ · `D70` ชี้สถานที่ข้ามทริปไม่ได้
+    //    · `D53` check ผูกกับ `kind` (0 · 1 · ห้าม 2) · `trip_id` เขียนไม่ได้ · `D73` trigger ยิงจริง
     // 🔴 อัปเดตรอบ 5 (`9dfaba9e…` → `be2d37ba…`) — `custom_places` + `custom_place_names` 8 policy
     //    ครบ 4 verb ทั้งสองตาราง · ทุกกิ่งมีเคสสด (editor เขียนได้ · viewer อ่านได้เขียนไม่ได้ · คนนอกไม่เห็น)
     // 🔴 อัปเดตรอบ 4 (`f9c74ff5…` → `9dfaba9e…`) — คลังครบ 4 ตาราง (`places` · `place_names`)
@@ -519,7 +535,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     //    (`_select` → viewer อ่านได้ · `_insert` → viewer ถูกปฏิเสธ / editor ผ่าน · `_update` → `with check` กันย้ายวันข้ามทริป)
     //    และเคสพวกนั้นถูกเห็น **แดงด้วย `PGRST205` ก่อน `db push`** จึงรู้ว่ามันแตะตารางจริง
     expect(fingerprint, "เงื่อนไขของ policy บางตัวเปลี่ยนไป — ไล่กิ่งใหม่ก่อนอัปเดตค่านี้").toBe(
-      "be2d37ba910e691a",
+      "d223b58a5049c24b",
     );
   });
 });
@@ -2467,6 +2483,195 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       const { error } = await B.from("custom_places")
         .insert({ trip_id: tripC, city_id: cityC, category: "fake", lat: 3, lng: 3, added_by_user: ids.a });
       expect(error?.code, `ตั้ง added_by_user ได้: ${error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E2 — `trip_stops`: ตารางที่เป็นทั้งทริป (D6 · D36 · D53 · D70 · D73)", () => {
+    /**
+     * ✅ **เขียนก่อน `db push`**
+     *
+     * ตารางนี้คือทั้งทริป — ไปไหน กี่โมง ค้างที่ไหน · `visited_at` คือเวลาที่อยู่จุดนั้นจริง
+     * `transfer_target_label` มีเลขไฟลต์จริง · **วันนี้ `using (true)` = ไล่ดูได้ว่าเจ้าของทริป
+     * อยู่ตรงไหนตอนไหนย้อนหลังได้ทั้งทริป**
+     */
+    let tripS = "", planS = "", dayS1 = "", dayS2 = "", catPlace = "", myPlace = "", otherPlace = "";
+    const cc4 = "zw";
+
+    beforeAll(async () => {
+      await admin.from("catalog_cities").delete().eq("country_id", cc4);
+      await admin.from("catalog_countries").delete().eq("id", cc4);
+      await admin.from("catalog_countries").insert({ id: cc4, name_th: "ทดสอบสี่", name_en: "T4" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: cc4, name_th: "เมืองS", name_en: "CityS", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      const cp = await admin.from("catalog_places")
+        .insert({ city_id: ci.data.id, category: "sight", lat: 35, lng: 129 })
+        .select("id").single();
+      if (cp.error) throw new Error(`seed catalog place: ${cp.error.message}`);
+      catPlace = cp.data.id as string;
+
+      const t = await A.rpc("create_trip", {
+        p_title: `stops-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripS = t.data.id as string;
+      await A.from("trip_members").insert({ trip_id: tripS, user_id: ids.b, role: "editor" });
+      await A.from("trip_members").insert({ trip_id: tripS, user_id: ids.c, role: "viewer" });
+
+      const pl = await A.from("trip_plans").insert({ trip_id: tripS, name: "แผน A" }).select("id").single();
+      if (pl.error) throw new Error(`สร้างแผน: ${pl.error.message}`);
+      planS = pl.data.id as string;
+
+      const d1 = await A.from("trip_days").insert({ trip_id: tripS, date: "2026-10-12" }).select("id").single();
+      const d2 = await A.from("trip_days").insert({ trip_id: tripS, date: "2026-10-13" }).select("id").single();
+      if (d1.error || d2.error) throw new Error(`สร้างวัน: ${d1.error?.message ?? d2.error?.message}`);
+      dayS1 = d1.data!.id as string;
+      dayS2 = d2.data!.id as string;
+
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripS, city_id: ci.data.id, category: "cafe", lat: 35.1, lng: 129.1 })
+        .select("id").single();
+      if (mp.error) throw new Error(`สร้าง custom place: ${mp.error.message}`);
+      myPlace = mp.data.id as string;
+
+      // สถานที่ของ *ทริปอื่น* ที่ A เขียนได้เหมือนกัน — ใช้พิสูจน์ว่า **FK เป็นตัวปฏิเสธ ไม่ใช่สิทธิ์**
+      const t2 = await A.rpc("create_trip", {
+        p_title: `stops-other-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const op = await A.from("custom_places")
+        .insert({ trip_id: t2.data.id, city_id: ci.data.id, category: "cafe", lat: 35.2, lng: 129.2 })
+        .select("id").single();
+      if (op.error) throw new Error(`สร้าง custom place ทริปอื่น: ${op.error.message}`);
+      otherPlace = op.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("catalog_places").delete().eq("id", catPlace);
+      await admin.from("catalog_cities").delete().eq("country_id", cc4);
+      await admin.from("catalog_countries").delete().eq("id", cc4);
+    });
+
+    describe("ด้านบวก — precondition", () => {
+      it("editor เพิ่มจุดแวะที่ชี้คลังกลางได้", async () => {
+        const { error } = await B.from("trip_stops").insert({
+          trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+          kind: "place", catalog_place_id: catPlace, rank: "m", dwell_minutes: 60,
+        });
+        expect(error, `editor เพิ่มจุดแวะไม่ได้: ${error?.message}`).toBeNull();
+      });
+
+      it("จุดแวะที่ชี้สถานที่ของทริปตัวเองได้", async () => {
+        const { error } = await B.from("trip_stops").insert({
+          trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+          kind: "place", custom_place_id: myPlace, rank: "n",
+        });
+        expect(error, `ชี้ custom place ไม่ได้: ${error?.message}`).toBeNull();
+      });
+
+      it("`kind='intercity'` ไม่ต้องมีสถานที่เลย — แถวชนิดนี้มีอยู่จริงวันนี้ (`useStops.ts:223`)", async () => {
+        const { error } = await B.from("trip_stops").insert({
+          trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+          kind: "intercity", intercity_from: "ปูซาน", intercity_to: "ซกโช", rank: "o",
+        });
+        expect(error, `แถว intercity เขียนไม่ได้: ${error?.message}`).toBeNull();
+      });
+
+      it("🔴 `rank` ซ้ำได้โดยเจตนา — 2 เครื่องแทรกที่เดียวกันย่อมได้ค่าเท่ากัน (P7)", async () => {
+        const { error } = await B.from("trip_stops").insert({
+          trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+          kind: "place", catalog_place_id: catPlace, rank: "m",
+        });
+        expect(
+          error,
+          `rank ซ้ำถูกปฏิเสธ: ${error?.message}\n` +
+            "  🔴 มี unique บน rank อยู่ = คนแทรกทีหลังได้ error แทนที่จะได้จุดของตัวเอง = **แถวหาย**\n" +
+            "  ลำดับที่นิ่งมาจาก tie-break (rank, id) ไม่ใช่จากการห้ามชน",
+        ).toBeNull();
+      });
+    });
+
+    it("🔴 D70 — จุดแวะชี้สถานที่ของทริปอื่นไม่ได้ (FK เป็นตัวปฏิเสธ ไม่ใช่สิทธิ์)", async () => {
+      const { error } = await A.from("trip_stops").insert({
+        trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+        kind: "place", custom_place_id: otherPlace, rank: "p",
+      });
+      expect(error?.code, `ชี้สถานที่ข้ามทริปได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
+    });
+
+    it("🔴 D53 — `kind='place'` ต้องมีสถานที่ **หนึ่งเดียว** ไม่ใช่ศูนย์ ไม่ใช่สอง", async () => {
+      const none = await B.from("trip_stops").insert({
+        trip_id: tripS, plan_id: planS, trip_day_id: dayS1, kind: "place", rank: "q",
+      });
+      expect(
+        none.error?.code,
+        `แถว place ที่ไม่มีสถานที่เขียนลงได้: ${none.error?.message ?? "ไม่มี error"}\n` +
+          "  = บั๊กที่เงียบที่สุดที่เป็นไปได้ในตารางนี้ (P4 ค้าน `<= 1` ด้วยเหตุผลนี้)",
+      ).toBe("23514");
+
+      const both = await B.from("trip_stops").insert({
+        trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+        kind: "place", catalog_place_id: catPlace, custom_place_id: myPlace, rank: "r",
+      });
+      expect(both.error?.code, `แถวที่มีสถานที่สองแหล่ง: ${both.error?.message ?? "ไม่มี error"}`).toBe("23514");
+    });
+
+    it("🔴 viewer เพิ่ม/แก้จุดแวะไม่ได้", async () => {
+      const ins = await C.from("trip_stops").insert({
+        trip_id: tripS, plan_id: planS, trip_day_id: dayS1,
+        kind: "place", catalog_place_id: catPlace, rank: "s",
+      });
+      expect(ins.error?.code, `viewer เพิ่มจุดแวะได้: ${ins.error?.message ?? "ไม่มี error"}`).toBe("42501");
+    });
+
+    it("🔴 ไคลเอนต์ย้ายจุดแวะข้ามทริปด้วยการเขียน `trip_id` ไม่ได้ (P7)", async () => {
+      const { error } = await B.from("trip_stops")
+        .update({ trip_id: tripS }).eq("trip_id", tripS).eq("rank", "n");
+      expect(
+        error?.code,
+        `เขียน trip_id ได้: ${error?.message ?? "ไม่มี error"}\n` +
+          "  · op ที่เขียน trip_id เดี่ยว ๆ ไม่ใช่ no-op แต่คือย้ายแถวข้ามทริป",
+      ).toBe("42501");
+    });
+
+    it("🔴 D73 — ลบวันที่ยังมีจุดแวะอยู่ไม่ได้ (trigger ต้อง *ยิงจริง* ไม่ใช่แค่มีอยู่)", async () => {
+      const { error } = await admin.from("trip_days").delete().eq("id", dayS1);
+      expect(
+        error,
+        "ลบวันที่มีจุดแวะสำเร็จ = cascade กินจุดแวะทิ้งเงียบ ๆ · RLS ไม่มีผลกับ cascade",
+      ).not.toBeNull();
+
+      const left = await admin.from("trip_stops").select("id").eq("trip_day_id", dayS1);
+      expect(left.data, "จุดแวะหายไปแล้วทั้งที่ trigger ควรขวาง").not.toHaveLength(0);
+    });
+
+    it("ด้านบวกของ D73: ลบวันที่ *ไม่มี* จุดแวะได้ตามปกติ", async () => {
+      const { error } = await admin.from("trip_days").delete().eq("id", dayS2);
+      expect(error, `ลบวันว่างไม่ได้: ${error?.message} — trigger เข้มเกินไป`).toBeNull();
+    });
+
+    it("🔴 ลบสถานที่ที่ยังอยู่ในแผนไม่ได้ (`restrict`) — กันด้วย FK ไม่ใช่ด้วยเคส", async () => {
+      const { error } = await B.from("custom_places").delete().eq("id", myPlace);
+      expect(error?.code, `ลบสถานที่ที่ยังถูกใช้ได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
+    });
+
+    it("ด้านบวก: ลบทริปทั้งใบยังทำได้ — cascade ต้องไม่ถูก trigger ของ D73 ขวาง", async () => {
+      const t = await A.rpc("create_trip", {
+        p_title: `cascade-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      const p = await A.from("trip_plans").insert({ trip_id: t.data.id, name: "P" }).select("id").single();
+      const d = await A.from("trip_days").insert({ trip_id: t.data.id, date: "2026-10-12" }).select("id").single();
+      await A.from("trip_stops").insert({
+        trip_id: t.data.id, plan_id: p.data!.id, trip_day_id: d.data!.id,
+        kind: "place", catalog_place_id: catPlace, rank: "m",
+      });
+      const { error } = await admin.from("trips").delete().eq("id", t.data.id);
+      expect(
+        error,
+        `ลบทริปทั้งใบไม่ได้: ${error?.message}\n` +
+          "  🔴 = `when (pg_trigger_depth() = 0)` หายไป → trigger ขวาง cascade ที่ถูกต้องด้วย",
+      ).toBeNull();
     });
   });
 
