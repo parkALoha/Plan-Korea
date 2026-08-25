@@ -21,17 +21,44 @@
 ║    พอมี `Q<n>` แล้ว ด่านที่ตรวจ "กล่องเปิดที่ถูกตอบไปแล้ว" จะเขียนได้ทันที    ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
-🔴 นิยามนับเฉพาะ **หัวข้อ** (`### D53 — …`) กับ **แถวตาราง** (`| D22 | … |`) ใน README
-   ไม่นับการอ้างถึงในเนื้อความ — ไม่งั้นการพิมพ์ `D99` ผิดในย่อหน้าเดียว
-   จะกลายเป็น "นิยาม" ของตัวเอง แล้วด่านก็ผ่านตัวเองเงียบๆ
+🔴 **นิยาม = ID อยู่หน้าสุดของหัวข้อ แล้วตามด้วย em-dash** (`### 🔴 P-33 — …` · ``### 🔴 `P-61` — …``)
+   · มี backtick หรือไม่ก็ได้ — เอกสารเปลี่ยนธรรมเนียมระหว่างทาง ของเก่าเปล่า ของใหม่มี backtick
+   · เป็นกลุ่มได้ (``### 📌 `P-30` · `P-31` — …`` · ``### 🔴 `P-51` / `D69` — …``) → นับทุกตัวในกลุ่ม
+   🔴 **หัวข้อที่แค่ *เอ่ยถึง* ID ไม่ใช่นิยาม** — และข้อนี้จำเป็นจริง วัดแล้วมี 4 หัวข้อแบบนั้น:
+     `### 📌 เลขที่ชนกัน — \`P-27\` …`  ·  `### ② เคส \`P-35\` — …`
+     `#### 🔴 และมันบังคับให้ \`P-46\` …`  ·  ``### 🔴 `P-33` ปิดฝั่ง client แล้ว …``
+     ตัวสุดท้ายเป็นตัวที่หลอกที่สุด: **ID อยู่หน้าสุดจริง แต่ไม่มี em-dash** — em-dash คือตัวแยก
+   ⚠️ ถ้าไม่แยกข้อนี้ ด่านจะแดงใส่หัวข้อที่ถูกต้อง **3–4 อันตั้งแต่วันแรก** (P1 วัดมาก่อนขอ)
+
+📌 ใช้ *นิยามเดียวกัน* ตอบทั้งสองคำถาม (dangling · ซ้ำ) โดยตั้งใจ
+   ตรวจแล้วว่าให้ผลเท่ากับกฎหลวมเดิมสำหรับ `D` (89 = 89 · dangling 0 ทั้งคู่)
+   🔴 **ถ้าใช้คนละนิยาม เราจะได้ด่านสองตัวที่เชื่อคนละเรื่องเกี่ยวกับคำว่า "นิยาม"** (`D46`)
 """
 import re
 import sys
 
 # รองรับเลขทศนิยมด้วย (`D3.1` มีอยู่จริงในเอกสาร)
-HEAD_RE = re.compile(r"^#{1,6}[^\n]*?\bD(\d+(?:\.\d+)?)\b", re.M)
-ROW_RE = re.compile(r"^\|\s*`?D(\d+(?:\.\d+)?)`?\s*\|", re.M)
-REF_RE = re.compile(r"`D(\d+(?:\.\d+)?)`")
+# ID หน้าสุด (หลังอิโมจิ/เครื่องหมาย) เป็นกลุ่มได้ แล้วตามด้วย em-dash
+LEAD_RE = re.compile(r"^#{1,6}\s+(?:[^\w`]+\s*)*((?:`?[DP]-?\d+(?:\.\d+)?`?(?:\s*[·/,]\s*)?)+)\s*—")
+IDS_RE = re.compile(r"[DP]-?\d+(?:\.\d+)?")
+ROW_RE = re.compile(r"^\|\s*`?(D\d+(?:\.\d+)?)`?\s*\|", re.M)
+REF_RE = re.compile(r"`(D\d+(?:\.\d+)?)`")
+
+
+def definitions(text: str):
+    """คืน {ID: [เลขบรรทัด, ...]} ของ *นิยาม* เท่านั้น"""
+    out = {}
+    for ln, line in enumerate(text.split("\n"), 1):
+        if not line.startswith("#"):
+            continue
+        m = LEAD_RE.match(line)
+        if not m:
+            continue
+        for i in IDS_RE.findall(m.group(1)):
+            out.setdefault(i, []).append(ln)
+    for i in ROW_RE.findall(text):
+        out.setdefault(i, []).append(0)
+    return out
 
 
 def main(argv) -> int:
@@ -44,7 +71,9 @@ def main(argv) -> int:
     except OSError:
         print(f"🔴 decision-refs: เปิด {readme} ไม่ได้ — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
         return 1
-    defined = set(HEAD_RE.findall(text)) | set(ROW_RE.findall(text))
+    defs = definitions(text)
+    defined = set(defs)
+    dupbad = 0
 
     bodies = {}
     for path in paths:
@@ -57,21 +86,37 @@ def main(argv) -> int:
     # 🔴 "README ไม่มีนิยามเลย" เป็นเรื่องผิดปกติ **ก็ต่อเมื่อมีคนอ้างถึง `D` อยู่จริง**
     #    ถ้าไม่มีใครอ้างถึงเลย ก็ไม่มีอะไรให้ตรวจ — ไม่ใช่ความผิด
     #    (เดิมเขียนให้ fail เสมอ แล้วมันไปฟ้องทรีที่ README ยังไม่มีมติสักข้อ ซึ่งถูกต้องตามสภาพ)
+    # ── หนึ่งเลข หนึ่งนิยาม (P1 ขอ 25 ส.ค. 2026) ──────────────────────────────
+    # 🔴 คืนที่ขอ `P-<n>` ชนกัน 3 ครั้ง (P-66×2 · P-67×2) ขณะที่ `D<n>` ไม่ชนเลย
+    #    ความต่างข้อเดียว: `D` มีด่าน `P` ไม่มี
+    for ident in sorted(defs, key=lambda x: (x[0], float(re.sub(r"[^0-9.]", "", x)))):
+        lines = [l for l in defs[ident] if l]
+        if len(lines) > 1:
+            print(f"🔴 decision-refs: `{ident}` มีนิยามซ้ำ {len(lines)} ที่ — บรรทัด {lines}")
+            print("   ทะเบียนที่เลขหนึ่งตัวชี้ได้สองที่ ไม่ใช่ทะเบียน · รวมเป็นหัวข้อเดียว หรือออกเลขใหม่")
+            dupbad += 1
+
     if any_ref and not defined:
         print(f"🔴 decision-refs: มีการอ้างถึง `D` แต่ {readme} ไม่มีนิยามสักตัว — ผิดปกติ ถือว่าไม่ผ่าน")
         return 1
     if not any_ref:
-        return 0
+        # 🔴 ด่าน "หนึ่งเลข หนึ่งนิยาม" ต้องทำงานแม้ไม่มีใครอ้างถึงเลย
+        #    ฉบับแรก return ตรงนี้ก่อนถึงการตรวจซ้ำ → **เคสด้านลบทั้งสองผ่านเงียบ**
+        #    เจอเพราะเทสต์ด้านลบ ไม่ใช่เพราะอ่านโค้ดซ้ำ
+        return 1 if dupbad else 0
 
-    bad = 0
+    bad = dupbad
     for path, body in bodies.items():
-        for d in sorted(set(REF_RE.findall(body)) - defined, key=lambda x: float(x)):
-            print(f"🔴 decision-refs: {path} อ้างถึง `D{d}` ซึ่งไม่มีนิยามใน {readme}")
+        for d in sorted(set(REF_RE.findall(body)) - defined,
+                        key=lambda x: float(x[1:])):
+            print(f"🔴 decision-refs: {path} อ้างถึง `{d}` ซึ่งไม่มีนิยามใน {readme}")
             bad += 1
     if bad:
-        print(f"   เพิ่มหัวข้อ `### D{'<n>'} — …` ใน README หรือแก้เลขที่อ้างให้ถูก")
+        print("   เพิ่มหัวข้อ `### D<n> — …` ใน README หรือแก้เลขที่อ้างให้ถูก")
         return 1
-    print(f"✅ decision-refs: ทุก `D<n>` ที่อ้างถึง มีนิยามครบ (นิยาม {len(defined)} ตัว)")
+    nP = len([d for d in defs if d.startswith("P")])
+    nD = len([d for d in defs if d.startswith("D")])
+    print(f"✅ decision-refs: อ้างถึงมีปลายทางครบ · หนึ่งเลขหนึ่งนิยาม (D {nD} · P {nP})")
     return 0
 
 

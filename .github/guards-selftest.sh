@@ -453,4 +453,30 @@ dynchk "URL ในสตริงที่ไม่มีอะไรผิด �
 dynchk "ชื่อตารางในคอมเมนต์บล็อก ต้องไม่โดน" pass '/* supabase.from("catalog_places") */
 supabase.from("bookings");'
 
+# ── "หนึ่งเลข หนึ่งนิยาม" (P1 ขอ · P-66×2 · P-67×2 คืนนี้) ──────────────────────
+DREFS_T="$(cd "$(dirname "$0")" && pwd)/check-decision-refs.py"
+dref() {  # dref <ชื่อ> <pass|fail> <เนื้อ README>
+  name="$1"; want="$2"; d="$(mktemp -d)"
+  printf '%s\n' "$3" > "$d/R.md"
+  if "$DREFS_T" "$d/R.md" "$d/R.md" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  rm -rf "$d"
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got"; rc=1; return 1
+}
+
+dref "หนึ่งเลขหนึ่งนิยาม: P ซ้ำต้องแดง" fail '### 🔴 `P-66` — หนึ่ง
+### 🔴 `P-66` — สอง'
+dref "หนึ่งเลขหนึ่งนิยาม: D ซ้ำต้องแดง" fail '### 🟢 D53 — หนึ่ง
+### 🎯 D53 — สอง'
+# 🔴 4 เคสนี้ P1 วัดมาก่อนขอ ว่าจะเป็น false positive ถ้าไม่แยก "นิยาม" ออกจาก "เอ่ยถึง"
+dref "หัวข้อที่เอ่ยถึง ID ไม่ใช่นิยาม" pass '### 🔴 `P-33` — นิยามจริง
+### 📌 เลขที่ชนกัน — `P-33` มี 2 ความหมาย
+### ② เคส `P-33` — และตัวกัน'
+# ตัวหลอกที่สุด: ID อยู่หน้าสุดจริง **แต่ไม่มี em-dash** → ไม่ใช่นิยาม
+dref "ID หน้าสุดแต่ไม่มี em-dash ไม่ใช่นิยาม" pass '### 🔴 `P-33` — นิยามจริง
+### 🔴 `P-33` ปิดฝั่ง client แล้ว · ต่อ'
+dref "นิยามกลุ่ม (P-30 · P-31) นับทุกตัว" pass '### 📌 `P-30` · `P-31` — ของ P4'
+dref "ธรรมเนียมเก่า (เปล่า) กับใหม่ (backtick) ใช้ได้ทั้งคู่" pass '### 🔴 P-24 — เก่า
+### 🔴 `P-61` — ใหม่'
+
 exit $rc
