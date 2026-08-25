@@ -37,7 +37,17 @@ const PUBLIC_MARKER = `/storage/v1/object/public/${BOOKING_FILES_BUCKET}/`;
 export function storageKeyOf(stored: string | null | undefined): string | null {
   if (!stored) return null;
   const idx = stored.indexOf(PUBLIC_MARKER);
-  if (idx !== -1) return decodeURIComponent(stored.slice(idx + PUBLIC_MARKER.length));
+  if (idx !== -1) {
+    // 🔴 ตัด query/hash ออกก่อน — **P3 จับได้ 26 ส.ค. 2026** ว่าเคสของผมเองในเทสต์
+    //    เขียนคอมเมนต์ว่า *"ต้องไม่กลายเป็น a.png?w=400"* แต่ assert ว่ามันเป็นแบบนั้นพอดี
+    //    · `?w=400` ไม่ใช่ส่วนหนึ่งของ path ใน bucket → เซ็นด้วยมันจะได้ไฟล์ที่ไม่มีอยู่
+    //    · เกิดจริงได้เพราะ `photoUrlAtWidth()` ต่อ `&w=` ท้าย URL แล้วค่าอาจถูกเก็บทั้งเส้น
+    const rest = stored.slice(idx + PUBLIC_MARKER.length);
+    const cut = rest.search(/[?#]/);
+    return decodeURIComponent(cut === -1 ? rest : rest.slice(0, cut));
+  }
   if (/^https?:\/\//i.test(stored)) return null;
+  // 🔴 กิ่ง "เป็น path อยู่แล้ว" **ไม่ตัด `?`** โดยตั้งใจ — ถ้าค่ามี `?` จริงในกิ่งนี้
+  //    แปลว่ามันไม่ใช่ path ที่เราเขียนลงไป และการเดาให้มันใช้ได้จะซ่อนต้นเหตุ
   return stored;
 }

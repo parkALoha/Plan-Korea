@@ -43,9 +43,16 @@ describe("storageKeyOf — path ที่ signed URL เปลี่ยนไม
     expect(storageKeyOf("https://x.supabase.co/storage/v1/object/public/avatars/a.png")).toBeNull();
   });
 
-  it("URL ที่มี query string ต่อท้าย → path ยังต้องรวม query ไว้ไม่ได้", () => {
-    // ไม่มีเคสจริงวันนี้ แต่ตรึงไว้: ถ้าวันหนึ่งมีใครต่อ `?w=400` เข้ามา
-    // path ที่ได้ต้องไม่กลายเป็น "a.png?w=400" ซึ่งเซ็นไม่ผ่านและอ่านไม่ออกว่าทำไม
-    expect(storageKeyOf(`${PUB}a.png?w=400`)).toBe("a.png?w=400");
+  it("🔴 URL ที่มี query/hash ต่อท้าย → ตัดออก · **P3 จับได้ว่าเคสนี้เคยขัดกับคอมเมนต์ของตัวเอง**", () => {
+    // ฉบับแรก: คอมเมนต์เขียนว่า *"ต้องไม่กลายเป็น a.png?w=400"* แล้ว assert ว่ามันเป็นแบบนั้นพอดี
+    // 🎯 **ถ้อยคำกับกลไกเดินคนละทางในเคสเดียวกัน — `D82` ในระยะ 3 บรรทัด และผมเขียนเองทั้งคู่**
+    // `?w=400` ไม่ใช่ส่วนของ path ใน bucket → เซ็นด้วยมันจะได้ไฟล์ที่ไม่มีอยู่ และ error อ่านไม่ออก
+    expect(storageKeyOf(`${PUB}a.png?w=400`)).toBe("a.png");
+    expect(storageKeyOf(`${PUB}a.png#page=2`)).toBe("a.png");
+  });
+
+  it("path ตรง ๆ ที่มี `?` → **ไม่ตัด** เพราะมันไม่ใช่ path ที่เราเขียนลงไป", () => {
+    // เดาให้มันใช้ได้ = ซ่อนต้นเหตุ · ปล่อยให้เซ็นไม่ผ่านแล้วมีคนมาดูดีกว่า
+    expect(storageKeyOf("weird?name.png")).toBe("weird?name.png");
   });
 });
