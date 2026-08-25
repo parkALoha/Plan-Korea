@@ -371,10 +371,28 @@ Supabase Realtime free tier ~200 connection พร้อมกันทั้ง
 - **สรุป:** ทุกคนที่เปิด `/` หรือ `/today` ดาวน์โหลดคลังทั้งก้อนเป็น JS ก่อน parse ได้ ไม่ว่าจะใช้กี่จุด
   ในทริปนั้นจริงๆ — ยิ่งคลังโตหลายประเทศ (เป้าหมายของ `E2`) เลขนี้ยิ่งแย่ลงเป็นเส้นตรง
 
+**อัปเดต 25 ส.ค. — วัดซ้ำบนทรี `platform` หลัง `7f985e3` (PIN ถอดแล้ว, session auth เข้ามา) รวม
+`data/transferPoints.ts` ที่ P1 ถามเพิ่ม:** `transferPoints.ts` (16,860 B source) ถูก import ผ่าน
+`data/places.ts` เอง (และตรงจาก `TransferEditModal`/`IntercityEditModal` ที่เป็น `"use client"`) จึง
+**อยู่ใน chunk เดียวกับ places** ไม่แยกกัน — วัดจาก `next build` สดบน `platform`: chunk รวม (แทนที่
+`0106pf5up_xvz.js` เดิม) = **165,913 B ดิบ / 47,609 B gzip** ปรากฏใน client-reference-manifest ของ
+**`/`, `/today`, `/summary` ทั้ง 3 หน้า** (ตัวเลขขยับขึ้นเล็กน้อยจากตอนวัดบน `main` เพราะ schema/route
+เปลี่ยนไปตาม `trip_days`/auth ไม่ใช่เพราะ transferPoints เพิ่งถูกนับ — มันถูกนับรวมอยู่แล้วตั้งแต่แรก
+เพราะ import จาก places.ts ตรงๆ)
+
 ### 9.2 รูปแบบการดึงที่ควรเป็น — schema ต้องรองรับอะไรตั้งแต่ `E2`
 
 คลังเป็นข้อมูลอ่านอย่างเดียว/เหมือนกันทุกผู้ใช้ → **`use cache` (public, ไม่ใช่ `private`)** ต่างจาก
 `trip_stops` ที่ต้อง `use cache: private` ตาม D11 (หัวข้อ 7) เพราะคลังไม่ผ่าน RLS รายทริป
+
+**ยืนยันตามที่ P1 ขอ — `use cache` ยังใช้ได้จริงกับ Next เวอร์ชันนี้ (16.3.0):**
+เช็คจาก `node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-cache.md` ตรงๆ ตามกติกา
+`AGENTS.md` — ยังมีอยู่ ยังทำงานตามที่ §2 อธิบายไว้ แต่มีเงื่อนไขที่ต้องพูดตรงๆ: **`use cache` ต้องเปิด
+`cacheComponents: true` ใน `next.config.ts` ก่อนถึงจะทำงาน** (ระบุไว้ในหัวข้อ Usage ของ doc เอง) และ
+`next.config.ts` วันนี้บน `platform` **ยังไม่ได้เปิด** (เช็คแล้ว ไฟล์มีแค่ config ว่างเปล่า) — ไม่ใช่บั๊ก
+เป็นไปตามแผนที่เขียนไว้แล้วในหัวข้อ 2 ว่าให้เปิดพร้อม `E3` ไม่ใช่ตอนนี้ (เพราะยังไม่มี server component
+จริงจังที่จะได้ประโยชน์) **สรุป: schema เขียนรองรับได้ตั้งแต่ `E2` เลย แต่ตัว cache จะยังไม่ทำงานจริงจน
+กว่า `E3` จะเปิด flag — ไม่ใช่ตัวบล็อก DDL แค่ต้องรู้ว่ายังพิสูจน์ไม่ได้ตอนนี้**
 
 🔴 **สิ่งที่ต้องมีใน DDL ของ `E2` ก่อนเขียน ไม่งั้นต้องตาม migration ทีหลัง:**
 1. `updated_at timestamptz` ต่อแถวใน `catalog.places` (และ `catalog.place_names` — แยกตารางจริงตามที่
@@ -444,3 +462,37 @@ group by p.id
 เทียบเท่าพฤติกรรมวันนี้ก่อนย้าย (ซึ่งผ่านเกณฑ์นี้อยู่แล้วโดยบังเอิญเพราะข้อ 9.1) — ใช้เป็น regression
 test ก่อน/หลัง `E3` ได้ตรงๆ ไม่ต้องเขียนเกณฑ์ใหม่ แค่ทำให้ยังผ่านต่อหลังย้าย เพิ่มเป็น manual QA step
 ใน `backlog.md` ได้เลย (อัตโนมัติเป็น Playwright + `context.setOffline(true)` ได้ในเฟสถัดไปถ้า P4 ต้องการ)
+
+---
+
+## 10. รายงาน (ยังไม่แก้) — cache key ฝั่ง client ที่ไม่มี user/session ผูกอยู่ (ตอบ P1 ข้อ ②)
+
+ไล่ทุกจุดที่เรียก `readCache`/`writeCache` จาก `lib/localCache.ts` (localStorage, ตาม comment ในไฟล์
+เอง — เก็บไว้ให้ offline อ่านได้ตามเฟส 18) พบ **8 hook** ทั้งหมดคีย์ด้วย `planId` เป็นอย่างมาก **ไม่มีจุด
+ไหนใส่ user/session id เข้าไปในคีย์เลยสักจุด**:
+
+| hook | key ที่ใช้จริง | ผูก planId ไหม | ผูก user ไหม |
+|---|---|---|---|
+| `useStops.ts` | `` `stops:${planId}` `` | ✅ | ❌ |
+| `useDaySettings.ts` | `` `daySettings:${planId}` `` | ✅ | ❌ |
+| `usePlaceNotes.ts` | `` `placeNotes:${planId}` `` | ✅ | ❌ |
+| `usePlans.ts` | `"plans"` | ❌ | ❌ |
+| `useOvernightOverrides.ts` | `"overnightOverrides"` | ❌ | ❌ |
+| `useBookings.tsx` | `"bookings"` | ❌ | ❌ |
+| `useHotels.tsx` | `"hotels"` | ❌ | ❌ |
+| `useCustomPlaces.tsx` | `"customPlaces"` | ❌ | ❌ |
+
+**อ่านผลตรงๆ:** 3 hook ผูก planId แล้ว (เสี่ยงน้อยกว่า — ต้องสลับ user ที่เห็นทริปเดียวกันถึงจะชน) แต่
+**5 hook ไม่ผูกอะไรเลยแม้แต่ planId** — เครื่องเดียวกันเปิดคนละทริปยังชนกันได้อยู่แล้ววันนี้ ก่อน RLS
+จะเข้ามาอีก พอ RLS จริงเปิด (คนละ user เห็นคนละชุดทริป/ข้อมูล) ทั้ง 8 จุดนี้เสี่ยงเหมือนกันหมดในความหมาย
+ที่ P1 พูดถึง: สลับบัญชีบนเครื่องเดียวกัน (หรือ 2 คนใช้เครื่องเดียวกันคนละช่วงเวลา) แล้วอ่านของคนก่อนหน้า
+จาก localStorage ทันที เพราะไม่มี field ไหนให้เช็คว่า "แคชนี้เป็นของ user คนนี้จริงไหม"
+
+**นอกขอบเขตของปัญหานี้ — พบระหว่างไล่แต่ไม่ใช่ประเภทเดียวกัน:** `hooks/usePlaceNamesEn.ts` มีแคชของ
+ตัวเอง (module-level `Map`, ไม่ผ่าน `localCache.ts`, ไม่ persist ข้าม reload) คีย์ด้วย place-name query
+string — ข้อมูลนี้คือชื่ออังกฤษของสถานที่จาก Google (ข้อมูลสาธารณะ ไม่ผ่าน RLS ไม่ใช่ของรายคน) จึงไม่ใช่
+ความเสี่ยงชนิดเดียวกับตารางด้านบน ไม่ต้องรวมในการนับ
+
+**ยังไม่แก้ตามที่ P1 สั่ง** — รอดูว่า P1 อยากแก้แบบไหน (เติม `userId`/`sessionId` เข้าคีย์ทุกจุด vs.
+ล้างแคชทั้งหมดตอน sign-out/sign-in vs. ย้ายไปพึ่ง `use cache: private` แทนทั้งหมดตาม §2 เมื่อถึง `E3`)
+ก่อนลงมือแก้จริง
