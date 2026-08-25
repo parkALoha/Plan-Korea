@@ -38,6 +38,8 @@ import { useTripWeather } from "@/hooks/useTripWeather";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDaySettings } from "@/hooks/useDaySettings";
+import { useSignedFiles } from "@/hooks/useSignedFiles";
+import { signStoredFile } from "@/lib/engine/files";
 import { BottomNav } from "@/components/BottomNav";
 import { WeatherBadge } from "@/components/WeatherBadge";
 import { EmergencyCard } from "@/components/EmergencyCard";
@@ -314,6 +316,14 @@ export default function TodayPage() {
     .filter((b) => b.day_id === day.id || (!b.day_id && b.date === day.date))
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 
+  // เซ็นรวมทีเดียว (E2-AC13 ②) — รูปหน้างานของจุดถัดไป + ตั๋วที่เป็นรูปทุกใบของวันนี้
+  const signedFiles = useSignedFiles([
+    nextStop?.photo_url,
+    ...dayBookings
+      .filter((b) => isImageAttachment(b.file_name, b.file_url))
+      .map((b) => b.file_url),
+  ]);
+
   // ดูรายละเอียดสถานที่แบบเดียวกับหน้าแผน — เก็บแค่ id แล้วหา place/index สดจาก dayStops/schedule
   // ทุกครั้งที่ render กันข้อมูลค้างเวลาสลับวันหรือ schedule คำนวณใหม่ (delay เลื่อนเวลา ฯลฯ)
   const [detailStopId, setDetailStopId] = useState<string | null>(null);
@@ -326,6 +336,23 @@ export default function TodayPage() {
   const startHotelPlace = startHotel ? hotelToPlace(startHotel, day.city) : null;
   const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const detailIndex = detailStopId ? dayStops.findIndex((s) => s.id === detailStopId) : -1;
+
+  // เปิดไฟล์ตั๋วที่ไม่ใช่รูป (PDF ฯลฯ) — เซ็นใหม่ตอนคลิกเสมอ ไม่ใช้ค่า signed ที่ batch ไว้ (§12.2
+  // ux-flows.md) เพราะเป็นการเปิดแท็บใหม่ครั้งเดียว ไม่ใช่รูปที่ค้างแสดงอยู่บนจอ
+  const [openingFileFor, setOpeningFileFor] = useState<string | null>(null);
+  const [openFileError, setOpenFileError] = useState<string | null>(null);
+  async function handleOpenBookingFile(booking: (typeof dayBookings)[number]) {
+    if (!booking.file_url || openingFileFor) return;
+    setOpeningFileFor(booking.id);
+    setOpenFileError(null);
+    const url = await signStoredFile(booking.file_url);
+    setOpeningFileFor(null);
+    if (!url) {
+      setOpenFileError(`เปิดไฟล์ของ "${booking.title}" ไม่สำเร็จ — ลองใหม่อีกครั้ง`);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   // คัดลอกชื่อที่พักให้คนขับดูตอนเที่ยวครบแล้วจะกลับ — เหมือน LocalNameCard แต่ endHotel เป็น TripHotel ไม่ใช่ Place
   const [copiedHotelName, setCopiedHotelName] = useState(false);
@@ -669,26 +696,40 @@ export default function TodayPage() {
                       </div>
                     )}
 
-                    {nextStop.photo_url && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setZoomed({
-                            src: nextStop.photo_url!,
-                            alt: "รูปหน้างานของจุดแวะนี้ ขนาดเต็ม",
-                          })
-                        }
-                        aria-label="ดูรูปหน้างานขนาดเต็ม"
-                        className="mt-2 block"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
-                        <img
-                          src={nextStop.photo_url}
-                          alt="รูปหน้างานของจุดแวะนี้"
-                          className="h-24 w-24 rounded-lg object-cover"
-                        />
-                      </button>
+                    {/* signedFiles มี 3 สถานะต่อค่า (E2-AC13 ②) — undefined กำลังเซ็น · null เซ็นไม่สำเร็จ
+                        (ต้องบอก ไม่ใช่กลืน) · string เปิดได้ */}
+                    {nextStop.photo_url && signedFiles.get(nextStop.photo_url) === undefined && (
+                      <div className="mt-2 h-24 w-24 animate-pulse rounded-lg bg-surface-soft" />
                     )}
+                    {nextStop.photo_url && signedFiles.get(nextStop.photo_url) === null && (
+                      <div
+                        className="mt-2 flex h-24 w-24 items-center justify-center rounded-lg bg-surface-soft text-xs text-content-soft"
+                        title="เปิดรูปไม่ได้"
+                      >
+                        🖼️✕
+                      </div>
+                    )}
+                    {nextStop.photo_url &&
+                      typeof signedFiles.get(nextStop.photo_url) === "string" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setZoomed({
+                              src: signedFiles.get(nextStop.photo_url!) as string,
+                              alt: "รูปหน้างานของจุดแวะนี้ ขนาดเต็ม",
+                            })
+                          }
+                          aria-label="ดูรูปหน้างานขนาดเต็ม"
+                          className="mt-2 block"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
+                          <img
+                            src={signedFiles.get(nextStop.photo_url) as string}
+                            alt="รูปหน้างานของจุดแวะนี้"
+                            className="h-24 w-24 rounded-lg object-cover"
+                          />
+                        </button>
+                      )}
 
                     <div className="mt-4">
                       {/* ส่งชื่อภาษาท้องถิ่นเข้าแอปแผนที่ ไม่ใช่ nameTh — Naver/Kakao ค้นชื่อไทยไม่เจอ (เฟส 14) */}
@@ -878,41 +919,58 @@ export default function TodayPage() {
                         เปิดลิงก์
                       </a>
                     )}
-                    {b.file_url &&
-                      (isImageAttachment(b.file_name, b.file_url) ? (
-                        // รูปตั๋วเปิดดูในแอปเลย — หน้านี้คือหน้าที่เปิดค้างไว้ตอนอยู่หน้างานจริง
-                        // เด้งออกแท็บใหม่ = เสียที่ที่กำลังดูอยู่
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setZoomed({
-                              src: b.file_url!,
-                              alt: `รูปตั๋วที่แนบไว้กับ “${b.title}”`,
-                            })
-                          }
-                          aria-label={`ดูรูปตั๋วของ ${b.title} ขนาดเต็ม`}
-                          className="shrink-0"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
-                          <img
-                            src={b.file_url}
-                            alt=""
-                            loading="lazy"
-                            className="h-10 w-10 rounded-lg object-cover"
-                          />
-                        </button>
-                      ) : (
-                        <a
-                          href={b.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="shrink-0 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs font-medium text-panel-pine-ink"
-                        >
-                          📎 ไฟล์
-                        </a>
-                      ))}
+                    {b.file_url && isImageAttachment(b.file_name, b.file_url) && (
+                      // รูปตั๋วเปิดดูในแอปเลย — หน้านี้คือหน้าที่เปิดค้างไว้ตอนอยู่หน้างานจริง
+                      // เด้งออกแท็บใหม่ = เสียที่ที่กำลังดูอยู่ · signedFiles มี 3 สถานะ (E2-AC13 ②)
+                      <>
+                        {signedFiles.get(b.file_url) === undefined && (
+                          <div className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-surface-soft" />
+                        )}
+                        {signedFiles.get(b.file_url) === null && (
+                          <div
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-[10px] text-content-soft"
+                            title="เปิดรูปตั๋วไม่ได้"
+                          >
+                            🖼️✕
+                          </div>
+                        )}
+                        {typeof signedFiles.get(b.file_url) === "string" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setZoomed({
+                                src: signedFiles.get(b.file_url!) as string,
+                                alt: `รูปตั๋วที่แนบไว้กับ “${b.title}”`,
+                              })
+                            }
+                            aria-label={`ดูรูปตั๋วของ ${b.title} ขนาดเต็ม`}
+                            className="shrink-0"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
+                            <img
+                              src={signedFiles.get(b.file_url) as string}
+                              alt=""
+                              loading="lazy"
+                              className="h-10 w-10 rounded-lg object-cover"
+                            />
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {b.file_url && !isImageAttachment(b.file_name, b.file_url) && (
+                      // ไม่ใช่รูป (PDF ฯลฯ) — เซ็นใหม่ตอนคลิกเสมอ ไม่ใช้ signed URL ค้าง (§12.2)
+                      <button
+                        type="button"
+                        onClick={() => handleOpenBookingFile(b)}
+                        disabled={openingFileFor === b.id}
+                        className="shrink-0 rounded-lg bg-surface-soft px-2.5 py-1.5 text-xs font-medium text-panel-pine-ink disabled:opacity-60"
+                      >
+                        {openingFileFor === b.id ? "กำลังเปิด..." : "📎 ไฟล์"}
+                      </button>
+                    )}
                   </div>
                 ))}
+                {openFileError && <p className="text-xs text-red-600">{openFileError}</p>}
               </div>
             </section>
           )}
