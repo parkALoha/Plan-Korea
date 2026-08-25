@@ -359,7 +359,14 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 | 🔴 `overnightOptions` | **ไม่เก็บ** | `D80` เขียนเหตุผลไว้แล้ว — เป็น*คำแนะนำที่เราคัดมา* ไม่ใช่ข้อมูลผู้ใช้ · บนแพลตฟอร์มเลือกเมืองไหนก็ได้ |
 | 🔴 `slots` | **ไม่เก็บ — ทั้งชนิด `Slot` ตายไปแล้ว** | `itinerary.ts:1-6` เขียนสารภาพเอง: *"**ไม่มีโค้ดไหนอ่านค่านี้แล้ว** … ถูกแทนด้วย `trip_stops` ตั้งแต่หลายเดือนก่อน"* |
 
-#### 🔴 `Slot` (3 ฟิลด์: `id` · `label` · `candidateIds`) — **ตั้งใจทิ้งทั้งชนิด**
+#### 🔴 `Slot` — **ตั้งใจทิ้งทั้งชนิด**
+
+| ฟิลด์ | ปลายทาง | เหตุผล |
+|---|---|---|
+| `id` · `label` · `candidateIds` | 🔴 **ไม่เก็บทั้งชนิด** | ดูข้างล่าง |
+
+📌 **ฉบับแรกผมเขียนสามชื่อนี้ไว้ใน*ร้อยแก้ว* แล้วด่าน `E2-AC15` แดงทันทีที่รันครั้งแรก**
+🎯 **ถูกแล้วที่มันแดง** — *"เขียนถึงแล้ว"* กับ *"ตัดสินแล้ว"* เป็นคนละอย่าง **และ `P-57` เกิดจากช่องระหว่างสองอันนั้นพอดี**
 
 > `itinerary.ts` บรรทัด 1–6: *"เก็บข้อมูลไว้เฉย ๆ เพราะเป็นบันทึกว่าตอนวางแผนแรกคิดว่าวันไหนควรไปที่ไหน"*
 
@@ -389,15 +396,16 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 ✅ **ปิดแล้ว 26 ส.ค. 2026 — `D81` · DDL ลง `20260826010130_e2_d81_trip_stop_events.sql`**
 
-ทั้ง 15 ฟิลด์ลงเป็นคอลัมน์บน **`trip_stops` ที่ `kind='event'`** (ไม่มีตารางที่สาม):
+ทั้ง 15 ฟิลด์ของ **`DayEvent`** ลงเป็นคอลัมน์บน **`trip_stops` ที่ `kind='event'`** (ไม่มีตารางที่สาม)
+· ชนิดซ้อนสองตัว: **`FlightInfo`** (5 ฟิลด์) · **`Layover`** (4 ฟิลด์) — แตกเป็นคอลัมน์แบน ไม่เก็บเป็น json:
 
 | ฟิลด์ใน TS | คอลัมน์ใน DB | หมายเหตุ |
 |---|---|---|
 | `time` · `endTime` | `fixed_start_time` · `fixed_end_time` | รูปแบบเดียวกับ `transfer_target_time` · **ไม่มี check ว่าปลาย > ต้น** (ช่วงต่อเครื่องข้ามเที่ยงคืนได้) |
 | 🔴 `anchor` | **`schedule_bound`** | เปลี่ยนชื่อเพราะ `anchor` ชนกับ `hotelAnchorId()` (`D81` ②) |
 | 🔴 `dayOffset` | `day_offset int not null default 0` | check `between 0 and 3` |
-| 🔴 `flight.*` (5) | `flight_no` · `flight_from_code` · `flight_to_code` · `flight_from_en` · `flight_to_en` | **ครบชุดหรือไม่มีเลย** — ครึ่งชุดคือช่องว่างที่ถูกพิมพ์ลงเอกสาร ตม. จริง |
-| `layover.*` (4) | `layover_baggage` · `layover_immigration` · `layover_leaves_airport` · `layover_terminal_change` | ครบชุดหรือไม่มีเลย เช่นกัน |
+| 🔴 `flight.no` · `flight.fromCode` · `flight.toCode` · `flight.fromEn` · `flight.toEn` | `flight_no` · `flight_from_code` · `flight_to_code` · `flight_from_en` · `flight_to_en` | **ครบชุดหรือไม่มีเลย** — ครึ่งชุดคือช่องว่างที่ถูกพิมพ์ลงเอกสาร ตม. จริง |
+| `layover.baggage` · `layover.immigration` · `layover.leavesAirport` · `layover.terminalChange` | `layover_baggage` · `layover_immigration` · `layover_leaves_airport` · `layover_terminal_change` | ครบชุดหรือไม่มีเลย เช่นกัน |
 | `placeId` | `catalog_place_id` · `custom_place_id` · **`place_ref='hotel'`** | อย่างมาก 1 ใน 3 · `@hotel` → `place_ref` · `home-base` → `custom_places` |
 | `kind` | `event_kind` | `transfer` → **`move`** (ชนกับ `trip_stops.kind='transfer'`) · null ได้จริง |
 | `icon` · `alert` · `editable` · `titleEn` | `icon` · `is_alert` · **`time_is_flexible`** · `title_en` | `editable` กลับด้านเป็น "เวลานี้ยืดหยุ่นได้" ให้ตรงกับสิ่งที่มันหมายถึงจริง |
@@ -431,6 +439,8 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 `TransferPoint = Place & { transferKind, pickerHidden }` → **ฟิลด์ของ `Place` ได้ปลายทางจากหัวข้อ `data/places.ts` ข้างบนครบแล้ว** เหลือ 2 ตัวที่เป็นของไฟล์นี้เอง:
 
+**ชนิด: `TransferPoint`** (`= Place & { … }` — ฟิลด์ของ `Place` อยู่หัวข้อข้างบน)
+
 | ฟิลด์ | ปลายทาง | เหตุผล |
 |---|---|---|
 | `transferKind` | **`catalog_places.transfer_kind`** `text check in ('airport','station')` | มี `check` ผูกกับ `source = 'transfer'` — แถวที่ไม่ใช่จุดเปลี่ยนถ่ายถือค่านี้ไม่ได้ |
@@ -442,7 +452,7 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 ## 🟢 `data/emergency.ts` → `catalog_country_contacts` (`P-60` · DDL ลงแล้ว 25 ส.ค. 2026)
 
-`EMERGENCY_BY_COUNTRY: Record<"kr" | "vn", EmergencyContact[]>` — **คีย์ของ `Record` คือรหัสประเทศ ซึ่งตรงกับ `catalog_countries.id` พอดี** จึงไม่ต้องออกแบบคีย์ใหม่
+**ชนิด: `EmergencyContact`** · `EMERGENCY_BY_COUNTRY: Record<"kr" | "vn", EmergencyContact[]>` — **คีย์ของ `Record` คือรหัสประเทศ ซึ่งตรงกับ `catalog_countries.id` พอดี** จึงไม่ต้องออกแบบคีย์ใหม่
 
 | ฟิลด์ | ปลายทาง | เหตุผล |
 |---|---|---|
@@ -462,7 +472,7 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 
 ## 🟢 `data/airportAccess.ts` → `catalog_place_access` (`P-60` · DDL ลงแล้ว 25 ส.ค. 2026)
 
-`AIRPORT_ACCESS: Record<string, AirportAccessOption[]>` — **คีย์คือ id ของสนามบิน** (`"airport-icn"`) → เป็น**ตารางลูก**ของจุดเปลี่ยนถ่าย ไม่ใช่ตารางอิสระ
+**ชนิด: `AirportAccessOption`** · `AIRPORT_ACCESS: Record<string, AirportAccessOption[]>` — **คีย์คือ id ของสนามบิน** (`"airport-icn"`) → เป็น**ตารางลูก**ของจุดเปลี่ยนถ่าย ไม่ใช่ตารางอิสระ
 
 | ฟิลด์ | ปลายทาง | เหตุผล |
 |---|---|---|
