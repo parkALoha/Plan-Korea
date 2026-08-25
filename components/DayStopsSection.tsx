@@ -11,6 +11,7 @@ import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useInViewOnce } from "@/hooks/useInViewOnce";
+import { useSignedFiles } from "@/hooks/useSignedFiles";
 import { hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
@@ -101,6 +102,11 @@ export function DayStopsSection({
   locked: boolean;
   onToggleLock: () => void;
 }) {
+  // เซ็น signed URL ของรูปจุดแวะทั้งวันครั้งเดียว (E2-AC13 ②) — ไม่ใช่ให้ SortableStopRow เซ็นเอง
+  // ทีละแถว เพราะที่นี่มี stops ทั้งวันอยู่ในมือแล้วโดยธรรมชาติของโครงเดิม ไม่ต้องรื้อ prop chain
+  // ใหม่เพื่อสร้างจุด batch (ตามที่ P1 ยืนยันใน ux-flows.md §12)
+  const signedStopPhotos = useSignedFiles(stops.map((s) => s.photo_url));
+
   // droppable ของทั้งวันนี้ — ใช้ตอนลากการ์ดจากคลัง sidebar มาวาง หรือลากจุดแวะข้ามมาจากวันอื่น
   // (การจัดลำดับ/ย้ายข้ามวันจริงๆ ถูกจัดการที่ DndContext ระดับบนสุดใน app/page.tsx)
   const { setNodeRef: setDayDroppableRef, isOver } = useDroppable({
@@ -489,6 +495,9 @@ export function DayStopsSection({
                   }
                   onInsertHotelBefore={i > 0 && hotel ? () => onInsertHotel(i) : undefined}
                   hotelName={hotelForStop(stop.place_id, hotel, startHotel)?.hotel_name ?? null}
+                  signedPhotoUrl={
+                    stop.photo_url ? signedStopPhotos.get(stop.photo_url) : undefined
+                  }
                 />
               );
             })}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CATEGORY_EMOJI, CATEGORY_LABEL, Place } from "@/data/places";
 import { Modal } from "./Modal";
 import { useTravelTime } from "@/hooks/useTravelTime";
@@ -9,6 +9,7 @@ import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import type { TripHotel } from "@/lib/supabase";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
+import { signStoredFile } from "@/lib/engine/files";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 import { PhotoGallery } from "./PhotoGallery";
 import { PhotoLightbox } from "./PhotoLightbox";
@@ -51,6 +52,33 @@ export function PlaceDetailModal({
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(false);
+
+  // เซ็น signed URL สำหรับแสดงผล (E2-AC13 ②) — modal นี้โชว์รูปทีละใบ ไม่ใช่ลิสต์ จึงเซ็นเองในตัวได้
+  // โดยไม่เจอปัญหา N request ที่ BookingsPanel/SortableStopRow ต้อง batch ที่ parent · userPhotoUrl (ดิบ)
+  // ยังใช้กับ uploadStopPhoto/removeStopPhoto เหมือนเดิมทุกจุด — สองอย่างนี้เป็นคนละคำถามกัน
+  const [signedResult, setSignedResult] = useState<{
+    forUrl: string;
+    url: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!userPhotoUrl) return;
+    let cancelled = false;
+
+    function run() {
+      signStoredFile(userPhotoUrl!).then((url) => {
+        if (!cancelled) setSignedResult({ forUrl: userPhotoUrl!, url });
+      });
+    }
+
+    run();
+    const timer = setInterval(run, 30_000); // ต่ออายุก่อน TTL 90 วินาทีหมด (§12.2/P-65)
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [userPhotoUrl]);
+  const signedPhotoUrl =
+    signedResult && signedResult.forUrl === userPhotoUrl ? signedResult.url : undefined;
 
   async function handlePhotoChange(file: File | null) {
     if (!file || !stopId || !onUpdatePhoto) return;
@@ -125,15 +153,28 @@ export function PlaceDetailModal({
       <div className="mb-4 rounded-xl bg-panel-pine/40 p-3">
         <h3 className="mb-1.5 text-sm font-semibold text-panel-pine-ink">โน้ตของเรา</h3>
         {userNote && <NoteBody note={userNote} className="text-sm text-content" />}
-        {userPhotoUrl && (
+        {/* signedPhotoUrl มี 3 สถานะ (E2-AC13 ②) — undefined กำลังเซ็น · null เซ็นไม่สำเร็จ (ต้องบอก
+            ไม่ใช่กลืน) · string เปิดได้ — เช็ค userPhotoUrl (ดิบ) เพื่อรู้ว่า "มีรูป" ไหม แยกจากผลเซ็น */}
+        {userPhotoUrl && signedPhotoUrl === undefined && (
+          <div className={`h-32 w-full max-w-56 animate-pulse rounded-lg bg-surface-soft ${userNote ? "mt-2" : ""}`} />
+        )}
+        {userPhotoUrl && signedPhotoUrl === null && (
+          <div
+            className={`flex h-32 w-full max-w-56 items-center justify-center rounded-lg bg-surface-soft text-xs text-content-soft ${userNote ? "mt-2" : ""}`}
+            title="เปิดรูปไม่ได้"
+          >
+            🖼️✕ เปิดรูปไม่ได้
+          </div>
+        )}
+        {userPhotoUrl && typeof signedPhotoUrl === "string" && (
           <button
             type="button"
             onClick={() => setZoomedPhoto(true)}
             className={`block w-full max-w-56 ${userNote ? "mt-2" : ""}`}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
             <img
-              src={userPhotoUrl}
+              src={signedPhotoUrl}
               alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ — กดเพื่อดูขนาดเต็ม"
               className="w-full rounded-lg object-cover"
             />
@@ -168,9 +209,9 @@ export function PlaceDetailModal({
       </div>
     )}
 
-    {zoomedPhoto && userPhotoUrl && (
+    {zoomedPhoto && typeof signedPhotoUrl === "string" && (
       <PhotoLightbox
-        src={userPhotoUrl}
+        src={signedPhotoUrl}
         alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ ขนาดเต็ม"
         onClose={() => setZoomedPhoto(false)}
       />

@@ -45,6 +45,7 @@ export function SortableStopRow({
   onInsertIntercityBefore,
   onInsertHotelBefore,
   hotelName,
+  signedPhotoUrl,
 }: {
   stop: TripStop;
   dayId: string;
@@ -80,6 +81,10 @@ export function SortableStopRow({
   onInsertHotelBefore: (() => void) | undefined;
   /** ชื่อที่พักของช่วงนี้ — ใช้โชว์บนแถว kind="hotel" (ดึงสดจาก trip_hotels ไม่ใช่จาก place_id) */
   hotelName: string | null;
+  /** signed URL ของ stop.photo_url เซ็นไว้แล้วจาก DayStopsSection (E2-AC13 ②) — แถวนี้ไม่รู้จักการเซ็น
+   *  เอง ตั้งใจ เพราะ parent มี stops ทั้งวันอยู่ในมืออยู่แล้วและเซ็นรวมทีเดียวถูกกว่าเซ็นทีละแถว
+   *  undefined = ยังเซ็นไม่เสร็จ · null = เซ็นไม่สำเร็จ (ต้องบอกว่าเปิดไม่ได้) · string = เปิดได้ */
+  signedPhotoUrl: string | null | undefined;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stop.id,
@@ -470,19 +475,34 @@ export function SortableStopRow({
         <div className="px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
           {stop.photo_url ? (
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setZoomedPhoto(true)}
-                aria-label="ดูรูปหน้างานขนาดเต็ม"
-                className="shrink-0"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
-                <img
-                  src={stop.photo_url}
-                  alt="รูปหน้างานของจุดแวะนี้"
-                  className="h-14 w-14 rounded-lg object-cover"
-                />
-              </button>
+              {/* signedPhotoUrl มี 3 สถานะ (E2-AC13 ②) — เซ็นรวมกันทั้งวันที่ DayStopsSection ไม่ใช่ที่นี่
+                  undefined กำลังเซ็น · null เซ็นไม่สำเร็จ (ต้องบอก ไม่ใช่กลืน) · string เปิดได้ */}
+              {signedPhotoUrl === undefined && (
+                <div className="h-14 w-14 shrink-0 animate-pulse rounded-lg bg-surface-soft" />
+              )}
+              {signedPhotoUrl === null && (
+                <div
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-[10px] text-content-soft"
+                  title="เปิดรูปไม่ได้"
+                >
+                  🖼️✕
+                </div>
+              )}
+              {typeof signedPhotoUrl === "string" && (
+                <button
+                  type="button"
+                  onClick={() => setZoomedPhoto(true)}
+                  aria-label="ดูรูปหน้างานขนาดเต็ม"
+                  className="shrink-0"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ของ Supabase Storage ไม่ใช่ static asset */}
+                  <img
+                    src={signedPhotoUrl}
+                    alt="รูปหน้างานของจุดแวะนี้"
+                    className="h-14 w-14 rounded-lg object-cover"
+                  />
+                </button>
+              )}
               {!locked && (
                 <button
                   onClick={handleRemovePhoto}
@@ -516,9 +536,9 @@ export function SortableStopRow({
           {closedHoursLabel ? ` — ${closedHoursLabel}` : " (ตามเวลาเปิด-ปิดจาก Google)"}
         </div>
       )}
-      {zoomedPhoto && stop.photo_url && (
+      {zoomedPhoto && typeof signedPhotoUrl === "string" && (
         <PhotoLightbox
-          src={stop.photo_url}
+          src={signedPhotoUrl}
           alt="รูปหน้างานของจุดแวะนี้ ขนาดเต็ม"
           onClose={() => setZoomedPhoto(false)}
         />
