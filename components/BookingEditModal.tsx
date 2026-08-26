@@ -125,8 +125,10 @@ export function BookingEditModal({
       await supabase.storage.from(BOOKING_FILES_BUCKET).remove([pendingUploadPathRef.current]);
     }
     pendingUploadPathRef.current = path;
-    const { data } = supabase.storage.from(BOOKING_FILES_BUCKET).getPublicUrl(path);
-    setFileUrl(data.publicUrl);
+    // เก็บ path ตรงๆ ไม่ใช่ getPublicUrl() — bucket เป็น private แล้ว (E2-AC13 ①) URL นั้นเปิดไม่ได้จริง
+    // มัน "ทำงาน" อยู่ได้ก่อนหน้านี้เพราะ storageKeyOf() แกะ path ออกจาก URL ให้ทุกจุดอ่าน แต่แปลว่า
+    // ทุกอัปโหลดใหม่เขียนรูปแบบเก่า (ที่ E7 มีหน้าที่ย้ายทิ้ง) ลงคอลัมน์ซ้ำไปเรื่อยๆ — P1 พบระหว่าง E3-AC4
+    setFileUrl(path);
     setFileName(file.name);
     setUploading(false);
   }
