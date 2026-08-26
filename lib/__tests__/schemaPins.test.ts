@@ -846,12 +846,22 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       const m = stmt.match(/execute\s+(?:function|procedure)\s+([\w.]+)/i);
       if (m) fns.add(m[1].toLowerCase());
     }
+    // 🔴 trigger พลวัต (zz_read_only_guard ผูกด้วยลูป) ถูกตัดจาก registry — แต่ *body ฟังก์ชัน* เป็น static `create or replace`
+    //    เหตุผลที่ตัด *trigger* (พลวัต) ใช้กับ *body* ไม่ได้ (P1) · deny_write_when_read_only คือฟังก์ชันเดียวที่ตัดสินว่า
+    //    เขียนทั้งระบบถูกบล็อกไหม — แก้ body = read-only เปลี่ยนเงียบ (ถูก create or replace ไปแล้ว 2 ไฟล์)
+    for (const f of migrationFiles) {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      for (const m of sql.matchAll(
+        /execute\s+format\([^;]*create\s+trigger[^;]*?execute\s+(?:function|procedure)\s+([\w.]+)/gi,
+      ))
+        fns.add(m[1].toLowerCase());
+    }
     const names = [...fns].sort();
     expect(names, "trigger function เพิ่ม/หาย — ตัวใหม่ต้องประกาศว่า stamp หรือไม่").toEqual([
       "app.assert_day_has_no_stops", "app.assert_place_not_in_use", "app.assert_trip_has_owner",
-      "app.assert_trip_has_plan", "app.bootstrap_trip_owner", "app.freeze_created_by",
-      "app.handle_new_user", "app.preserve_authorship", "app.stamp_added_by", "app.stamp_checked_by",
-      "app.stamp_hidden_by", "app.touch_updated_at", "app.touch_updated_at_only",
+      "app.assert_trip_has_plan", "app.bootstrap_trip_owner", "app.deny_write_when_read_only",
+      "app.freeze_created_by", "app.handle_new_user", "app.preserve_authorship", "app.stamp_added_by",
+      "app.stamp_checked_by", "app.stamp_hidden_by", "app.touch_updated_at", "app.touch_updated_at_only",
     ]);
     const eff = effectiveFunctions();
     const bodies = names.map((n) => [n, eff.get(n) ?? "MISSING"] as const);
@@ -859,7 +869,7 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     expect(
       sha(JSON.stringify(bodies)),
       "body ของ trigger function สักตัวเปลี่ยน — `create or replace` เปลี่ยน body ได้โดย def ของ trigger ไม่ขยับ (②③ ซ่อนตรงนี้)",
-    ).toBe("7c10b876b567a7fe8ec51a066e817adda21a23fcfe54ecd4ca505f63e09b9b01");
+    ).toBe("7d786c427ef3d209440a8d882b9890a72d777b669e8c400c817c27fff52c78a8");
   });
 
   it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
