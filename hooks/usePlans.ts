@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type TripPlan } from "@/lib/supabase";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
@@ -81,6 +82,7 @@ export function usePlans() {
           timer.current = setTimeout(() => void refetchRef.current?.(), 300);
         })
         .subscribe();
+      noteRealtimeSubscribed("trip_plans");
     }
 
     init();
