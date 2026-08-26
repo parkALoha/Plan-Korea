@@ -15,7 +15,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  */
 
 const cap = vi.hoisted(() => ({ oauth: null as { options: { redirectTo: string } } | null, otp: null as { options: { emailRedirectTo: string } } | null }));
-vi.mock("@/lib/auth/browser", () => ({
+// S6: spread ของเดิมกลับเข้าไป ไม่แทนที่ทั้งโมดูล (ไม่งั้น export ใหม่ของ browser.ts จะหายเงียบ)
+vi.mock("@/lib/auth/browser", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/browser")>()),
   createBrowserSupabase: () => ({
     auth: {
       signInWithOAuth: async (opts: { options: { redirectTo: string } }) => { cap.oauth = opts; return { error: null }; },
