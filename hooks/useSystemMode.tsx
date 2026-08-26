@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 /**
  * อ่านโหมดของทั้งระบบตอน **โหลด** — `E3-AC7` · ข้อ ③ ของ P7
@@ -30,7 +30,17 @@ async function readMode(): Promise<SystemMode> {
   }
 }
 
-export function useSystemMode(): { mode: SystemMode; refresh: () => void } {
+type SystemModeValue = { mode: SystemMode; refresh: () => void };
+
+/**
+ * ตัวจริงที่ fetch — เรียกครั้งเดียวที่ `<SystemModeProvider>` (root layout)
+ *
+ * 🔴 **เดิมทุกจุดที่ต้องรู้โหมดเรียก `useSystemMode()` แยกกันเอง** — ตอนมีแค่ `SystemModeBanner`
+ * จุดเดียวไม่เป็นปัญหา แต่พอ `BookingEditModal` เป็นจุดที่สอง (และกำลังจะมีอีก 5 โมดัลตามมา)
+ * ยิง `GET /api/engine/system-mode` ซ้ำกันหลายจุดสำหรับสถานะเดียวที่เปลี่ยนนาน ๆ ครั้ง — ย้ายมาไว้ที่
+ * provider ตัวเดียว ตามที่ตั้งใจเลื่อนไว้ (docs/engine/read-only-switch.md ข้อ 9)
+ */
+function useSystemModeSource(): SystemModeValue {
   const [mode, setMode] = useState<SystemMode>({ state: "loading" });
 
   // 🔴 `setState` ต้องอยู่ **หลัง `await`** เสมอ — `react-hooks/set-state-in-effect`
@@ -53,4 +63,18 @@ export function useSystemMode(): { mode: SystemMode; refresh: () => void } {
   }, []);
 
   return { mode, refresh };
+}
+
+const SystemModeContext = createContext<SystemModeValue | null>(null);
+
+/** ครอบที่ root layout เท่านั้น — ต้องอยู่เหนือ `/login` ด้วย (ธงต้องอ่านได้ก่อนล็อกอิน) */
+export function SystemModeProvider({ children }: { children: ReactNode }) {
+  const value = useSystemModeSource();
+  return <SystemModeContext.Provider value={value}>{children}</SystemModeContext.Provider>;
+}
+
+export function useSystemMode(): SystemModeValue {
+  const ctx = useContext(SystemModeContext);
+  if (!ctx) throw new Error("useSystemMode ต้องถูกเรียกใต้ <SystemModeProvider> เท่านั้น");
+  return ctx;
 }
