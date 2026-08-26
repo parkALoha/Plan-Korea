@@ -793,3 +793,53 @@ function ไม่ import อะไรที่ผูก environment แล้�
 Route Handler) จึงไม่มีทางเลือกอื่นนอกจาก `Cache-Control: private, no-store` ทุก route ในกลุ่มนี้ตั้งแต่
 ตัวแรก — `'use cache: private'` ตาม `D11`/`E3-AC6` เป็นคนละชั้น (Server Component ที่**อ่าน DAL ตรง**
 ไม่ผ่าน Route Handler) ซึ่งเป็นทางเลือกสถาปัตยกรรมของ `E5`/หลังจากนี้ ไม่ใช่สิ่งที่ต้องตัดสินตอนนี้
+
+---
+
+## 15. `payload.old` ตอน `DELETE` — ปลอดภัย · แต่เจอกับดักที่ใหญ่กว่าที่ถามระหว่างตรวจโค้ดจริง
+
+**ตอบคำถามที่ถามตรง ๆ ก่อน: `payload.old.id` ตอน `DELETE` ใช้ต่อได้ ไม่มีกับดัก** — Postgres ส่ง `OLD`
+ของ `DELETE` มาแค่คอลัมน์ replica identity (ปกติคือ PK) เว้นแต่ตั้ง `REPLICA IDENTITY FULL` ไว้ · โค้ด
+เดิมไม่เคยเรียก `toCustomPlace(payload.old)` เลย ใช้แค่ `.id` กรองออกจาก state ตรง ๆ — **ถูกทางแล้ว
+เพราะ DELETE ไม่ต้องรู้รูปข้อมูล ต้องรู้แค่ตัวตนที่จะเอาออก** กฎที่ควรตรึงไว้: **ห้ามเรียก `toCustomPlace`
+(หรือ adapter อื่นในตระกูลเดียวกัน) กับ `payload.old` เด็ดขาดไม่ว่ากรณีไหน** เพราะไม่รู้ล่วงหน้าว่า
+replica identity ของตารางไหนตั้งไว้ยังไง ปลอดภัยที่สุดคือไม่พึ่งเลย
+
+**🔴 แต่ระหว่างเปิด `db.ts`/`customPlaceShape.ts` เพื่อตอบข้อนี้ เจอกับดักที่ใหญ่กว่าที่ถูกถามและยังไม่มี
+ใครถาม — INSERT/UPDATE ก็พังเหมือนกัน ไม่ใช่แค่ DELETE:**
+
+`customPlaceRowsOfTrip()` (`db.ts`) ทำ **join** ผ่าน PostgREST embedded resource
+(`catalog_cities(legacy_slug)`, `custom_place_names(locale, name, priority)`) — นี่คือของที่ `toCustomPlace`
+ต้องมีถึงจะได้ชื่อ/เมืองที่ถูกต้อง **`postgres_changes` ไม่มีทาง join ได้เลยไม่ว่ากรณีไหน** (ส่งมาจาก WAL
+เป็นแถวดิบของ**ตารางเดียว** ที่เปลี่ยน ไม่ใช่ผลของคิวรี) → `payload.new` ตอน INSERT/UPDATE บน `custom_places`
+**ไม่มีคีย์ `catalog_cities`/`custom_place_names` อยู่เลย** (ไม่ใช่ `null` — ไม่มีคีย์นั้นในอ็อบเจกต์เลย)
+
+**ผลที่เกิดถ้าเรียก `toCustomPlace(payload.new)` ตรง ๆ (ตามที่ท่าที่วางแผนไว้ตอนแรกจะทำ):**
+- `pickName(undefined, locale)` → `(undefined ?? [])` = `[]` → คืน `null` ทุกภาษา
+- `name_th` ตกไปที่ fallback ว่าง (`?? ""`) → **สถานที่ที่เพิ่ง insert/update ผ่าน realtime จะโชว์ชื่อว่าง**
+- `city` ตกไปที่ `row.city_id` (uuid ดิบ) เหมือนเคส "เมืองไม่มี legacy_slug" ที่ตั้งใจรองรับไว้อยู่แล้ว
+  แต่คราวนี้เกิดกับ**ทุกแถว** ไม่ใช่แค่เมืองใหม่บนแพลตฟอร์ม
+- **หน้าตา:** component render สำเร็จ ไม่มี error, ไม่มี type error (เพราะ cast ผ่าน `as`/type assertion
+  ปกติของ payload) — ดูเหมือนใช้งานได้ แค่ชื่อหาย ตรงกับรูปแบบ "เขียวแต่ไม่ถูก" ที่ทีมนี้ไล่จับมาทั้งสัปดาห์
+  (`P-64`, `D46`) เพียงแต่รอบนี้เกิดจากข้อจำกัดของ Realtime เอง ไม่ใช่ comment/assertion ขัดกัน
+
+**🔴 ตัดสิน: INSERT/UPDATE ทาง realtime ต้องไม่ transform payload เอง — ต้อง refetch ผ่าน route แทน**
+
+เหตุผลที่เลือกทางนี้แทนการ subscribe เพิ่มตาราง `custom_place_names`/`catalog_cities` แล้ว merge เอง
+ฝั่ง client: ต้องคง**การ join ไว้ที่จุดเดียว** (`db.ts`) ไม่งั้นกลายเป็นเขียน join logic คู่ขนานฝั่ง client
+อีกชุด (เสี่ยง drift กับฝั่งเซิร์ฟเวอร์แบบเดียวกับที่ `storageKeyOf` หลีกเลี่ยงไว้ทั้งหมด) และคลังสถานที่
+ของทริปหนึ่งมีแค่ "หลายสิบแถว" (comment ใน `db.ts` เอง) ไม่ใช่ resource ที่เปลี่ยนถี่แบบ `trip_stops` —
+ต้นทุนการ refetch ทั้งลิสต์ต่ำกว่าความเสี่ยงของ join สองที่มาก
+
+**รูปที่เสนอสำหรับ `useCustomPlaces` (และ resource อื่นที่ adapter พึ่ง join ข้ามตาราง — ต้องเช็คเป็นรายตัว
+ไม่ใช่ทุก resource เป็นแบบนี้):**
+- `eventType === "DELETE"` → ใช้ `payload.old.id` กรองออกจาก state ตรง ๆ เหมือนเดิมทุกประการ ไม่มี
+  adapter เกี่ยวข้อง
+- `eventType === "INSERT" | "UPDATE"` → **ไม่แตะ `payload.new` เลย** ใช้เป็นแค่สัญญาณ "มีอะไรเปลี่ยน"
+  แล้วยิง `fetch()` ไปที่ `GET /api/engine/trips/[tripId]/custom-places` ซ้ำ (debounce สั้น ๆ ถ้าหลาย
+  event เข้ามาติดกัน) แทนที่ optimistic local merge — ได้รูปที่ถูกต้อง 100% เพราะผ่าน join จริงเสมอ
+  ราคาที่จ่าย: latency เพิ่มขึ้นเล็กน้อยต่อการเปลี่ยนแปลง (ยอมรับได้ เพราะไม่ใช่ resource ที่แก้ถี่)
+
+⚠️ **ไม่ใช่ท่าที่ใช้ได้กับทุก resource ใน `E3-AC1`:** resource ที่ adapter ไม่ต้อง join ข้ามตาราง (แถวเดียว
+พอ) น่าจะยังเรียก adapter กับ `payload.new` ตรง ๆ ได้ปลอดภัย — ต้องเช็คทีละ resource ตอนถึงคิวว่า adapter
+ของมันพึ่ง embedded resource ใน `db.ts` หรือไม่ ก่อนตัดสินว่าจะ merge locally ได้หรือต้อง refetch แบบนี้
