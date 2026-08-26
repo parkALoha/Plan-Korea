@@ -2,6 +2,7 @@
 
 import { soleTripMessage } from "@/lib/engine/tripChoice";
 import type { ActiveTripState } from "@/hooks/useActiveTripId";
+import { CreateTripForm } from "./CreateTripForm";
 
 /**
  * จอที่แสดงระหว่าง/แทนที่หน้า **bare** (`/`, `/today`, `/summary`) — `E5-AC1`
@@ -43,10 +44,17 @@ export function TripStatusFallback({ trip }: { trip: Exclude<ActiveTripState, { 
       </div>
     );
   }
-  const message =
-    trip.status === "none"
-      ? soleTripMessage({ ok: false, reason: "none" })
-      : soleTripMessage({ ok: false, reason: "error", message: trip.message });
+  // 🔴 "ยังไม่มีทริป" ต้องมีทางออกอยู่ตรงนี้เลย ไม่ใช่ซ่อนไว้ใน setting (P1 27 ส.ค. 2026) — ก่อนหน้านี้
+  // create_trip อยู่ในฐานมาตั้งแต่ 25 ส.ค. แต่ไม่มี UI เรียกมันเลย บัญชีใหม่ทุกบัญชีค้างอยู่ตรงนี้ตลอดกาล
+  if (trip.status === "none") {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <p className="text-content">{soleTripMessage({ ok: false, reason: "none" })}</p>
+        <CreateTripForm />
+      </div>
+    );
+  }
+  const message = soleTripMessage({ ok: false, reason: "error", message: trip.message });
   return (
     <div className="flex min-h-full items-center justify-center p-8 text-center">
       <p className="text-content">{message}</p>

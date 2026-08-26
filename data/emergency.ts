@@ -115,6 +115,11 @@ export function countryOfCitySlug(slug: string | null | undefined): CountryCode 
  * 🔴 **ชื่อประเทศเป็นข้อมูล ไม่ใช่โค้ด** (P1 27 ส.ค. 2026 — เหตุผลเดียวกับที่ `lib/engine/countries.ts`
  * ไม่เก็บชื่อแสดงผล) แต่เว็บทริปนี้ยังไม่มีตาราง `catalog_countries` จะดึงมาใช้ — ทะเบียนนี้จึงเป็นแค่
  * ขั้นกลาง (2 ประเทศ ตายตัว) จนกว่าฝั่งแพลตฟอร์มจะมีสายจากฐานถึงคอมโพเนนต์ให้ดึงแทน
+ *
+ * 🔴 **ของชั่วคราว — จะซ้ำกับ `catalog_countries.name_en` ทันทีที่แพลตฟอร์มต่อสายชื่อประเทศมาถึง
+ * คอมโพเนนต์นี้** (P1 27 ส.ค. 2026 ชี้ไว้ หลังเจอตารางซ้ำแบบไม่มีใครรู้มาแล้ว 2 ครั้งวันนี้ — `nav_providers`
+ * กับรายการภาษา 4 ชุด ทั้งคู่ไม่มีคอมเมนต์บอกว่าชั่วคราวจนดูเหมือนของถาวร) วันที่มีสายนั้นแล้ว
+ * ให้ลบสองทะเบียนนี้ทิ้ง ไม่ใช่ให้อยู่คู่กัน — คือของที่ต้องแทนที่ ไม่ใช่ของที่ต้อง sync
  */
 export const COUNTRY_NAME_EN: Readonly<Record<CountryCode, string>> = {
   kr: "Republic of Korea",
@@ -122,7 +127,8 @@ export const COUNTRY_NAME_EN: Readonly<Record<CountryCode, string>> = {
 };
 
 /** ชื่อภาษาไทย — เผื่อไว้สำหรับหน้าที่ต่อไปนี้ยังไม่มี (`country` prop ของ `ImmigrationSheet` รับคู่กันมา
- *  ทั้งสองภาษาตามที่ P1 กำหนดรูป แม้เอกสารนี้เองจะโชว์แค่ nameEn เพราะเป็นเอกสารยื่น ตม.) */
+ *  ทั้งสองภาษาตามที่ P1 กำหนดรูป แม้เอกสารนี้เองจะโชว์แค่ nameEn เพราะเป็นเอกสารยื่น ตม.)
+ *  🔴 ของชั่วคราวเหมือน `COUNTRY_NAME_EN` ด้านบน — จะถูกแทนที่ด้วย `catalog_countries.name_th` */
 export const COUNTRY_NAME_TH: Readonly<Record<CountryCode, string>> = {
   kr: "เกาหลีใต้",
   vn: "เวียดนาม",
