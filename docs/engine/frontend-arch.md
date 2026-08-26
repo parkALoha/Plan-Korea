@@ -843,3 +843,66 @@ replica identity ของตารางไหนตั้งไว้ยัง
 ⚠️ **ไม่ใช่ท่าที่ใช้ได้กับทุก resource ใน `E3-AC1`:** resource ที่ adapter ไม่ต้อง join ข้ามตาราง (แถวเดียว
 พอ) น่าจะยังเรียก adapter กับ `payload.new` ตรง ๆ ได้ปลอดภัย — ต้องเช็คทีละ resource ตอนถึงคิวว่า adapter
 ของมันพึ่ง embedded resource ใน `db.ts` หรือไม่ ก่อนตัดสินว่าจะ merge locally ได้หรือต้อง refetch แบบนี้
+
+---
+
+## 16. `E2-AC13` ③ (`sw.js`) — ตรวจแล้ว: **กรณี B** ไม่ใช่กรณี A — และมีทางที่ดีกว่าที่เคยเสนอไว้
+
+P1 ขอให้ตรวจก่อนเชื่อว่า "ทุกจุดอ่านผ่าน `/api/booking-file/…` แล้วหรือยัง" — **ตรวจจริงจากซอร์ส ไม่เดา:**
+
+```
+grep signStoredFile|useSignedFiles|api/booking-file  ทั้งทรี
+```
+**ผลลัพธ์: ไม่มีจุดไหนในหน้าเว็บ/component เรียก `/api/booking-file/...` เลยสักจุด** ทุกจุดที่แสดงรูป/ลิงก์
+ไฟล์ตั๋ว (`BookingsPanel` · `BookingEditModal` · `PlaceCard` · `DayStopsSection` · `today` · `summary`)
+เรียกผ่าน `useSignedFiles()` → `signStoredFile()`/`signStoredFiles()` (`lib/engine/files.ts`) ซึ่ง **เรียก
+`supabase.storage.from(...).createSignedUrl()` ตรงจากไคลเอนต์** แล้วเอา URL ที่ได้ (cross-origin, หมดอายุ
+90 วิ) ไปใส่ `<img src>`/`<a href>` **ตรง ๆ** — `/api/booking-file/[...path]` ที่ P1 สร้างไว้ (`3bcd9b8`)
+**ยังไม่มีใครเรียกใช้เลยจากฝั่ง UI** สมมติฐานที่ตั้ง AC ไว้ตอน 24 ส.ค. (signed URL ตรงคือทางเดียว) **ยังจริง
+อยู่ทั้งหมด** — ปัญหาเดิมของ `E2-AC13` ③ ยังอยู่ครบ ไม่ได้ถูกแก้โดยบังเอิญจาก ②
+
+### 🎯 แต่การอ่านโค้ดจริงของ `signStoredFile()` เปิดทางที่ดีกว่าที่เคยเสนอไว้ทั้งหมด — ไม่ต้องมี proxy เลย
+
+ที่ผ่านมา (§11) ออกแบบว่าต้อง**เปลี่ยนสิ่งที่ component render** จาก signed URL ตรง ไปเป็น
+`/api/booking-file/…` เพื่อให้เป็น same-origin แล้ว `sw.js` ถึงจะแคชได้โดยไม่เจอปัญหา `opaque response`
+(§12) — **ราคาคือต้องแก้ 6 ไฟล์ consumer** ตอนนี้เห็นแล้วว่ามีทางที่ **ไม่ต้องแตะ component สักไฟล์**:
+
+`signStoredFile()`/`signStoredFiles()` เป็น**จุดเดียว**ที่ทุก consumer เรียกอยู่แล้ว (ตั้งใจแบบนั้นตาม
+comment ในไฟล์เอง) — ย้ายกลไก cache-for-offline เข้าไป**ข้างใน**จุดนี้แทนที่จะเปลี่ยนสิ่งที่ consumer เห็น:
+
+1. แทนที่จะ `fetch()` ทางอ้อมผ่าน `<img src>` (ซึ่งเป็น `no-cors` เสมอ → opaque → คือเหตุผลที่ปฏิเสธการแคช
+   ตรงใน `sw.js` ไปตอน §12) ให้ `signStoredFile()` **เรียก `fetch(signedUrl)` เองด้วย JS ตรง ๆ** —
+   `fetch()` ที่เรียกจากโค้ด (ไม่ใช่จาก `<img>`/`<a>` element) มี **`mode: "cors"` เป็นค่าเริ่มต้น** ไม่ใช่
+   `no-cors` → response อ่าน `status`/`ok` ได้จริง ไม่ opaque (Supabase Storage ตั้ง CORS header รองรับ
+   การเรียกแบบนี้อยู่แล้วโดยปกติ)
+2. เซ็น `fetch()` สำเร็จ → เก็บ `blob` ลง **`Cache Storage`** คีย์ด้วย `storageKeyOf(stored)` (ตัวตนที่
+   ไม่เปลี่ยนตามลายเซ็น — ของเดิมที่ P1 ทำไว้ให้แล้วในนามของ ③) → คืน `URL.createObjectURL(blob)` ให้
+   component ใช้เป็น `src`/`href` แทนสตริง signed URL ตรง ๆ
+3. ออฟไลน์ (`fetch()` throw) → เช็ค Cache Storage ด้วยคีย์เดียวกัน → ถ้ามี คืน `createObjectURL` จาก blob
+   เก่า → ถ้าไม่มี คืน `null` เหมือนพฤติกรรมเดิมของฟังก์ชันนี้ตอนเซ็นไม่สำเร็จ
+
+**ทำไมทางนี้ดีกว่า proxy:**
+- **ไม่ต้องแตะ component สักไฟล์** — `signStoredFile()` เปลี่ยน implementation ข้างในเท่านั้น สัญญา
+  (`Promise<string | null>`) เหมือนเดิมทุกประการ ตรงกับปรัชญา "แอปใช้ได้ตลอด" ที่ทำมาตลอดเธรดนี้
+- **ไม่ต้องเจาะ cross-origin exception เข้า `sw.js:103`** เลย — การแคชเกิดจาก Cache Storage API ที่เรียก
+  ตรงจาก JS (หรือจะย้ายไปเรียกใน `sw.js` ทีหลังก็ได้ผ่าน `postMessage`) ไม่ใช่การ intercept fetch event
+  อัตโนมัติ — เส้นแบ่ง same-origin/cross-origin ของ `sw.js` ไม่ต้องมีข้อยกเว้นเพิ่มเลยสักจุด
+- **`storageKeyOf` ที่ P1 ทำไว้ถูกใช้ตรงจุดประสงค์เป๊ะ** — เป็นคีย์ของ Cache Storage โดยตรง ไม่ต้องผ่าน
+  ชั้น route/path มาแปลงอีกที
+- **`opaque response` ไม่มีทางเกิด** เพราะเป็น `fetch()` ที่เรียกเอง ไม่ใช่ `<img src>`/`<a href>` ที่
+  browser เลือก mode ให้ — แก้ปัญหาที่ §12 ปฏิเสธไว้แบบตรงจุด ไม่ใช่เลี่ยงมัน
+
+**ราคาที่ต้องรู้ก่อนทำ:**
+- `blob:` URL ต้อง `URL.revokeObjectURL()` เมื่อเลิกใช้ ไม่งั้นรั่ว memory ทีละน้อย — `signed` Map ที่มีอยู่
+  แล้วใน `files.ts` (เก็บ signed URL string ไว้แคชในหน่วยความจำ) ต้องปรับให้ revoke ของเก่าตอนแทนที่ด้วย
+  ของใหม่ (แพทเทิร์นเดียวกับที่ `forgetSignedFile()`/`forgetAllSignedFiles()` มีอยู่แล้ว แค่ต้องเรียก
+  `revokeObjectURL` เพิ่มในนั้นด้วย)
+- `/api/booking-file/[...path]` ที่มีอยู่แล้วจะกลายเป็น**ไม่มีใครเรียกจริง** — ไม่ใช่ปัญหา (เก็บไว้เป็น
+  building block สำหรับอนาคตได้ เช่น share link ที่ไม่ผ่าน client-side signing) แต่ต้องบันทึกไว้ตรง ๆ
+  ว่ามันไม่ใช่เส้นทางที่ `sw.js` ต้องรู้จักอีกต่อไปตามแผนนี้ ต่างจาก §11/§13 ที่วางแผนให้ `sw.js` แคช path
+  นั้น
+
+**สิ่งที่ขอจาก P1:** `lib/engine/files.ts` เป็นโซนของ P1 — ผมออกแบบกลไกได้ (เป็นเรื่อง offline/caching
+ของผมโดยตรง) แต่ไม่แก้ไฟล์ในโซนคุณเองโดยไม่ถาม อยากรู้ว่า **P1 จะแก้เอง หรือให้ผมแก้/เสนอ diff ให้ตรวจ**
+— ถ้าเลือกทางนี้ **ไม่มีอะไรใน `sw.js` ต้องแก้เลยสำหรับ booking-file โดยเฉพาะ** (ต่างจาก §11/§13 ที่วางแผน
+ให้ `sw.js` แคช `/api/booking-file/...` — แผนนั้นยกเลิกถ้าเลือกทางนี้แทน)
