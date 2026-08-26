@@ -11,9 +11,19 @@ on:
   push:
     branches: [platform]
 
+# 🔴 `cancel-in-progress: false` ตั้งแต่ 26 ส.ค. 2026 — เดิมเป็น `true`
+#    เหตุผล (P4 ชี้ · P6 ยืนยันกลไก): job ที่ถูก cancel **ถูก kill ไม่ใช่ throw**
+#    → `finally` / `afterAll` ของ vitest **ไม่รัน** → cleanup ไม่เกิด
+#    · ชุดสดสร้าง fixture จริงบนฐาน dev ที่ใช้ร่วม 8 เซสชัน → ถูกฆ่ากลางคัน = fixture ค้าง
+#    · และถ้าวันหนึ่งมีเคสที่เปิด/ปิด state ร่วม (เช่นโหมด read-only) การถูกฆ่ากลางหน้าต่าง
+#      **จะทิ้งฐานไว้ในสถานะที่ไม่มีใครตั้งใจ และไม่มี cleanup path ไหนกู้ได้**
+#
+# ⚠️ ข้อแลก: run ที่ถูกแซงจะ **วิ่งจนจบ** แทนที่จะถูกตัด → ผลช้าลง และกิน runner นานขึ้น
+#    · แต่ GitHub เก็บ pending ได้ 1 อันต่อ group → push รัว ๆ จะ cancel **ตัวที่ยัง pending**
+#      (ยังไม่เริ่มรัน = ไม่มี cleanup ให้ค้าง) **ไม่ใช่ตัวที่กำลังวิ่ง** ซึ่งคือสิ่งที่เราต้องการ
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -134,6 +144,16 @@ jobs:
     name: RLS matrix (engine-dev)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # 🔴 group ผูกกับ **ฐาน** ไม่ใช่กับ ref ของ git (P4 ถาม · 26 ส.ค. 2026)
+    #    `concurrency` ระดับ workflow ข้างบนผูกกับ `github.ref` → **สอง branch = คนละ group**
+    #    วันนี้ทุกคนอยู่ `platform` จึงกันกันเองอยู่แล้ว **แต่กันโดยบังเอิญ ไม่ใช่โดยเจตนา**
+    #    วันที่มีสาขาที่สอง (PR/`E5`) การกันนั้นหายเงียบ ๆ โดยไม่มีใครแก้อะไรเลย
+    #    → group นี้ทำให้ **ทุกคนที่แตะ engine-dev ต่อคิวกัน ไม่ว่ามาจาก ref ไหน**
+    # ⚠️ กันได้แค่ฝั่ง CI · **การรัน `npx vitest` บนเครื่องของ 8 เซสชัน ไม่มีอะไรกันเลย**
+    #    ซึ่งเป็นแหล่งชนหลัก — เคสที่แก้ state ร่วมต้องกันตัวเองด้วย (ปฏิเสธรันถ้าโหมดเปิดอยู่)
+    concurrency:
+      group: engine-dev-live
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
