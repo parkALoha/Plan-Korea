@@ -4667,6 +4667,65 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         "default_expiry_minutes ไม่ใช่จำนวนบวก — test hold จะไม่หมดอายุ หรือหมดทันทีจนเปิดไม่ติด",
       ).toBeGreaterThan(0);
     });
+
+    it("🔴 E3-AC6 / D11 — แคชต้องไม่ถือข้อมูลที่ผูกกับทริป (hit แคช = ข้าม RLS)", () => {
+      /**
+       * `D11`: **hit แคช = ข้าม DB = ข้าม RLS** · วันนี้แคช 4 ใบว่างเปล่าจึงยังไม่กัด
+       * แต่วันที่ edge function เติมมัน คำถามนี้ live ทันที — และแคชแชร์ข้ามทริป (`P-33`)
+       *
+       * 🎯 **สิ่งที่ทำให้แคชปลอดภัยกับการข้าม RLS คือ: มันถือข้อมูล *ไม่ผูกกับทริป* เท่านั้น**
+       * (รายละเอียดสถานที่สาธารณะ · รูป · เวลาเดินทางระหว่างพิกัด) — ข้อมูลพวกนี้ไม่มี RLS ให้ข้ามอยู่แล้ว
+       * · `travel_time_cache` เก็บผลที่คำนวณจาก **พิกัด** (route.ts รับ `originLat/Lng`) → trip-independent จริง
+       *
+       * 🔴 **ด่านนี้ pin *ครึ่งที่ตรวจได้*: ไม่มีคอลัมน์ไหนของแคชผูกกับทริป** (คำถามข้อ 2 ของ P1)
+       * วันที่มีคน `add column trip_id` (หรือ FK ไปตารางที่ผูกทริป) → แดง → **ต้องตอบ `D11` ก่อน merge**
+       *
+       * ⚠️ **ครึ่งที่ตรวจไม่ได้ (คำถามข้อ 1 ของ P1) — ต้องมีคนยืนยันตอน wire edge function:**
+       * `travel_time_cache.from_place_id` เป็น **`text`** · schema กันไม่ได้ว่ามันจะไม่ถือ `custom_places.id`
+       * (UUID ที่ผูกทริป) · ถ้าโค้ดใส่ custom-place UUID ลงไป → **แคชแถวนั้นเป็นข้อมูลของทริปหนึ่ง**
+       * แล้วคนที่เดา/รู้ UUID อ่านเวลาเดินทางได้ → triangulate พิกัดสถานที่ส่วนตัวได้ (leak อ่อน ๆ แต่มีจริง)
+       * → **คนที่เขียน edge function ต้องยืนยันว่า `*_place_id` ถือแค่ global id (Google/`catalog_places`) ไม่ใช่ custom UUID**
+       *   `schema` พิสูจน์ข้อนี้ไม่ได้ · เป็น human-verify · ผมจดไว้ตรงนี้ให้คนที่เปิดฟีเจอร์เจอ
+       *
+       * 🎯 รูปเดียวกับด่าน publication เป๊ะ: **pin สภาพที่คำถามยัง *ไม่* เปิด บังคับให้ตอบตอนมันเปิด**
+       */
+      const CACHE_TABLES = [
+        "place_details_cache",
+        "place_details_local_cache",
+        "place_photo_cache",
+        "travel_time_cache",
+      ] as const;
+
+      const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+      const violations: string[] = [];
+
+      for (const t of CACHE_TABLES) {
+        const m = new RegExp(`create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?public\\.${t}\\s*\\(([\\s\\S]*?)\\n\\);`, "i").exec(src);
+        expect(m, `หา schema ของ ${t} ไม่เจอ — ด่านนี้ตรวจตารางที่ไม่มีอยู่`).not.toBeNull();
+        const body = m![1];
+
+        // ① คอลัมน์ที่มีคำว่า trip = ผูกกับทริปโดยตั้งใจหรือเผลอ
+        for (const line of body.split("\n")) {
+          const col = /^\s*([a-z_][a-z_0-9]*)\s+\S/.exec(line);
+          if (col && /trip/i.test(col[1]) && !["primary", "constraint", "check", "unique", "foreign"].includes(col[1])) {
+            violations.push(`${t}.${col[1]} — คอลัมน์มีคำว่า 'trip'`);
+          }
+        }
+        // ② FK ไปตารางไหนก็ตาม — แคช denormalize ต้องไม่อ้างตารางที่มี RLS
+        if (/\breferences\b/i.test(body)) {
+          violations.push(`${t} — มี FK (references) · แคชต้องไม่อ้างตารางที่ผูกทริป`);
+        }
+      }
+
+      expect(
+        violations.sort(),
+        "แคชถือข้อมูลที่อาจผูกกับทริปแล้ว — `D11`: hit แคช = ข้าม RLS\n" +
+          "  🔴 ถ้าแถวแคชเป็นของทริปหนึ่ง คนที่อ่านแคชได้ (ข้าม RLS) จะเห็นข้อมูลทริปที่ตัวเองไม่มีสิทธิ์\n" +
+          "  · **มี `trip_id`/FK มาโดยตั้งใจ** → ต้องตอบ: คนนอกทริปอ่านแถวนี้ได้ไหม · ถ้าได้ = leak\n" +
+          "  · **เผลอ** → เอาออก · แคชต้องถือแค่ข้อมูลสาธารณะ ไม่ผูกทริป (`P-33`)\n" +
+          "  ⚠️ และตรวจ human: `*_place_id` ถือ global id เท่านั้น ไม่ใช่ `custom_places.id` (ดูคอมเมนต์)",
+      ).toEqual([]);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
