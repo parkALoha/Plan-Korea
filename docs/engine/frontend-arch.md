@@ -1037,3 +1037,27 @@ write (`setHotel`) สร้าง row เองจาก `HotelInput` ที่
 `country_id` มาด้วย (additive, ผู้เรียกเดิม 2 จุดยังอ่านแค่ `.id`) แล้วให้ PUT `/hotels` คืน `country` กลับมา
 ใน response ให้ `onOk` callback backfill พร้อมกับ `updated_at` แบบเดียวกับที่ `D7` ทำอยู่แล้ว —
 `useCustomPlaces` ไม่มีช่องนี้ (write path `await` server response เต็มอยู่แล้ว ไม่มี optimistic row ที่ขาด field)
+
+---
+
+## 18. `E4-AC1` — ยืนยันบั๊กสะพานวันที่ P7/P1 เจอ + บรรเทาชั่วคราว (`abf2cd2`)
+
+**① ยืนยัน — และแรงกว่าที่บรรยาย:** `buildDayBridge(ITINERARY, dbDays)` ที่ 4 ใน 9 hook ใช้ (`useStops`
+`useDaySettings` `useOvernightOverrides` `useBookings`) ผูกกับ `data/itinerary.ts` ซึ่งเป็นข้อมูลนิ่งของ
+**ทริปเกาหลีใบนี้ใบเดียว** — `lib/engine/dayBridge.ts` เขียนไว้ตั้งแต่แรกว่าตั้งใจให้ผู้เรียกส่ง `legacyDays`
+เข้ามาเอง "เพื่อไม่ให้ชั้น engine ผูกกับข้อมูลของทริปใดทริปหนึ่ง" — แต่ทั้ง 4 hook ยัง import `ITINERARY`
+ตรง ๆ อยู่ ทริปที่สร้างใหม่ (ไม่มี legacy correspondence เลย) จึงได้สะพานว่างเปล่าเสมอ
+
+**② ตอบตรงคำถาม:** ใช่ ควรอ่าน `trip_days` จากฐานของทริปนั้น — **แต่คำตอบที่แท้จริงไม่ใช่แค่ "เปลี่ยนแหล่ง
+`legacyDays`"** เพราะทริปใหม่ไม่มี `"d0"`-style id ให้ bridge ไปด้วยเลยตั้งแต่ต้น สะพานทั้งระบบมีความหมาย
+เฉพาะทริปที่ถูกย้ายมาจากไฟล์เดิม (`E7`) เท่านั้น — ทางแก้จริงคือ **หน้าเว็บต้องใช้ `trip_days.id` (uuid)
+ของฐานตรง ๆ เป็นตัวระบุวันสำหรับทริปที่ไม่ใช่ทริปนี้** ไม่ใช่พยายาม bridge มันเข้า `"d0"` ที่ไม่มีอยู่จริง
+— นี่เป็นการตัดสินใจที่ใหญ่กว่าหนึ่งบรรทัด กระทบ 3 หน้า + `data/itinerary.ts`'s `"d0"` ids ที่ใช้ทั่ว UI
+วันนี้ **ยังไม่ตัดสินใจ รอ P1**
+
+**③ ทำแล้ว (บรรเทา ไม่ใช่แก้ที่ต้นตอ):** `lib/engine/dayBridgeIncomplete.ts` — `reportDayBridgeDropIfAny
+(raw, mapped)` โชว์ toast (ใช้ `lib/toast.ts` เดิม) เมื่อจำนวนแถวหดหลังผ่านสะพาน + ข้ามการเขียนแคชรอบนั้น
+(state ยังอัปเดตตามปกติ แคชออฟไลน์เท่านั้นที่ถูกกัน) — wiring เข้า 3 ใน 4 hook ที่ยุบแถวจริง (`useStops`/
+`useDaySettings`/`useOvernightOverrides`) ส่วน `useBookings` ไม่ยุบแถว (ได้แค่ `day_id: null`) จึงมีแค่
+toast ไม่มี cache-guard ข้อความเดียวกันทุกจุดเรียก ให้ `showToast`'s dedup รวม 4 hook ที่พังพร้อมกันเป็น
+toast เดียว ไม่ซ้อนกันเป็นตั้ง
