@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
-import type { HotelLeg } from "@/lib/hotelLegs";
+import { hotelRangeKey, type HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel } from "@/lib/supabase";
 import type { HotelInput } from "@/hooks/useHotels";
 import { HotelEditModal } from "./HotelEditModal";
@@ -24,7 +24,8 @@ export function HotelLegsPanel({
   legs: HotelLeg[];
   hotels: Record<string, TripHotel>;
   onSave: (input: HotelInput) => void;
-  onClear: (legId: string) => void;
+  // D51: clearHotel ต้องได้คีย์ช่วงวันที่ ไม่ใช่ legId เพียวๆ — ส่ง range มาด้วยเสมอ (เหมือน onSave)
+  onClear: (legId: string, range: { startDate: string; endDate: string }) => void;
 }) {
   const [editingLegId, setEditingLegId] = useState<string | null>(null);
   const editingLeg = legs.find((l) => l.id === editingLegId) ?? null;
@@ -38,7 +39,9 @@ export function HotelLegsPanel({
           (truncate ข้างในไม่ช่วย เพราะตัวปุ่มเองไม่มีเพดานความกว้าง) */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {legs.map((leg) => {
-          const hotel = hotels[leg.id];
+          // D51: ไม่มี leg_id ในฐานแล้ว คีย์ด้วยช่วงวันที่แทน (hotelRangeKey — ฟังก์ชันเดียวใช้ทั้ง
+          // ฝั่งอ่าน/เขียน กันเขียนคีย์เองสองที่แล้วต่างกันสักวัน)
+          const hotel = hotels[hotelRangeKey(leg)];
           const meta = CITY_META[leg.city];
           return (
             <button
@@ -68,12 +71,23 @@ export function HotelLegsPanel({
       {editingLeg && (
         <HotelEditModal
           leg={editingLeg}
-          existing={hotels[editingLeg.id] ?? null}
+          existing={hotels[hotelRangeKey(editingLeg)] ?? null}
           onClose={() => setEditingLegId(null)}
           onSave={(input) =>
-            onSave({ ...input, legId: editingLeg.id, city: editingLeg.city })
+            onSave({
+              ...input,
+              legId: editingLeg.id,
+              city: editingLeg.city,
+              checkIn: editingLeg.startDate,
+              checkOut: editingLeg.endDate,
+            })
           }
-          onClear={() => onClear(editingLeg.id)}
+          onClear={() =>
+            onClear(editingLeg.id, {
+              startDate: editingLeg.startDate,
+              endDate: editingLeg.endDate,
+            })
+          }
         />
       )}
     </section>
