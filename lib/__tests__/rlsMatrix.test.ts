@@ -469,6 +469,9 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
    *
    * 📌 ไม่ throw โดยตั้งใจ — คืนข้อความให้ผู้เรียกตัดสินใจ · `afterAll` ที่ล้มจะกลบผลของเคสที่เพิ่งรัน
    */
+  /** role ที่ไคลเอนต์ถืออยู่จริง — **ตัวเดียวของทั้งไฟล์** (`E0` ข้อ 5) */
+  const CLIENT_ROLES = ["anon", "authenticated", "PUBLIC"];
+
   /** 1 แถว = 1 ประตูที่เปิดอยู่ — **ตัวเดียวของทั้งไฟล์** (`E0` ข้อ 5 · สองบล็อกใช้ร่วมกัน) */
   type Door = { table_name: string; door: string; grantee: string; detail: string };
 
@@ -4219,6 +4222,83 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           "  📌 ถ้าตั้งใจ ให้แก้ทะเบียนในไฟล์นี้ **พร้อมกับ migration ในคอมมิตเดียวกัน**",
       ).toEqual([]);
     });
+    it("ด้านบวกของสองเคสข้างล่าง — ต้องเห็น grant ทั้งสองรูปจริง ไม่ใช่กรองจนว่าง", async () => {
+      /**
+       * 🔴 **สองเคสข้างล่างเป็นเคสด้านลบล้วน — ทั้งคู่เขียวได้ถ้าตัวกรองไม่เจออะไรเลย**
+       * `table_exposure` เปลี่ยนรูป `detail` เมื่อไหร่ · `door` เปลี่ยนชื่อเมื่อไหร่ · regex พังเมื่อไหร่
+       * → ทั้งสองเคสจะรายงานว่า "ไม่มีปัญหา" ตลอดกาล **โดยไม่มีอะไรบอก**
+       */
+      const rows = await exposure(tablesFromMigrations());
+      const tableLevel = rows.filter((r) => r.door === "grant" && CLIENT_ROLES.includes(r.grantee));
+      const columnLevel = rows.filter((r) => r.door === "column-grant" && CLIENT_ROLES.includes(r.grantee));
+      expect(tableLevel.length, "ไม่เห็น grant ระดับตารางเลยสักแถว — ตัวกรองหรือ `door` เปลี่ยนไปแล้ว").toBeGreaterThan(0);
+      expect(columnLevel.length, "ไม่เห็น grant ระดับคอลัมน์เลยสักแถว").toBeGreaterThan(20);
+      // regex ที่ดึงชื่อคอลัมน์ต้องดึงได้จริง ไม่ใช่ไม่ match แล้วเงียบ
+      const parsed = columnLevel.filter((r) => /^([A-Z]+)\s+\(([^)]+)\)/.test(r.detail));
+      expect(parsed.length, "อ่านชื่อคอลัมน์จาก `detail` ไม่ได้เลย — รูปของมันเปลี่ยนแล้ว").toBe(columnLevel.length);
+    });
+
+    it("🔴 ห้ามมี grant ระดับ *ตาราง* ฝั่งเขียนให้ไคลเอนต์ — `INSERT`/`UPDATE` ต้องระบุคอลัมน์เสมอ", async () => {
+      /**
+       * 🔴 **รูที่ `hidden_places` เปิดไว้ตั้งแต่วันแรก และด่านทุกตัวของเรามองไม่เห็น** (P1 พบ · 26 ส.ค.)
+       * ตารางนั้นถูกสร้างทีหลัง `…122247_e2_freeze_row_times.sql` ด้วย
+       * `grant select, insert, delete on public.hidden_places to authenticated` **ระดับตาราง**
+       * → ครอบ **ทุกคอลัมน์** รวม `hidden_by_user` → **ไคลเอนต์ตั้งเป็น id ของคนอื่นได้**
+       *   (FK บังคับแค่ว่าต้องเป็นโปรไฟล์ที่มีจริง) = **ปลอมได้ว่าใครซ่อนสถานที่**
+       *
+       * 🎯 **และทะเบียน `COLUMN_GRANTS` ข้างบนก็มองไม่เห็นมันเหมือนกัน — ข้อนี้ผมต้องพูดเอง**
+       * ทะเบียนนั้นอ่านเฉพาะ `door === "column-grant"` · **grant ระดับตารางมาเป็น `door === "grant"`**
+       * → ตารางที่ไม่มี column-grant เลย **ไม่มีอะไรให้เทียบ จึงไม่มีอะไรแดง**
+       * · มันแดงตอน P1 *แก้* (เพราะกลายเป็น column-grant = รายการเพิ่ม) **ไม่ใช่ตอนบั๊กเกิด**
+       *
+       * ✅ **เกณฑ์นี้จับที่ *รูปของ grant* ไม่ใช่ที่ *ชื่อคอลัมน์*** — ไม่ต้องมีลิสต์ให้ใครดูแล
+       * และไม่มี false positive เพราะสคีมานี้ออกแบบให้ทุกการเขียนระบุคอลัมน์อยู่แล้ว
+       *
+       * ⚠️ **`DELETE` ยกเว้นโดยธรรมชาติ ไม่ใช่โดยข้อยกเว้น** — `DELETE` ไม่มีความละเอียดระดับคอลัมน์
+       *    ให้ระบุ · วันนี้มี 5 ตารางที่ให้ `DELETE` ระดับตาราง และนั่นคือรูปเดียวที่เป็นไปได้
+       */
+      const rows = await exposure(tablesFromMigrations());
+      const tableLevelWrites = rows
+        .filter((r) => r.door === "grant" && CLIENT_ROLES.includes(r.grantee) && /^(INSERT|UPDATE)$/.test(r.detail))
+        .map((r) => `${r.table_name} → ${r.grantee} ${r.detail}`);
+      expect(
+        tableLevelWrites.sort(),
+        "มี grant ฝั่งเขียนระดับตาราง — ครอบ**ทุกคอลัมน์** รวมคอลัมน์ที่ trigger เป็นเจ้าของ\n" +
+          "  🔴 ไคลเอนต์จะตั้ง `*_by_user` · `*_at` · `deleted_at` เองได้ทั้งหมด **โดย policy ยังผ่านปกติ**\n" +
+          "  → `revoke insert, update` แล้ว `grant insert (คอลัมน์ที่ผู้ใช้เป็นเจ้าของจริง)` ระบุชื่อ",
+      ).toEqual([]);
+    });
+
+    it("🔴 ไม่มี grant ไหนให้ไคลเอนต์เขียนคอลัมน์ `*_by_user` — ตัวตนเป็นของเซิร์ฟเวอร์เสมอ", async () => {
+      /**
+       * 🎯 **ข้อนี้เป็นแพตเทิร์นได้ ต่างจาก `*_at`** — และความต่างคือเหตุผลที่ผมไม่ขยาย
+       * `client_writable_timestamps()` ให้จับ `%\_at` ตามที่ P1 ชั่งไว้:
+       * · **`*_at` ตัดสินจากชื่อไม่ได้** — `visited_at` เป็น *ข้อมูลของผู้ใช้* (ผู้ใช้บอกว่าไปมาตอนไหน)
+       *   `check_in`/`fixed_start_time`/`date` ก็เหมือนกัน → แพตเทิร์นดื้อ ๆ จะแดงทันที
+       *   แล้วจบที่ **allowlist ยาว ๆ ที่คนเติมชื่อเพื่อให้เขียว** ซึ่งเป็นรูปที่เราปฏิเสธไปแล้ว
+       * · 🔴 **`*_by_user` ไม่มีเคสที่ถูกต้องเลยสักเคส** — *"ใครทำ"* เป็นสิ่งที่เซิร์ฟเวอร์ยืนยัน
+       *   ไม่ใช่สิ่งที่ไคลเอนต์ประกาศ · นั่นคือ `D38`/`P-15` ทั้งข้อ
+       *   **แพตเทิร์นจึงปลอดภัยตรงนี้ และไม่ปลอดภัยตรงนั้น เพราะความหมายต่างกัน ไม่ใช่เพราะรูปต่างกัน**
+       *
+       * 📌 และตัวนี้ไม่ต้องมีแหล่งที่สอง: **อ่านชื่อคอลัมน์จาก grant ที่ฐานคืนมาตรง ๆ**
+       *    ไม่ต้องรู้ว่าสคีมามีคอลัมน์อะไรบ้าง — ถ้ามันถูก grant มันจะโผล่มาเอง
+       */
+      const rows = await exposure(tablesFromMigrations());
+      const identityWrites: string[] = [];
+      for (const r of rows) {
+        if (!CLIENT_ROLES.includes(r.grantee)) continue;
+        if (r.door === "grant" && /^(INSERT|UPDATE)$/.test(r.detail)) continue; // เคสข้างบนจับแล้ว
+        const m = /^([A-Z]+)\s+\(([^)]+)\)/.exec(r.detail);
+        if (!m || !/^(INSERT|UPDATE)$/.test(m[1])) continue;
+        if (/_by_user$/.test(m[2].trim())) identityWrites.push(`${r.table_name}.${m[2].trim()} (${m[1]} · ${r.grantee})`);
+      }
+      expect(
+        identityWrites.sort(),
+        "ไคลเอนต์เขียนคอลัมน์ที่บอก *ใครทำ* ได้\n" +
+          "  🔴 = ปลอมได้ว่าใครเพิ่ม/ใครติ๊ก/ใครซ่อน · FK บังคับแค่ว่าต้องเป็นโปรไฟล์ที่มีจริง **ไม่ได้บังคับว่าเป็นตัวเอง**\n" +
+          "  → ถอนออกจาก grant แล้วให้ trigger เติมจาก `auth.uid()` เหมือนตารางพี่น้องทุกใบ",
+      ).toEqual([]);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -4420,7 +4500,6 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "place_photo_cache",
       "travel_time_cache",
     ];
-    const CLIENT_ROLES = ["anon", "authenticated", "PUBLIC"];
     it("🔴 แคช 4 ใบ — ไม่มีประตูสำหรับไคลเอนต์เลยสักบาน ทั้ง 5 ทาง", async () => {
       const rows = await exposure(CACHES);
       const open = rows.filter((r) => CLIENT_ROLES.includes(r.grantee));
