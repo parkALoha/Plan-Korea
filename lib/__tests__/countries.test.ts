@@ -5,6 +5,7 @@ import {
   countriesWithCapabilities,
   hasRealTravelTime,
   mapProvidersFor,
+  shouldSkipTravelApiForLeg,
 } from "../engine/countries";
 
 /**
@@ -151,6 +152,41 @@ describe("E4 — ทะเบียนความสามารถรายป
 
     it("คีย์โปรโตไทป์จากฐานก็ถูกทิ้งเหมือนกัน", () => {
       expect(mapProvidersFor("jp", ["constructor", "__proto__"])).toEqual(["google"]);
+    });
+  });
+
+  /**
+   * 🔴 **ขาเดินทางข้ามประเทศ — ช่องที่ P5 ชี้ และไม่เคยมีใครตัดสิน** (27 ส.ค. 2026)
+   * ทริปนี้มีวันข้ามประเทศ 3 วัน ตั้งแต่วันแรก · `shouldSkipTravelApi()` รับประเทศเดียว
+   */
+  describe("shouldSkipTravelApiForLeg", () => {
+    it("ในประเทศเดียวกันที่รู้แน่ว่าไม่มีโหมดนี้ → ข้าม", () => {
+      expect(shouldSkipTravelApiForLeg("kr", "kr", "drive")).toBe(true);
+      expect(shouldSkipTravelApiForLeg("kr", "KR", "walk")).toBe(true); // ตัวพิมพ์ไม่สำคัญ
+    });
+
+    it("ในประเทศเดียวกันที่มีโหมดนี้ → ไม่ข้าม", () => {
+      expect(shouldSkipTravelApiForLeg("kr", "kr", "transit")).toBe(false);
+      expect(shouldSkipTravelApiForLeg("vn", "vn", "drive")).toBe(false);
+    });
+
+    it("🔴 ข้ามประเทศ → **ยิงเสมอ** แม้ทั้งสองฝั่งจะรู้ว่าไม่มีโหมดนี้", () => {
+      // เกาหลีไม่มี drive จริง · แต่ขา โซล→ฮานอย ไม่ใช่ "ขาของเกาหลี" หรือ "ขาของเวียดนาม"
+      // 🎯 เราไม่มีนิยามว่าความสามารถของขานี้เป็นของใคร **และการเดาที่นี่ราคาแพงกว่าการยิง**
+      expect(shouldSkipTravelApiForLeg("kr", "vn", "drive")).toBe(false);
+      expect(shouldSkipTravelApiForLeg("vn", "kr", "walk")).toBe(false);
+    });
+
+    it("ไม่รู้ปลายใดปลายหนึ่ง → ยิง", () => {
+      expect(shouldSkipTravelApiForLeg(null, "kr", "drive")).toBe(false);
+      expect(shouldSkipTravelApiForLeg("kr", null, "drive")).toBe(false);
+      expect(shouldSkipTravelApiForLeg("kr", "zu", "drive")).toBe(false);
+      expect(shouldSkipTravelApiForLeg(undefined, undefined, "drive")).toBe(false);
+    });
+
+    it("คีย์โปรโตไทป์ยังปลอดภัย", () => {
+      expect(() => shouldSkipTravelApiForLeg("constructor", "constructor", "drive")).not.toThrow();
+      expect(shouldSkipTravelApiForLeg("constructor", "constructor", "drive")).toBe(false);
     });
   });
 });
