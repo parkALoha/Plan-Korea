@@ -27,6 +27,9 @@ function fakeDb(insertErrors: (null | { code: string; message: string })[] = [],
         update(payload: unknown) { calls.push({ op: "update", table, payload, eq }); return chain; },
         insert(payload: unknown) { calls.push({ op: "insert", table, payload, eq }); return chain; },
         eq(col: string, val: string) { eq.push([col, val]); return chain; },
+        // 🔴 `upsertPlaceNote` กรอง `.is("deleted_at", null)` เพื่อไม่ให้เขียนทับ tombstone
+        //    fake ต้องรู้จักมัน ไม่งั้นเคสจะล้มด้วยเหตุผลที่ไม่เกี่ยวกับสิ่งที่วัด
+        is(col: string, val: unknown) { eq.push([col, String(val)]); return chain; },
         select() {
           const last = calls[calls.length - 1];
           if (last.op === "insert") {
@@ -122,13 +125,17 @@ describe("upsertPlaceNote — คีย์ของแถวต้องไม�
     await upsertPlaceNote(db, CATALOG);
     const upd = calls.find((c) => c.op === "update");
     expect(upd!.payload).toEqual({ note: "x", photo_path: null });
-    expect(upd!.eq).toEqual([["plan_id", "P"], ["catalog_place_id", "C1"]]);
+    // 🔴 `deleted_at` ต้องอยู่ในตัวกรอง — ไม่งั้น `update` จะเขียนทับ tombstone สำเร็จ
+    //    แล้ว `.select()` (ที่ policy กรอง `deleted_at is null`) คืน 0 แถว
+    //    → route ตอบ `403` **ทั้งที่ข้อมูลถูกเขียนไปแล้ว**
+    expect(upd!.eq).toEqual([["plan_id", "P"], ["catalog_place_id", "C1"], ["deleted_at", "null"]]);
   });
 
   it("โน้ตของสถานที่ที่ผู้ใช้เพิ่มเอง ใช้คีย์อีกคอลัมน์", async () => {
     const { db, calls } = fakeDb([], new Set(["P/U1"]));
     await upsertPlaceNote(db, CUSTOM);
-    expect(calls.find((c) => c.op === "update")!.eq).toEqual([["plan_id", "P"], ["custom_place_id", "U1"]]);
+    expect(calls.find((c) => c.op === "update")!.eq)
+      .toEqual([["plan_id", "P"], ["custom_place_id", "U1"], ["deleted_at", "null"]]);
   });
 
   it("ยังไม่มีแถว → `insert` ส่งคีย์ครบทั้งสองช่อง (ช่องที่ไม่ใช้เป็น `null`)", async () => {
