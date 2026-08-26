@@ -54,6 +54,8 @@ import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useSignedFiles } from "@/hooks/useSignedFiles";
+import { useTripDaysGate } from "@/hooks/useTripDaysGate";
+import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
@@ -585,6 +587,13 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   const lockedCount = itinerary.filter((d) => daySettings[d.id]?.is_locked === true).length;
   const daysWithoutStops = itinerary.filter((d) => (stopsByDay[d.id] ?? []).length === 0);
 
+  // 🔴 gate เฉพาะโครงวัน + hotelLegs/immigration ที่ผูกกับ itinerary — ไม่แตะ bookings/checklist ที่ไม่พึ่ง
+  // trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22) hotelLegs ใช้ itinerary คำนวณช่วงวันของที่พัก จึงนับเป็น
+  // itinerary-dependent ด้วยแม้ hotels เองจะเป็น day-independent
+  const dayPlanGate = useTripDaysGate(tripId);
+  const dayPlanReady = overallLoaded && dayPlanGate === "ready";
+  const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
+
   function handleExportJson() {
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -713,12 +722,16 @@ export function SummaryContent({ tripId }: { tripId: string }) {
               <span>
                 🗺️ {stops.length} {t("stopsInTrip")}
               </span>
-              <span>
-                📅 {itinerary.length} {t("days")}
-              </span>
-              <span>
-                🔒 {t("locked")} {lockedCount}/{itinerary.length}
-              </span>
+              {dayPlanReady && (
+                <>
+                  <span>
+                    📅 {itinerary.length} {t("days")}
+                  </span>
+                  <span>
+                    🔒 {t("locked")} {lockedCount}/{itinerary.length}
+                  </span>
+                </>
+              )}
               {plans.length > 0 && (
                 <span>
                   {t("plan")}: {plans.find((p) => p.id === activePlanId)?.name}
@@ -734,24 +747,35 @@ export function SummaryContent({ tripId }: { tripId: string }) {
       )}
 
       {overallLoaded && immigrationView && (
-        <ImmigrationSheet
-          country={IMMIGRATION_DOCUMENT_COUNTRY}
-          hotelLegs={hotelLegs}
-          hotels={hotels}
-          stopsByDay={stopsByDay}
-          customPlaces={customPlaces}
-        />
+        dayPlanReady ? (
+          <ImmigrationSheet
+            country={IMMIGRATION_DOCUMENT_COUNTRY}
+            hotelLegs={hotelLegs}
+            hotels={hotels}
+            stopsByDay={stopsByDay}
+            customPlaces={customPlaces}
+          />
+        ) : dayPlanEmpty ? (
+          <div className="mx-auto max-w-2xl px-4 pt-5">
+            <DayPlanUnavailableNotice />
+          </div>
+        ) : (
+          <div className="px-4 py-10 text-center text-sm text-content-soft">{t("loading")}</div>
+        )
       )}
 
       {overallLoaded && !immigrationView && (
         <div className="mx-auto max-w-2xl px-4 pt-5">
-          {daysWithoutStops.length > 0 && (
+          {dayPlanReady && daysWithoutStops.length > 0 && (
             <div className="mb-4 rounded-xl bg-panel-maple/60 px-3 py-2 text-xs text-panel-maple-ink">
               ⚠️ {daysWithoutStops.length} {t("daysWithoutStops")}:{" "}
               {daysWithoutStops.map((d) => dateLabelOf(d.date, lang)).join(", ")}
             </div>
           )}
 
+          {dayPlanEmpty && <DayPlanUnavailableNotice />}
+
+          {dayPlanReady && (
           <section className="mb-5">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
               {t("hotelsAll")}
@@ -779,6 +803,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
               })}
             </div>
           </section>
+          )}
 
           {bookings.length > 0 && (
             <section className="mb-5">
@@ -865,6 +890,8 @@ export function SummaryContent({ tripId }: { tripId: string }) {
             </section>
           )}
 
+          {dayPlanReady && (
+          <>
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
             {t("dailyPlan")}
           </h2>
@@ -887,6 +914,8 @@ export function SummaryContent({ tripId }: { tripId: string }) {
               t={t}
             />
           ))}
+          </>
+          )}
         </div>
       )}
 

@@ -44,6 +44,8 @@ import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
 import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
+import { useTripDaysGate } from "@/hooks/useTripDaysGate";
+import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 
 // ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
 // (ทริปนี้ไม่มีรถส่วนตัว แท็กซี่ต้องเลือกเองเสมอ ไม่ใช่ค่าเริ่มต้น) ใช้ตอนเพิ่ม/แทรกจุดแวะใหม่
@@ -386,6 +388,13 @@ export function HomeContent({ tripId }: { tripId: string }) {
     (!activePlanId || (stopsLoaded && daySettingsLoaded));
   const activePlan = plans.find((p) => p.id === activePlanId);
 
+  // 🔴 gate เฉพาะโครงวัน (ITINERARY + DayJumpBar/PlaceSidebar ที่ผูกกับมัน) — ไม่แตะ TripPrepPanel
+  // (ที่พัก/booking/checklist) เพราะไม่มีตัวไหนพึ่ง trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22)
+  const dayPlanGate = useTripDaysGate(tripId);
+  const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading";
+  const dayPlanReady = overallLoaded && dayPlanGate === "ready";
+  const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
+
   return (
     // MapsApiProvider ครอบเฉพาะหน้านี้ ไม่ได้อยู่ใน layout อีกแล้ว — หน้าแผนเป็นหน้าเดียวที่มี `<Map>`
     // จริง (DayMapPanel ในแต่ละวัน) ส่วน /today กับ /summary ใช้แผนที่แบบ iframe ที่ไม่พึ่ง SDK
@@ -423,7 +432,7 @@ export function HomeContent({ tripId }: { tripId: string }) {
               ไม่มีแล้วคอลัมน์นี้จะกว้าง 1129px ทั้งที่มีที่ให้ 904px แล้วดัน <aside> คลังสถานที่
               หลุดออกนอกจอไป 209px บนจอ 1280 (วัดจริง: scrollWidth 1489 vs clientWidth 1280) */}
           <div className="mx-auto min-w-0 max-w-2xl flex-1 lg:mx-0 lg:max-w-none">
-            {!overallLoaded && (
+            {!dayPlanLoaded && (
               <>
                 <DayCardSkeleton />
                 <DayCardSkeleton />
@@ -431,10 +440,12 @@ export function HomeContent({ tripId }: { tripId: string }) {
               </>
             )}
 
+            {dayPlanEmpty && <DayPlanUnavailableNotice />}
+
             {/* แถบวัน sticky — กระโดดข้ามวันได้โดยไม่ต้องสกรอลล์ผ่านทั้ง 11 วัน (เฟส 17)
                 เฟส 20.3 ย้ายขึ้นมาไว้บนสุด: เดิมอยู่ใต้แผงเตรียมทริปทั้งสาม จึงต้องเลื่อนผ่าน
                 แผงพวกนั้นไปก่อนมันถึงจะติดบนจอ = ใช้ไม่ได้ตอนที่ต้องใช้ที่สุด */}
-            {overallLoaded && <DayJumpBar itinerary={itinerary} />}
+            {dayPlanReady && <DayJumpBar itinerary={itinerary} />}
 
             {overallLoaded && (
               <TripPrepPanel
@@ -463,14 +474,14 @@ export function HomeContent({ tripId }: { tripId: string }) {
               </TripPrepPanel>
             )}
 
-            {overallLoaded && daysUntilFirstDay != null && daysUntilFirstDay > 16 && (
+            {dayPlanReady && daysUntilFirstDay != null && daysUntilFirstDay > 16 && (
               <div className="mb-4 rounded-xl bg-cream-soft/70 px-3 py-2 text-xs text-ink-soft">
                 🌤️ พยากรณ์อากาศรายวันจะขึ้นบนหัวการ์ดเมื่อเหลืออีก ~16 วันก่อนถึงวันนั้น (ตอนนี้อีก{" "}
                 {daysUntilFirstDay} วัน)
               </div>
             )}
 
-            {overallLoaded &&
+            {dayPlanReady &&
               itinerary.map((day) => (
                 <DayStopsSection
                   key={day.id}
@@ -522,7 +533,7 @@ export function HomeContent({ tripId }: { tripId: string }) {
               ))}
           </div>
 
-          {overallLoaded && (
+          {dayPlanReady && (
             <PlaceSidebar
               itinerary={itinerary}
               customPlaces={customPlaces}

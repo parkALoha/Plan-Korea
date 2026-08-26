@@ -49,6 +49,8 @@ import { useMounted } from "@/hooks/useMounted";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
+import { useTripDaysGate } from "@/hooks/useTripDaysGate";
+import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 
 
 /** ป้ายชื่อของแถวจุดแวะในลิสต์ "ถัดจากนี้" / "ผ่านมาแล้ว"
@@ -271,6 +273,11 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
     bookingsLoaded &&
     (!activePlanId || daySettingsLoaded);
 
+  // 🔴 หน้านี้ไม่มีส่วนไหนที่ไม่ผูกกับวัน (P1/P3, 27 ส.ค. 2026 — ดู §21/§22) ต่างจาก `page.tsx`/
+  // `summary/page.tsx` ที่แยกที่พัก/booking/checklist ออกจากโครงวันได้ — ที่นี่แม้แต่ header (ชื่อเมือง/
+  // วันที่/พยากรณ์อากาศ) ก็เป็น `day` (จาก `itinerary[dayIndex]`) ทั้งหมด จึง gate ทั้งหน้าแทนที่จะแยกส่วน
+  const dayPlanGate = useTripDaysGate(tripId);
+
   const nextIndex = dayStops.findIndex((s) => !s.visited_at);
   const nextStop = nextIndex >= 0 ? dayStops[nextIndex] : null;
   const nextSched = nextIndex >= 0 ? schedule[nextIndex] : null;
@@ -437,6 +444,34 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
     return (
       <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
         <TodaySkeleton />
+      </main>
+    );
+  }
+
+  if (dayPlanGate === "loading") {
+    return (
+      <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
+        <TodaySkeleton />
+      </main>
+    );
+  }
+
+  if (dayPlanGate === "empty") {
+    return (
+      <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
+        <header className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
+              ← หน้าแผน
+            </Link>
+            <Link href="/summary" className="text-sm text-cream/80 hover:text-cream hover:underline">
+              📋 สรุปแผน
+            </Link>
+          </div>
+        </header>
+        <div className="px-4 pt-5">
+          <DayPlanUnavailableNotice />
+        </div>
       </main>
     );
   }
