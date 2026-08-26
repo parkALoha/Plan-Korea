@@ -65,4 +65,52 @@ describe("kind allowlist", () => {
     expect(res.status).toBe(200);
     expect(searchNearbySpy.mock.calls[0][1]).toEqual(["restaurant"]);
   });
+
+  it("🔴 พิกัดที่ไม่ใช่ตัวเลข → 400 และ **ห้ามแตะ Google**", async () => {
+    // `if (!lat || !lng)` เดิมตรวจแค่ว่า *มี* → `?lat=abc` ผ่านไปเป็น `NaN` แล้วยิง Google จริง
+    // 🎯 รูปเดียวกับช่อง `kind`: **ด่านที่ผ่านได้ ทำให้เกิดคำขอที่ไม่ควรมี**
+    for (const [la, ln] of [["abc", "129"], ["35.1", "xyz"], ["NaN", "129"], ["", "129"], ["Infinity", "129"]]) {
+      searchNearbySpy.mockClear();
+      const res = await GET(new NextRequest(`http://localhost/api/place-nearby?lat=${la}&lng=${ln}&kind=restaurant`));
+      expect(res.status, `${la},${ln}`).toBe(400);
+      expect(searchNearbySpy, `${la},${ln}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("🔴 พิกัดนอกช่วงของโลก → 400", async () => {
+    // ไม่ใช่แค่ `isFinite` — พิกัดนอกโลกไม่มีความหมาย และเป็นสัญญาณว่าฝั่งเรียกพัง
+    for (const [la, ln] of [["91", "0"], ["-91", "0"], ["0", "181"], ["0", "-181"]]) {
+      searchNearbySpy.mockClear();
+      const res = await GET(new NextRequest(`http://localhost/api/place-nearby?lat=${la}&lng=${ln}&kind=restaurant`));
+      expect(res.status, `${la},${ln}`).toBe(400);
+      expect(searchNearbySpy, `${la},${ln}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("ขอบของช่วงยังผ่าน (±90 / ±180)", async () => {
+    for (const [la, ln] of [["90", "180"], ["-90", "-180"], ["0", "0"]]) {
+      searchNearbySpy.mockClear();
+      searchNearbySpy.mockResolvedValue({ places: [], error: null });
+      const res = await GET(new NextRequest(`http://localhost/api/place-nearby?lat=${la}&lng=${ln}&kind=restaurant`));
+      expect(res.status, `${la},${ln}`).toBe(200);
+    }
+  });
+
+  it("🔴 `radius` ที่พัง → ตกไปใช้ค่าเริ่มต้นของ kind ไม่ใช่ส่ง `NaN` ไป Google", async () => {
+    for (const bad of ["abc", "", "-100", "0", "NaN"]) {
+      searchNearbySpy.mockClear();
+      searchNearbySpy.mockResolvedValue({ places: [], error: null });
+      const res = await GET(new NextRequest(
+        `http://localhost/api/place-nearby?lat=35.1&lng=129&kind=restaurant&radius=${encodeURIComponent(bad)}`));
+      expect(res.status, bad).toBe(200);
+      expect(searchNearbySpy.mock.calls[0][3], bad).toBe(1200); // ค่าเริ่มต้นของ restaurant
+    }
+  });
+
+  it("`radius` ที่ใหญ่เกินถูกตัดที่ 50000", async () => {
+    searchNearbySpy.mockClear();
+    searchNearbySpy.mockResolvedValue({ places: [], error: null });
+    await GET(new NextRequest("http://localhost/api/place-nearby?lat=35.1&lng=129&kind=restaurant&radius=999999"));
+    expect(searchNearbySpy.mock.calls[0][3]).toBe(50000);
+  });
 });

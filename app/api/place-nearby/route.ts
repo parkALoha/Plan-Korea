@@ -82,6 +82,19 @@ export async function GET(req: NextRequest) {
   if (!lat || !lng) {
     return NextResponse.json({ results: [], error: "missing lat/lng" }, { status: 400 });
   }
+  /**
+   * 🔴 **`if (!lat)` ตรวจแค่ว่า *มี* ไม่ได้ตรวจว่า *เป็นตัวเลข*** — แก้ 27 ส.ค. 2026 (P1)
+   * `?lat=abc` ผ่านด่านข้างบน แล้ว `parseFloat("abc")` เป็น `NaN`
+   * → **ยิง Google จริงด้วยพิกัด `NaN`** แล้วคืน error ของ Google ให้ผู้ใช้แทนที่จะเป็น `400` ของเรา
+   * 🎯 รูปเดียวกับช่อง `kind` ในไฟล์นี้เป๊ะ: **ด่านที่ผ่านได้ทำให้เกิดคำขอที่ไม่ควรมี**
+   * · เช็คช่วงด้วย ไม่ใช่แค่ `isFinite` — พิกัดนอกโลกไม่มีความหมายและเป็นสัญญาณว่าฝั่งเรียกพัง
+   */
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) ||
+      latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+    return NextResponse.json({ results: [], error: "bad lat/lng" }, { status: 400 });
+  }
 
   // 🔴 ตรวจ **ก่อน** แตะตารางใด ๆ — ไม่ใช่ตรวจผลลัพธ์ของการแตะตาราง
   //    การเช็ค `if (!ผลลัพธ์)` แปลว่าเรา index ไปแล้ว และสายโปรโตไทป์ก็ตอบไปแล้ว
@@ -90,10 +103,15 @@ export async function GET(req: NextRequest) {
   }
   const includedTypes = KIND_TYPES[kind];
   const options = KIND_OPTIONS[kind];
-  const radius = radiusParam ? Math.min(parseInt(radiusParam, 10), 50000) : options.radius;
+  // ⚠️ `parseInt("abc")` เป็น `NaN` → `Math.min(NaN, 50000)` ก็ `NaN` → รัศมี `NaN` ไปถึง Google
+  //    ค่าที่พังต้อง **ตกไปใช้ค่าเริ่มต้นของ kind** ไม่ใช่ทำให้คำขอเสีย
+  const radiusNum = radiusParam ? parseInt(radiusParam, 10) : NaN;
+  const radius = Number.isFinite(radiusNum) && radiusNum > 0
+    ? Math.min(radiusNum, 50000)
+    : options.radius;
 
   const { places, error } = await searchNearby(
-    { lat: parseFloat(lat), lng: parseFloat(lng) },
+    { lat: latNum, lng: lngNum },
     includedTypes,
     "places.id,places.displayName,places.formattedAddress,places.location,places.photos,places.rating,places.userRatingCount,places.primaryType,places.primaryTypeDisplayName",
     radius,
