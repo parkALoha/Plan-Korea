@@ -152,6 +152,16 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
 
+      # 🔴 ต้องมาหลัง ci-target (ยืนยันว่าคุยกับฐานถูกใบ) แต่ก่อน vitest
+      #    ถ้าโหมด read-only เปิดค้างอยู่ ชุดสดจะพ่นความล้มเหลวเต็มไปหมด
+      #    **แล้วคนจะไปไล่หาบั๊กใน policy ที่ไม่มีบั๊ก** — ด่านนี้ประกาศแทนว่า
+      #    "ผลรอบนี้ไม่มีความหมาย" ไม่ใช่ "โค้ดพัง" (รูปเดียวกับ applied_migrations)
+      - name: โหมด read-only เปิดอยู่ไหม (ผลจะมีความหมายไหม)
+        run: .github/check-readonly-mode.py
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
       - name: RLS matrix — skip ต้องกลายเป็น fail
         run: npx vitest run lib/__tests__/rlsMatrix.test.ts
         env:

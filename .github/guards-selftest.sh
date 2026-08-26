@@ -513,4 +513,31 @@ schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]'
 check "api-config ผ่านกับ config ที่ถูกต้อง" pass "$d"
 
+# ── ด่าน readonly-mode (ข้อ ⑤ ของ P6 · ฝั่ง CI) ─────────────────────────────────
+# 🔴 ยิงตรรกะล้วนผ่าน --decide เพื่อให้ทดสอบได้โดยไม่ต้องมีเน็ตหรือ creds
+ROM="$(cd "$(dirname "$0")" && pwd)/check-readonly-mode.py"
+rom() {  # rom <ชื่อ> <pass|fail> <json>
+  name="$1"; want="$2"
+  if "$ROM" --decide "$3" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got"; rc=1; return 1
+}
+
+rom "readonly-mode: โหมดเปิดต้องแดง" fail '[{"read_only":true,"reason":"E7 cutover"}]'
+rom "readonly-mode: โหมดปิดต้องผ่าน" pass '[{"read_only":false,"reason":null}]'
+# 🔴 ตารางไม่มีแถว = อ่านสถานะไม่ได้ ≠ ปลอดภัย · ต้องแดง ไม่ใช่ผ่านเพราะ "ไม่เจอ true"
+rom "readonly-mode: ตารางไม่มีแถวต้องแดง" fail '[]'
+rom "readonly-mode: payload ผิดรูปต้องแดง" fail '[{"mode":"ro"}]'
+rom "readonly-mode: payload ไม่ใช่ list ต้องแดง" fail '{"read_only":false}'
+# เคสด้านบวกของ *ข้อความ*: ต้องมีคำว่า "ไม่มีความหมาย" ไม่ใช่แค่ exit 1
+# 🔴 ต้องเก็บ output ใส่ตัวแปรก่อน **ห้าม pipe ตรงเข้า grep**
+#    ไฟล์นี้ตั้ง `set -o pipefail` → `cmd | grep` จะคืน exit ของ `cmd` (ซึ่งคือ 1 โดยตั้งใจ)
+#    ทำให้เคสนี้แดงทั้งที่ข้อความถูกต้อง — **เครื่องมือวัดโกหก ตระกูลเดียวกับ `$?` หลัง pipe**
+rom_out="$("$ROM" --decide '[{"read_only":true,"reason":"x"}]' 2>&1 || true)"
+if printf '%s' "$rom_out" | grep -q 'ไม่มีความหมาย'; then
+  echo "✅ readonly-mode: ข้อความบอกว่า 'ผลไม่มีความหมาย' ไม่ใช่ 'โค้ดพัง'"
+else
+  echo "🔴 readonly-mode: ข้อความไม่ได้บอกว่าผลไม่มีความหมาย — คนจะไปไล่หาบั๊ก"; rc=1
+fi
+
 exit $rc
