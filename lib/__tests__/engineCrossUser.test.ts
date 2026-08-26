@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
-import { readEnvKey, requireLiveCreds } from "./_helpers";
+import { readEnvKey, requireLiveCreds, TEST_COUNTRY_CODES } from "./_helpers";
 import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -62,6 +62,7 @@ import { GET as tripsGET } from "@/app/api/engine/trips/route";
 import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
 import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
+import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[tripId]/hotels/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -131,7 +132,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -187,6 +188,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aDay = "";
   let aPlan = "";
   let aClient: SupabaseClient;
+  const CC = TEST_COUNTRY_CODES.engineCrossUser; // "xz" — country code จองในทะเบียน กันชนข้ามเซสชัน
+  const citySlug = `ex-${stamp}`;
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -237,8 +240,27 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     ).toEqual([opts.valueA]);
   }
 
+  async function purgeCatalog() {
+    const cities = (await admin.from("catalog_cities").select("id").eq("country_id", CC)).data ?? [];
+    const cityIds = cities.map((c) => (c as { id: string }).id);
+    if (cityIds.length) {
+      await admin.from("catalog_places").delete().in("city_id", cityIds);
+      await admin.from("catalog_cities").delete().in("id", cityIds);
+    }
+    await admin.from("catalog_countries").delete().eq("id", CC);
+  }
+
+  async function seedCatalog() {
+    await purgeCatalog(); // ลูกก่อนพ่อ · เรียกก่อน seed เผื่อรอบก่อนตายกลางคัน (รูป purgeCountry ของ P1)
+    const co = await admin.from("catalog_countries").insert({ id: CC, name_th: "ทดสอบ", name_en: "Test" });
+    if (co.error) throw new Error(`seed country: ${co.error.message}`);
+    const ci = await admin.from("catalog_cities").insert({ country_id: CC, legacy_slug: citySlug, name_th: "เมืองทดสอบ", name_en: "TestCity", lat: 37.5, lng: 127.0, timezone: "Asia/Seoul" });
+    if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+  }
+
   beforeAll(async () => {
     admin = createClient(URL_, SERVICE, { auth: { persistSession: false }, realtime: noRealtime() });
+    await seedCatalog();
     const a = await makeUser("a");
     aClient = a.client;
     const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
@@ -276,6 +298,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       const { error } = await admin.auth.admin.deleteUser(id);
       if (error) console.warn(`cleanup user ${id}: ${error.message}`);
     }
+    await purgeCatalog();
   });
 
   it("pin: GET /api/engine/trips = 200 (กันถอย fae94fe — helper อ้างคอลัมน์ที่ไม่มี = 502)", async () => {
@@ -354,5 +377,25 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(verdict, `[stops] B → **${verdict}** (${detail})`).toBe("rejected");
     const n2 = await count();
     expect(n2, "[stops] จำนวนจุดแวะในวัน A เพิ่มหลัง B ยิง = B สร้างในทริป A สำเร็จ (leak)").toBe(n1);
+  });
+
+  it("hotels PUT — A บันทึกที่พักได้ (GET คืน country ไม่ null) · B บันทึกในทริป A ไม่ได้", async () => {
+    const body = (name: string) => ({ checkIn: "2026-10-12", checkOut: "2026-10-14", city: citySlug, hotelName: name, lat: 37.5, lng: 127.0 });
+    const aRes = await callAs(aCookies, tripA, hotelsPUT, "PUT", body("H-a"));
+    expect(aRes.status, `control A ควร 200: ${aRes.status} ${await aRes.clone().text()}`).toBe(200);
+    // 🔴 P1 ฝาก: country ต้องไม่ null — แยก "ลืมแมป city→country join" ออกจาก "ค่าเป็น null จริง"
+    const gRes = await callAs(aCookies, tripA, hotelsGET, "GET");
+    const hotels = (await gRes.json()) as { country: string | null; hotel_name: string }[];
+    const mine = hotels.find((h) => h.hotel_name === "H-a");
+    expect(mine?.country, `country ควรเป็น '${CC}' ไม่ใช่ null (join city→country หลุด?)`).toBe(CC);
+    const bRes = await callAs(bCookies, tripA, hotelsPUT, "PUT", body("H-b"));
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[hotels] B → **${verdict}** (${detail})`).toBe("rejected");
+    const cnt = async () => {
+      const { data, error } = await admin.from("trip_hotels").select("id").eq("trip_id", tripA);
+      if (error) throw new Error(`admin count trip_hotels: ${error.message}`);
+      return data.length;
+    };
+    expect(await cnt(), "[hotels] B บันทึกที่พักในทริป A สำเร็จ (leak)").toBe(1);
   });
 });

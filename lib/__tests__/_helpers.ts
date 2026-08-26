@@ -165,6 +165,8 @@ export const TEST_COUNTRY_CODES = {
   placeSearch: "xw",
   /** บล็อกคำบรรยายสถานที่ (`Q6`) — P4 */
   descriptions: "xy",
+  /** บล็อกยิง engine route ข้ามผู้ใช้ (`E3-AC9②` · seed catalog country+city+place) — P4 */
+  engineCrossUser: "xz",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */
