@@ -42,7 +42,8 @@ export type EngineTable =
   | "catalog_country_contacts"
   | "catalog_place_access"
   | "trip_days"
-  | "trip_stops";
+  | "trip_stops"
+  | "custom_places";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -226,4 +227,23 @@ export function searchPlaceNames(db: Db, opts: {
  */
 export function tripsVisibleToMe(db: Db) {
   return engineTable(db, "trips").select("id, name").order("created_at");
+}
+
+/**
+ * แถวคลังสถานที่ของทริป **พร้อมชื่อทุกภาษาและ slug ของเมือง ในคำขอเดียว**
+ *
+ * 🔴 **join ที่นี่ ไม่ใช่ยิงทีละใบจากชั้นบน** — คลังของทริปหนึ่งมีได้หลายสิบแถว
+ * ยิงชื่อทีละแถวคือ N+1 ที่จะไม่มีใครสังเกตจนกว่าทริปจะใหญ่
+ * · การแปลงรูปอยู่ที่ [`customPlaces.ts`](./customPlaces.ts) — ที่นี่มีแต่ *รูปคิวรี*
+ */
+export function customPlaceRowsOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "custom_places")
+    .select(
+      "id, city_id, category, lat, lng, maps_query, description, google_place_id," +
+        " legacy_added_by, created_at," +
+        " catalog_cities(legacy_slug)," +
+        " custom_place_names(locale, name, priority)"
+    )
+    .eq("trip_id", tripId)
+    .order("created_at");
 }
