@@ -19,6 +19,12 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type HotelDto = {
   city: string;
+  /**
+   * 🔴 รหัสประเทศของ **เมือง** ไม่ใช่ของทริป (`E4-AC3`) — `trips` ไม่มีคอลัมน์ประเทศเลย
+   * และนั่นถูก: **ทริปเดียวข้ามประเทศได้** (ทริปปัจจุบันข้ามเวียดนาม→เกาหลีอยู่แล้ว)
+   * · `null` = ยังไม่รู้ → ส่งเข้า `capabilitiesOf()` ได้ตรง ๆ มันคืนค่าปลอดภัยให้เอง
+   */
+  country: string | null;
   hotel_name: string;
   formatted_address: string | null;
   name_local: string | null; address_local: string | null;
@@ -46,14 +52,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ trip
   const { data, error } = await tripHotelsOfTrip(db, tripId);
   if (error) return NextResponse.json({ error: error.message }, { status: 502 });
 
-  type Row = Omit<HotelDto, "city"> & { id: string; city_id: string; catalog_cities: { legacy_slug: string | null } | null };
+  type Row = Omit<HotelDto, "city" | "country"> & {
+    id: string;
+    city_id: string;
+    catalog_cities: { legacy_slug: string | null; country_id: string | null } | null;
+  };
   const out: HotelDto[] = [];
   for (const r of (data ?? []) as unknown as Row[]) {
     // ⚠️ เมืองที่ไม่มี `legacy_slug` = UI เดิมไม่รู้จัก → ข้าม **ไม่ส่ง uuid ไปให้มันเทียบไม่ตรง**
     const city = r.catalog_cities?.legacy_slug;
+    // 🔴 `country` มาจาก *เมือง* ไม่ใช่ *ทริป* — ทริปเดียวข้ามประเทศได้ (`E4-AC3`)
+    //    `null` = ยังไม่รู้ → `capabilitiesOf()` คืนค่าปลอดภัยให้เอง ไม่ต้องเช็คที่ผู้เรียก
+    const country = r.catalog_cities?.country_id ?? null;
     if (!city) continue;
     out.push({
-      city, hotel_name: r.hotel_name, formatted_address: r.formatted_address,
+      city, country, hotel_name: r.hotel_name, formatted_address: r.formatted_address,
       name_local: r.name_local, address_local: r.address_local,
       name_en: r.name_en, address_en: r.address_en, phone: r.phone,
       lat: r.lat, lng: r.lng, check_in: r.check_in, check_out: r.check_out,

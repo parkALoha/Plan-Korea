@@ -273,7 +273,11 @@ export function customPlaceRowsOfTrip(db: Db, tripId: string) {
     .select(
       "id, city_id, category, lat, lng, maps_query, google_place_id," +
         " legacy_added_by, created_at," +
-        " catalog_cities(legacy_slug)," +
+        // 🔴 `country_id` เพิ่ม 27 ส.ค. 2026 (`E4-AC3`/`AC4`) — **ประเทศผูกกับ *เมือง* ไม่ใช่ *ทริป***
+        //    `trips` ไม่มีคอลัมน์ประเทศเลย (มี `base_timezone`) และนั่นถูก:
+        //    ทริปปัจจุบันข้ามเวียดนาม→เกาหลีอยู่แล้ว · **ทริปเดียวมีได้หลายประเทศ**
+        //    → UI ต้องเลือกปุ่มแผนที่จากเมืองของสถานที่นั้น ไม่ใช่จากทริป
+                " catalog_cities(legacy_slug, country_id)," +
         " custom_place_names(locale, name, priority)," +
         " custom_place_descriptions(locale, description)"
     )
@@ -490,7 +494,8 @@ export function softDeletePlaceNote(db: Db, id: string) {
 export function tripHotelsOfTrip(db: Db, tripId: string) {
   return engineTable(db, "trip_hotels")
     .select("id, city_id, hotel_name, formatted_address, name_local, address_local, name_en, address_en," +
-            " phone, lat, lng, check_in, check_out, updated_at, catalog_cities(legacy_slug)")
+            // `country_id` — ดูเหตุผลที่ `customPlaceRowsOfTrip` · ประเทศมาจากเมือง ไม่ใช่ทริป
+            " phone, lat, lng, check_in, check_out, updated_at, catalog_cities(legacy_slug, country_id)")
     .eq("trip_id", tripId)
     .is("deleted_at", null)
     .order("check_in");

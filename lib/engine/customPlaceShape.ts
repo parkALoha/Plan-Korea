@@ -14,7 +14,7 @@ export type CustomPlaceRow = {
   // 🔴 **สองช่องนี้มาจาก embedded resource ของ PostgREST — `postgres_changes` ไม่มีทางมี**
   //    Realtime ส่งแถวดิบของ *ตารางเดียว* จาก WAL ไม่ใช่ผลของคิวรี → ไม่มี join ให้เลย (P3)
   //    `null` = join แล้วไม่เจอ (เมืองถูกลบ) · `undefined` = **ไม่ได้ join มาเลย** ← คนละเรื่อง
-  catalog_cities: { legacy_slug: string | null } | null;
+  catalog_cities: { legacy_slug: string | null; country_id?: string | null } | null;
   custom_place_names: { locale: string; name: string; priority: number }[] | null;
   // `Q6` — คำบรรยายย้ายออกจาก `custom_places` มาเป็นตารางลูกแยกภาษา (26 ส.ค. 2026)
   custom_place_descriptions: { locale: string; description: string }[] | null;
@@ -75,6 +75,9 @@ export function toCustomPlace(row: CustomPlaceRow): CustomPlace {
     // ⚠️ เมืองที่ไม่มี `legacy_slug` = เมืองที่เกิดบนแพลตฟอร์ม ไม่เคยอยู่ในเว็บเดิม
     //    คืนสตริงว่างจะทำให้ UI จัดกลุ่มมันรวมกันมั่ว → คืน `city_id` ไปตรง ๆ ให้เห็นว่าต่าง
     city: row.catalog_cities?.legacy_slug ?? row.city_id,
+    // 🔴 ประเทศมาจาก **เมือง** ไม่ใช่ทริป (`E4-AC3`) · `null` = ยังไม่รู้
+    //    ⚠️ `postgres_changes` ส่งแถวดิบไม่มี join → `assertJoined()` จับได้ก่อนถึงบรรทัดนี้อยู่แล้ว
+    country: row.catalog_cities?.country_id ?? null,
     // `name_th` เป็น `not null` ในรูปเดิม — ถ้าไม่มีชื่อไทยจริง ๆ ให้ใช้ภาษาอื่นแทนการโชว์ค่าว่าง
     name_th: nameTh ?? pickName(row.custom_place_names, "en") ?? pickName(row.custom_place_names, "ko") ?? "",
     name_en: pickName(row.custom_place_names, "en"),
