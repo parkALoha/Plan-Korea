@@ -118,7 +118,9 @@ describe("applyOvernightOverrides", () => {
 describe("hotelForStop", () => {
   function hotel(name: string, lat: number, lng: number): TripHotel {
     return {
-      leg_id: name,
+      // `E3`/`D51` — ไม่มี `leg_id` แล้ว · ช่วงวันที่คือตัวระบุ
+      check_in: "2026-10-11",
+      check_out: "2026-10-12",
       city: "sokcho",
       hotel_name: name,
       formatted_address: "",

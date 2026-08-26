@@ -13,7 +13,10 @@ export const supabase = createClient(
 );
 
 export type TripHotel = {
-  leg_id: string;
+  /** 🔴 `E3`/`D51` — สคีมาใหม่ไม่มี `leg_id` · ที่พักถูกระบุด้วย **ช่วงวันที่ของตัวเอง**
+   *  `leg` เป็นค่าคำนวณจากวัน ไม่ใช่ของที่เก็บ · ใช้ `hotelRangeKey()` เป็นคีย์ทั้งสองฝั่ง */
+  check_in: string;
+  check_out: string;
   city: string;
   hotel_name: string;
   formatted_address: string | null;

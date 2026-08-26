@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { hotelRangeKey } from "@/lib/hotelLegs";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
@@ -9,6 +11,12 @@ import { writeGuard } from "@/lib/writeGuard";
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
 export type HotelInput = {
   legId: string;
+  /** 🔴 `E3` — สคีมาใหม่ระบุที่พักด้วย *ช่วงวันที่* ไม่ใช่ `legId` (`D51`)
+   *  `HotelLegsPanel` มี `leg.startDate`/`leg.endDate` อยู่ในมือแล้ว จึงส่งต่อมาได้ตรง ๆ
+   *  ⚠️ **ยังเป็น optional ชั่วคราวเพื่อไม่ให้ `tsc` แดงคาระหว่างรอ P2 ต่อ**
+   *     → `hooks/__tests__` มีเคสที่จะแดงวันที่ผู้เรียกส่งครบ = สัญญาณให้เปลี่ยนเป็น required */
+  checkIn?: string;
+  checkOut?: string;
   city: string;
   hotelName: string;
   lat: number;
@@ -19,7 +27,9 @@ export type HotelInput = {
 
 function toRow(input: HotelInput): TripHotel {
   return {
-    leg_id: input.legId,
+    // 🔴 ไม่มี `leg_id` แล้ว (`D51`) — ช่วงวันที่คือตัวระบุ
+    check_in: input.checkIn ?? "",
+    check_out: input.checkOut ?? "",
     city: input.city,
     hotel_name: input.hotelName,
     formatted_address: input.formattedAddress ?? null,
@@ -38,6 +48,8 @@ function toRow(input: HotelInput): TripHotel {
  *  (เรียกซ้ำหลายที่ = ดึงทั้งตารางซ้ำ + เปิด channel ใหม่ทุกครั้ง) ที่เหลือใช้ useHotels() อ่านจาก context */
 function useHotelsStore() {
   const [hotels, setHotels] = useState<Record<string, TripHotel>>({});
+  const tripIdRef = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ยังไม่ได้ตั้งค่า Supabase — ใช้ state ในเครื่องไปก่อน (ไม่ sync ระหว่างเครื่อง) ถือว่าโหลดเสร็จตั้งแต่แรก
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
@@ -54,7 +66,12 @@ function useHotelsStore() {
     async function init() {
       const toMap = (rows: TripHotel[]) => {
         const map: Record<string, TripHotel> = {};
-        for (const row of rows) map[row.leg_id] = row;
+        // 🔴 คีย์ด้วย **ช่วงวันที่** ไม่ใช่ `leg_id` — สคีมาใหม่ไม่มี `leg_id` (`D51`)
+        //    `HotelsProvider` อยู่บนสุดของทรี **legs ยังไม่มีตรงนั้น** จึงคีย์ด้วยของที่ฐานมีจริง
+        //    ผู้เรียกใช้ `hotelRangeKey(leg)` เพื่อหา — **ฟังก์ชันเดียวกันทั้งสองฝั่ง**
+        for (const row of rows) {
+          map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;
+        }
         return map;
       };
 
@@ -64,32 +81,38 @@ function useHotelsStore() {
         setLoaded(true);
       }
 
-      const { data } = await supabase.from("trip_hotels").select("*");
+      if (!supabaseConfigured) return void setLoaded(true);
+
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const res = await fetch(`/api/engine/trips/${trip.tripId}/hotels`);
       if (cancelled) return;
-      if (data) {
-        setHotels(toMap(data as TripHotel[]));
-        writeCache("hotels", data);
+      if (res.ok) {
+        const rows = (await res.json()) as TripHotel[];
+        setHotels(toMap(rows));
+        writeCache("hotels", rows);
       }
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "trip_hotels" },
-          (payload) => {
-            setHotels((prev) => {
-              const next = { ...prev };
-              if (payload.eventType === "DELETE") {
-                delete next[(payload.old as TripHotel).leg_id];
-              } else {
-                const row = payload.new as TripHotel;
-                next[row.leg_id] = row;
-              }
-              return next;
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "trip_hotels" }, () => {
+          // 🔴 ไม่แตะ payload — แถวดิบมี `city_id` เป็น uuid ไม่มี slug (P3 · `§15`)
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(async () => {
+            const id = tripIdRef.current;
+            if (!id || cancelled) return;
+            const r = await fetch(`/api/engine/trips/${id}/hotels`);
+            if (!r.ok || cancelled) return;
+            const rows = (await r.json()) as TripHotel[];
+            setHotels(toMap(rows));
+            writeCache("hotels", rows);
+          }, 300);
+        })
         .subscribe();
     }
 
@@ -102,44 +125,104 @@ function useHotelsStore() {
   }, []);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
-  const reload = useCallback(async () => {
-    if (!supabaseConfigured) return;
-    const { data } = await supabase.from("trip_hotels").select("*");
-    if (!data) return;
+  const refetch = useCallback(async () => {
+    const id = tripIdRef.current;
+    if (!supabaseConfigured || !id) return;
+    const res = await fetch(`/api/engine/trips/${id}/hotels`);
+    if (!res.ok) return;
+    const rows = (await res.json()) as TripHotel[];
     const map: Record<string, TripHotel> = {};
-    for (const row of data as TripHotel[]) map[row.leg_id] = row;
+    for (const row of rows) {
+      map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;
+    }
     setHotels(map);
-    writeCache("hotels", data);
+    writeCache("hotels", rows);
   }, []);
 
-  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
   const guard = useCallback(
-    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
-      if (!(await writeGuard(label, run))) await reload();
+    async (label: string, run: () => Promise<Response>) => {
+      const ok = await writeGuard(label, async () => {
+        const res = await run();
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await refetch();
+      return ok;
     },
-    [reload]
+    [refetch]
   );
 
   const setHotel = useCallback(async (input: HotelInput) => {
-    const row = toRow(input);
-    if (!supabaseConfigured) {
-      setHotels((prev) => ({ ...prev, [input.legId]: row }));
+    // 🔴 **ยังไม่มีช่วงวันที่ = เขียนไม่ได้ และต้องดัง** (`E3`)
+    //    `checkIn`/`checkOut` ยัง optional ในชนิดเพื่อไม่ให้ `tsc` แดงคาระหว่างรอ P2 ต่อ
+    //    **แต่ปล่อยให้เขียนโดยไม่มีวันที่ = แถวที่ระบุตัวเองไม่ได้** → ปฏิเสธออกมาดัง ๆ แทน
+    if (!input.checkIn || !input.checkOut) {
+      console.error("[hotels] setHotel ต้องมี checkIn/checkOut — HotelLegsPanel ยังไม่ได้ส่งมา (E3)");
       return;
     }
-    await guard("บันทึกที่พัก", () => supabase.from("trip_hotels").upsert(row));
+    const key = hotelRangeKey({ startDate: input.checkIn, endDate: input.checkOut });
+    const row = toRow(input);
+    const tripId = tripIdRef.current;
+    if (!supabaseConfigured || !tripId) {
+      setHotels((prev) => ({ ...prev, [key]: row }));
+      return;
+    }
+    setHotels((prev) => ({ ...prev, [key]: row }));
+    await guard("บันทึกที่พัก", () =>
+      fetch(`/api/engine/trips/${tripId}/hotels`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkIn: input.checkIn, checkOut: input.checkOut,
+          city: input.city, hotelName: input.hotelName,
+          formattedAddress: input.formattedAddress ?? null,
+          lat: input.lat, lng: input.lng,
+          nameLocal: input.localized?.nameLocal ?? null,
+          addressLocal: input.localized?.addressLocal ?? null,
+          nameEn: input.localized?.nameEn ?? null,
+          addressEn: input.localized?.addressEn ?? null,
+          phone: input.localized?.phone ?? null,
+        }),
+      })
+    );
   }, [guard]);
 
-  const clearHotel = useCallback(async (legId: string) => {
-    if (!supabaseConfigured) {
+  /**
+   * ลบที่พักของช่วงวันหนึ่ง
+   *
+   * 🔴 รับ **ช่วงวันที่** ไม่ใช่ `legId` — ด้วยเหตุผลเดียวกับ `setHotel`
+   * ⚠️ ชนิดยังรับสตริงเดี่ยวเพื่อความเข้ากันได้ระหว่างรอ P2 ต่อ · **แต่ต้องเป็นคีย์ช่วงวันที่**
+   */
+  const clearHotel = useCallback(
+    async (rangeKeyOrLegId: string, range?: { startDate: string; endDate: string }) => {
+      const key = range ? hotelRangeKey(range) : rangeKeyOrLegId;
+      const [checkIn, checkOut] = key.split("..");
+      const tripId = tripIdRef.current;
+
       setHotels((prev) => {
+        if (!prev[key]) return prev;
         const next = { ...prev };
-        delete next[legId];
+        delete next[key];
         return next;
       });
-      return;
-    }
-    await guard("ลบที่พัก", () => supabase.from("trip_hotels").delete().eq("leg_id", legId));
-  }, [guard]);
+
+      if (!supabaseConfigured || !tripId) return;
+      if (!checkIn || !checkOut) {
+        // 🔴 คีย์ที่ไม่ใช่ช่วงวันที่ = ผู้เรียกยังส่ง `legId` แบบเดิมมา → **ดังไว้ อย่าเงียบ**
+        console.error("[hotels] clearHotel ต้องรับคีย์ช่วงวันที่ — ได้", key);
+        return;
+      }
+      await guard("ลบที่พัก", () =>
+        fetch(
+          `/api/engine/trips/${tripId}/hotels?checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}`,
+          { method: "DELETE" }
+        )
+      );
+    },
+    [guard]
+  );
 
   return useMemo(
     () => ({ hotels, loaded, setHotel, clearHotel, supabaseConfigured }),

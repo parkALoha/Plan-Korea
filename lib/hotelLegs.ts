@@ -128,3 +128,15 @@ export function dayIdToLegId(legs: HotelLeg[]): Record<string, string> {
   }
   return map;
 }
+
+
+/**
+ * คีย์ของที่พักต่อหนึ่งช่วงการนอน — **`E3` · `D51`**
+ *
+ * 🔴 สคีมาใหม่ไม่มี `leg_id` · ที่พักถูกระบุด้วย **ช่วงวันที่ของมันเอง**
+ * ทั้งฝั่ง hook และฝั่ง UI ต้องใช้ฟังก์ชันนี้ตัวเดียวกัน — **เขียนคีย์เองสองที่ = ต่างกันสักวัน**
+ * (บทเรียนเดียวกับ `customPlaceShape` และ `dayBridge`)
+ */
+export function hotelRangeKey(range: { startDate: string; endDate: string }): string {
+  return `${range.startDate}..${range.endDate}`;
+}
