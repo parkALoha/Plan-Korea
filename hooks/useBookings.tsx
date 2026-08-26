@@ -6,6 +6,7 @@ import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStat
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -91,6 +92,12 @@ function useBookingsStore(tripId: string | null) {
           ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
         }));
         setBookings(sortBookings(mapped));
+        // 🔴 booking ไม่ถูกทิ้งเมื่อสะพานวันไม่ครบ (ต่างจาก stops) — ได้แค่ `day_id: null` แทน จึงไม่ต้อง
+        // กัน writeCache (จำนวนแถวเท่าเดิม ไม่มีอะไรให้ปกป้อง) แค่เตือนถ้าบางใบเสียการผูกวันไป
+        reportDayBridgeDropIfAny(
+          rows.filter((r) => r.trip_day_id !== null).length,
+          mapped.filter((r) => r.day_id !== null).length
+        );
         writeCache("bookings", mapped);
       }
       setLoaded(true);
@@ -125,6 +132,10 @@ function useBookingsStore(tripId: string | null) {
       ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
     }));
     setBookings(sortBookings(mapped));
+    reportDayBridgeDropIfAny(
+      rows.filter((r) => r.trip_day_id !== null).length,
+      mapped.filter((r) => r.day_id !== null).length
+    );
     writeCache("bookings", mapped);
   }, []);
 

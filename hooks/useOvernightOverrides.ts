@@ -7,6 +7,7 @@ import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
+import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 type Overrides = Record<string, City>;
 
@@ -71,7 +72,11 @@ export function useOvernightOverrides(tripId: string | null) {
 
       const next = toOvernightOverrides(rows, bridge) as Overrides;
       setOverrides(next);
-      writeCache("overnightOverrides", next);
+      // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — วัดจากจำนวนวันที่สะพานจับคู่ได้จริง
+      // (`bridge.matched`) เทียบกับจำนวนวันที่ฐานมีจริง (`rows.length`) ไม่ใช่ผลลัพธ์ที่ toMap ให้มา
+      if (!reportDayBridgeDropIfAny(rows.length, bridge.matched)) {
+        writeCache("overnightOverrides", next);
+      }
       setLoaded(true);
     }
 

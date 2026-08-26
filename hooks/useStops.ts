@@ -6,6 +6,7 @@ import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -65,9 +66,14 @@ export function useStops(tripId: string | null, planId: string | null) {
     if (!supabaseConfigured || !tripId || !planId) return;
     const res = await fetch(`/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`);
     if (!res.ok) return;
-    const mapped = sortStops(mapRows((await res.json()) as StopDto[]));
+    const rawRows = (await res.json()) as StopDto[];
+    const mapped = sortStops(mapRows(rawRows));
     setStops(mapped);
-    writeCache(`stops:${planId}`, mapped);
+    // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — state ในเครื่องอัปเดตได้ปกติ (จะถูกต้องเองเมื่อ
+    // สะพานดีขึ้น) แต่แคชออฟไลน์ต้องไม่ถูกทำลายด้วยความว่างที่เกิดจากบั๊ก ไม่ใช่จากทริปที่ไม่มีจุดแวะจริง
+    if (!reportDayBridgeDropIfAny(rawRows.length, mapped.length)) {
+      writeCache(`stops:${planId}`, mapped);
+    }
   }, [planId, mapRows]);
 
   useEffect(() => {

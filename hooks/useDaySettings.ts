@@ -7,6 +7,7 @@ import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 /** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
 export function useDaySettings(tripId: string | null, planId: string | null) {
@@ -69,7 +70,10 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
         const rows = (await res.json()) as { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[];
         const map = toMap(rows, bridge);
         setSettings(map);
-        writeCache(`daySettings:${planId}`, Object.values(map));
+        // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — ดู lib/engine/dayBridgeIncomplete.ts
+        if (!reportDayBridgeDropIfAny(rows.length, Object.keys(map).length)) {
+          writeCache(`daySettings:${planId}`, Object.values(map));
+        }
       }
       setLoaded(true);
 
@@ -110,7 +114,9 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       };
     }
     setSettings(map);
-    writeCache(`daySettings:${planId}`, Object.values(map));
+    if (!reportDayBridgeDropIfAny(rows.length, Object.keys(map).length)) {
+      writeCache(`daySettings:${planId}`, Object.values(map));
+    }
   }, [planId]);
 
   useEffect(() => {
