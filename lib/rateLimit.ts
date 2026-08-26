@@ -37,7 +37,15 @@ export function rateLimitGuard(
 ): NextResponse | null {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (isRateLimited(`${routeName}:${ip}`, limitPerMinute, 60_000)) {
-    return NextResponse.json({ error: "rate limited" }, { status: 429 });
+    // 🔴 **ข้อความไทย — แก้ 27 ส.ค. 2026 (P2 พบตอนยิงจริง)**
+    //    ฉบับเดิมคืน `"rate limited"` ซึ่งเป็น**อังกฤษที่เดียวในทั้ง route** ที่เหลือเป็นไทยหมด
+    //    · ฟอร์มฝั่ง UI แสดง `error` ของ route ตรง ๆ → ผู้ใช้เห็นคำว่า `"rate limited"` บนหน้าจอ
+    // 🎯 **ตัวนี้ไม่ได้ตั้งใจให้ผู้ใช้เห็น มันเลยไม่เคยถูกเขียนให้ผู้ใช้อ่าน** — จนมีคนต่อสายจริง
+    // 📌 เพิ่ม `code` ด้วย ให้ฝั่งเรียกแยกกรณีได้โดยไม่ต้องอ่านข้อความ (รูปเดียวกับ error อื่นของ engine route)
+    return NextResponse.json(
+      { error: "ส่งคำขอถี่เกินไป รอสักครู่แล้วลองใหม่", code: "rate_limited" },
+      { status: 429 },
+    );
   }
   return null;
 }

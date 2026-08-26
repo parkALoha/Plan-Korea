@@ -123,7 +123,14 @@ describe("rateLimitGuard() — ตัวห่อสำหรับ API route", 
 
     expect(res).not.toBeNull();
     expect(res?.status).toBe(429);
-    await expect(res?.json()).resolves.toEqual({ error: "rate limited" });
+    // 🔴 แก้ 27 ส.ค. 2026 (P1 · แตะไฟล์โซน P4 เพราะเป็นผลโดยตรงของการแก้ `lib/rateLimit.ts`
+    //    — ทิ้งหัวแดงไว้ให้เจ้าของไฟล์มาเจอแย่กว่า) · P2 พบว่า `"rate limited"` เป็นอังกฤษ
+    //    ที่เดียวในทั้ง route แล้วมันไปโผล่บนหน้าจอผู้ใช้ตรง ๆ
+    // 📌 ตรึง `code` ด้วย — ฝั่งเรียกควรแยกกรณีจาก `code` ไม่ใช่จากข้อความ (ข้อความเปลี่ยนได้)
+    await expect(res?.json()).resolves.toEqual({
+      error: "ส่งคำขอถี่เกินไป รอสักครู่แล้วลองใหม่",
+      code: "rate_limited",
+    });
   });
 
   it("นับแยกตาม routeName — เพดานของ route หนึ่งไม่กินอีก route", () => {
