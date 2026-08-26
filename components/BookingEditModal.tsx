@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { type BookingCategory, type BookingStatus, type TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { useBookingFile } from "@/hooks/useBookingFile";
+import { useSystemMode } from "@/hooks/useSystemMode";
 import { Modal } from "./Modal";
 import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
@@ -43,6 +44,12 @@ export function BookingEditModal({
   onDelete?: () => void;
 }) {
   const { uploadBookingFile, removePendingBookingFile, removeSavedBookingFile } = useBookingFile();
+  // ปิดที่ *ทางเข้า* (ก่อนเริ่มพิมพ์) ไม่ใช่แค่ปุ่มบันทึก — โมดัลนี้หนักที่สุดในแอป (8 ช่อง + โน้ต +
+  // อัปโหลดไฟล์) การให้กรอกครบแล้วเจอ 503 ตอนจบ คือแรงที่เสียไปเปล่าๆ ทั้งหมด (E3-AC7 §9)
+  // อ่านสถานะตอนโมดัล mount ครั้งเดียว (useSystemMode ไม่มี poll) — ยังไม่แน่ใจ (`loading`/`unknown`)
+  // ถือว่ายังเขียนได้ตามปกติ เพราะฐานเป็นด่านจริงอยู่แล้ว ไม่ต้องเดาแทนตอนอ่านสถานะไม่ได้
+  const { mode: systemMode } = useSystemMode();
+  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
   const [zoomed, setZoomed] = useState(false);
   const [category, setCategory] = useState<BookingCategory>(existing?.category ?? "flight");
   const [status, setStatus] = useState<BookingStatus>(existing?.status ?? "booked");
@@ -99,7 +106,7 @@ export function BookingEditModal({
   const signedFileUrl = signedResult?.fileUrl === fileUrl ? signedResult.url : undefined;
 
   async function handleFileChange(file: File | null) {
-    if (!file) return;
+    if (!file || readOnly) return;
     setUploading(true);
     setUploadError(null);
     const result = await uploadBookingFile(file, existing?.id ?? null);
@@ -122,6 +129,7 @@ export function BookingEditModal({
   }
 
   async function handleRemoveFile() {
+    if (readOnly) return;
     // ไฟล์ที่ยังไม่บันทึก (เพิ่งอัปโหลดในเซสชันนี้) กับไฟล์ที่บันทึกไว้แล้ว ใช้ allowNoRows คนละค่า
     // (เหตุผลอยู่ที่ hooks/useBookingFile.ts) จึงต้องแยกสองทาง ไม่ใช้ path เดียวกันเรียกฟังก์ชันเดียว
     if (pendingUploadPathRef.current) {
@@ -167,7 +175,7 @@ export function BookingEditModal({
   }
 
   function handleSave() {
-    if (!title.trim()) return;
+    if (!title.trim() || readOnly) return;
     const trimmedLink = link.trim();
     if (trimmedLink && !safeHttpUrl(trimmedLink)) {
       setLinkError("ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https:// เท่านั้น");
@@ -213,7 +221,7 @@ export function BookingEditModal({
           )}
           <button
             onClick={handleSave}
-            disabled={!title.trim() || uploading}
+            disabled={!title.trim() || uploading || readOnly}
             className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
           >
             บันทึก
@@ -221,6 +229,18 @@ export function BookingEditModal({
         </>
       }
     >
+      {/* ให้เห็นก่อนเริ่มกรอก ไม่ใช่หลังกรอกครบแล้วเจอปุ่มบันทึกจาง — คนละคำกับ SystemModeBanner ที่ลอยอยู่
+          บนสุดของหน้า (อาจเลื่อนพ้นจอไปแล้วตอนโมดัลนี้เปิด) ข้อความเดียวกันเจตนา: "ตั้งใจ" ไม่ใช่ "พัง" */}
+      {readOnly && (
+        <div
+          role="status"
+          className="rounded-lg bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink"
+        >
+          🔧 ระบบปิดรับการแก้ไขชั่วคราว — ดูได้ตามปกติ แต่บันทึก/อัปโหลดตอนนี้ไม่ได้
+          {systemMode.state === "ok" && systemMode.reason ? ` (${systemMode.reason})` : ""}
+        </div>
+      )}
+
       <div>
         <label className="mb-1 block text-xs font-medium text-content-soft">ประเภท</label>
         <div className="grid grid-cols-3 gap-2">
@@ -228,7 +248,8 @@ export function BookingEditModal({
             <button
               key={c}
               onClick={() => setCategory(c)}
-              className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium ${
+              disabled={readOnly}
+              className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium disabled:opacity-40 ${
                 category === c
                   ? "border-maple bg-maple-soft text-maple-dark"
                   : "border-line text-content-soft hover:bg-surface-soft"
@@ -248,7 +269,8 @@ export function BookingEditModal({
             <button
               key={s.value}
               onClick={() => setStatus(s.value)}
-              className={`rounded-lg border px-2 py-2 text-xs font-medium ${
+              disabled={readOnly}
+              className={`rounded-lg border px-2 py-2 text-xs font-medium disabled:opacity-40 ${
                 status === s.value
                   ? "border-maple bg-maple-soft text-maple-dark"
                   : "border-line text-content-soft hover:bg-surface-soft"
@@ -266,7 +288,8 @@ export function BookingEditModal({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="เช่น VN610 กรุงเทพ → ฮานอย"
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
       </div>
 
@@ -275,7 +298,8 @@ export function BookingEditModal({
         <select
           value={dayId}
           onChange={(e) => handleDayChange(e.target.value)}
-          className="w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         >
           <option value="">— ไม่ผูกวันไหน —</option>
           {ITINERARY.map((day) => (
@@ -293,7 +317,8 @@ export function BookingEditModal({
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
         </div>
         <div className="flex-1">
@@ -302,7 +327,8 @@ export function BookingEditModal({
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
         </div>
       </div>
@@ -320,7 +346,8 @@ export function BookingEditModal({
             value={bookByDaysBefore}
             onChange={(e) => setBookByDaysBefore(e.target.value)}
             placeholder="เช่น 30"
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
           {deadline ? (
             <p className="mt-1 text-xs text-content-soft">📅 ต้องจองภายใน {deadline}</p>
@@ -337,7 +364,8 @@ export function BookingEditModal({
         <input
           value={confirmationNumber}
           onChange={(e) => setConfirmationNumber(e.target.value)}
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
       </div>
 
@@ -350,7 +378,8 @@ export function BookingEditModal({
             setLinkError(null);
           }}
           placeholder="https://..."
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
         {linkError && <p className="mt-1 text-xs text-red-600">{linkError}</p>}
       </div>
@@ -361,7 +390,8 @@ export function BookingEditModal({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
       </div>
 
@@ -406,15 +436,21 @@ export function BookingEditModal({
               >
                 {openingFile ? "กำลังเปิด..." : `📎 ${fileName || "เปิดไฟล์"}`}
               </button>
-              <button
-                onClick={handleRemoveFile}
-                className="shrink-0 rounded-full p-1 text-content-soft hover:bg-surface-soft"
-              >
-                ✕
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={handleRemoveFile}
+                  className="shrink-0 rounded-full p-1 text-content-soft hover:bg-surface-soft"
+                >
+                  ✕
+                </button>
+              )}
             </div>
             {openFileError && <p className="mt-1 text-xs text-red-600">{openFileError}</p>}
           </div>
+        ) : readOnly ? (
+          <p className="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-content-soft">
+            ยังไม่มีไฟล์แนบ — อัปโหลดไม่ได้ตอนนี้
+          </p>
         ) : (
           <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-line px-3 py-3 text-xs text-content-soft hover:bg-surface-soft">
             {uploading ? "กำลังอัปโหลด..." : "แตะเพื่อเลือกรูป/PDF (สูงสุด 10MB)"}
