@@ -78,3 +78,32 @@ describe("toCustomPlace", () => {
     expect(toCustomPlace(row({ custom_place_names: [] })).name_th).toBe("");
   });
 });
+
+/**
+ * 🔴 **P3 เจอตอนเปิดโค้ดนี้เพื่อตอบคำถามอื่น — และมันใหญ่กว่าคำถามที่ผมถาม**
+ *
+ * `postgres_changes` ส่งแถวดิบของ *ตารางเดียว* จาก WAL **ไม่ใช่ผลของคิวรี**
+ * → `payload.new` ไม่มีคีย์ `catalog_cities`/`custom_place_names` เลย
+ * → เรียกตัวแปลงตรง ๆ จะได้ **ชื่อว่าง + `city` เป็น uuid ดิบ ทุกแถวที่เปลี่ยนผ่าน realtime**
+ * **โดยที่ component render สำเร็จ ไม่มี error ที่ไหน แค่ชื่อหาย**
+ */
+describe("แถวที่ไม่ได้ผ่าน join ต้องล้ม ไม่ใช่คืนชื่อว่าง", () => {
+  it("🔴 `payload.new` จาก realtime (ไม่มีคีย์ join) → โยน พร้อมบอกว่าต้องทำอะไรแทน", () => {
+    const raw = {
+      id: "p1", city_id: "city-uuid", category: "food", lat: 1, lng: 2,
+      maps_query: "q", description: null, google_place_id: null,
+      legacy_added_by: null, created_at: "2026-08-01T00:00:00Z",
+    } as unknown as Parameters<typeof toCustomPlace>[0];
+    expect(() => toCustomPlace(raw)).toThrow(/postgres_changes/);
+  });
+
+  it("🔴 คีย์มีแต่เป็น `[]` → **ผ่าน** — สถานที่ที่ยังไม่มีชื่อเกิดได้จริง", () => {
+    // ความต่างนี้คือทั้งหมดของกลไก: "ไม่มีคีย์" กับ "คีย์ว่าง" ต้องแยกออกจากกัน
+    // ตระกูลเดียวกับ data: null vs data: [] ที่ทีมนี้เดินเข้าไปมาแล้วสามรอบ
+    expect(() => toCustomPlace(row({ custom_place_names: [] }))).not.toThrow();
+  });
+
+  it("คีย์มีแต่เป็น `null` (join แล้วไม่เจอเมือง) → ผ่าน", () => {
+    expect(() => toCustomPlace(row({ catalog_cities: null }))).not.toThrow();
+  });
+});
