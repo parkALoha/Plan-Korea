@@ -45,7 +45,8 @@ export type EngineTable =
   | "trip_stops"
   | "custom_places"
   | "hidden_places"
-  | "place_notes";
+  | "place_notes"
+  | "trip_hotels";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -442,4 +443,50 @@ export function placeNoteId(db: Db, tripId: string, planId: string, place: { cat
 
 export function softDeletePlaceNote(db: Db, id: string) {
   return db.rpc("soft_delete_place_note", { p_id: id });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ที่พัก — `E3` · `D51` (ไม่มี `leg_id` · ใช้ช่วงวันที่ของตัวเอง)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * ที่พักของทริป **พร้อม slug ของเมือง**
+ *
+ * 🔴 **ไม่มี `leg_id` ในสคีมาใหม่ตามที่ `D51` ตัดสิน** — `leg` เป็น *ค่าคำนวณจาก `trip_days`*
+ * ที่พักเก็บ `check_in`/`check_out` ของตัวเอง · *"คืนนี้นอนที่ไหน"* = แถวที่ `check_in <= วันนั้น < check_out`
+ * · `trip_hotels_no_overlap` (exclusion ด้วย `gist`) บังคับว่าช่วงวันซ้อนกันไม่ได้ **ฐานจึงกันคำตอบกำกวมให้เอง**
+ */
+export function tripHotelsOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "trip_hotels")
+    .select("id, city_id, hotel_name, formatted_address, name_local, address_local, name_en, address_en," +
+            " phone, lat, lng, check_in, check_out, updated_at, catalog_cities(legacy_slug)")
+    .eq("trip_id", tripId)
+    .is("deleted_at", null)
+    .order("check_in");
+}
+
+/**
+ * บันทึกที่พักของช่วงวันหนึ่ง
+ *
+ * 🔴 **`onConflict` ใช้ `(trip_id, check_in)` ไม่ได้ — ไม่มี unique ตัวนั้น**
+ * ที่กันการซ้อนคือ **exclusion constraint** ซึ่ง `upsert` ใช้ไม่ได้
+ * → ต้อง **ลบช่วงเดิมก่อนแล้วค่อยเขียนใหม่** ในคำสั่งของผู้เรียก · ที่นี่ทำแค่ `insert`
+ */
+export function insertTripHotel(db: Db, row: Record<string, unknown>) {
+  return engineTable(db, "trip_hotels").insert(row).select("id");
+}
+
+/** หาแถวที่ครอบช่วงวันนั้นพอดี — `null` = ยังไม่มีที่พักของช่วงนี้ */
+export function tripHotelByRange(db: Db, tripId: string, checkIn: string, checkOut: string) {
+  return engineTable(db, "trip_hotels")
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("check_in", checkIn)
+    .eq("check_out", checkOut)
+    .is("deleted_at", null)
+    .maybeSingle();
+}
+
+export function softDeleteTripHotel(db: Db, id: string) {
+  return db.rpc("soft_delete_trip_hotel", { p_id: id });
 }
