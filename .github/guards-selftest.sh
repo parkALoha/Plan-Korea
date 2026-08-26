@@ -590,6 +590,31 @@ d="$(mkrepo)"; echo '// ห้ามเรียก https://api.odsay.com/v1 —
 git -C "$d" add -A >/dev/null 2>&1
 pyc "api-hosts: ชื่อโฮสต์ในคอมเมนต์ต้องไม่โดนจับ" pass check-api-hosts.py "$d"
 
+# 🔴 โฮสต์จริงของ provider ที่ regex ชุดแรกพลาด (P4 วัด · P1 อนุมัติ · 27 ส.ค. 2026)
+#    `naveropenapi.apigw.ntruss.com` ลงท้าย `.ntruss.com` ไม่ใช่ `.com` ของ naver
+d="$(mkrepo)"; echo 'fetch("https://naveropenapi.apigw.ntruss.com/map-direction/v1");' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: Naver Cloud Maps (ntruss) ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+d="$(mkrepo)"; echo 'fetch("https://apis-navi.kakaomobility.com/v1/directions");' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: Kakao Mobility ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+# ✅ **เคสด้านบวก — ปุ่มนำทางของ `E4-AC4` ต้องรอด** (P1 ขอ · P5 ยืนยันเส้นแบ่ง)
+# 🎯 **ไม่ได้มีไว้ยืนยันว่าวันนี้ถูก · มีไว้กันคนที่ "รัดด่านให้แน่นขึ้น" ในอีก 3 เดือน**
+#    แล้วฆ่า `lib/mapLinks.ts` โดยไม่รู้ตัว — **การรัดเพิ่มดูเหมือนความรอบคอบทุกครั้ง**
+#    เส้นแบ่ง: `AC5` ห้าม *API host* (ยิงเอง ใช้คีย์ กินโควตา) **ไม่ได้ห้าม deep-link ที่ผู้ใช้กด**
+d="$(mkrepo)"; cat > "$d/lib/x.ts" <<'TSEOF'
+export function kakaoTo(name: string, lat: number, lng: number) {
+  return `https://map.kakao.com/link/to/${encodeURIComponent(name)},${lat},${lng}`;
+}
+export function naverSearch(name: string) {
+  return `https://map.naver.com/p/search/${encodeURIComponent(name)}`;
+}
+TSEOF
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: deep-link map.kakao/map.naver ต้อง *ไม่* โดนจับ" pass check-api-hosts.py "$d"
+
 d="$(mkrepo)"; pyc "naive-strip: ทรีสะอาดต้องผ่าน" pass check-naive-strip.py "$d"
 
 d="$(mkrepo)"; printf 'x = re.sub(r"//.*$", "", line)\n' > "$d/lib/s.py"
