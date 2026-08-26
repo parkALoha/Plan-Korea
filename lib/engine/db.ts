@@ -30,10 +30,11 @@
  * · 🔴 **และผมจะไม่เขียนจุดเรียกใหม่จนกว่า ③ จะลง** — ไม่งั้นเหตุผลข้างบนหมดอายุด้วยมือผมเอง
  */
 
-import { supabase } from "../supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** ตารางของแพลตฟอร์มที่ชั้นนี้ดูแล — เพิ่มตารางใหม่ = เพิ่มฟังก์ชันในไฟล์นี้ ไม่ใช่เรียก `.from` ที่อื่น */
 export type EngineTable =
+  | "trips"
   | "catalog_countries"
   | "catalog_cities"
   | "catalog_places"
@@ -44,13 +45,27 @@ export type EngineTable =
   | "trip_stops";
 
 /**
+ * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
+ *
+ * ฉบับแรกผม `import { supabase }` จาก `lib/supabase` ตรง ๆ ซึ่งเป็น**ไคลเอนต์ฝั่งเบราว์เซอร์**
+ * → ผูกชั้นข้อมูลไว้กับเบราว์เซอร์ถาวร **ทั้งที่ `E3-AC1` ต้องการให้คิวรีย้ายไปฝั่งเซิร์ฟเวอร์**
+ *
+ * 🎯 **รับเข้ามาเป็นพารามิเตอร์ = ฟังก์ชันเดียวใช้ได้ทั้งสองฝั่ง และ *ผู้เรียกเป็นคนตัดสินว่าเป็นใคร***
+ * · ฝั่งเซิร์ฟเวอร์ส่ง `createServerSupabase()` ซึ่งผูก session ผู้ใช้จริง → **RLS ทำงานเหมือนเดิมทุกประการ**
+ * · 🔴 **นี่คือ `D38` ในรูปโครงสร้าง ไม่ใช่ในรูปคำเตือน** — ย้ายไปเซิร์ฟเวอร์**ไม่ได้**แปลว่าได้สิทธิ์เพิ่ม
+ *   เพราะไม่มีที่ไหนในไฟล์นี้ที่ *เลือก* ตัวตนได้เลย · ใครส่ง client อะไรมา ก็ได้สิทธิ์เท่านั้น
+ * · ⚠️ **ห้ามใส่ค่าเริ่มต้นให้ `db`** — ค่าเริ่มต้นคือการเลือกตัวตนแทนผู้เรียก ซึ่งคือสิ่งที่ย่อหน้านี้ห้าม
+ */
+export type Db = SupabaseClient;
+
+/**
  * 🔴 **จุดเดียวในแอปที่พิมพ์ชื่อตารางของแพลตฟอร์มได้**
  *
- * ตั้งใจไม่ `export` — ถ้ามันออกไปข้างนอกได้ ด่านของ P6 จะเห็นแค่ `engineTable("x")`
+ * ตั้งใจไม่ `export` — ถ้ามันออกไปข้างนอกได้ ด่านของ P6 จะเห็นแค่ `engineTable(db, "x")`
  * ซึ่งเป็นสตริงเหมือนเดิม **แต่ predicate ไม่ถูกใส่ให้** = ได้ท่ากลับมาโดยไม่ได้อะไรเลย
  */
-function engineTable(name: EngineTable) {
-  return supabase.from(name);
+function engineTable(db: Db, name: EngineTable) {
+  return db.from(name);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -64,8 +79,8 @@ function engineTable(name: EngineTable) {
  * ไม่ควรโผล่ในคลังสถานที่ให้เลือกเพิ่มลงวัน"* — วันนี้กฎนั้นบังคับด้วย**การอยู่คนละไฟล์**
  * พอทั้งคู่เป็นแถวใน `catalog_places` ตารางเดียวกัน เหลือแค่คอลัมน์ธง
  */
-export function browseCatalogPlaces(opts: { cityId?: string; countryId?: string; limit?: number }) {
-  let q = engineTable("catalog_places").select("*").eq("picker_hidden", false);
+export function browseCatalogPlaces(db: Db, opts: { cityId?: string; countryId?: string; limit?: number }) {
+  let q = engineTable(db, "catalog_places").select("*").eq("picker_hidden", false);
   if (opts.cityId) q = q.eq("city_id", opts.cityId);
   if (opts.countryId) q = q.eq("country_id", opts.countryId);
   return q.limit(opts.limit ?? 50);
@@ -79,8 +94,8 @@ export function browseCatalogPlaces(opts: { cityId?: string; countryId?: string;
  * **แถวสนามบินในแผนของผู้ใช้จะกลายเป็นแถวที่ "ไม่รู้จักสถานที่" ทั้งที่ข้อมูลอยู่ครบ**
  * · `picker_hidden` แปลว่า *"ไม่โผล่ในลิสต์ให้เลือก"* **ไม่ได้แปลว่า "ไม่มีอยู่"**
  */
-export function catalogPlaceById(id: string) {
-  return engineTable("catalog_places").select("*").eq("id", id).maybeSingle();
+export function catalogPlaceById(db: Db, id: string) {
+  return engineTable(db, "catalog_places").select("*").eq("id", id).maybeSingle();
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -93,8 +108,8 @@ export function catalogPlaceById(id: string) {
  * `rank` ไม่ unique โดยตั้งใจ (`D6`) → **`id` คือ tie-break ที่ทำให้ 2 เครื่องได้ลำดับเดียวกัน**
  * ไม่ใช่รายละเอียดของ `order by` แต่เป็นเหตุผลที่ `order by` มีอยู่
  */
-export function dayStops(opts: { tripDayId: string; planId: string }) {
-  return engineTable("trip_stops")
+export function dayStops(db: Db, opts: { tripDayId: string; planId: string }) {
+  return engineTable(db, "trip_stops")
     .select("*")
     .eq("trip_day_id", opts.tripDayId)
     .eq("plan_id", opts.planId)
@@ -121,8 +136,8 @@ export function dayStops(opts: { tripDayId: string; planId: string }) {
  *
  * 📌 **กฎอยู่ที่ [`scheduleBounds.ts`](./scheduleBounds.ts) → `pickScheduleBounds()` ใช้ตัวนั้น อย่าเลือกเอง**
  */
-export function dayScheduleBounds(opts: { tripDayId: string; planId: string }) {
-  return engineTable("trip_stops")
+export function dayScheduleBounds(db: Db, opts: { tripDayId: string; planId: string }) {
+  return engineTable(db, "trip_stops")
     .select("*")
     .eq("trip_day_id", opts.tripDayId)
     .eq("plan_id", opts.planId)
@@ -139,8 +154,8 @@ export function dayScheduleBounds(opts: { tripDayId: string; planId: string }) {
  * เป็นฟังก์ชันแยกเพราะ *"อ่าน tombstone"* ต้องเป็นการ **เลือก** ที่มีชื่อ
  * ไม่ใช่สิ่งที่เกิดขึ้นเพราะใครลืมใส่ `.is("deleted_at", null)`
  */
-export function dayStopsIncludingDeleted(opts: { tripDayId: string; planId: string }) {
-  return engineTable("trip_stops")
+export function dayStopsIncludingDeleted(db: Db, opts: { tripDayId: string; planId: string }) {
+  return engineTable(db, "trip_stops")
     .select("*")
     .eq("trip_day_id", opts.tripDayId)
     .eq("plan_id", opts.planId)
@@ -181,18 +196,34 @@ export type PlaceSearchHit = {
  * 🔴 **RPC นี้เป็น `security invoker`** — RLS เป็นตัวจำกัดขอบเขตให้เอง
  * ไม่มีบรรทัดไหนในนั้นเช็คว่าใครเป็นเจ้าของทริป และนั่นคือเหตุผลที่มันจะยังถูกวันที่ policy เปลี่ยน (`D38`)
  */
-export function searchPlaceNames(opts: {
+export function searchPlaceNames(db: Db, opts: {
   tripId: string;
   query: string;
   intent: PlaceSearchIntent;
   cityId?: string;
   limit?: number;
 }) {
-  return supabase.rpc("search_place_names", {
+  return db.rpc("search_place_names", {
     p_trip_id: opts.tripId,
     p_query: opts.query,
     p_intent: opts.intent,
     p_city_id: opts.cityId ?? null,
     p_limit: opts.limit ?? 20,
   });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ทริปของผู้ใช้ — `E3` · ตรรกะการเลือกอยู่ที่ [`trip.ts`](./trip.ts) ไม่ใช่ที่นี่
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * ทริปทั้งหมดที่ผู้ใช้เห็นได้ **เรียงตามเวลาสร้าง**
+ *
+ * 🔴 **ไม่มี `where` เรื่องสิทธิ์ในนี้เลย — `trips_select` เป็นคนกรอง**
+ * เขียน `.eq("owner", …)` เอง = แหล่งความจริงที่สองเรื่องสิทธิ์ ที่ต้องคอยให้ตรงกับ policy ตลอดไป (`P-15`)
+ *
+ * ⚠️ **`order` มีไว้ให้ผลคงที่ ไม่ได้มีไว้ให้ใครหยิบตัวแรก** — ดู `trip.ts` ว่าทำไมการหยิบตัวแรกถึงผิด
+ */
+export function tripsVisibleToMe(db: Db) {
+  return engineTable(db, "trips").select("id, name").order("created_at");
 }
