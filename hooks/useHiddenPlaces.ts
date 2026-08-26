@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 type HiddenPlaceRow = {
   place_id: string;
@@ -72,6 +73,7 @@ export function useHiddenPlaces(tripId: string | null) {
           }, REFETCH_DEBOUNCE_MS);
         })
         .subscribe();
+      noteRealtimeSubscribed("hidden_places");
     }
 
     init();

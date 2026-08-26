@@ -5,6 +5,7 @@ import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -109,6 +110,7 @@ export function useStops(tripId: string | null, planId: string | null) {
           timer.current = setTimeout(() => void refetchRef.current?.(), 300);
         })
         .subscribe();
+      noteRealtimeSubscribed("trip_stops");
     }
 
     init();

@@ -5,6 +5,7 @@ import { hotelRangeKey } from "@/lib/hotelLegs";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 /** ทุกอย่างที่ต้องรู้ตอนบันทึกที่พักหนึ่งที่ — รวมเป็นอ็อบเจกต์เดียวตั้งแต่เฟส 16
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
@@ -115,6 +116,7 @@ function useHotelsStore(tripId: string | null) {
           }, 300);
         })
         .subscribe();
+      noteRealtimeSubscribed("trip_hotels");
     }
 
     init();
@@ -185,9 +187,14 @@ function useHotelsStore(tripId: string | null) {
         }),
       }),
       // เวลาจริงจาก trigger ฝั่งฐาน — เติมทีหลังเมื่อคำตอบกลับมา
+      // 🔴 `country` ก็เติมทีหลังเหมือนกัน — `toRow()` ไม่รู้ country (client ไม่มี city→country
+      // mapping ในตัว) route จึงต้องคืนมาให้ ไม่งั้นปุ่มแผนที่จะไม่มี country จนกว่าจะโหลดหน้าใหม่
       (body) => {
         const stamped = stampOf(body);
-        if (stamped) setHotels((prev) => (prev[key] ? { ...prev, [key]: { ...prev[key], updated_at: stamped } } : prev));
+        const country = typeof body.country === "string" ? body.country : null;
+        setHotels((prev) =>
+          prev[key] ? { ...prev, [key]: { ...prev[key], ...(stamped ? { updated_at: stamped } : {}), country } } : prev
+        );
       }
     );
   }, [guard]);

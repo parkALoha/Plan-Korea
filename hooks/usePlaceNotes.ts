@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type PlaceNote } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 const REFETCH_DEBOUNCE_MS = 300;
 
@@ -80,6 +81,7 @@ export function usePlaceNotes(tripId: string | null, planId: string | null) {
           }, REFETCH_DEBOUNCE_MS);
         })
         .subscribe();
+      noteRealtimeSubscribed("place_notes");
     }
 
     init();

@@ -5,6 +5,7 @@ import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -101,6 +102,7 @@ function useBookingsStore(tripId: string | null) {
           timer.current = setTimeout(() => void refetchRef.current?.(), 300);
         })
         .subscribe();
+      noteRealtimeSubscribed("bookings");
     }
 
     init();

@@ -6,6 +6,7 @@ import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 /** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
 export function useDaySettings(tripId: string | null, planId: string | null) {
@@ -80,6 +81,7 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
           timer.current = setTimeout(() => void refetchRef.current?.(), 300);
         })
         .subscribe();
+      noteRealtimeSubscribed("trip_day_plan_settings");
     }
 
     init();

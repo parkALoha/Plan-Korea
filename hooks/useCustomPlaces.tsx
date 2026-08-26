@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 function makeCustomPlaceId() {
   return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -91,6 +92,7 @@ function useCustomPlacesStore(tripId: string | null) {
           }
         )
         .subscribe();
+      noteRealtimeSubscribed("custom_places");
     }
 
     init();

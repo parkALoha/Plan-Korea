@@ -137,7 +137,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   // 🔴 คืน `updated_at` ของจริงกลับไป — `D7` ไคลเอนต์ห้ามปั้นเวลาเอง
   //    trigger ฝั่งฐานเป็นคนเขียน เครื่องที่นาฬิกาผิดจึงชนะ LWW ไม่ได้อีก
   const updatedAt = (data[0] as { updated_at?: string }).updated_at ?? null;
-  return NextResponse.json({ ok: true, updatedAt }, { headers: { "Cache-Control": "private, no-store" } });
+  // 🔴 คืน `country` กลับไปด้วย (`E5` — เจ้าของ P1 ขอ `E4-AC3`) — ฝั่ง client เขียน state แบบ optimistic
+  // ก่อนคำตอบนี้กลับมา (`toRow()` ไม่รู้ country) ถ้าไม่คืนตรงนี้ ปุ่มแผนที่จะไม่มี country ให้ใช้
+  // จนกว่าจะโหลดหน้าใหม่ (Realtime ไม่ทำงานวันนี้ — ดู `lib/engine/realtimeStatus.ts`)
+  const country = (city as { country_id?: string | null }).country_id ?? null;
+  return NextResponse.json(
+    { ok: true, updatedAt, country },
+    { headers: { "Cache-Control": "private, no-store" } }
+  );
 }
 
 /** ลบที่พักของช่วงวันหนึ่ง — `?checkIn=&checkOut=` */

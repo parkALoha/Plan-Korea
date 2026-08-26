@@ -1,28 +1,29 @@
 "use client";
 
-import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { TripDataProvider } from "@/components/TripDataProvider";
-import { rememberActiveTripId } from "@/hooks/useActiveTripId";
+import { TripStatusFallback } from "@/components/TripStatusFallback";
+import { useActiveTripId } from "@/hooks/useActiveTripId";
 
 /**
  * Layout ของ `/trip/[tripId]/...` — `E5-AC1`/`E5-AC2`
  *
- * `tripId` มาจาก **path** ตรง ๆ ผ่าน `useParams()` — ไม่ resolve เอง ไม่เดา ตรงกับหลักการเดียวกับ
- * ฝั่งเซิร์ฟเวอร์ (`app/api/engine/trips/[tripId]/.../route.ts`) `E5-AC2` ("สลับทริปแล้ว URL เปลี่ยน ·
- * refresh แล้วยังอยู่ทริปเดิม · กด back ได้ถูกทริป") ได้มาฟรีจาก Next.js routing เอง เพราะ `tripId`
- * ไม่เคยถูกเก็บเป็น state ที่ไหนเลยนอกจาก URL — เปลี่ยน URL = เปลี่ยนทริปทันที ไม่มี state ค้าง
+ * 🔴 **เรียก `useActiveTripId({ fromRoute })` ตัวเดียวกับที่หน้า bare ใช้ ไม่ใช่เชื่อ `params.tripId`
+ * ตรง ๆ** (P1 ขอ) — URL ที่พิมพ์/บุ๊กมาร์กไว้ก็เป็น "แหล่งความจริงที่อาจเก่า" ได้เหมือน localStorage:
+ * ทริปถูกลบ · สิทธิ์ถูกถอน · เปิดคนละบัญชี — ถ้า `tripId` ใน path ใช้ไม่ได้แล้ว `resolveTripId()`
+ * (ใน `useActiveTripId.ts`) จะตกไปหา fallback เดียวกับหน้า bare แทนที่จะ render ต่อด้วย id ที่ตายแล้ว
  *
- * `rememberActiveTripId()` บันทึกไว้ให้หน้า bare (`/`, `/today`, `/summary` — `BareTripDataProvider`)
- * รู้ว่าครั้งหน้าควรพาไปทริปไหนก่อน โดยไม่ต้องเดาจาก `chooseSoleTrip` เพียงอย่างเดียว
+ * `E5-AC2` ("สลับทริปแล้ว URL เปลี่ยน · refresh แล้วยังอยู่ทริปเดิม · กด back ได้ถูกทริป") ยังได้มาฟรี
+ * จาก Next.js routing เหมือนเดิม เพราะ `fromRoute` มาจาก `useParams()` สดทุกครั้ง ไม่มี state ค้าง —
+ * ตัว `resolveTripId()` แค่เพิ่มการตรวจว่า id นั้น**ยังใช้ได้จริง**ก่อนเชื่อ ไม่ได้เปลี่ยนที่มาของมัน
+ *
+ * `useActiveTripId()` เขียน `lastTripId` ลง localStorage เองทุกครั้งที่ resolve สำเร็จ (ไม่ว่าจะมาจาก
+ * `fromRoute` หรือ fallback) ให้หน้า bare (`/`, `/today`, `/summary`) รู้ว่าครั้งหน้าควรพาไปทริปไหนก่อน
  */
 export default function TripLayout({ children }: { children: React.ReactNode }) {
   const params = useParams<{ tripId: string }>();
-  const tripId = params.tripId;
+  const trip = useActiveTripId({ fromRoute: params.tripId });
 
-  useEffect(() => {
-    if (tripId) rememberActiveTripId(tripId);
-  }, [tripId]);
-
-  return <TripDataProvider tripId={tripId ?? null}>{children}</TripDataProvider>;
+  if (trip.status !== "ready") return <TripStatusFallback trip={trip} />;
+  return <TripDataProvider tripId={trip.tripId}>{children}</TripDataProvider>;
 }

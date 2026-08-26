@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { chooseSoleTrip } from "@/lib/engine/tripChoice";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readCache, writeCache, clearCache } from "@/lib/localCache";
 
-/** localStorage key เก็บ tripId ล่าสุดที่เปิดผ่าน `/trip/[tripId]/...` — ดู `rememberActiveTripId()` */
+/** localStorage key เก็บ tripId ล่าสุดที่ resolve สำเร็จ (ไม่ว่าจาก route หรือ fallback) — เขียนใน
+ *  `useActiveTripId()` เองทุกครั้งที่ได้ `"ready"` ไม่มีฟังก์ชันแยกให้เรียกจากที่อื่น (จุดเดียว ไม่ซ้ำ) */
 const LAST_TRIP_ID_KEY = "lastTripId";
 
 export type ActiveTripState =
@@ -12,71 +13,94 @@ export type ActiveTripState =
   | { status: "ready"; tripId: string }
   | { status: "none" }
   | { status: "ambiguous"; tripIds: string[] }
+  /** ออฟไลน์ตั้งแต่เปิดแอปครั้งแรก ไม่เคยมี tripId ให้ใช้เลย — ต่างจาก `"error"` ตรงข้อความ (P1 · `E5`) */
+  | { status: "offline-first-launch" }
   | { status: "error"; message: string };
 
 /**
- * ตัวตัดสิน "ทริปไหน" สำหรับหน้า **bare** (`/`, `/today`, `/summary`) — `E5-AC1`
+ * 🔴 **ตัวตัดสิน "ทริปไหน" ตัวเดียวของทั้งแอป — `resolveTripId()` ด้านล่าง** (P1 ขอ, `E5`)
  *
- * ## ทำไมต้องมีตัวนี้แยกจาก `chooseSoleTrip`
- * `chooseSoleTrip` เป็นกฎบริสุทธิ์ (ไม่ import อะไร) ที่ 9 hook เคยเรียก**แยกกันคนละที่**
- * ทำให้พอมีทริปที่สอง แต่ละ hook ได้ `ambiguous` เงียบ ๆ ไม่พร้อมกัน — ตอนนี้ 9 hook รับ `tripId`
- * จากผู้เรียกแล้ว (ไม่ resolve เอง) **ต้องมีที่เดียวที่ตัดสินแทน** และหน้า bare (ที่ไม่มี `[tripId]`
- * ในหน้า URL ให้ยึด) คือที่ที่ต้องใช้ตัวนี้ — เรียกครั้งเดียวต่อหน้า ไม่ใช่ครั้งเดียวต่อ hook
- *
- * ## `lastTripId` มาก่อน `chooseSoleTrip` เสมอ
- * ทริปล่าสุดที่ผู้ใช้เปิดจริง (`rememberActiveTripId`, เรียกจาก `/trip/[tripId]/layout.tsx`) ตรงกับ
- * ความตั้งใจของผู้ใช้มากกว่ากฎ "ทริปเดียว = ใช้เลย" เพราะพอมีทริปที่สองจริง `chooseSoleTrip` จะไม่มีวัน
- * เลือกให้อีก (คืน `ambiguous` เสมอ) — ถ้าไม่มี `lastTripId` ที่ยังใช้ได้จริง ค่อย fallback ไปใช้กฎเดิม
+ * มีคำตอบสามแหล่งสำหรับคำถามเดียวกัน ("ทริปไหน"): route params (`/trip/[tripId]`) · localStorage
+ * (`lastTripId`, หน้า bare) · `chooseSoleTrip()` (fallback) — **ถ้าลำดับ fallback ถูกเขียนซ้ำที่ไหนอีก
+ * แม้แต่ที่เดียว วันหนึ่งมันจะต่างกันแล้วผู้ใช้เห็นคนละทริประหว่างสองหน้า** ซึ่งเป็นรูปเดียวกับ
+ * `storageKeyOf`/`dayBridge`/`hotelRangeKey` ที่ไล่ปิดกันมาทั้งวัน — `useActiveTripId()` (ฮุคเดียว)
+ * เรียก `resolveTripId()` (ฟังก์ชันตัดสินใจล้วน) ตัวเดียวกันไม่ว่าจะมี `fromRoute` หรือไม่
  */
-export function useActiveTripId(): ActiveTripState {
+export function useActiveTripId(opts: { fromRoute?: string } = {}): ActiveTripState {
+  const { fromRoute } = opts;
   const [state, setState] = useState<ActiveTripState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
-    async function resolve() {
-      const res = await fetch("/api/engine/trips");
-      if (cancelled) return;
-      if (!res.ok) {
-        setState({ status: "error", message: `เปิดรายการทริปไม่ได้ (${res.status})` });
+    async function run() {
+      let trips: { id: string }[];
+      try {
+        const res = await fetch("/api/engine/trips");
+        if (cancelled) return;
+        if (!res.ok) {
+          setState({ status: "error", message: `เปิดรายการทริปไม่ได้ (${res.status})` });
+          return;
+        }
+        trips = (await res.json()) as { id: string }[];
+      } catch {
+        // 🔴 `fetch` ที่ throw คือออฟไลน์จริง (คนละเคสกับ `!res.ok`) — resolveTripId ตัดสินว่าจะแสดงอะไร
+        if (cancelled) return;
+        const cachedId = readCache<string>(LAST_TRIP_ID_KEY);
+        setState(cachedId ? { status: "ready", tripId: cachedId } : { status: "offline-first-launch" });
         return;
       }
-      const trips = (await res.json()) as { id: string }[];
       if (cancelled) return;
 
-      // 🔴 ทริปล่าสุดที่เคยเปิด ยังอยู่ในรายการที่เห็นได้จริงไหม — เช็คกับของจริงเสมอ ไม่เชื่อ cache เปล่า ๆ
-      //    (สิทธิ์อาจถูกถอนไปแล้วตั้งแต่ครั้งก่อน — `trips` มาจาก RLS จริง ไม่ใช่จากที่จำไว้)
       const cachedId = readCache<string>(LAST_TRIP_ID_KEY);
-      if (cachedId && trips.some((t) => t.id === cachedId)) {
-        setState({ status: "ready", tripId: cachedId });
-        return;
-      }
-
-      const resolved = chooseSoleTrip(trips);
-      if (resolved.ok) {
-        writeCache(LAST_TRIP_ID_KEY, resolved.tripId);
-        setState({ status: "ready", tripId: resolved.tripId });
-        return;
-      }
-      if (resolved.reason === "ambiguous") {
-        setState({ status: "ambiguous", tripIds: resolved.tripIds });
-      } else if (resolved.reason === "none") {
-        setState({ status: "none" });
-      } else {
-        setState({ status: "error", message: resolved.message });
-      }
+      const result = resolveTripId(trips, { fromRoute, cachedId });
+      if (result.clearCache) clearCache(LAST_TRIP_ID_KEY);
+      else if (result.state.status === "ready") writeCache(LAST_TRIP_ID_KEY, result.state.tripId);
+      setState(result.state);
     }
 
-    resolve();
+    run();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fromRoute]);
 
   return state;
 }
 
-/** เรียกตอนเข้า `/trip/[tripId]/...` จริง — ให้หน้า bare รู้ว่าครั้งหน้าควรพาไปทริปไหนก่อน */
-export function rememberActiveTripId(tripId: string): void {
-  writeCache(LAST_TRIP_ID_KEY, tripId);
+/**
+ * ฟังก์ชันตัดสินใจล้วน (ไม่ทำ side effect) — แยกจาก `useActiveTripId` เพื่อให้ทดสอบได้ตรง ๆ ไม่ต้อง mock
+ * `fetch`/`localStorage` · เรียกจากฮุคเดียวเท่านั้น ไม่มีที่อื่นเขียนลำดับ fallback ซ้ำ
+ *
+ * ลำดับ: `fromRoute` (ถ้ามีและยังใช้ได้จริง) → `cachedId` (ถ้ามีและยังใช้ได้จริง) → `chooseSoleTrip()`
+ *
+ * 🔴 **`fromRoute`/`cachedId` ที่ไม่อยู่ใน `trips` ที่เห็นได้จริง = ใช้ไม่ได้แล้ว** (ถูกถอนจากทริป · ทริป
+ * ถูกลบ · เปิดคนละบัญชี) — ต้องตกไป `chooseSoleTrip()` ทันที ไม่ใช่ render ต่อด้วย id ที่ตายแล้ว (P1 ขอ)
+ * `clearCache: true` บอกผู้เรียกว่าต้องล้าง `lastTripId` ทิ้ง เพราะค่าที่จำไว้เคยถูกใช้ (ไม่ว่าจะมาจาก
+ * route หรือ storage) กลายเป็นค่าที่ใช้ไม่ได้แล้ว
+ */
+export function resolveTripId(
+  trips: readonly { id: string }[],
+  opts: { fromRoute?: string; cachedId?: string | null }
+): { state: ActiveTripState; clearCache: boolean } {
+  const known = new Set(trips.map((t) => t.id));
+  const routeStale = Boolean(opts.fromRoute) && !known.has(opts.fromRoute!);
+
+  // ① fromRoute ถ้ามีและยังใช้ได้ → ใช้เลย ② cachedId ถ้ายังใช้ได้ → รองลงมา (แม้ fromRoute จะเก่าไปแล้ว —
+  // บุ๊กมาร์กทริปที่ลบไปแล้วไม่ควรทำให้พลาดทริปล่าสุดที่ยังเปิดได้จริงอยู่ในเครื่องเดียวกัน)
+  if (opts.fromRoute && known.has(opts.fromRoute)) {
+    return { state: { status: "ready", tripId: opts.fromRoute }, clearCache: false };
+  }
+  if (opts.cachedId && known.has(opts.cachedId)) {
+    return { state: { status: "ready", tripId: opts.cachedId }, clearCache: routeStale };
+  }
+
+  const hadStaleId = routeStale || Boolean(opts.cachedId);
+  const resolved = chooseSoleTrip(trips);
+  if (resolved.ok) return { state: { status: "ready", tripId: resolved.tripId }, clearCache: hadStaleId };
+  if (resolved.reason === "ambiguous") {
+    return { state: { status: "ambiguous", tripIds: resolved.tripIds }, clearCache: hadStaleId };
+  }
+  if (resolved.reason === "none") return { state: { status: "none" }, clearCache: hadStaleId };
+  return { state: { status: "error", message: resolved.message }, clearCache: hadStaleId };
 }

@@ -79,5 +79,15 @@ export function writeCache(key: string, value: unknown) {
   }
 }
 
+/** ลบคีย์เดียวทิ้ง — ใช้ตอนค่าที่แคชไว้ใช้ไม่ได้แล้ว (เช่น `lastTripId` ที่ถูกถอนสิทธิ์) ไม่ใช่แค่ "ยังไม่มี" */
+export function clearCache(key: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(PREFIX + key);
+  } catch {
+    // localStorage ถูกปิด — ไม่มีอะไรให้ลบ
+  }
+}
+
 /** 🔴 เปิดให้เทสต์เท่านั้น — ด่านที่ไม่มีเคสด้านบวก คือด่านที่ไม่มีใครรู้ว่ายังทำงานอยู่ไหม */
 export const __cachePrefixForTests = PREFIX;

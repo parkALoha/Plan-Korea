@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
+import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 
 function makeChecklistId() {
   return `cl-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -54,6 +55,7 @@ export function useChecklist(tripId: string | null) {
           timer.current = setTimeout(() => void refetchRef.current?.(), 300);
         })
         .subscribe();
+      noteRealtimeSubscribed("checklist_items");
     }
 
     init();

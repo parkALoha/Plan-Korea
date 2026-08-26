@@ -29,6 +29,20 @@ export function TripStatusFallback({ trip }: { trip: Exclude<ActiveTripState, { 
       </div>
     );
   }
+  // 🔴 **`offline-first-launch` ต้องเป็นข้อความที่ตัดสินใจแล้ว ไม่ใช่หน้า offline fallback เปล่า ๆ ของ
+  // sw.js** (P1 ขอ, E5) — PWA เปิดครั้งแรกบนเครื่องใหม่ตอนไม่มีเน็ต ไม่เคยมี tripId ให้ใช้เลย: ต่างจาก
+  // ผู้ใช้เก่าที่มี `lastTripId` แคชไว้แล้ว (เคสนั้น `useActiveTripId` ใช้ค่าเก่าต่อได้เลย ไม่มาถึงที่นี่)
+  // — ต้องบอกตรง ๆ ว่าทำไมไม่มีอะไรให้ดู ไม่ใช่ให้ผู้ใช้คิดว่าแอปพัง
+  if (trip.status === "offline-first-launch") {
+    return (
+      <div className="flex min-h-full items-center justify-center p-8 text-center">
+        <p className="text-content">
+          📴 ยังไม่เคยเปิดแอปนี้ตอนมีเน็ตเลย — ต้องเชื่อมต่อเน็ตอย่างน้อยหนึ่งครั้งก่อน หลังจากนั้นจะเปิด
+          ออฟไลน์ได้ตามปกติ
+        </p>
+      </div>
+    );
+  }
   const message =
     trip.status === "none"
       ? soleTripMessage({ ok: false, reason: "none" })

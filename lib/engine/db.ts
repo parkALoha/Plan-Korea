@@ -372,9 +372,11 @@ export function setOvernightIntent(
   return engineTable(db, "trip_days").update(patch).eq("id", dayId).select("id");
 }
 
-/** หา `city_id` จาก slug เดิม — `null` = ไม่รู้จักเมืองนั้น */
+/** หา `city_id` จาก slug เดิม — `null` = ไม่รู้จักเมืองนั้น
+ *  🔴 รวม `country_id` มาด้วยเสมอ (`E5` — P1 ขอให้ P3 ส่ง `country` กลับหลังเขียนที่พัก) — เพิ่ม
+ *  แบบ additive ล้วน ผู้เรียกเดิม 2 จุด (`hotels`/`days` route) ยังอ่านแค่ `.id` เหมือนเดิมได้ */
 export function cityIdBySlug(db: Db, slug: string) {
-  return engineTable(db, "catalog_cities").select("id").eq("legacy_slug", slug).maybeSingle();
+  return engineTable(db, "catalog_cities").select("id, country_id").eq("legacy_slug", slug).maybeSingle();
 }
 
 // ───────────────────────────────────────────────────────────────────────────
