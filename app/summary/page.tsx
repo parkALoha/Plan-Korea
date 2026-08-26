@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
+import { countryOfCity, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { resolveEventPlace } from "@/lib/eventPlace";
@@ -57,6 +58,30 @@ import { useActiveTripId } from "@/hooks/useActiveTripId";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
 import NoteBody from "@/components/NoteBody";
+
+/**
+ * ประเทศที่เอกสาร ตม. (`ImmigrationSheet`) เป็นของ — ทริปนี้ข้าม 2 ประเทศ (ฮานอยพักเครื่อง → เกาหลี)
+ * เอกสารใบเดียวเป็นของประเทศเดียว เลือกไม่ได้แบบเดาเงียบๆ (P1 27 ส.ค. 2026) — ใช้ประเทศที่มีจำนวนวัน
+ * มากที่สุดในทริป (ทริปนี้คือเกาหลี 5/6 เมือง) แล้วเขียนชื่อประเทศที่เลือกไว้บนเอกสารเองอยู่แล้ว (h1 +
+ * หัวข้อที่พัก ดู ImmigrationSheet.tsx) เจ้าหน้าที่จึงไม่มีทางอ่านผิดประเทศแบบไม่รู้ตัว
+ * ⚠️ คำนวณจาก ITINERARY ที่เป็นข้อมูลสถิตย์ ไม่ขึ้นกับ props/state จึงทำครั้งเดียวนอกคอมโพเนนต์ได้
+ */
+const IMMIGRATION_DOCUMENT_COUNTRY: { code: CountryCode; nameEn: string; nameTh: string } = (() => {
+  const dayCountByCountry = new Map<CountryCode, number>();
+  for (const day of ITINERARY) {
+    const country = countryOfCity(day.city);
+    dayCountByCountry.set(country, (dayCountByCountry.get(country) ?? 0) + 1);
+  }
+  let winner: CountryCode = "kr";
+  let winnerDays = -1;
+  for (const [country, days] of dayCountByCountry) {
+    if (days > winnerDays) {
+      winner = country;
+      winnerDays = days;
+    }
+  }
+  return { code: winner, nameEn: COUNTRY_NAME_EN[winner], nameTh: COUNTRY_NAME_TH[winner] };
+})();
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
   if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
@@ -710,6 +735,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
 
       {overallLoaded && immigrationView && (
         <ImmigrationSheet
+          country={IMMIGRATION_DOCUMENT_COUNTRY}
           hotelLegs={hotelLegs}
           hotels={hotels}
           stopsByDay={stopsByDay}

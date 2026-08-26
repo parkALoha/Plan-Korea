@@ -61,12 +61,20 @@ function allFlights(): FlightRow[] {
  * ของโปรเจกต์นี้เปิดสาธารณะทุกตารางและ anon key อยู่ในบันเดิลฝั่ง browser (ดูขอบเขตที่เฟส 13.5)
  * — ใครได้ key ไปก็อ่านได้หมด ชื่อ-นามสกุลตามพาสปอร์ตไม่ควรอยู่ในนั้น
  */
+/** ประเทศที่เอกสารนี้เป็นของ — มาจาก prop เสมอ ไม่ใช่ค้นเอง (E4-AC3/§2③ ImmigrationSheet ตัดสิน
+ *  27 ส.ค. 2026) ทริปเดียวข้ามได้หลายประเทศ คอมโพเนนต์นี้จึงเลือกเองไม่ได้ว่าเอกสารเป็นของประเทศไหน —
+ *  ผู้เรียก (วันนี้คือ app/summary/page.tsx ใช้ประเทศที่มีจำนวนวันมากที่สุดในทริป วันหน้าอาจมาจากฐาน)
+ *  เป็นคนตัดสินแล้วส่งลงมา nameTh ยังไม่ได้ใช้ในเอกสารนี้ (ภาษาอังกฤษล้วน) แต่รับมาตามรูปที่ตกลงไว้ */
+export type ImmigrationCountry = { code: string; nameEn: string; nameTh: string };
+
 export function ImmigrationSheet({
+  country,
   hotelLegs,
   hotels,
   stopsByDay,
   customPlaces,
 }: {
+  country: ImmigrationCountry;
   hotelLegs: HotelLeg[];
   hotels: Record<string, TripHotel>;
   stopsByDay: Record<string, TripStop[]>;
@@ -126,7 +134,7 @@ export function ImmigrationSheet({
           เท่าตัวหนังสือ (`--line` เป็นครีมอ่อน #f7ead6 ไว้คั่นแถวในการ์ด พอมาอยู่บนกระดาษขาวจะหายไปเลย)
           หน้านี้พิมพ์ยื่นเจ้าหน้าที่ ตม. จริง เส้นที่หายคือเส้นที่แบ่งส่วนของเอกสารให้อ่านออก */}
       <header className="border-b-2 border-content pb-2">
-        <h1 className="text-xl font-bold">Travel Itinerary — Republic of Korea</h1>
+        <h1 className="text-xl font-bold">Travel Itinerary — {country.nameEn}</h1>
         <p className="text-sm text-content-soft">
           {formatDateEn(ITINERARY[0].date)} – {formatDateEn(ITINERARY[ITINERARY.length - 1].date)} ·
           Tourism · Round trip from Bangkok, Thailand
@@ -199,7 +207,7 @@ export function ImmigrationSheet({
         </p>
       </Section>
 
-      <Section title="Accommodation in Korea">
+      <Section title={`Accommodation in ${country.nameEn}`}>
         <Table head={["Dates", "Nights", "Hotel", "Address", "Phone"]}>
           {hotelLegs.map((leg) => {
             const hotel = hotels[leg.id];
