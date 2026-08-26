@@ -84,6 +84,22 @@ describe("ด่านก่อนถึงฐาน", () => {
   it("วันเดียว (เริ่ม = จบ) ต้องผ่าน — ทริปวันเดียวมีจริง", async () => {
     expect((await post({ ...OK, startDate: "2026-10-11", endDate: "2026-10-11" })).status).toBe(201);
   });
+
+  it("🔴 ช่วงวันที่ยาวเกิน 366 วัน → 400 **ก่อน**ถึงฐาน", async () => {
+    // `create_trip` สร้าง `trip_days` หนึ่งแถวต่อวัน · พิมพ์ปีผิดครั้งเดียว = หลายพันแถว
+    rpcSpy.mockClear();
+    const res = await post({ ...OK, startDate: "2026-10-11", endDate: "2036-10-11" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("366");
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it("366 วันพอดีต้องผ่าน — ขอบต้องไม่ถูกกันไปด้วย", async () => {
+    // 2026-01-01 → 2027-01-01 = 366 วัน (นับหัวท้าย)
+    expect((await post({ ...OK, startDate: "2026-01-01", endDate: "2027-01-01" })).status).toBe(201);
+    // 367 วันต้องไม่ผ่าน
+    expect((await post({ ...OK, startDate: "2026-01-01", endDate: "2027-01-02" })).status).toBe(400);
+  });
 });
 
 describe("เส้นทางที่ถูกต้อง", () => {
@@ -115,7 +131,7 @@ describe("เส้นทางที่ถูกต้อง", () => {
 
 describe("🔴 แยก 'ด่านทำงาน' ออกจาก 'บั๊กเรา' — รูปเดียวกับ `verdictFor()` ของ P4", () => {
   it("`42501` → 403 (สิทธิ์) · `PT503` → 503 (โหมดอ่านอย่างเดียว) · อื่น → 502 (บั๊กเรา)", async () => {
-    for (const [code, status] of [["42501", 403], ["PT503", 503], ["42P01", 502], [undefined, 502]] as const) {
+    for (const [code, status] of [["42501", 403], ["PT503", 503], ["22023", 400], ["42P01", 502], [undefined, 502]] as const) {
       rpcSpy.mockResolvedValue({ data: null, error: { code, message: "x" } });
       expect((await post(OK)).status, String(code)).toBe(status);
     }

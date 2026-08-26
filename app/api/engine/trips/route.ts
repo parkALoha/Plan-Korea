@@ -88,6 +88,22 @@ export async function POST(req: NextRequest) {
   if (endDate < startDate) {
     return NextResponse.json({ error: "วันสิ้นสุดต้องไม่มาก่อนวันเริ่ม" }, { status: 400 });
   }
+  /**
+   * 🔴 **เพดานช่วงวันที่ — `create_trip` สร้าง `trip_days` หนึ่งแถวต่อวัน**
+   * พิมพ์ปีผิด (`2036` แทน `2026`) = **3,653 แถวในทรานแซกชันเดียว โดยผู้ใช้ไม่ได้ตั้งใจ**
+   * · `trips_dates_ordered` บังคับแค่ `end >= start` **ไม่มีเพดาน**
+   * · ตัวเลข 366 = ปีหนึ่งรวมปีอธิกสุรทิน · **ฟังก์ชันในฐานบังคับซ้ำอีกชั้น** (`22023`)
+   * 🎯 ที่นี่มีไว้ให้ **ข้อความอ่านรู้เรื่อง** ไม่ใช่ให้เป็นด่าน — ด่านจริงอยู่ในฐาน
+   *   (เขียนไว้เพราะถ้าไม่เขียน คนถัดไปจะอ่านว่าลบอันไหนก็ได้)
+   */
+  const DAY_MS = 86_400_000;
+  const days = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / DAY_MS) + 1;
+  if (days > 366) {
+    return NextResponse.json(
+      { error: `ช่วงวันที่ยาวเกินไป (${days} วัน) — สูงสุด 366 วัน` },
+      { status: 400 },
+    );
+  }
 
   const baseTimezone = typeof b.baseTimezone === "string" && b.baseTimezone.trim() !== ""
     ? b.baseTimezone.trim()
@@ -98,7 +114,11 @@ export async function POST(req: NextRequest) {
     const { data, error } = await createTrip(db, { title, startDate, endDate, baseTimezone });
     if (error) {
       // 🔴 แยก "ด่านทำงาน" ออกจาก "บั๊กเรา" แบบเดียวกับที่ `verdictFor()` ของ P4 ทำ
-      const status = error.code === "42501" ? 403 : error.code === "PT503" ? 503 : 502;
+      // `22023` = ฟังก์ชันในฐานปฏิเสธค่าที่ส่งไป (เพดานช่วงวันที่) → เป็นคำขอที่ผิด ไม่ใช่บั๊กเรา
+      const status =
+        error.code === "42501" ? 403 :
+        error.code === "PT503" ? 503 :
+        error.code === "22023" ? 400 : 502;
       return NextResponse.json({ error: error.message, code: error.code }, { status });
     }
     return NextResponse.json(data, { status: 201, headers: { "Cache-Control": "private, no-store" } });
