@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser } from "@/lib/auth/server";
 import {
-  catalogPlaceIdBySlug, insertStop, ranksInDay, softDeleteStop, stopsOfPlan, updateStop,
+  catalogPlaceIdBySlug, insertStop, ranksInDay, softDeleteStop, stopsOfPlan, updateStop, updateStopInDay,
 } from "@/lib/engine/db";
 import { rankBetween, rankForInsert } from "@/lib/engine/rank";
 import { rateLimitGuard } from "@/lib/rateLimit";
@@ -230,15 +230,41 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   if (error) return NextResponse.json({ error: error.message }, { status: 502 });
 
   const current = new Map(((existing ?? []) as { id: string; rank: string }[]).map((r) => [r.id, r.rank]));
+
+  // ── ตรวจ `orderedIds` ก่อนเขียนแถวแรก (P4 ยิงเจอทั้งสองแบบ 26 ส.ค. 2026) ────
+  // 🔴 id ที่ไม่ได้อยู่ในวันนี้ = **ไคลเอนต์เห็นภาพคนละอันกับฐาน** ไม่ใช่คำขอที่ข้ามได้เงียบ ๆ
+  //    ของเดิมปล่อยให้ไหลไป `updateStop` แล้ว **เขียนทับ `rank` ของวันอื่นจริง**
+  //    · ย้ายจุดแวะ *เข้า* วันนี้ทำผ่าน `PATCH` (`tripDayId`) ไม่ใช่ผ่านที่นี่ → ไม่มีเคสถูกต้องที่ id หลุดชุด
+  const unknown = b.orderedIds.filter((id) => !current.has(id));
+  // 🔴 id ซ้ำ = ลิสต์ที่ขัดแย้งกับตัวเอง · ของเดิมเขียนแถวเดิมสองรอบด้วย rank คนละตัว
+  const seen = new Set<string>();
+  const duplicated = [...new Set(b.orderedIds.filter((id) => (seen.has(id) ? true : (seen.add(id), false))))];
+  if (unknown.length > 0 || duplicated.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          unknown.length > 0
+            ? "orderedIds มีจุดแวะที่ไม่ได้อยู่ในวันนี้ — หน้าจอกับฐานไม่ตรงกัน ลองโหลดใหม่"
+            : "orderedIds มี id ซ้ำ",
+        code: "stale_order",
+        unknown,
+        duplicated,
+      },
+      { status: 409 }
+    );
+  }
+
+  // ตัวที่เล็กที่สุด *ของวันนั้น* — คิดครั้งเดียวจากภาพก่อนเขียน ไม่ใช่คิดใหม่ทุกรอบ
+  const minRank = [...current.values()].sort()[0];
   let prev: string | null = null;
   const writes: { id: string; rank: string }[] = [];
   for (const id of b.orderedIds) {
-    const cur = current.get(id);
-    if (cur !== undefined && prev !== null && cur > prev) {
+    const cur = current.get(id) as string;
+    if (prev !== null && cur > prev) {
       prev = cur; // อยู่ถูกที่แล้ว — ไม่ต้องเขียน
       continue;
     }
-    if (cur !== undefined && prev === null && cur === [...current.values()].sort()[0]) {
+    if (prev === null && cur === minRank) {
       prev = cur;
       continue;
     }
@@ -254,16 +280,35 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
       );
     }
     writes.push({ id, rank: next });
+    // 🔴 อัปเดตภาพในมือด้วย — รอบถัดไปต้องเทียบกับค่าใหม่ ไม่ใช่ค่าที่เพิ่งถูกแทนที่ไป
+    current.set(id, next);
     prev = next;
   }
 
+  // 🔴 `written` เคยนับ *ความตั้งใจ* ไม่ใช่ *ผลจริง* (P4 · 26 ส.ค. 2026)
+  //    id ที่ไม่มีอยู่จริงก็ได้ `{"ok":true,"written":1}` → **หน้าจอจะแสดงลำดับที่ฐานไม่มี**
+  //    และมันปิดตาชุดทดสอบด้วย: เคสที่ต้องถามว่า "เขียนไปกี่แถว" ถามไม่ได้เลย
+  let written = 0;
   for (const w of writes) {
-    const { error: e } = await updateStop(db, w.id, { rank: w.rank });
+    const { data: rows, error: e } = await updateStopInDay(
+      db,
+      w.id,
+      { tripId, planId: b.planId, tripDayId: b.tripDayId },
+      { rank: w.rank }
+    );
     if (e) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: e.code === "42501" ? 403 : 502 });
     }
+    // 0 แถว = RLS กรองออก หรือแถวย้ายวันไประหว่างนั้น — **ไม่ใช่สำเร็จ**
+    if (!rows || rows.length === 0) {
+      return NextResponse.json(
+        { error: "จัดลำดับไม่สำเร็จ — จุดแวะบางตัวไม่อยู่ในวันนี้แล้ว ลองโหลดใหม่", code: "stale_order", written },
+        { status: 409 }
+      );
+    }
+    written += rows.length;
   }
-  return NextResponse.json({ ok: true, written: writes.length }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json({ ok: true, written }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 /** ลบ — soft delete ผ่าน RPC (`E2-AC12`) */

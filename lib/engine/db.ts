@@ -677,6 +677,32 @@ export function updateStop(db: Db, id: string, patch: Record<string, unknown>) {
   return engineTable(db, "trip_stops").update(patch).eq("id", id).select("id");
 }
 
+/**
+ * แก้จุดแวะ **โดยผูกกับวันที่ผู้เรียกอ้างว่ากำลังจัดลำดับอยู่**
+ *
+ * 🔴 P4 เจอ 26 ส.ค. 2026: `PUT` อ่าน rank ด้วย `ranksInDay()` ซึ่งมีขอบครบ (trip · plan · day)
+ * แล้วเขียนกลับด้วย `updateStop()` ซึ่งมีแค่ `.eq("id")` — **อ่านมีขอบ เขียนไม่มีขอบ**
+ * → `orderedIds` ที่ปน id ของ *วันอื่น* เขียนทับ `rank` ของวันนั้นได้จริง (ยิงผ่าน HTTP แล้ว)
+ * · RLS ยังกันข้ามผู้ใช้ได้ครบ **แต่ผู้ใช้ทำลำดับวันอื่น *ของตัวเอง* พังได้จากคำขอเดียว**
+ *
+ * 🎯 route กันด้วยการตรวจก่อน (คืน `409`) อยู่แล้ว — **ตัวนี้คือชั้นที่ทำให้มันเกิดไม่ได้
+ * ถึงแม้การตรวจนั้นจะถูกข้าม** · ขอบของการเขียนต้องเท่ากับขอบของการอ่านเสมอ ไม่ใช่เพราะจำได้
+ */
+export function updateStopInDay(
+  db: Db,
+  id: string,
+  scope: { tripId: string; planId: string; tripDayId: string },
+  patch: Record<string, unknown>
+) {
+  return engineTable(db, "trip_stops")
+    .update(patch)
+    .eq("id", id)
+    .eq("trip_id", scope.tripId)
+    .eq("plan_id", scope.planId)
+    .eq("trip_day_id", scope.tripDayId)
+    .select("id");
+}
+
 export function softDeleteStop(db: Db, id: string) {
   return db.rpc("soft_delete_trip_stop", { p_id: id });
 }
