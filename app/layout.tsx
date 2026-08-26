@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { SystemModeBanner } from "@/components/SystemModeBanner";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { ToastHost } from "@/components/ToastHost";
 import "./globals.css";
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-cream">
         <ServiceWorkerRegistrar />
         <OfflineBanner />
+        <SystemModeBanner />
         <ToastHost />
         {/* MapsApiProvider **ไม่อยู่ตรงนี้แล้ว** — ย้ายไปครอบเฉพาะหน้าแผนที่ `app/page.tsx`
             `APIProvider` โหลด Google Maps JS SDK ทันทีที่ mount ไม่ว่าจะมีแผนที่ให้วาดหรือไม่
