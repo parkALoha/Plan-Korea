@@ -23,7 +23,28 @@ const ATTRACTION_TYPES = [
   "cultural_landmark",
 ];
 
-const KIND_TYPES: Record<string, string[]> = {
+/**
+ * 🔴 **allowlist ที่บังคับได้จริง — แก้ 27 ส.ค. 2026 (P1)**
+ *
+ * เดิม `KIND_TYPES: Record<string, string[]>` แล้วเช็คด้วย `if (!includedTypes) return 400`
+ * → **`?kind=constructor` ได้ฟังก์ชัน `Object` กลับมา ซึ่งเป็นค่า truthy → เดินผ่านด่านไปเลย**
+ * แล้ว `KIND_OPTIONS["constructor"].radius` เป็น `undefined` → **ยิง Google จริงด้วยค่าขยะ**
+ * (`"toString"` `"valueOf"` `"__proto__"` ก็เหมือนกัน)
+ *
+ * 🎯 **คอมเมนต์ข้างบนเขียนเจตนาไว้ถูกทุกตัวอักษร — กลไกไม่ได้ทำตามนั้น** (ตระกูล `D82`)
+ * *"จำกัดไว้เป็น allowlist ฝั่งเซิร์ฟเวอร์ ไม่ปล่อยให้ client ส่ง type อะไรก็ได้เข้า Google"*
+ *
+ * ทางแก้ใช้ **รายการที่เขียนชื่อออกมาตรง ๆ** ไม่ใช่ `Object.hasOwn` เพราะ:
+ * ① `KINDS` เป็นแหล่งความจริงเดียวที่อ่านแล้วรู้ทันทีว่ารับอะไรได้บ้าง
+ * ② `Record<Kind, …>` ทำให้ **ลืมเพิ่มใน `KIND_OPTIONS` = `tsc` แดง** ไม่ใช่ `undefined` ตอนรัน
+ */
+const KINDS = ["restaurant", "attraction", "place", "hospital"] as const;
+type Kind = (typeof KINDS)[number];
+function isKind(v: string): v is Kind {
+  return (KINDS as readonly string[]).includes(v);
+}
+
+const KIND_TYPES: Record<Kind, string[]> = {
   restaurant: ["restaurant"],
   // ที่เที่ยวของเมืองนั้นๆ — รวมพิพิธภัณฑ์/วัด/สวน/ตลาด/จุดชมวิว ไม่ใช่แค่ tourist_attraction ล้วน
   // เพราะที่เที่ยวเกาหลีหลายที่ Google ไม่ได้ติดป้าย tourist_attraction ไว้
@@ -35,7 +56,7 @@ const KIND_TYPES: Record<string, string[]> = {
 };
 
 // รัศมี/การเรียงลำดับต่อ kind — ที่เที่ยวมองทั้งเมืองเลยกว้างสุด ร้านอาหารต้องเดินต่อจากจุดก่อนหน้าได้เลยแคบสุด
-const KIND_OPTIONS: Record<string, { radius: number; rank: "POPULARITY" | "DISTANCE" }> = {
+const KIND_OPTIONS: Record<Kind, { radius: number; rank: "POPULARITY" | "DISTANCE" }> = {
   restaurant: { radius: 1200, rank: "DISTANCE" },
   attraction: { radius: 15000, rank: "POPULARITY" },
   place: { radius: 3000, rank: "POPULARITY" },
@@ -62,11 +83,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [], error: "missing lat/lng" }, { status: 400 });
   }
 
-  const includedTypes = KIND_TYPES[kind];
-  if (!includedTypes) {
+  // 🔴 ตรวจ **ก่อน** แตะตารางใด ๆ — ไม่ใช่ตรวจผลลัพธ์ของการแตะตาราง
+  //    การเช็ค `if (!ผลลัพธ์)` แปลว่าเรา index ไปแล้ว และสายโปรโตไทป์ก็ตอบไปแล้ว
+  if (!isKind(kind)) {
     return NextResponse.json({ results: [], error: "unknown kind" }, { status: 400 });
   }
-
+  const includedTypes = KIND_TYPES[kind];
   const options = KIND_OPTIONS[kind];
   const radius = radiusParam ? Math.min(parseInt(radiusParam, 10), 50000) : options.radius;
 

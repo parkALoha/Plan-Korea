@@ -1,0 +1,68 @@
+import { describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+
+/**
+ * `app/api/place-nearby` — **ด่าน allowlist ของ `kind`** (P1 · 27 ส.ค. 2026)
+ *
+ * 🔴 คอมเมนต์ในไฟล์นั้นเขียนเจตนาไว้ตรง ๆ ว่า
+ * *"จำกัดไว้เป็น allowlist ฝั่งเซิร์ฟเวอร์ **ไม่ปล่อยให้ client ส่ง type อะไรก็ได้เข้า Google**"*
+ * แต่กลไกเดิมคือ `const t = KIND_TYPES[kind]; if (!t) return 400`
+ * → **`?kind=constructor` ได้ฟังก์ชัน `Object` (truthy) → เดินผ่านด่าน แล้วยิง Google จริง**
+ * 🎯 ตระกูล `D82`: **ถ้อยคำกับกลไกเดินคนละทาง โดยไม่มีใครแก้ฝั่งไหน**
+ *
+ * ⚠️ **`searchNearby` ถูก mock** — เคสนี้ต้องพิสูจน์ว่า *ไม่มีการเรียก Google เลย*
+ * ถ้าปล่อยให้เรียกจริง เทสต์จะเผา quota ทุกครั้งที่รัน **และจะพิสูจน์ตรงข้ามกับที่ตั้งใจ**
+ */
+const searchNearbySpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/googlePlaces", () => ({ searchNearby: searchNearbySpy }));
+vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: () => null }));
+
+import { GET } from "@/app/api/place-nearby/route";
+
+const call = (kind: string) =>
+  GET(new NextRequest(`http://localhost/api/place-nearby?lat=35.1&lng=129.0&kind=${encodeURIComponent(kind)}`));
+
+describe("kind allowlist", () => {
+  it("🔴 คีย์สายโปรโตไทป์ต้องได้ 400 และ **ห้ามแตะ Google เลย**", async () => {
+    for (const bad of ["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"]) {
+      searchNearbySpy.mockClear();
+      const res = await call(bad);
+      expect(res.status, bad).toBe(400);
+      expect(await res.json(), bad).toEqual({ results: [], error: "unknown kind" });
+      // 🎯 ข้อนี้คือหัวใจ — 400 อย่างเดียวไม่พอ ถ้ามันยิงไปแล้วค่อยตอบ 400
+      expect(searchNearbySpy, bad).not.toHaveBeenCalled();
+    }
+  });
+
+  it("kind ที่ไม่รู้จักทั่วไปก็ 400 เหมือนเดิม", async () => {
+    for (const bad of ["", "hotel", "RESTAURANT", "restaurant ", "../etc"]) {
+      searchNearbySpy.mockClear();
+      const res = await call(bad);
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(searchNearbySpy, JSON.stringify(bad)).not.toHaveBeenCalled();
+    }
+  });
+
+  it("ด้านบวก: kind ที่ถูกต้องยังเดินต่อได้ — ถ้าข้อนี้แดง เคสด้านลบไม่ได้พิสูจน์อะไร", async () => {
+    for (const ok of ["restaurant", "attraction", "place", "hospital"]) {
+      searchNearbySpy.mockClear();
+      searchNearbySpy.mockResolvedValue({ places: [], error: null });
+      const res = await call(ok);
+      expect(res.status, ok).toBe(200);
+      expect(searchNearbySpy, ok).toHaveBeenCalledTimes(1);
+      // รัศมี/การเรียงต้องมาจริง ไม่ใช่ `undefined` ที่หลุดมาจากตาราง
+      const [, types, , radius, rank] = searchNearbySpy.mock.calls[0];
+      expect(Array.isArray(types), ok).toBe(true);
+      expect(typeof radius, ok).toBe("number");
+      expect(["POPULARITY", "DISTANCE"], ok).toContain(rank);
+    }
+  });
+
+  it("ไม่ส่ง kind → ค่าเริ่มต้น `restaurant`", async () => {
+    searchNearbySpy.mockClear();
+    searchNearbySpy.mockResolvedValue({ places: [], error: null });
+    const res = await GET(new NextRequest("http://localhost/api/place-nearby?lat=35.1&lng=129.0"));
+    expect(res.status).toBe(200);
+    expect(searchNearbySpy.mock.calls[0][1]).toEqual(["restaurant"]);
+  });
+});
