@@ -34,7 +34,11 @@ git() {
 
 mk() {  # สร้างทรีจำลองที่ "สะอาด" แล้วคืน path
   d="$(mktemp -d)"
-  mkdir -p "$d/docs/engine/schema" "$d/.github"
+  # 🔴 ต้องมี supabase-platform/ ไม่งั้น guards.sh ปฏิเสธทั้งทรี (exit 2) ตั้งแต่บรรทัดแรก
+  #    เพิ่ม 27 ส.ค. 2026 พร้อมกับด่าน "ทรีนี้ไม่ใช่ทรี platform"
+  #    · ตอนเพิ่มด่านนั้น **positive control พังไป 16 เคสรวด** และ negative test ผ่านหมดเหมือนเดิม
+  #      (ทุกอย่างแดง ก็ตรงกับที่มันคาดพอดี) — รูปเดิมกับตอนต่อสาย api-hosts
+  mkdir -p "$d/docs/engine/schema" "$d/.github" "$d/supabase-platform"
   echo "-- ร่าง DDL" > "$d/docs/engine/schema/ok.sql"
   echo "name: ci" > "$d/.github/ci.yml"
   echo "$d"
@@ -46,7 +50,7 @@ mk() {  # สร้างทรีจำลองที่ "สะอาด" แ
 #    🎯 จับได้เพราะ stderr พ่น `No such file or directory` ไม่ใช่เพราะผลเคสผิด (ผลมัน 'ถูก')
 
 mkrepo() {  # git repo จริงที่มี lib/ และไฟล์ .ts มากพอให้ด่านยอมทำงาน
-  d="$(mktemp -d)"; mkdir -p "$d/lib" "$d/docs/engine/schema" "$d/.github"
+  d="$(mktemp -d)"; mkdir -p "$d/lib" "$d/docs/engine/schema" "$d/.github" "$d/supabase-platform"
   echo "-- ร่าง" > "$d/docs/engine/schema/ok.sql"
   i=0; while [ $i -lt 110 ]; do echo "export const v$i = 1;" > "$d/lib/f$i.ts"; i=$((i+1)); done
   git -C "$d" init -q . && git -C "$d" add -A >/dev/null 2>&1
@@ -70,6 +74,24 @@ check() {  # check <ชื่อเคส> <คาดหวัง pass|fail> <pa
 
 # ① ควบคุมด้านบวก: ทรีสะอาดต้องผ่าน — ถ้าข้อนี้ fail แปลว่าเคสด้านลบข้างล่างเชื่อไม่ได้
 d="$(mk)"; check "ทรีสะอาดต้องผ่าน" pass "$d"
+
+# ①b 🔴 ทรีที่ *ไม่ใช่* ทรี platform ต้องถูก **ปฏิเสธ** ไม่ใช่ถูกตรวจแล้วให้ผลที่อ่านผิดได้
+#    เหตุ: ผมลองรัน guards.sh ใส่ทรีหลัก (`main`) เพื่อดูว่าใช้สคริปต์เดียวคุมสองทรีได้ไหม
+#    → ได้ผลที่ดูน่าเชื่อถือ **และมีข้อที่ผิดปนอยู่**: `.env ชี้ไป DB ทริป` ซึ่งบนทรีหลัก **ถูกต้อง**
+#    🎯 ด่านหลายตัวฝัง "ทรีนี้คือทรี platform" ไว้ในเกณฑ์ · พอเอาไปใช้ที่อื่น
+#       **มันไม่เงียบ มันตอบคำถามอื่นด้วยน้ำเสียงมั่นใจเท่าเดิม**
+d="$(mktemp -d)"; mkdir -p "$d/docs/engine/schema" "$d/.github"   # จงใจไม่มี supabase-platform/
+if "$G" "$d" >/dev/null 2>&1; then
+  echo "🔴 ทรีที่ไม่ใช่ platform ต้องถูกปฏิเสธ — แต่ guards.sh ยอมรันให้"; rc=1
+else
+  st=$?; "$G" "$d" >/dev/null 2>&1 || st=$?
+  if [ "$st" -eq 2 ]; then
+    echo "✅ ทรีที่ไม่ใช่ platform ถูกปฏิเสธด้วย exit 2 (ไม่ใช่ 1 ที่แปลว่าเจอปัญหา)"
+  else
+    echo "🔴 ปฏิเสธแล้วแต่ exit=$st — ต้องเป็น 2 เพื่อแยก 'รันไม่ได้' ออกจาก 'เจอปัญหา'"; rc=1
+  fi
+fi
+rm -rf "$d"
 
 # ② AC10: .sql นอก schema/ ต้องโดนจับ
 d="$(mk)"; echo "select 1;" > "$d/docs/engine/stray.sql"
@@ -735,7 +757,9 @@ pyc "naive-strip: ตัวด่านทุกตัวต้องผ่า�
 # 🎯 บทเรียนซ้อนบทเรียน: **ควบคุมที่ไม่เคยแดง กับควบคุมที่พัง หน้าตาเหมือนกันเป๊ะ —
 #    รวมถึงตอนที่เราเพิ่งเขียนมันเองเมื่อ 5 นาทีที่แล้ว** · ต้องพิสูจน์ว่ามันแดงได้ก่อนถึงจะนับ
 mkworktree() {  # ทรีที่ `.git` เป็น *ไฟล์* — รูปเดียวกับ /Users/park/plan-korea-platform
-  b="$(mktemp -d)"; mkdir -p "$b/up/lib" "$b/up/docs/engine/schema"
+  b="$(mktemp -d)"; mkdir -p "$b/up/lib" "$b/up/docs/engine/schema" "$b/up/supabase-platform"
+  # git ไม่เก็บโฟลเดอร์ว่าง → ต้องมีไฟล์ ไม่งั้น worktree จะไม่มี supabase-platform/
+  echo "placeholder" > "$b/up/supabase-platform/.keep"
   echo "-- ร่าง" > "$b/up/docs/engine/schema/ok.sql"
   i=0; while [ $i -lt 110 ]; do echo "export const v$i = 1;" > "$b/up/lib/f$i.ts"; i=$((i+1)); done
   git -C "$b/up" init -q . >/dev/null 2>&1
