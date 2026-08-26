@@ -4629,6 +4629,44 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           "  📌 เครื่องมือ: Node ต้องมี WebSocket (`--experimental-websocket` · Node 20 ไม่มี native)",
       ).toEqual([]);
     });
+
+    it("🔴 E3-AC7 — maintenance hold ต้องไม่หมดอายุ (`null`) · เปลี่ยนเมื่อไหร่ต้องผูกกับ `E7`", async () => {
+      /**
+       * 🔴 **ผมขอผิดตอนแรก และ P1 แก้ถูก** — ผมขอให้ assert `maintenance_expiry >= E7_pin × safety`
+       * แต่ maintenance hold ใช้ `expires => null` (**ไม่หมดอายุ**) โดยการออกแบบ → **ไม่มีตัวเลขนั้นอยู่จริง**
+       * ถ้าประกาศเลขขึ้นมาให้ผูก = เปลี่ยน maintenance ให้หมดอายุได้ = สิ่งที่เราตัดสินร่วมว่าห้ามเกิด
+       *
+       * 🎯 **ทำไม `null` (ไม่หมดอายุ) ปลอดภัยกว่า bounded — ผมคิดกลับด้านตอนเสนอ P6:**
+       * migration ที่ถูก kill กลางคันทิ้ง DB ไว้ครึ่ง ๆ
+       *   · โหมดค้างเปิด (null)    → เขียนไม่ได้ · DB แช่ครึ่ง ๆ จนคนมาซ่อม = **outage มองเห็นได้ กู้ได้**
+       *   · โหมดปิดเอง (bounded)  → ผู้ใช้เขียนทับครึ่ง ๆ = **ข้อมูลพังเพิ่ม · `dev` ไม่มี PITR**
+       * → **outage ที่มองเห็น < corruption ที่มองไม่เห็น** · และ `system_mode()` โชว์ banner อยู่ → **ไม่เงียบ**
+       *   (ตอบ 4am ของ P6 คนละทางที่เราคิด: ไม่ใช่ "หายเอง" แต่ "เห็นได้ตลอดผ่าน banner")
+       *
+       * 🔴 **ด่านนี้จึง pin สภาพที่คำถามยัง *ไม่* เปิด** (รูปกระจกของด่าน publication):
+       * วันที่มีคนให้ maintenance หมดอายุได้ → แดง → **ต้องเขียนความสัมพันธ์กับ `E7`-pin ก่อน merge**
+       * ไม่ใช่เดาตัวเลขไว้ล่วงหน้า · `default_expiry` (15) มีแหล่งเดียว (P6 ย้ำ): ลายเซ็น `set_system_mode`
+       * เรียก `app.default_expiry_minutes()` ตัวเดียวกับที่ `mode_limits()` คืน
+       */
+      const { data, error } = await admin.rpc("mode_limits");
+      expect(error?.message ?? null, "เรียก mode_limits() ไม่ได้ — fail closed").toBeNull();
+      const limits = (data as { default_expiry_minutes: number; maintenance_expiry_minutes: number | null }[])[0];
+      expect(limits, "mode_limits() คืนแถวว่าง").toBeDefined();
+
+      expect(
+        limits.maintenance_expiry_minutes,
+        "maintenance hold หมดอายุได้แล้ว — เดิมเป็น `null` (ไม่หมดอายุ)\n" +
+          "  🔴 ถ้านี่ตั้งใจ: migration ที่ยาวเกินค่านี้จะ **ปิดโหมดเองกลางคัน** → ผู้ใช้เขียนทับข้อมูลที่กำลังย้าย\n" +
+          "     → ต้องมีเทสต์ผูก `maintenance_expiry >= E7_pin × safety` ก่อน merge · `dev` ไม่มี PITR\n" +
+          "  · ถ้าไม่ตั้งใจ: ใครเผลอใส่ค่า — เอากลับเป็น `null`",
+      ).toBeNull();
+
+      // default_expiry (test/accidental hold) ต้องมีค่าบวก — 0/ลบ = ลืมปิดแล้วไม่หมดอายุ / หมดทันที
+      expect(
+        limits.default_expiry_minutes,
+        "default_expiry_minutes ไม่ใช่จำนวนบวก — test hold จะไม่หมดอายุ หรือหมดทันทีจนเปิดไม่ติด",
+      ).toBeGreaterThan(0);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
