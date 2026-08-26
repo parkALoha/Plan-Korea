@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser } from "@/lib/auth/server";
 import { tripsForUser } from "@/lib/engine/trip";
+import { createTrip } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
 /**
@@ -32,6 +33,79 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "อ่านรายการทริปไม่ได้" },
       { status: 502 }
+    );
+  }
+}
+
+/** ISO `YYYY-MM-DD` เท่านั้น — ไม่รับรูปอื่น เพราะคอลัมน์เป็น `date` และเราไม่อยากให้ Postgres เดาแทน */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * สร้างทริปใหม่ — `POST /api/engine/trips`
+ * เจ้าของ: P1-Lead · 27 ส.ค. 2026
+ *
+ * ## 🔴 ทำไมเพิ่งมี
+ * `create_trip` อยู่ในฐานมาตั้งแต่ 25 ส.ค. **แต่ไม่มีอะไรในแอปเรียกมันเลย**
+ * → **บัญชีใหม่ค้างที่ "ยังไม่มีทริป" ตลอดกาล · ไม่มีใคร live-verify อะไรได้ทั้งวัน**
+ * · P2 รายงานว่าเปิดหน้าจริงไม่ได้ **4 รอบติด** ด้วยเหตุผลเดียวกัน — และไม่มีใครถามว่าทำไม
+ *
+ * ## ตรวจ **ก่อน** เรียก RPC เสมอ
+ * 🎯 บทเรียนตรงจาก `place-nearby` วันนี้: **ด่านที่ผ่านได้ ทำให้เกิดคำขอที่ไม่ควรมี**
+ * · ที่นี่ราคาไม่ใช่โควตา Google แต่เป็น **ข้อความ error ของ Postgres ที่ผู้ใช้อ่านไม่รู้เรื่อง**
+ *   (`trips_dates_ordered` · `length(trim(title)) between 1 and 120`) → ตอบเป็นภาษาคนตั้งแต่ที่นี่
+ *
+ * ## ⚠️ ไม่ตรวจ "โหมดอ่านอย่างเดียว" ในนี้ **โดยตั้งใจ**
+ * trigger `zz_read_only_guard` บน `public.trips` เป็นคนกัน · **เขียนซ้ำที่นี่ = แหล่งความจริงที่สอง**
+ * ที่ต้องคอยให้ตรงกับฐานตลอดไป · ผู้ใช้จะได้ `PT503` ซึ่ง PostgREST แปลงเป็น `503` ให้เอง
+ */
+export async function POST(req: NextRequest) {
+  // 🔴 จำกัดแน่นกว่า `GET` มาก — อ่านรายการเป็นเรื่องปกติ · **สร้างทริปไม่ใช่**
+  const limited = rateLimitGuard(req, "engine-trips-create", 10);
+  if (limited) return limited;
+
+  const user = await getUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+
+  let b: Record<string, unknown>;
+  try {
+    b = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "body ไม่ใช่ JSON" }, { status: 400 });
+  }
+
+  const title = typeof b.title === "string" ? b.title.trim() : "";
+  if (title.length < 1 || title.length > 120) {
+    return NextResponse.json({ error: "ชื่อทริปต้องมี 1–120 ตัวอักษร" }, { status: 400 });
+  }
+
+  const startDate = typeof b.startDate === "string" ? b.startDate : "";
+  const endDate = typeof b.endDate === "string" ? b.endDate : "";
+  if (!ISO_DATE.test(startDate) || !ISO_DATE.test(endDate)) {
+    return NextResponse.json({ error: "วันที่ต้องเป็นรูปแบบ YYYY-MM-DD" }, { status: 400 });
+  }
+  // ⚠️ เทียบเป็น **สตริง** ไม่ใช่ `new Date()` — `YYYY-MM-DD` เรียงตามพจนานุกรมตรงกับเรียงตามเวลาพอดี
+  //    และ `new Date("2026-10-11")` ตีความเป็น **UTC เที่ยงคืน** ซึ่งพาเขตเวลาเข้ามาโดยไม่จำเป็น
+  if (endDate < startDate) {
+    return NextResponse.json({ error: "วันสิ้นสุดต้องไม่มาก่อนวันเริ่ม" }, { status: 400 });
+  }
+
+  const baseTimezone = typeof b.baseTimezone === "string" && b.baseTimezone.trim() !== ""
+    ? b.baseTimezone.trim()
+    : null;
+
+  try {
+    const db = await createServerSupabase();
+    const { data, error } = await createTrip(db, { title, startDate, endDate, baseTimezone });
+    if (error) {
+      // 🔴 แยก "ด่านทำงาน" ออกจาก "บั๊กเรา" แบบเดียวกับที่ `verdictFor()` ของ P4 ทำ
+      const status = error.code === "42501" ? 403 : error.code === "PT503" ? 503 : 502;
+      return NextResponse.json({ error: error.message, code: error.code }, { status });
+    }
+    return NextResponse.json(data, { status: 201, headers: { "Cache-Control": "private, no-store" } });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "สร้างทริปไม่ได้" },
+      { status: 502 },
     );
   }
 }

@@ -248,6 +248,35 @@ export function systemMode(db: Db) {
   return db.rpc("system_mode");
 }
 
+/**
+ * สร้างทริปใหม่ **พร้อมแผนเริ่มต้น** — `create_trip` (`20260825143958`)
+ *
+ * ## 🔴 ทำไมเพิ่งมี ทั้งที่ RPC อยู่ในฐานมาตั้งแต่ 25 ส.ค.
+ * `grep -rn "create_trip" app/ components/ hooks/ lib/` → **ไม่มีอะไรเรียกมันเลยสักที่**
+ * → **ไม่มีทางสร้างทริปจาก UI** → บัญชีใหม่ทุกบัญชีค้างอยู่ที่ *"ยังไม่มีทริป"* ตลอดกาล
+ *
+ * 🎯 **และนั่นคือเหตุผลที่ไม่มีใคร live-verify อะไรได้เลยทั้งวัน** — P2 รายงานว่าเปิดหน้าจริงไม่ได้
+ * 4 รอบติดกัน (`TripHeader` · `NearbyPlacesModal` · โมดัล read-only · `ImmigrationSheet`)
+ * **ทุกครั้งด้วยเหตุผลเดียวกัน และไม่มีใคร (รวมผม) ถามว่าทำไมบัญชีนั้นถึงไม่มีทริป**
+ * · ครึ่งที่เหลือของ `E4-AC1` (เปิดหน้าทริปญี่ปุ่นจริง) ก็ติดข้อนี้เหมือนกัน
+ *
+ * ## ⚠️ `security definer` ตัวนี้ **ไม่ใช่สิทธิ์พิเศษ** (`D38`)
+ * มันอ่าน `auth.uid()` ของ**ผู้เรียก** · เรียกผ่าน `createServerSupabase()` = session ของผู้ใช้จริง
+ * **ไม่มี service role key เข้ามาเกี่ยวข้องเลย** · `authNoServiceRole.test.ts` ยังบังคับ `app/` เหมือนเดิม
+ * · ที่มันต้องเป็น `definer` เพราะมันเขียน `trips` + `trip_plans` ในทรานแซกชันเดียว
+ */
+export function createTrip(
+  db: Db,
+  args: { title: string; startDate: string; endDate: string; baseTimezone?: string | null },
+) {
+  return db.rpc("create_trip", {
+    p_title: args.title,
+    p_start_date: args.startDate,
+    p_end_date: args.endDate,
+    p_base_timezone: args.baseTimezone ?? null,
+  });
+}
+
 
 /**
  * ทริปทั้งหมดที่ผู้ใช้เห็นได้ **เรียงตามเวลาสร้าง**
