@@ -64,6 +64,7 @@ import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-setti
 import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
 import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[tripId]/hotels/route";
 import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom-places/route";
+import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -133,7 +134,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -191,6 +192,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aClient: SupabaseClient;
   const CC = TEST_COUNTRY_CODES.engineCrossUser; // "xz" — country code จองในทะเบียน กันชนข้ามเซสชัน
   const citySlug = `ex-${stamp}`;
+  const placeSlug = `exp-${stamp}`;
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -255,8 +257,11 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     await purgeCatalog(); // ลูกก่อนพ่อ · เรียกก่อน seed เผื่อรอบก่อนตายกลางคัน (รูป purgeCountry ของ P1)
     const co = await admin.from("catalog_countries").insert({ id: CC, name_th: "ทดสอบ", name_en: "Test" });
     if (co.error) throw new Error(`seed country: ${co.error.message}`);
-    const ci = await admin.from("catalog_cities").insert({ country_id: CC, legacy_slug: citySlug, name_th: "เมืองทดสอบ", name_en: "TestCity", lat: 37.5, lng: 127.0, timezone: "Asia/Seoul" });
+    const ci = await admin.from("catalog_cities").insert({ country_id: CC, legacy_slug: citySlug, name_th: "เมืองทดสอบ", name_en: "TestCity", lat: 37.5, lng: 127.0, timezone: "Asia/Seoul" }).select("id").single();
     if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+    // ชื่ออยู่ catalog_place_names แยกตาราง · probe ต้องการแค่ให้ place *มีอยู่* (ค้นด้วย legacy_slug)
+    const pl = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug, category: "food", lat: 37.5, lng: 127.0 });
+    if (pl.error) throw new Error(`seed place: ${pl.error.message}`);
   }
 
   beforeAll(async () => {
@@ -416,4 +421,21 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(verdict, `[custom-places] B → **${verdict}** (${detail})`).toBe("rejected");
     expect(await cnt(), "[custom-places] จำนวนเพิ่มหลัง B ยิง = B สร้างในทริป A สำเร็จ (leak)").toBe(n1);
   });
+
+  it("hidden-places POST — B ซ่อนสถานที่ในทริป A ไม่ได้", async () => {
+    const aRes = await postAs(aCookies, tripA, hiddenPlacesPOST, { placeId: placeSlug });
+    expect(aRes.status, `control A ควร 200: ${aRes.status} ${await aRes.clone().text()}`).toBe(200);
+    const cnt = async () => {
+      // admin มี select บน hidden_places (ข้อยกเว้น #4)
+      const { data, error } = await admin.from("hidden_places").select("trip_id").eq("trip_id", tripA);
+      if (error) throw new Error(`admin count hidden_places: ${error.message}`);
+      return data.length;
+    };
+    const n1 = await cnt();
+    const bRes = await postAs(bCookies, tripA, hiddenPlacesPOST, { placeId: placeSlug });
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[hidden-places] B → **${verdict}** (${detail})`).toBe("rejected");
+    expect(await cnt(), "[hidden-places] เพิ่มหลัง B = B ซ่อนในทริป A สำเร็จ (leak)").toBe(n1);
+  });
+
 });
