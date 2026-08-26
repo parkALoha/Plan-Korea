@@ -56,12 +56,22 @@ export async function tripsForUser(db: Db): Promise<{ id: string; name: string |
  * วินาทีที่ผู้ใช้มีทริปที่สอง มันคืน `ambiguous` **แทนที่จะเดา** → มีคนต้องมาต่อ `E5`
  * 🎯 **ข้อยกเว้นที่ประกาศวันหมดอายุของตัวเองไว้ ไม่ใช่ `D73`**
  */
+/**
+ * กฎการเลือก — **แยกออกมาเป็น pure เพราะฝั่งเบราว์เซอร์ต้องใช้กฎเดียวกัน**
+ *
+ * 🔴 hook ฝั่ง client อ่านรายชื่อทริปผ่าน `GET /api/engine/trips` **แล้วต้องตัดสินแบบเดียวกันเป๊ะ**
+ * ถ้าปล่อยให้แต่ละฝั่งเขียนกฎเอง วันหนึ่งฝั่งหนึ่งจะหยิบตัวแรกและอีกฝั่งจะไม่หยิบ
+ * **แล้วผู้ใช้จะเห็นทริปคนละใบระหว่างเฟรมแรกกับเฟรมที่สอง** — `D46` ที่รอยต่อ client/server
+ */
+export function chooseSoleTrip(trips: readonly { id: string }[]): SoleTrip {
+  if (trips.length === 0) return { ok: false, reason: "none" };
+  if (trips.length > 1) return { ok: false, reason: "ambiguous", tripIds: trips.map((t) => t.id) };
+  return { ok: true, tripId: trips[0].id };
+}
+
 export async function soleTrip(db: Db): Promise<SoleTrip> {
   try {
-    const trips = await tripsForUser(db);
-    if (trips.length === 0) return { ok: false, reason: "none" };
-    if (trips.length > 1) return { ok: false, reason: "ambiguous", tripIds: trips.map((t) => t.id) };
-    return { ok: true, tripId: trips[0].id };
+    return chooseSoleTrip(await tripsForUser(db));
   } catch (e) {
     // 🔴 อ่านไม่ได้ **ไม่ใช่** ไม่มีทริป — สองอย่างนี้ผู้ใช้ต้องทำคนละเรื่อง
     //    (ยังไม่ล็อกอิน vs ยังไม่มีทริป) · `?? []` ตรงนี้คือบั๊กที่ P4 เดินเข้าไปเองเมื่อวาน
