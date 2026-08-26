@@ -578,9 +578,14 @@ export function HomeContent({ tripId }: { tripId: string }) {
           )}
         </div>
 
+        {/* 🔴 เดิมเขียนว่า "กำลังตั้งค่าแผนเริ่มต้น..." เหมือนเป็นสถานะ loading ชั่วคราว — ผิด (P1 ชี้
+            27 ส.ค. 2026) `overallLoaded` เป็น true แล้วตอนถึงบรรทัดนี้ ไม่มีอะไรกำลังโหลดอยู่จริง ·
+            สถานะจริงคือ "ไม่มีแผนไหน active เลย" ซึ่งเกิดถาวรได้ (เช่นลบแผน active ทิ้งแล้วไม่มีแผนไหน
+            ขึ้นมาแทน — ก่อน migration `pending-review` ตัวที่ 4 ลง) ข้อความเดิมสั่งให้ผู้ใช้ "รอ" ทั้งที่
+            ไม่มีอะไรจะเสร็จ ทางแก้จริงคือกด ⚙️ แล้วเลือกแผน — บอกตรงนั้นแทน */}
         {overallLoaded && !activePlan && (
           <div className="fixed inset-x-0 bottom-14 bg-maple-soft px-4 py-2 text-center text-xs text-maple-dark lg:bottom-0">
-            กำลังตั้งค่าแผนเริ่มต้น...
+            ยังไม่มีแผนที่ใช้งานอยู่ — แตะปุ่ม ⚙️ มุมขวาบนเพื่อเลือกแผน
           </div>
         )}
       </main>
