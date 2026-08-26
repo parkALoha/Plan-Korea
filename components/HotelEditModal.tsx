@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import { CITY_NAME_TH } from "@/data/itinerary";
-import { CITY_LOCALE, cityCenter, type Place } from "@/data/places";
+import { CITY_LOCALE, cityCenter } from "@/data/places";
 import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
 import { Modal } from "./Modal";
@@ -69,7 +69,15 @@ export function HotelEditModal({
   const skipNextSuggest = useRef(false);
   const bias = cityCenter(leg.city);
   // ภาษาท้องถิ่นของเมืองที่พักอยู่ — ขอชื่อ/ที่อยู่ภาษานั้น + อังกฤษ + เบอร์โทรมาพร้อมพิกัดในคำขอเดียว
-  const locale = CITY_LOCALE[leg.city as Place["city"]];
+  //
+  // 🔴 เดิมมี `as Place["city"]` ตรงนี้ — ลบแล้ว (P1 ชี้ 27 ส.ค. 2026) `leg.city: City` มาจาก
+  // `HotelLeg` ซึ่งคำนวณจาก `day.overnightCity ?? day.city` และ `Day[]` ทั้งหมดเป็นข้อมูลสถิตย์ใน
+  // `ITINERARY` (data/itinerary.ts) ไม่มีเส้นทางไหนที่ leg.city มาจากฐาน/ผู้ใช้เลยตอนนี้ — `as` เดิม
+  // จึงไม่จำเป็นตั้งแต่แรก (ลบแล้ว tsc ยังผ่าน ยืนยันว่า City ⊆ Place["city"] อยู่แล้วโดยไม่ต้องคาสต์)
+  // ⚠️ ถ้าวันไหน leg.city เริ่มมาจากฐานจริง (เช่น hotel legs ผูกกับ trip_days ใน schema ใหม่)
+  // ต้องกลับมาเช็ค `Object.hasOwn(CITY_LOCALE, leg.city)` ก่อนอินเด็กซ์ แบบเดียวกับ `data/emergency.ts`
+  // ไม่ใช่ใส่ `as` กลับเข้ามาเฉยๆ — `as` ไม่ได้ทำให้ค่าปลอดภัย มันแค่ทำให้ tsc เงียบ
+  const locale = CITY_LOCALE[leg.city];
 
   // แนะนำสถานที่ตามที่พิมพ์แบบ debounce 300ms bias ผลลัพธ์ให้ใกล้เมืองของ leg นี้
   useEffect(() => {
