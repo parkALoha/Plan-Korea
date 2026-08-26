@@ -32,6 +32,12 @@ FORBIDDEN = [
 ]
 
 # 🔴 self-test: ด่านที่ไม่เคยเห็นของผิด กับด่านที่พัง **หน้าตาเหมือนกันเป๊ะ**
+#
+# ⚠️ **CANARY ข้างล่างมีชื่อโฮสต์ที่ด่านนี้ห้ามไว้ อยู่เป็นสตริงจริง**
+#    วันนี้ไม่ระเบิด **เพราะบังเอิญ** — ด่านนี้สแกนแค่ `*.ts`/`*.tsx` ไฟล์นี้เป็น `.py`
+#    🔴 **วันที่มีคนขยายขอบเขตไปที่ `.py` มันจะแดงใส่ตัวเองทันที** (เกิดกับ `check-naive-strip.py`
+#       มาแล้วจริง ๆ · P1 เจอบนหัว branch เมื่อ 27 ส.ค.) → ถ้าจะขยาย **ประกอบ CANARY ทีละชิ้นก่อน**
+#       รูปแบบเดียวกับ `guards-selftest.sh:11` (`printf 'ejzibhgqhxdz%s' 'kovsnpds'`)
 CANARY = ('const u = "https://maps.googleapis.com/maps/api/js?key=x";\n'
           'fetch("https://api.odsay.com/v1");\n'
           'const k = "https://dapi.kakao.com/v2";\n'
