@@ -293,14 +293,23 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
     tripA = await mkTrip(a.client, "a");
     await mkTrip(b.client, "b");
-    // A สร้าง trip_day ของตัวเองผ่าน client ผู้ใช้จริง (grant ราย column: id,trip_id,date,timezone,city_id — ห้ามส่งอื่น)
-    const dayIns = await a.client
-      .from("trip_days")
-      .insert({ trip_id: tripA, date: "2026-10-12", timezone: "Asia/Seoul" })
-      .select("id")
-      .single();
-    if (dayIns.error) throw new Error(`mkDay: ${dayIns.error.message}`);
-    aDay = dayIns.data.id as string;
+    // 🔴 forward-compat กับ migration `create_trip_makes_days` ที่จอด pending-review (P1/P3):
+    //    หลัง migration ลง create_trip จะสร้าง trip_days ให้เอง → insert วันซ้ำจะชน `trip_days_unique_date`
+    //    → อ่านวันที่มีอยู่ก่อน ถ้าไม่มีค่อย insert · robust ทั้งก่อน/หลัง migration ลง (ไม่ต้องแก้เทสต์ตอนมันลง)
+    const existDay = await a.client.from("trip_days").select("id").eq("trip_id", tripA).order("date").limit(1).maybeSingle();
+    if (existDay.error) throw new Error(`read day: ${existDay.error.message}`);
+    if (existDay.data) {
+      aDay = existDay.data.id as string;
+    } else {
+      // grant ราย column: id,trip_id,date,timezone,city_id — ห้ามส่งอื่น (created_at/updated_at เป็นของเซิร์ฟเวอร์)
+      const dayIns = await a.client
+        .from("trip_days")
+        .insert({ trip_id: tripA, date: "2026-10-12", timezone: "Asia/Seoul" })
+        .select("id")
+        .single();
+      if (dayIns.error) throw new Error(`mkDay: ${dayIns.error.message}`);
+      aDay = dayIns.data.id as string;
+    }
     // admin (service_role) ไม่มี grant บน trip_plans → อ่านด้วย client ของ A (เจ้าของ · ผ่าน RLS)
     const planRow = await aClient.from("trip_plans").select("id").eq("trip_id", tripA).single();
     if (planRow.error) throw new Error(`read plan: ${planRow.error.message}`);
