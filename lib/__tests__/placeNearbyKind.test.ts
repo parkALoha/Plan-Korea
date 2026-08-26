@@ -14,8 +14,32 @@ import { NextRequest } from "next/server";
  * ถ้าปล่อยให้เรียกจริง เทสต์จะเผา quota ทุกครั้งที่รัน **และจะพิสูจน์ตรงข้ามกับที่ตั้งใจ**
  */
 const searchNearbySpy = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/googlePlaces", () => ({ searchNearby: searchNearbySpy }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: () => null }));
+
+/**
+ * 🔴 **`...(await importOriginal())` จำเป็น — ด่าน `S6` จับผมได้ตอนรันชุดเต็ม (P1 · 27 ส.ค. 2026)**
+ *
+ * ฉบับแรกเขียน `vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: () => null }))` เฉย ๆ
+ * ซึ่ง **แทนที่ทั้งโมดูล** → export ตัวอื่นหายหมด และ **กลืน export ใหม่ทุกตัวที่ใครเพิ่มทีหลัง**
+ *
+ * 🎯 และเคสของผมคือเคสที่ `S6` ยกตัวอย่างไว้เป๊ะ: **ผม mock ทับตัวจำกัดอัตรา ซึ่งเป็นตัวควบคุม
+ * เชิงป้องกัน** · ถ้าวันหนึ่ง `lib/rateLimit` เพิ่มด่านตัวที่สอง ไฟล์นี้จะกลืนมันเงียบ ๆ
+ * แล้วเทสต์จะ **รับรองโค้ดที่ไม่เคยผ่านด่านนั้นเลย**
+ * · `S6` เขียนไว้ตรงกว่านั้นอีก: *"การซ่อมที่เป็นธรรมชาติที่สุดของบั๊กนี้ คือการปิดด่านความปลอดภัย
+ *   และไม่มีขั้นตอนไหนในนั้นที่รู้สึกผิดปกติ"*
+ *
+ * ⚠️ **ที่แทนจริง ๆ มีแค่ 2 ตัว และทั้งคู่มีเหตุผลของตัวเอง:**
+ * · `searchNearby` — ถ้าไม่แทน เทสต์จะยิง Google จริงและเผา quota ทุกครั้งที่รัน
+ * · `rateLimitGuard` — เทสต์นี้ยิงหลายคำขอติดกัน · ตัวจริงจะเริ่มตอบ `429` กลางทาง
+ *   แล้วเคสจะแดงด้วยเหตุผลที่ไม่เกี่ยวกับสิ่งที่วัด
+ */
+vi.mock("@/lib/googlePlaces", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/googlePlaces")>()),
+  searchNearby: searchNearbySpy,
+}));
+vi.mock("@/lib/rateLimit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/rateLimit")>()),
+  rateLimitGuard: () => null,
+}));
 
 import { GET } from "@/app/api/place-nearby/route";
 
