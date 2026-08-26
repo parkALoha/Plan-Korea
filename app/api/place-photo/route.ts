@@ -28,7 +28,16 @@ export async function GET(req: NextRequest) {
 
   const url = `https://places.googleapis.com/v1/${name}/media?maxWidthPx=${width}&key=${apiKey}`;
   // แคชฝั่งเซิร์ฟเวอร์ไว้ 30 วัน — รูปสถานที่ไม่เปลี่ยนบ่อย ลดจำนวนครั้งที่ดึงจาก Google
-  const res = await fetch(url, { next: { revalidate: 2592000 } });
+  // 🔴 `fetch` **โยน** เมื่อไปไม่ถึงปลายทาง — ไม่ใช่คืน `res.ok = false`
+  //    ปล่อยให้โยน = ผู้ใช้ได้หน้า `500` ของ Next แทน `502` ที่บรรทัดล่างตั้งใจคืน
+  //    **ข้อแตกต่างระหว่างสองอันไม่ใช่แค่ตัวเลข** — `502` ที่นี่บอกว่า "ปลายทางมีปัญหา"
+  //    ซึ่งเป็นความจริงทั้งสองกรณี · `500` บอกว่า "เราพัง" ซึ่งไม่จริงและพาไปหาผิดที่
+  let res: Response;
+  try {
+    res = await fetch(url, { next: { revalidate: 2592000 } });
+  } catch {
+    return NextResponse.json({ error: "photo fetch unreachable" }, { status: 502 });
+  }
 
   if (!res.ok || !res.body) {
     return NextResponse.json({ error: "photo fetch failed" }, { status: 502 });

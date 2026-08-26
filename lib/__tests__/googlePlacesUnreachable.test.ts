@@ -39,8 +39,12 @@ afterEach(() => {
 /** ทั้ง 4 ตัวคืนรูปต่างกัน — ดึงเฉพาะ `error` ออกมาเทียบ และเช็ค payload ว่าว่างจริง */
 const CALLS = [
   { name: "searchPlacesText", run: () => searchPlacesText("ร้านกาแฟ", "places.id"), label: "places search" },
-  { name: "autocompletePlaces", run: () => autocompletePlaces("โซล"), label: "autocomplete" },
-  { name: "searchNearby", run: () => searchNearby({ lat: 37.5, lng: 127 }, ["cafe"]), label: "nearby search" },
+  { name: "autocompletePlaces", run: () => autocompletePlaces("โซล", null), label: "autocomplete" },
+  {
+    name: "searchNearby",
+    run: () => searchNearby({ lat: 37.5, lng: 127 }, ["cafe"], "places.id"),
+    label: "nearby search",
+  },
   { name: "getPlaceDetails", run: () => getPlaceDetails("places/abc", "id"), label: "place details" },
 ] as const;
 

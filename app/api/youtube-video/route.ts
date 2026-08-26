@@ -28,12 +28,27 @@ export async function GET(req: NextRequest) {
   url.searchParams.set("key", apiKey);
 
   // แคชผลลัพธ์ไว้ 30 วัน — ลดจำนวนครั้งที่ยิง YouTube Data API (มี quota ต่อวันจำกัด)
-  const res = await fetch(url.toString(), { next: { revalidate: 2592000 } });
+  //
+  // 🔴 `fetch` **โยน** เมื่อคำขอไปไม่ถึงปลายทาง (DNS · เน็ตขาด · timeout) ไม่ใช่คืน `res.ok = false`
+  //    route นี้ตั้งใจคืน `200` พร้อม `{ videoId: null, error }` ทุกทางพลาด เพื่อให้ฝั่ง client
+  //    แสดง "ไม่มีวิดีโอ" ได้เงียบ ๆ — **การโยนทำให้ได้ `500` ของ Next แทน ซึ่งพังสัญญานั้น**
+  //    · รูปเดียวกับที่แก้ใน `lib/googlePlaces.ts` และ `lib/travelProvider.ts` (27 ส.ค. 2026)
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), { next: { revalidate: 2592000 } });
+  } catch {
+    return NextResponse.json({ videoId: null, error: "youtube ติดต่อไม่ได้" });
+  }
   if (!res.ok) {
     return NextResponse.json({ videoId: null, error: `youtube search failed: ${res.status}` });
   }
 
-  const data = await res.json();
+  let data: { items?: { id?: { videoId?: string } }[] };
+  try {
+    data = await res.json();
+  } catch {
+    return NextResponse.json({ videoId: null, error: "youtube ตอบกลับไม่ใช่ JSON" });
+  }
   const videoId: string | null = data.items?.[0]?.id?.videoId ?? null;
 
   return NextResponse.json({ videoId });
