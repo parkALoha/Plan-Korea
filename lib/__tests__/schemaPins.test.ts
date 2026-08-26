@@ -892,3 +892,65 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     ]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+describe("🔴 read-only mode — ทุกตาราง public ต้องติด zz_read_only_guard (pin:read-only-coverage)", () => {
+  /**
+   * P1 (จาก P5) · `E7` (หลายประเทศ) จะเพิ่มตาราง · ตารางใหม่ที่ไม่ติด guard = write ผ่านได้ตอน read-only mode
+   * และจะถูกพบตอน cutover (กู้ไม่ได้) เหมือนช่อง storage ของ P2
+   *
+   * 🎯 หมุด trigger (`pin:trigger-registry`) มองข้อนี้ไม่เห็นตามนิยาม — **ตารางที่ไม่มี trigger เลย ไม่อยู่ใน pg_trigger**
+   *    ต้องไล่จาก *ตาราง* ไม่ใช่จาก *trigger* (รูปเดียวกับ `noteRealtimeSubscribed`: การนับจากรายการที่มี ไม่เห็นสิ่งที่ไม่เคยเข้ารายการ)
+   *
+   * เกณฑ์ (ไม่มีเส้นแบ่งไฟล์ให้จำ): ทุก `create table public.X` ต้องมี guard-event ที่ลำดับ ≥ ตอนสร้าง
+   *   ① `create trigger zz_read_only_guard … on public.X` ตรง ๆ · หรือ
+   *   ② ลูป `execute format('create trigger zz_read_only_guard … %I')` — ครอบทุกตารางที่เกิดก่อน/พร้อมมัน (มี 2 จุด · ทั้งคู่ zz_read_only_guard)
+   * → อัปเดตตัวเองเมื่อมีคนรันลูปซ้ำ · ไม่มีเลข/ชื่อไฟล์ให้ตามแก้
+   *
+   * 🔴 zz_read_only_guard เป็น dynamic (ลูปต่อตาราง) → source เห็นแค่ *ลูป* ไม่เห็น *ผลของลูป* — ปักเหตุการณ์ติดได้ ปักความครอบคลุมจริงไม่ได้
+   * ⚠️ ไม่ครอบ drift (แดชบอร์ด) · ⚠️ ยังไม่มี `drop table` จริง (10 แมตช์เป็นคอมเมนต์ rollback) — ถ้ามีวันนั้นต้องหักออกจากรายการ
+   */
+  /** ตารางถูกครอบไหม — สร้างก่อน/พร้อมลูป (ci ≤ lastLoop) หรือมี direct guard ทีหลัง (dg ≥ ci) */
+  const guardCovered = (ci: number, lastLoopIdx: number, dgIdx: number | undefined): boolean =>
+    ci <= lastLoopIdx || (dgIdx !== undefined && dgIdx >= ci);
+
+  it("🔴 ทุกตาราง public ใน migration ต้องมี zz_read_only_guard ครอบ (E7 ตารางใหม่จะแดงที่นี่)", () => {
+    const tables = tablesFromMigrations();
+    // positive control — regex พัง "ไม่เจอตาราง" ต้องไม่กลายเป็น "ทุกตารางผ่าน" (subscribers > 0)
+    expect(tables.length, "นับตารางไม่ได้เลย — ตัวช่วยพัง ไม่ใช่ 'ไม่มีตาราง'").toBeGreaterThan(20);
+
+    const createIdx = new Map<string, number>();
+    const directGuard = new Map<string, number>();
+    let lastLoopIdx = -1;
+    migrationFiles.forEach((f, i) => {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      for (const m of sql.matchAll(
+        /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?((?:public\.[a-z_][a-z0-9_]*\s*,?\s*)+)/gi,
+      ))
+        for (const n of m[1].matchAll(/public\.([a-z_][a-z0-9_]*)/gi))
+          if (!createIdx.has(n[1].toLowerCase())) createIdx.set(n[1].toLowerCase(), i);
+      if (/execute\s+format\([^)]*create\s+trigger\s+zz_read_only_guard[\s\S]*?%I/i.test(sql)) lastLoopIdx = i;
+      for (const m of sql.matchAll(/create\s+trigger\s+zz_read_only_guard[\s\S]*?on\s+public\.([a-z_][a-z0-9_]*)/gi))
+        directGuard.set(m[1].toLowerCase(), i);
+    });
+    expect(lastLoopIdx, "ไม่เจอลูปติด zz_read_only_guard เลย — ตัวติด guard หาย").toBeGreaterThanOrEqual(0);
+
+    const uncovered = tables.filter((t) => {
+      const ci = createIdx.get(t);
+      expect(ci, `ตาราง ${t} มาจาก tablesFromMigrations แต่หา create ไม่เจอ — ตัวช่วยสองตัวไม่ตรงกัน`).not.toBeUndefined();
+      return !guardCovered(ci as number, lastLoopIdx, directGuard.get(t));
+    });
+    expect(
+      uncovered,
+      "ตาราง public ไม่มี zz_read_only_guard ครอบ — write จะผ่านตอน read-only mode\n" +
+        "  → ติด guard บนตารางนี้ หรือรันลูปติดซ้ำ (E7 ตารางใหม่มาที่นี่)",
+    ).toEqual([]);
+  });
+
+  it("🔴 ตัวตัดสิน coverage ต้องทำงาน 2 ทิศ — ไม่งั้น pin ข้างบนเขียวได้โดยไม่เคยจับอะไร", () => {
+    expect(guardCovered(10, 5, undefined), "สร้างหลังลูป ไม่มี guard = ต้องไม่ครอบ (เคส E7 ที่ควรแดง)").toBe(false);
+    expect(guardCovered(3, 5, undefined), "สร้างก่อน/พร้อมลูป = ครอบ").toBe(true);
+    expect(guardCovered(10, 5, 12), "มี direct guard หลังสร้าง = ครอบ").toBe(true);
+    expect(guardCovered(10, 5, 8), "direct guard ก่อนสร้าง ไม่นับ = ไม่ครอบ").toBe(false);
+  });
+});
