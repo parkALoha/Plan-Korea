@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   capabilitiesOf,
+  shouldSkipTravelApi,
   countriesWithCapabilities,
   hasRealTravelTime,
   mapProvidersFor,
@@ -53,5 +54,28 @@ describe("E4 — ทะเบียนความสามารถรายป
     for (const c of countriesWithCapabilities()) {
       expect(mapProvidersFor(c).length, `${c} ไม่มี mapProviders`).toBeGreaterThan(0);
     }
+  });
+
+  describe("shouldSkipTravelApi — 'อย่ายิง' ไม่ใช่ 'อย่าเชื่อ'", () => {
+    it("🔴 ประเทศที่ไม่รู้จัก ต้อง **ยิงตามปกติ** ไม่ใช่ข้าม", () => {
+      // ถ้าข้ามด้วย จะไม่มีวันรู้ว่าญี่ปุ่นตอบ DRIVE ได้จริงไหม เพราะไม่เคยถาม
+      // → ทะเบียนจะ "ถูก" ตลอดไปโดยไม่มีใครท้าทายได้ · คำทำนายที่ทำให้ตัวเองเป็นจริง
+      for (const mode of ["TRANSIT", "DRIVE", "WALK"] as const) {
+        expect(shouldSkipTravelApi("jp", mode), `jp/${mode} ต้องไม่ถูกข้าม`).toBe(false);
+      }
+      expect(shouldSkipTravelApi(null, "DRIVE")).toBe(false);
+    });
+
+    it("🔴 ข้ามเฉพาะที่ **รู้แน่ว่าไม่มี** — และต้องไม่ข้ามโหมดที่มี", () => {
+      expect(shouldSkipTravelApi("kr", "DRIVE"), "รู้แน่ว่าเกาหลีไม่มี → ข้าม").toBe(true);
+      expect(shouldSkipTravelApi("kr", "WALK")).toBe(true);
+      expect(shouldSkipTravelApi("kr", "TRANSIT"), "เกาหลีมี TRANSIT → ห้ามข้าม").toBe(false);
+      expect(shouldSkipTravelApi("vn", "DRIVE"), "เวียดนามมีครบ → ห้ามข้าม").toBe(false);
+    });
+
+    it("🎯 ความต่างจาก hasRealTravelTime อยู่ที่ประเทศที่ไม่รู้จัก — ถ้าเหมือนกันแปลว่าฟังก์ชันนี้ไม่จำเป็น", () => {
+      expect(hasRealTravelTime("jp", "DRIVE")).toBe(false); // ไม่รู้ → ถือเป็นประมาณการ
+      expect(shouldSkipTravelApi("jp", "DRIVE")).toBe(false); // แต่ยังต้องยิงเพื่อไปรู้
+    });
   });
 });

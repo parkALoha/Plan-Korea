@@ -91,3 +91,33 @@ export function mapProvidersFor(countryCode: string | null | undefined): readonl
 export function countriesWithCapabilities(): readonly string[] {
   return Object.keys(CAPABILITIES);
 }
+
+/**
+ * ควร **ข้ามการยิง API** สำหรับโหมดนี้ในประเทศนี้ไหม — `E4-AC5` (ประหยัด quota · ไม่ให้ผู้ใช้รอเปล่า)
+ *
+ * ## 🔴 ทำไมไม่ใช้ `!hasRealTravelTime()` ตรง ๆ — P2 จับได้ก่อนผมจะทำพัง
+ * `hasRealTravelTime()` คืน `false` กับ **สองกรณีที่ต่างกันมาก**:
+ * ```
+ * kr / DRIVE   → false  เพราะ **รู้แน่ว่าไม่มี** (ทดสอบจริงแล้ว · PLAN.md §2)
+ * jp / DRIVE   → false  เพราะ **ยังไม่รู้อะไรเลย** (ไม่มีแถวในทะเบียน)
+ * ```
+ * · ใช้กรองด้วยตัวเดียวกัน → **ประเทศที่ไม่รู้จักจะไม่ถูกยิงตลอดกาล**
+ *   → **ไม่มีวันรู้ว่าญี่ปุ่นตอบ `DRIVE` ได้จริงไหม เพราะเราไม่เคยถาม**
+ *   → ทะเบียนจะ "ถูก" ตลอดไป **โดยไม่มีใครท้าทายมันได้** — คำทำนายที่ทำให้ตัวเองเป็นจริง
+ *
+ * 🎯 **ข้ามได้เฉพาะเมื่อประเทศนั้น *อยู่ในทะเบียนแล้ว* และระบุไว้ว่าไม่มีโหมดนี้**
+ * ประเทศที่ไม่รู้จัก = **ยิงตามปกติ แล้วให้ผลจริงสอนเรา** — นั่นคือทางเดียวที่ทะเบียนจะได้แถวใหม่ที่มีหลักฐาน
+ *
+ * ⚠️ **และนี่ไม่ใช่ตัวตัดสินว่า "จริงหรือประมาณ"** — ตัวนั้นคือผลที่ยิงกลับมาจริง (`isTravelTimeReal`)
+ * ซึ่ง**แม่นกว่าทะเบียนเสมอ** เพราะเป็นความจริงที่สังเกตแล้ว ไม่ใช่ค่าที่คาดไว้
+ * **ทะเบียนตอบว่า "อย่ายิง" ไม่ใช่ "อย่าเชื่อ"**
+ */
+export function shouldSkipTravelApi(
+  countryCode: string | null | undefined,
+  mode: TravelMode
+): boolean {
+  if (!countryCode) return false;
+  const known = CAPABILITIES[countryCode.toLowerCase()];
+  if (!known) return false; // ไม่รู้จัก → ยิง แล้วให้ผลจริงสอนเรา
+  return !known.realTravelModes.includes(mode);
+}
