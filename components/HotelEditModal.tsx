@@ -6,6 +6,7 @@ import { CITY_NAME_TH } from "@/data/itinerary";
 import { CITY_LOCALE, cityCenter } from "@/data/places";
 import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
+import { useSystemMode } from "@/hooks/useSystemMode";
 import { Modal } from "./Modal";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 
@@ -67,6 +68,9 @@ export function HotelEditModal({
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const skipNextSuggest = useRef(false);
+  // ปิดที่ทางเข้าตอนโมดัลเปิด ไม่ใช่แค่ปุ่มบันทึกตอนจบ — รูปแบบเดียวกับ BookingEditModal (E3-AC7 §9)
+  const { mode: systemMode } = useSystemMode();
+  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
   const bias = cityCenter(leg.city);
   // ภาษาท้องถิ่นของเมืองที่พักอยู่ — ขอชื่อ/ที่อยู่ภาษานั้น + อังกฤษ + เบอร์โทรมาพร้อมพิกัดในคำขอเดียว
   //
@@ -165,6 +169,7 @@ export function HotelEditModal({
   }
 
   function handleSaveManual() {
+    if (readOnly) return;
     const lat = parseFloat(manualLat);
     const lng = parseFloat(manualLng);
     if (Number.isNaN(lat) || Number.isNaN(lng)) return;
@@ -173,7 +178,7 @@ export function HotelEditModal({
   }
 
   function handleConfirm() {
-    if (!address.trim() || !resolved) return;
+    if (!address.trim() || !resolved || readOnly) return;
     onSave({
       hotelName: address.trim(),
       lat: resolved.lat,
@@ -203,7 +208,7 @@ export function HotelEditModal({
           )}
           <button
             onClick={handleConfirm}
-            disabled={!address.trim() || !resolved}
+            disabled={!address.trim() || !resolved || readOnly}
             className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
           >
             บันทึก
@@ -211,6 +216,15 @@ export function HotelEditModal({
         </>
       }
     >
+    {readOnly && (
+      <div
+        role="status"
+        className="mb-3 rounded-lg bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink"
+      >
+        🔧 ระบบปิดรับการแก้ไขชั่วคราว — บันทึกที่พักตอนนี้ไม่ได้
+        {systemMode.state === "ok" && systemMode.reason ? ` (${systemMode.reason})` : ""}
+      </div>
+    )}
     <label className="mb-1 block text-xs font-medium text-content-soft">
       ชื่อ/ที่อยู่โรงแรม
     </label>
@@ -237,11 +251,12 @@ export function HotelEditModal({
             }
           }}
           placeholder="เช่น Lotte Hotel Busan"
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
         <button
           onClick={handleGeocode}
-          disabled={!address.trim() || status === "loading"}
+          disabled={!address.trim() || status === "loading" || readOnly}
           className="shrink-0 rounded-lg bg-pine px-4 py-2 text-sm font-medium text-cream hover:bg-pine-dark disabled:opacity-40"
         >
           {status === "loading" ? "..." : "ค้นหา"}
@@ -305,7 +320,8 @@ export function HotelEditModal({
 
     <button
       onClick={() => setManualOpen((v) => !v)}
-      className="mt-3 text-xs text-content-soft underline hover:text-content"
+      disabled={readOnly}
+      className="mt-3 text-xs text-content-soft underline hover:text-content disabled:opacity-40"
     >
       {manualOpen ? "ซ่อนช่องกรอกพิกัดเอง" : "กรอกพิกัดเอง (lat, lng)"}
     </button>
@@ -316,17 +332,20 @@ export function HotelEditModal({
           value={manualLat}
           onChange={(e) => setManualLat(e.target.value)}
           placeholder="lat เช่น 35.1587"
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
         <input
           value={manualLng}
           onChange={(e) => setManualLng(e.target.value)}
           placeholder="lng เช่น 129.0603"
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+          disabled={readOnly}
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
         <button
           onClick={handleSaveManual}
-          className="shrink-0 rounded-lg bg-surface-soft px-3 py-2 text-sm text-content hover:bg-maple-soft"
+          disabled={readOnly}
+          className="shrink-0 rounded-lg bg-surface-soft px-3 py-2 text-sm text-content hover:bg-maple-soft disabled:opacity-40"
         >
           ใช้พิกัดนี้
         </button>

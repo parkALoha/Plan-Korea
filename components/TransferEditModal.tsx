@@ -6,6 +6,7 @@ import type { Day } from "@/data/itinerary";
 import { TRANSFER_POINTS } from "@/data/transferPoints";
 import { AIRPORT_ACCESS } from "@/data/airportAccess";
 import { DEFAULT_CHECKIN_BUFFER_MINUTES } from "@/lib/departureAdvice";
+import { useSystemMode } from "@/hooks/useSystemMode";
 
 const CHECKIN_PRESETS_MIN = [90, 120, 150, 180, 240];
 
@@ -54,7 +55,12 @@ export function TransferEditModal({
 
   const options = AIRPORT_ACCESS[placeId] ?? [];
 
+  // ปิดที่ทางเข้าตอนโมดัลเปิด ไม่ใช่แค่ปุ่ม "เพิ่ม" ตอนจบ — รูปแบบเดียวกับ BookingEditModal (E3-AC7 §9)
+  const { mode: systemMode } = useSystemMode();
+  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
+
   function handleSave() {
+    if (readOnly) return;
     onSave({
       placeId,
       checkinBufferMinutes: checkinBuffer,
@@ -71,12 +77,23 @@ export function TransferEditModal({
       footer={
         <button
           onClick={handleSave}
-          className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark"
+          disabled={readOnly}
+          className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
         >
           เพิ่ม
         </button>
       }
     >
+      {readOnly && (
+        <div
+          role="status"
+          className="rounded-lg bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink"
+        >
+          🔧 ระบบปิดรับการแก้ไขชั่วคราว — เพิ่มรายการนี้ตอนนี้ไม่ได้
+          {systemMode.state === "ok" && systemMode.reason ? ` (${systemMode.reason})` : ""}
+        </div>
+      )}
+
       <div>
         <label className="mb-1 block text-xs font-medium text-content-soft">ไปที่ไหน</label>
         {/* แยกกลุ่มสนามบิน/สถานี — รวมกันเป็นลิสต์เดียว 11 อันแล้วหาของที่ต้องการไม่เจอ
@@ -95,7 +112,8 @@ export function TransferEditModal({
                   <button
                     key={point.id}
                     onClick={() => setPlaceId(point.id)}
-                    className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
+                    disabled={readOnly}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-40 ${
                       placeId === point.id
                         ? "border-maple bg-maple-soft text-maple-dark"
                         : "border-line text-content-soft hover:bg-surface-soft"
@@ -127,7 +145,8 @@ export function TransferEditModal({
                   setTargetTime(e.time);
                   setTargetLabel(`${e.flight!.no} ${e.flight!.fromEn} → ${e.flight!.toEn}`);
                 }}
-                className={`rounded-full border px-2.5 py-1 text-xs ${
+                disabled={readOnly}
+                className={`rounded-full border px-2.5 py-1 text-xs disabled:opacity-40 ${
                   targetTime === e.time
                     ? "border-maple bg-maple-soft text-maple-dark"
                     : "border-line text-content-soft hover:border-maple/40"
@@ -143,13 +162,15 @@ export function TransferEditModal({
             type="time"
             value={targetTime}
             onChange={(e) => setTargetTime(e.target.value)}
-            className="w-32 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-32 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
           <input
             value={targetLabel}
             onChange={(e) => setTargetLabel(e.target.value)}
             placeholder="เช่น VN409 อินชอน → โฮจิมินห์"
-            className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
         </div>
       </div>
@@ -163,7 +184,8 @@ export function TransferEditModal({
             <button
               key={m}
               onClick={() => setCheckinBuffer(m)}
-              className={`rounded-full border px-2.5 py-1.5 text-xs ${
+              disabled={readOnly}
+              className={`rounded-full border px-2.5 py-1.5 text-xs disabled:opacity-40 ${
                 checkinBuffer === m
                   ? "border-maple bg-maple-soft text-maple-dark"
                   : "border-line text-content-soft hover:border-maple/40"

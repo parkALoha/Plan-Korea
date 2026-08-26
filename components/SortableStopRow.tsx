@@ -9,6 +9,7 @@ import type { ScheduledStop, TravelMode } from "@/lib/schedule";
 import { computeDepartureAdvice } from "@/lib/departureAdvice";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
+import { useSystemMode } from "@/hooks/useSystemMode";
 import { InsertBetweenRow } from "./InsertBetweenRow";
 import NoteBody from "./NoteBody";
 import { PhotoLightbox } from "./PhotoLightbox";
@@ -101,9 +102,13 @@ export function SortableStopRow({
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(false);
+  // ปิดที่ทางเข้า (โน้ต/อัปโหลดรูป) ตอนอ่านสถานะ — สองจุดนี้เป็นแรงจริงที่เสียได้ (พิมพ์โน้ตยาว/อัปโหลดรูป
+  // แล้วเจอ 503) ต่างจากปุ่มลาก/ลบ/ปรับเวลาในแถวนี้ที่เป็นคลิกเดียวไม่มีแรงจะเสีย (E3-AC7 §9)
+  const { mode: systemMode } = useSystemMode();
+  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
 
   async function handlePhotoChange(file: File | null) {
-    if (!file) return;
+    if (!file || readOnly) return;
     setUploadingPhoto(true);
     setPhotoError(null);
     const result = await uploadStopPhoto(stop.id, file, stop.photo_url);
@@ -117,6 +122,7 @@ export function SortableStopRow({
   }
 
   async function handleRemovePhoto() {
+    if (readOnly) return;
     await removeStopPhoto(stop.photo_url);
     onUpdatePhoto(null);
   }
@@ -354,7 +360,9 @@ export function SortableStopRow({
         <div className="min-w-0 flex-1">
         {/* มือถือ: ช่องพิมพ์โน้ตกินเต็มบรรทัด ปุ่มบันทึก/ยกเลิก/ลบ ตกไปบรรทัดล่าง
             (ของเดิมทุกอย่างอยู่แถวเดียว ช่องพิมพ์เลยแคบจนพิมพ์ไม่ได้จริง) */}
-        {locked ? (
+        {/* readOnly ใช้ทางเดียวกับ locked สำหรับโน้ต — ทั้งคู่แปลว่า "แก้ตอนนี้ไม่ได้" แค่คนละเหตุผล
+            (locked = วันนี้ถูกล็อกเอง · readOnly = ทั้งระบบปิดรับการแก้ไขชั่วคราว) */}
+        {locked || readOnly ? (
           stop.note ? (
             <NoteBody
               note={stop.note}
@@ -471,7 +479,7 @@ export function SortableStopRow({
           isTravelReal={isTravelReal}
         />
       )}
-      {(stop.photo_url || (!locked && !isSpecialRow)) && (
+      {(stop.photo_url || (!locked && !isSpecialRow && !readOnly)) && (
         <div className="px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
           {stop.photo_url ? (
             <div className="flex items-center gap-2">
@@ -503,7 +511,7 @@ export function SortableStopRow({
                   />
                 </button>
               )}
-              {!locked && (
+              {!locked && !readOnly && (
                 <button
                   onClick={handleRemovePhoto}
                   className="shrink-0 rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
@@ -514,7 +522,8 @@ export function SortableStopRow({
             </div>
           ) : (
             !locked &&
-            !isSpecialRow && (
+            !isSpecialRow &&
+            !readOnly && (
               <label className="inline-flex cursor-pointer items-center gap-1 py-1.5 text-xs text-content-soft/60 hover:text-content-soft">
                 {uploadingPhoto ? "กำลังอัปโหลด..." : "📷 + รูป"}
                 <input

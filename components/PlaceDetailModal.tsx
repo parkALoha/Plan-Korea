@@ -10,6 +10,7 @@ import type { TripHotel } from "@/lib/supabase";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { signStoredFile } from "@/lib/engine/files";
+import { useSystemMode } from "@/hooks/useSystemMode";
 import { GoogleMapEmbed } from "./GoogleMapEmbed";
 import { PhotoGallery } from "./PhotoGallery";
 import { PhotoLightbox } from "./PhotoLightbox";
@@ -52,6 +53,9 @@ export function PlaceDetailModal({
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(false);
+  // ปิดที่ทางเข้า (อัปโหลด/ลบรูป) ตอนอ่านสถานะ — จุดเดียวที่เขียนได้ในโมดัลนี้ (E3-AC7 §9)
+  const { mode: systemMode } = useSystemMode();
+  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
 
   // เซ็น signed URL สำหรับแสดงผล (E2-AC13 ②) — modal นี้โชว์รูปทีละใบ ไม่ใช่ลิสต์ จึงเซ็นเองในตัวได้
   // โดยไม่เจอปัญหา N request ที่ BookingsPanel/SortableStopRow ต้อง batch ที่ parent · userPhotoUrl (ดิบ)
@@ -81,7 +85,7 @@ export function PlaceDetailModal({
     signedResult && signedResult.forUrl === userPhotoUrl ? signedResult.url : undefined;
 
   async function handlePhotoChange(file: File | null) {
-    if (!file || !stopId || !onUpdatePhoto) return;
+    if (!file || !stopId || !onUpdatePhoto || readOnly) return;
     setUploadingPhoto(true);
     setPhotoError(null);
     const result = await uploadStopPhoto(stopId, file, userPhotoUrl);
@@ -95,7 +99,7 @@ export function PlaceDetailModal({
   }
 
   async function handleRemovePhoto() {
-    if (!onUpdatePhoto) return;
+    if (!onUpdatePhoto || readOnly) return;
     await removeStopPhoto(userPhotoUrl);
     onUpdatePhoto(null);
   }
@@ -181,7 +185,7 @@ export function PlaceDetailModal({
             <span className="mt-1 block text-[11px] text-panel-pine-ink">แตะเพื่อดูขนาดเต็ม</span>
           </button>
         )}
-        {stopId && onUpdatePhoto && (
+        {stopId && onUpdatePhoto && !readOnly && (
           <div className="mt-2">
             {userPhotoUrl ? (
               <button

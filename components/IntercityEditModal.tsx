@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal } from "./Modal";
 import type { Place } from "@/data/places";
 import { stationsForCity } from "@/data/transferPoints";
+import { useSystemMode } from "@/hooks/useSystemMode";
 
 export type IntercityMode = "bus" | "ktx" | "other";
 
@@ -87,8 +88,12 @@ export function IntercityEditModal({
 
   const totalMinutes = hours * 60 + minutes;
 
+  // ปิดที่ทางเข้าตอนโมดัลเปิด ไม่ใช่แค่ปุ่ม "เพิ่ม" ตอนจบ — รูปแบบเดียวกับ BookingEditModal (E3-AC7 §9)
+  const { mode: systemMode } = useSystemMode();
+  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
+
   function handleSave() {
-    if (!from.trim() || !to.trim() || totalMinutes <= 0) return;
+    if (!from.trim() || !to.trim() || totalMinutes <= 0 || readOnly) return;
     onSave({ from: from.trim(), to: to.trim(), mode, minutes: totalMinutes });
   }
 
@@ -100,13 +105,23 @@ export function IntercityEditModal({
       footer={
         <button
           onClick={handleSave}
-          disabled={!from.trim() || !to.trim() || totalMinutes <= 0}
+          disabled={!from.trim() || !to.trim() || totalMinutes <= 0 || readOnly}
           className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
         >
           เพิ่ม
         </button>
       }
     >
+      {readOnly && (
+        <div
+          role="status"
+          className="rounded-lg bg-panel-gold px-3 py-2 text-xs font-medium text-panel-gold-ink"
+        >
+          🔧 ระบบปิดรับการแก้ไขชั่วคราว — เพิ่มรายการนี้ตอนนี้ไม่ได้
+          {systemMode.state === "ok" && systemMode.reason ? ` (${systemMode.reason})` : ""}
+        </div>
+      )}
+
       <div>
         <label className="mb-1 block text-xs font-medium text-content-soft">พาหนะ</label>
         <div className="grid grid-cols-3 gap-2">
@@ -114,7 +129,8 @@ export function IntercityEditModal({
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium ${
+              disabled={readOnly}
+              className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium disabled:opacity-40 ${
                 mode === m
                   ? "border-maple bg-maple-soft text-maple-dark"
                   : "border-line text-content-soft hover:bg-surface-soft"
@@ -134,18 +150,20 @@ export function IntercityEditModal({
           <input
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
-          <StationPicks city={fromCity} value={from} onPick={setFrom} />
+          {!readOnly && <StationPicks city={fromCity} value={from} onPick={setFrom} />}
         </div>
         <div className="flex-1">
           <label className="mb-1 block text-xs font-medium text-content-soft">ไป</label>
           <input
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
-          <StationPicks city={toCity} value={to} onPick={setTo} />
+          {!readOnly && <StationPicks city={toCity} value={to} onPick={setTo} />}
         </div>
       </div>
 
@@ -157,7 +175,8 @@ export function IntercityEditModal({
             min={0}
             value={hours}
             onChange={(e) => setHours(Math.max(0, Number(e.target.value) || 0))}
-            className="w-20 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-20 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
           <span className="text-sm text-content-soft">ชม.</span>
           <input
@@ -166,7 +185,8 @@ export function IntercityEditModal({
             max={59}
             value={minutes}
             onChange={(e) => setMinutes(Math.min(59, Math.max(0, Number(e.target.value) || 0)))}
-            className="w-20 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none"
+            disabled={readOnly}
+            className="w-20 rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
           <span className="text-sm text-content-soft">นาที</span>
         </div>
@@ -178,7 +198,8 @@ export function IntercityEditModal({
                 setHours(Math.floor(m / 60));
                 setMinutes(m % 60);
               }}
-              className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-content-soft hover:border-maple/40"
+              disabled={readOnly}
+              className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-content-soft hover:border-maple/40 disabled:opacity-40"
             >
               {m / 60} ชม.
             </button>
