@@ -44,7 +44,8 @@ export type EngineTable =
   | "trip_days"
   | "trip_stops"
   | "custom_places"
-  | "hidden_places";
+  | "hidden_places"
+  | "place_notes";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -370,4 +371,75 @@ export function unhidePlace(db: Db, tripId: string, placeId: string) {
 /** `legacy_slug` → `catalog_places.id` · `null` = คลังไม่รู้จัก slug นั้น */
 export function catalogPlaceIdBySlug(db: Db, slug: string) {
   return engineTable(db, "catalog_places").select("id").eq("legacy_slug", slug).maybeSingle();
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// โน้ต/รูปที่ฝากไว้กับสถานที่ — `E3`
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * โน้ตของแผนหนึ่ง **พร้อม slug ของสถานที่ทั้งสองชนิด**
+ *
+ * 🔴 `place_notes` ชี้สถานที่ได้**สองทาง** (`catalog_place_id` หรือ `custom_place_id`)
+ * โดยมี `place_notes_one_place` บังคับว่าต้องมีทางเดียว
+ * → ต้อง join **ทั้งสองฝั่ง** แล้วเลือกอันที่ไม่ใช่ `null` · **join ฝั่งเดียวจะทำให้โน้ตของ
+ *   สถานที่ที่ผู้ใช้เพิ่มเองหายไปเงียบ ๆ** ซึ่งเป็นครึ่งหนึ่งของโน้ตทั้งหมดในทริปจริง
+ */
+export function placeNotesOfPlan(db: Db, tripId: string, planId: string) {
+  return engineTable(db, "place_notes")
+    .select("note, photo_path, updated_at, catalog_places(legacy_slug), custom_places(id)")
+    .eq("trip_id", tripId)
+    .eq("plan_id", planId)
+    .is("deleted_at", null);
+}
+
+/** เขียนโน้ต — ผู้เรียกต้องระบุแล้วว่าเป็นสถานที่ชนิดไหน (คลังกลาง vs ของทริป) */
+export function upsertPlaceNote(
+  db: Db,
+  row: {
+    tripId: string;
+    planId: string;
+    catalogPlaceId?: string | null;
+    customPlaceId?: string | null;
+    note: string | null;
+    photoPath: string | null;
+    legacyAddedBy?: string | null;
+  }
+) {
+  return engineTable(db, "place_notes")
+    .upsert(
+      {
+        trip_id: row.tripId,
+        plan_id: row.planId,
+        catalog_place_id: row.catalogPlaceId ?? null,
+        custom_place_id: row.customPlaceId ?? null,
+        note: row.note,
+        photo_path: row.photoPath,
+        legacy_added_by: row.legacyAddedBy ?? null,
+      },
+      { onConflict: row.catalogPlaceId ? "plan_id,catalog_place_id" : "plan_id,custom_place_id" }
+    )
+    .select("id");
+}
+
+/**
+ * ลบโน้ต — **ผ่าน RPC `soft_delete_place_note` เท่านั้น** (`E2-AC12`)
+ *
+ * 🔴 ไคลเอนต์ถูกถอด `update` สิทธิ์เขียน `deleted_at` ออกไปแล้ว → **ลบเองไม่ได้ตามการออกแบบ**
+ * ต้องหา `id` ของโน้ตก่อน เพราะ RPC รับ `id` ไม่ใช่ `(plan_id, place_id)`
+ */
+export function placeNoteId(db: Db, tripId: string, planId: string, place: { catalogId?: string | null; customId?: string | null }) {
+  let q = engineTable(db, "place_notes")
+    .select("id")
+    .eq("trip_id", tripId)
+    .eq("plan_id", planId)
+    .is("deleted_at", null);
+  q = place.catalogId
+    ? q.eq("catalog_place_id", place.catalogId)
+    : q.eq("custom_place_id", place.customId ?? "");
+  return q.maybeSingle();
+}
+
+export function softDeletePlaceNote(db: Db, id: string) {
+  return db.rpc("soft_delete_place_note", { p_id: id });
 }

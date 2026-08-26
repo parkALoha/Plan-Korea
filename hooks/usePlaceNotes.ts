@@ -1,26 +1,39 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type PlaceNote } from "@/lib/supabase";
-import { readCache, writeCache } from "@/lib/localCache";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { writeGuard } from "@/lib/writeGuard";
+import { readCache, writeCache } from "@/lib/localCache";
+
+const REFETCH_DEBOUNCE_MS = 300;
 
 /**
- * โน้ต/รูปที่ฝากไว้กับ "สถานที่ในคลัง" ระหว่างที่มันไม่ได้อยู่ในวันไหน (migration 0028)
+ * โน้ต/รูปที่ฝากไว้กับสถานที่ระหว่างที่มันไม่ได้อยู่ในวันไหนของแผน — **`E3` ผ่าน route แล้ว**
  *
- * ลากจุดแวะกลับคลัง = ลบแถว trip_stops ทิ้ง — เดิมโน้ตที่จดไว้หายไปด้วย ทั้งที่ผู้ใช้คิดว่า
- * "เก็บกลับคลัง" คือพักไว้ก่อน ไม่ใช่ทิ้ง · ตอนนี้โน้ต+รูปย้ายมาพักที่ตารางนี้แล้วกลับไปติดกับ
- * จุดแวะใหม่เองตอนลากลงวันอีกครั้ง (ดู addStopWithStashedNote ใน app/page.tsx)
+ * ## 🔴 `place_notes` ชี้สถานที่ได้สองทาง และการแยกอยู่ฝั่งเซิร์ฟเวอร์
+ * `catalog_place_id` (คลังกลาง · UI ใช้ slug) หรือ `custom_place_id` (ของทริป · UI ใช้ id ตรง)
+ * · **route แยกโดย *ถามฐาน* ว่า slug นั้นมีในคลังกลางไหม ไม่ใช่ดูรูปแบบสตริง**
+ *   🎯 `custom-xxx` เป็นแค่ธรรมเนียม **ไม่มีอะไรบังคับ** — เดาจากรูปแบบคือเดา
  *
- * ยังไม่ได้รัน migration 0028 = `available` เป็น false แล้วทุกฟังก์ชันเขียนกลายเป็น no-op เงียบๆ
- * (ไม่เด้ง toast "บันทึกไม่สำเร็จ" ทุกครั้งที่ลากการ์ด) — พฤติกรรมที่เหลือกลับไปเหมือนก่อนเฟส 22 เป๊ะ
+ * ## realtime เป็นสัญญาณ (P3 · `§15`)
+ * `payload.new` มี `catalog_place_id` เป็น `uuid` **ไม่มี slug** → merge ตรง ๆ ได้คีย์ผิดชนิด
  */
 export function usePlaceNotes(planId: string | null) {
   const [notes, setNotes] = useState<Record<string, PlaceNote>>({});
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const [available, setAvailable] = useState(true);
+  const tripIdRef = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const cacheKey = `placeNotes:${planId}`;
+  const fetchNotes = useCallback(async (tripId: string, plan: string) => {
+    const res = await fetch(
+      `/api/engine/trips/${tripId}/place-notes?planId=${encodeURIComponent(plan)}`
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as PlaceNote[];
+    return Object.fromEntries(rows.map((n) => [n.place_id, n]));
+  }, []);
 
   useEffect(() => {
     const channelName = `place_notes_changes_${Math.random().toString(36).slice(2)}`;
@@ -39,67 +52,58 @@ export function usePlaceNotes(planId: string | null) {
         setLoaded(true);
       }
 
-      const { data, error } = await supabase
-        .from("place_notes")
-        .select("*")
-        .eq("plan_id", planId);
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const map = await fetchNotes(trip.tripId, planId);
       if (cancelled) return;
-      // ตารางยังไม่มีจริง (ยังไม่รัน 0028) — ปิดฟีเจอร์นี้ทิ้งเงียบๆ แทนที่จะพังทั้งหน้า
-      if (error) {
+      if (map) {
+        setNotes(map);
+        writeCache(`placeNotes:${planId}`, Object.values(map));
+        setAvailable(true);
+      } else {
+        // 🔴 อ่านไม่ได้ ≠ ไม่มีโน้ต · `available=false` ทำให้ UI ไม่เสนอปุ่มที่กดแล้วล้มแน่ ๆ
         setAvailable(false);
-        setLoaded(true);
-        return;
       }
-      const rows = (data ?? []) as PlaceNote[];
-      setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n])));
-      writeCache(`placeNotes:${planId}`, rows);
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "place_notes", filter: `plan_id=eq.${planId}` },
-          (payload) => {
-            setNotes((prev) => {
-              const next = { ...prev };
-              if (payload.eventType === "DELETE") {
-                delete next[(payload.old as PlaceNote).place_id];
-              } else {
-                const row = payload.new as PlaceNote;
-                next[row.place_id] = row;
-              }
-              return next;
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "place_notes" }, () => {
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(async () => {
+            const id = tripIdRef.current;
+            if (!id || !planId || cancelled) return;
+            const fresh = await fetchNotes(id, planId);
+            if (fresh && !cancelled) setNotes(fresh);
+          }, REFETCH_DEBOUNCE_MS);
+        })
         .subscribe();
     }
 
     init();
-
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [planId]);
+  }, [planId, fetchNotes]);
 
-  /** ดึงของจริงมาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard เหมือน hook อื่น (เฟส 20.2) */
   const reload = useCallback(async () => {
-    if (!supabaseConfigured || !planId) return;
-    const { data } = await supabase.from("place_notes").select("*").eq("plan_id", planId);
-    if (!data) return;
-    const rows = data as PlaceNote[];
-    setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n])));
-    writeCache(cacheKey, rows);
-  }, [planId, cacheKey]);
+    const id = tripIdRef.current;
+    if (!id || !planId) return;
+    const fresh = await fetchNotes(id, planId);
+    if (fresh) setNotes(fresh);
+  }, [planId, fetchNotes]);
 
-  /** เก็บโน้ต/รูปของจุดแวะที่กำลังจะถูกเอาออกจากวัน ไว้กับตัวสถานที่ในคลัง
-   *  ไม่มีทั้งโน้ตและรูป = ไม่ต้องเขียนอะไร (การ์ดในคลังจะได้ไม่ขึ้นป้าย "มีโน้ต" เปล่าๆ) */
   const stashNote = useCallback(
     async (placeId: string, note: string | null, photoUrl: string | null) => {
       if (!planId || !available) return false;
       if (!note && !photoUrl) return false;
+      const tripId = tripIdRef.current;
       const row: PlaceNote = {
         plan_id: planId,
         place_id: placeId,
@@ -108,30 +112,45 @@ export function usePlaceNotes(planId: string | null) {
         updated_at: new Date().toISOString(),
       };
       setNotes((prev) => ({ ...prev, [placeId]: row }));
-      if (!supabaseConfigured) return true;
-      const ok = await writeGuard("เก็บโน้ตไว้กับสถานที่", () =>
-        supabase.from("place_notes").upsert(row)
-      );
+      if (!supabaseConfigured || !tripId) return true;
+
+      const ok = await writeGuard("เก็บโน้ตไว้กับสถานที่", async () => {
+        const res = await fetch(`/api/engine/trips/${tripId}/place-notes`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planId, placeId, note, photoUrl }),
+        });
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
       if (!ok) await reload();
       return ok;
     },
     [planId, available, reload]
   );
 
-  /** ล้างโน้ตที่ฝากไว้ — เรียกตอนโน้ตถูกย้ายกลับไปติดกับจุดแวะแล้ว (หรือตอนกด "เลิกทำ") */
   const clearNote = useCallback(
     async (placeId: string) => {
       if (!planId || !available) return;
+      const tripId = tripIdRef.current;
       setNotes((prev) => {
         if (!prev[placeId]) return prev;
         const next = { ...prev };
         delete next[placeId];
         return next;
       });
-      if (!supabaseConfigured) return;
-      const ok = await writeGuard("ล้างโน้ตของสถานที่", () =>
-        supabase.from("place_notes").delete().eq("plan_id", planId).eq("place_id", placeId)
-      );
+      if (!supabaseConfigured || !tripId) return;
+
+      const ok = await writeGuard("ล้างโน้ตของสถานที่", async () => {
+        const res = await fetch(
+          `/api/engine/trips/${tripId}/place-notes?planId=${encodeURIComponent(planId)}&placeId=${encodeURIComponent(placeId)}`,
+          { method: "DELETE" }
+        );
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
       if (!ok) await reload();
     },
     [planId, available, reload]
