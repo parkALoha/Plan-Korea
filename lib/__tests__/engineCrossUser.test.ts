@@ -65,6 +65,7 @@ import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
 import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[tripId]/hotels/route";
 import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom-places/route";
 import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
+import { PUT as placeNotesPUT } from "@/app/api/engine/trips/[tripId]/place-notes/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -134,7 +135,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -165,6 +166,8 @@ describe("E3-AC9 ② — ความครอบคลุม (ต้องเ�
         : `\n⚠️  AC9② cross-user: ครอบ ${covered.length}/${all.length} trip-route — เขียวไม่ได้แปลว่า cross-user ถูกทดสอบครบ\n` +
           `    เหลือ: ${remaining.join(" · ")}\n`;
     console.warn(banner);
+    // 🔴 ด่านบังคับ "ครบ 9" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ตัวที่ 10 ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
+    expect(remaining, "มี trip-scoped route ที่ยังไม่มี probe ข้ามผู้ใช้ — เพิ่ม probe ใน describe นี้ก่อน").toEqual([]);
   });
 });
 
@@ -436,6 +439,23 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const { verdict, detail } = await verdictFor(bRes);
     expect(verdict, `[hidden-places] B → **${verdict}** (${detail})`).toBe("rejected");
     expect(await cnt(), "[hidden-places] เพิ่มหลัง B = B ซ่อนในทริป A สำเร็จ (leak)").toBe(n1);
+  });
+
+  // จับบั๊กที่ owner เขียนไม่ได้ (42P10 · P4 พบ · P1 แก้ 04b7171: upsert partial-index → update-then-insert)
+  it("place-notes PUT — A เขียนโน้ตได้ · B เขียนทับโน้ตในแผน A ไม่ได้ (ตรวจ *เนื้อโน้ต* ไม่ใช่จำนวน)", async () => {
+    const aRes = await callAs(aCookies, tripA, placeNotesPUT, "PUT", { planId: aPlan, placeId: placeSlug, note: "n-a" });
+    expect(aRes.status, `control A ควร 200 (บั๊กเดิม 42P10): ${aRes.status} ${await aRes.clone().text()}`).toBe(200);
+    const notes = async () => {
+      // admin มี select บน place_notes (ข้อยกเว้น #4) — ตรวจ *เนื้อ* เพราะ upsert เขียนทับได้ (จำนวนไม่ขยับ)
+      const { data, error } = await admin.from("place_notes").select("note").eq("trip_id", tripA);
+      if (error) throw new Error(`admin read place_notes: ${error.message}`);
+      return (data ?? []).map((r) => (r as { note: string | null }).note).sort();
+    };
+    expect(await notes()).toEqual(["n-a"]);
+    const bRes = await callAs(bCookies, tripA, placeNotesPUT, "PUT", { planId: aPlan, placeId: placeSlug, note: "n-b" });
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[place-notes] B → **${verdict}** (${detail})`).toBe("rejected");
+    expect(await notes(), "[place-notes] เจอ 'n-b' = B เขียนทับโน้ตของ A สำเร็จ (leak)").toEqual(["n-a"]);
   });
 
 });
