@@ -21,6 +21,8 @@ import {
   navigationName,
   openNaverMap,
 } from "@/lib/mapLinks";
+import { mapProvidersFor, type MapProvider } from "@/lib/engine/countries";
+import { countryOfCity } from "@/data/emergency";
 import { LocalNameCard } from "@/components/LocalNameCard";
 import { PlaceDetailModal } from "@/components/PlaceDetailModal";
 import { placeDetailsCache } from "@/hooks/usePlaceDetails";
@@ -110,34 +112,59 @@ function TodaySkeleton() {
   );
 }
 
-function NavButtons({ lat, lng, name }: { lat: number; lng: number; name: string }) {
+// เมทาของแต่ละผู้ให้บริการ — สีปุ่มเป็นสีแบรนด์ของแอปนั้นๆ ไม่ใช่โทเคนของเว็บเรา (Kakao/Naver มีสีทางการ
+// ที่คนไทยจำได้จากแอปจริง) ปุ่มที่แสดงจริงมาจาก mapProvidersFor(countryCode) ไม่ใช่ลิสต์ตายตัวสามปุ่ม
+const MAP_PROVIDER_META: Record<
+  MapProvider,
+  { emoji: string; label: string; className: string }
+> = {
+  google: { emoji: "🧭", label: "Google", className: "bg-pine text-cream hover:bg-pine-dark" },
+  kakao: { emoji: "💬", label: "Kakao", className: "bg-[#FEE500] text-ink hover:brightness-95" },
+  naver: { emoji: "🟢", label: "Naver", className: "bg-[#03C75A] text-white hover:brightness-95" },
+};
+
+function NavButtons({
+  lat,
+  lng,
+  name,
+  providers,
+}: {
+  lat: number;
+  lng: number;
+  name: string;
+  /** ลำดับที่ควรแสดง — ตัวแรกคือตัวหลัก (จาก mapProvidersFor(countryCode), E4-AC2/AC4) */
+  providers: readonly MapProvider[];
+}) {
   return (
-    <div className="grid grid-cols-3 gap-2">
-      <a
-        href={googleMapsDirectionsUrl(lat, lng)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex flex-col items-center justify-center gap-1 rounded-xl bg-pine py-3 text-cream hover:bg-pine-dark"
-      >
-        <span className="text-xl">🧭</span>
-        <span className="text-xs font-medium">Google</span>
-      </a>
-      <a
-        href={kakaoMapDirectionsUrl(lat, lng, name)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#FEE500] py-3 text-ink hover:brightness-95"
-      >
-        <span className="text-xl">💬</span>
-        <span className="text-xs font-medium">Kakao</span>
-      </a>
-      <button
-        onClick={() => openNaverMap(lat, lng, name)}
-        className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#03C75A] py-3 text-white hover:brightness-95"
-      >
-        <span className="text-xl">🟢</span>
-        <span className="text-xs font-medium">Naver</span>
-      </button>
+    <div
+      className="grid gap-2"
+      style={{ gridTemplateColumns: `repeat(${providers.length}, minmax(0, 1fr))` }}
+    >
+      {providers.map((provider) => {
+        const meta = MAP_PROVIDER_META[provider];
+        const content = (
+          <>
+            <span className="text-xl">{meta.emoji}</span>
+            <span className="text-xs font-medium">{meta.label}</span>
+          </>
+        );
+        const className = `flex flex-col items-center justify-center gap-1 rounded-xl py-3 ${meta.className}`;
+        if (provider === "naver") {
+          // Naver ต้องลองเปิดแอปก่อนแล้วค่อย fallback เป็นเว็บ (ดู lib/mapLinks.ts) — ทำเป็นปุ่ม ไม่ใช่ลิงก์
+          return (
+            <button key={provider} onClick={() => openNaverMap(lat, lng, name)} className={className}>
+              {content}
+            </button>
+          );
+        }
+        const href =
+          provider === "google" ? googleMapsDirectionsUrl(lat, lng) : kakaoMapDirectionsUrl(lat, lng, name);
+        return (
+          <a key={provider} href={href} target="_blank" rel="noopener noreferrer" className={className}>
+            {content}
+          </a>
+        );
+      })}
     </div>
   );
 }
@@ -192,6 +219,10 @@ export default function TodayPage() {
   // เทียบวันที่ตรงๆ ไม่ใช่ index — เดิม dayIndex === todayIndex เป็น true เสมอตอนยังไม่ถึงทริป
   // (findTodayIndex clamp เป็น index 0) ทำให้ /today ขึ้นแถบ "ช้ากว่าแผน" ผิดๆ ทั้งที่ยังอีกหลายเดือน — บั๊ก 7.2
   const isRealToday = day.date === todayIso;
+  // ปุ่มแผนที่ที่ควรแสดงของวันนี้ — มาจากทะเบียนความสามารถรายประเทศ (E4-AC2/AC4) ไม่ใช่ลิสต์ตายตัว
+  // countryOfCity มาจาก data/emergency.ts (ตัวเดียวกับที่ EmergencyCard ใช้อยู่แล้ว) — ไม่สร้างแหล่งที่มา
+  // ของ "ประเทศจาก city" ใหม่อีกจุด แม้ตัวมันเองยังเป็น 2 ประเทศตายตัวก็ตาม (ข้อจำกัดที่รู้อยู่แล้ว แยกเรื่อง)
+  const mapProviders = mapProvidersFor(countryOfCity(day.city));
 
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === day.id).sort((a, b) => a.order_index - b.order_index),
@@ -737,6 +768,7 @@ export default function TodayPage() {
                         lat={nextSched.place.lat}
                         lng={nextSched.place.lng}
                         name={navigationName(nextSched.place, nextLocal?.nameLocal)}
+                        providers={mapProviders}
                       />
                       <LocalNameCard
                         place={nextSched.place}
@@ -788,6 +820,7 @@ export default function TodayPage() {
                     lat={endAnchor.lat}
                     lng={endAnchor.lng}
                     name={endHotel ? hotelNavigationName(endHotel) : endAnchor.label}
+                    providers={mapProviders}
                   />
                   {endHotel && (
                     <button
