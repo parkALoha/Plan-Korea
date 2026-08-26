@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
@@ -36,8 +35,9 @@ export type NewBooking = {
 };
 
 /** ตั๋ว/booking ทั้งหมดของทริป — trip-wide ไม่แยกตามแผน A/B เหมือน trip_hotels
- *  ตัวจริงที่ fetch + เปิด realtime channel เรียกครั้งเดียวที่ BookingsProvider ที่เหลืออ่านผ่าน useBookings() */
-function useBookingsStore() {
+ *  ตัวจริงที่ fetch + เปิด realtime channel เรียกครั้งเดียวที่ BookingsProvider ที่เหลืออ่านผ่าน useBookings()
+ *  🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
+function useBookingsStore(tripId: string | null) {
   const [bookings, setBookings] = useState<TripBooking[]>([]);
   const tripIdRef = useRef<string | null>(null);
   const dayToUuid = useRef<Map<string, string>>(new Map());
@@ -47,7 +47,11 @@ function useBookingsStore() {
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    tripIdRef.current = tripId;
+  }, [tripId]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId) return;
 
     const channelName = `bookings_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
@@ -62,15 +66,7 @@ function useBookingsStore() {
         setLoaded(true);
       }
 
-      if (!supabaseConfigured) return void setLoaded(true);
-
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const daysRes = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
       if (cancelled || !daysRes.ok) return void setLoaded(true);
       // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — `layoutImportGraph` จับได้ว่า
       //    hook นี้อยู่ใน `TripDataProvider` ซึ่งอยู่ใน root layout
@@ -84,7 +80,7 @@ function useBookingsStore() {
       );
       uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
 
-      const res = await fetch(`/api/engine/trips/${trip.tripId}/bookings`);
+      const res = await fetch(`/api/engine/trips/${tripId}/bookings`);
       if (cancelled) return;
       if (res.ok) {
         const rows = (await res.json()) as (TripBooking & { trip_day_id: string | null })[];
@@ -114,7 +110,7 @@ function useBookingsStore() {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [tripId]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
@@ -285,8 +281,8 @@ function useBookingsStore() {
 
 const BookingsContext = createContext<ReturnType<typeof useBookingsStore> | null>(null);
 
-export function BookingsProvider({ children }: { children: ReactNode }) {
-  const value = useBookingsStore();
+export function BookingsProvider({ tripId, children }: { tripId: string | null; children: ReactNode }) {
+  const value = useBookingsStore(tripId);
   return <BookingsContext.Provider value={value}>{children}</BookingsContext.Provider>;
 }
 

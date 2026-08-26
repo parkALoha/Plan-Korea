@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type PlaceNote } from "@/lib/supabase";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
 
@@ -18,13 +17,18 @@ const REFETCH_DEBOUNCE_MS = 300;
  *
  * ## realtime เป็นสัญญาณ (P3 · `§15`)
  * `payload.new` มี `catalog_place_id` เป็น `uuid` **ไม่มี slug** → merge ตรง ๆ ได้คีย์ผิดชนิด
+ * 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม
  */
-export function usePlaceNotes(planId: string | null) {
+export function usePlaceNotes(tripId: string | null, planId: string | null) {
   const [notes, setNotes] = useState<Record<string, PlaceNote>>({});
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const [available, setAvailable] = useState(true);
   const tripIdRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    tripIdRef.current = tripId;
+  }, [tripId]);
 
   const fetchNotes = useCallback(async (tripId: string, plan: string) => {
     const res = await fetch(
@@ -41,7 +45,7 @@ export function usePlaceNotes(planId: string | null) {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      if (!supabaseConfigured || !planId) {
+      if (!supabaseConfigured || !tripId || !planId) {
         setNotes({});
         return;
       }
@@ -52,13 +56,7 @@ export function usePlaceNotes(planId: string | null) {
         setLoaded(true);
       }
 
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const map = await fetchNotes(trip.tripId, planId);
+      const map = await fetchNotes(tripId, planId);
       if (cancelled) return;
       if (map) {
         setNotes(map);
@@ -90,7 +88,7 @@ export function usePlaceNotes(planId: string | null) {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [planId, fetchNotes]);
+  }, [tripId, planId, fetchNotes]);
 
   const reload = useCallback(async () => {
     const id = tripIdRef.current;

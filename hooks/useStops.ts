@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
@@ -32,7 +31,8 @@ function sortStops(stops: TripStop[]) {
 
 type StopDto = Omit<TripStop, "day_id" | "plan_id"> & { trip_day_id: string };
 
-export function useStops(planId: string | null) {
+/** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
+export function useStops(tripId: string | null, planId: string | null) {
   const [stops, setStops] = useState<TripStop[]>([]);
 
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
@@ -41,6 +41,10 @@ export function useStops(planId: string | null) {
   const uuidToDay = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    tripIdRef.current = tripId;
+  }, [tripId]);
 
   const mapRows = useCallback(
     (rows: StopDto[]): TripStop[] =>
@@ -70,7 +74,7 @@ export function useStops(planId: string | null) {
   }, [reload]);
 
   useEffect(() => {
-    if (!supabaseConfigured || !planId) return;
+    if (!supabaseConfigured || !tripId || !planId) return;
     const channelName = `trip_stops_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -82,13 +86,7 @@ export function useStops(planId: string | null) {
         setLoaded(true);
       }
 
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const daysRes = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
       if (cancelled || !daysRes.ok) return void setLoaded(true);
       // 🔴 `import()` ไม่ใช่ static — `useStops` ถูกเรียกจากหลายหน้า และเราไม่อยาก
       //    ให้ `data/itinerary.ts` ติดไปกับบันเดิลที่ไม่ต้องใช้ (บทเรียนจาก `useBookings`)
@@ -119,7 +117,7 @@ export function useStops(planId: string | null) {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [planId]);
+  }, [tripId, planId]);
 
   /** เขียนแบบมีเสียง แล้วดึงของจริงมาทับ state ที่เดาไว้ตอนล้ม */
   const call = useCallback(

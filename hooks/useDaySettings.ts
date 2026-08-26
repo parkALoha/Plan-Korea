@@ -3,18 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ITINERARY } from "@/data/itinerary";
 import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
-export function useDaySettings(planId: string | null) {
+/** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
+export function useDaySettings(tripId: string | null, planId: string | null) {
   const [settings, setSettings] = useState<Record<string, TripDaySettings>>({});
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
   const tripIdRef = useRef<string | null>(null);
   const dayIdRef = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+
+  useEffect(() => {
+    tripIdRef.current = tripId;
+  }, [tripId]);
 
   useEffect(() => {
     const channelName = `trip_day_settings_changes_${Math.random().toString(36).slice(2)}`;
@@ -39,7 +43,7 @@ export function useDaySettings(planId: string | null) {
         return map;
       };
 
-      if (!supabaseConfigured || !planId) return void setLoaded(true);
+      if (!supabaseConfigured || !tripId || !planId) return void setLoaded(true);
 
       const cached = readCache<TripDaySettings[]>(`daySettings:${planId}`);
       if (cached) {
@@ -49,13 +53,7 @@ export function useDaySettings(planId: string | null) {
         setLoaded(true);
       }
 
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const daysRes = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
       if (cancelled || !daysRes.ok) return void setLoaded(true);
       const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
@@ -64,7 +62,7 @@ export function useDaySettings(planId: string | null) {
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );
 
-      const res = await fetch(`/api/engine/trips/${trip.tripId}/day-settings?planId=${encodeURIComponent(planId)}`);
+      const res = await fetch(`/api/engine/trips/${tripId}/day-settings?planId=${encodeURIComponent(planId)}`);
       if (cancelled) return;
       if (res.ok) {
         const rows = (await res.json()) as { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[];
@@ -91,7 +89,7 @@ export function useDaySettings(planId: string | null) {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [planId]);
+  }, [tripId, planId]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {

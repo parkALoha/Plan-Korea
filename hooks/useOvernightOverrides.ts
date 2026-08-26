@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ITINERARY, type City } from "@/data/itinerary";
 import { supabaseConfigured } from "@/lib/supabase";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
@@ -30,15 +29,20 @@ type Overrides = Record<string, City>;
  * ## สะพาน `"d0"` → `uuid` อยู่ฝั่งนี้ ไม่ใช่ฝั่ง route
  * route พูด `uuid`/`date` เท่านั้น · `"d0"` เป็นเรื่องของ `data/itinerary.ts` ซึ่งเป็นไฟล์ของเว็บเดิม
  * 🎯 **วันที่ `E5-AC1` มาถึง สะพานหายไปเฉย ๆ โดยไม่ต้องแตะ route**
+ * 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม
  */
-export function useOvernightOverrides() {
+export function useOvernightOverrides(tripId: string | null) {
   const [overrides, setOverrides] = useState<Overrides>({});
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const tripIdRef = useRef<string | null>(null);
   const dayIdRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    tripIdRef.current = tripId;
+  }, [tripId]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId) return;
     let cancelled = false;
 
     async function init() {
@@ -48,13 +52,7 @@ export function useOvernightOverrides() {
         setLoaded(true);
       }
 
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const res = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      const res = await fetch(`/api/engine/trips/${tripId}/days`);
       if (cancelled || !res.ok) return void setLoaded(true);
       const rows = (await res.json()) as DayOvernightRow[];
       if (cancelled) return;
@@ -81,7 +79,7 @@ export function useOvernightOverrides() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tripId]);
 
   const setOvernightCity = useCallback(
     async (dayId: string, city: City) => {

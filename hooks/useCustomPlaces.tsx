@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
@@ -15,14 +14,24 @@ function makeCustomPlaceId() {
 /** หน่วงก่อนดึงใหม่ — realtime ยิงถี่ตอนมีคนเพิ่มหลายที่ติดกัน · ดึงทุกครั้งคือ N คำขอ */
 const REFETCH_DEBOUNCE_MS = 300;
 
-function useCustomPlacesStore() {
+/**
+ * 🔴 **`tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1`** — ไม่ใช่ resolve เองอีกต่อไป
+ * เดิม hook นี้ยิง `GET /api/engine/trips` + `chooseSoleTrip()` เอง (เหมือนอีก 8 hook) ซึ่งพอมีทริปที่สอง
+ * จะได้ `ambiguous` เงียบ ๆ — เปลี่ยนพร้อมกันทั้ง 9 hook ในคอมมิตเดียว (P1 เตือนไว้ ไม่ทำทีละตัว)
+ */
+function useCustomPlacesStore(tripId: string | null) {
   const [customPlaces, setCustomPlaces] = useState<CustomPlace[]>([]);
   const tripIdRef = useRef<string | null>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    tripIdRef.current = tripId;
+  }, [tripId]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId) return;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
 
     const channelName = `custom_places_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
@@ -45,25 +54,7 @@ function useCustomPlacesStore() {
         setLoaded(true);
       }
 
-      // 🔴 กฎการเลือกทริปเป็นตัวเดียวกับฝั่งเซิร์ฟเวอร์ (`chooseSoleTrip`)
-      //    เขียนกฎเองที่นี่ = วันหนึ่งสองฝั่งจะเลือกคนละใบ แล้วผู้ใช้เห็นทริปเปลี่ยนกลางเฟรม
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled) return;
-      if (!tripsRes.ok) {
-        setLoaded(true);
-        return;
-      }
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled) return;
-      if (!trip.ok) {
-        // ⚠️ ยังไม่มีทริป / มีหลายทริป — **ไม่ใช่ error และห้ามเดาให้**
-        //    `E5-AC1` (`/trip/[tripId]`) เป็นคนแก้เรื่องนี้ถาวร
-        setLoaded(true);
-        return;
-      }
-      tripIdRef.current = trip.tripId;
-
-      const rows = await fetchPlaces(trip.tripId);
+      const rows = await fetchPlaces(activeTripId);
       if (cancelled) return;
       if (rows) {
         setCustomPlaces(rows);
@@ -110,7 +101,7 @@ function useCustomPlacesStore() {
       if (refetchTimer.current) clearTimeout(refetchTimer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [tripId]);
 
   const addCustomPlace = useCallback(
     async (place: Omit<CustomPlace, "id" | "created_at">) => {
@@ -165,8 +156,8 @@ function useCustomPlacesStore() {
 
 const CustomPlacesContext = createContext<ReturnType<typeof useCustomPlacesStore> | null>(null);
 
-export function CustomPlacesProvider({ children }: { children: ReactNode }) {
-  const value = useCustomPlacesStore();
+export function CustomPlacesProvider({ tripId, children }: { tripId: string | null; children: ReactNode }) {
+  const value = useCustomPlacesStore(tripId);
   return <CustomPlacesContext.Provider value={value}>{children}</CustomPlacesContext.Provider>;
 }
 

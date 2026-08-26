@@ -46,6 +46,9 @@ import { showUndoToast } from "@/lib/toast";
 import NoteBody from "@/components/NoteBody";
 import { localDateIso } from "@/lib/localDate";
 import { useMounted } from "@/hooks/useMounted";
+import { useActiveTripId } from "@/hooks/useActiveTripId";
+import { TripDataProvider } from "@/components/TripDataProvider";
+import { TripStatusFallback } from "@/components/TripStatusFallback";
 
 
 /** ป้ายชื่อของแถวจุดแวะในลิสต์ "ถัดจากนี้" / "ผ่านมาแล้ว"
@@ -154,7 +157,25 @@ function NavButtons({ actions }: { actions: readonly MapAction[] }) {
   );
 }
 
+/**
+ * 🔴 หน้า **bare** — ไม่มี `[tripId]` ใน URL — `E5-AC1`
+ * resolve ทริปเองผ่าน `useActiveTripId()` แล้วค่อยห่อ `TripDataProvider` + render เนื้อหาจริง
+ * (`TodayPageContent`) ตัวเดียวกับที่ `/trip/[tripId]/today` ใช้ — `app/manifest.ts` ตั้ง
+ * `start_url: "/today"` ไว้ตายตัว หน้านี้จึงต้องคงอยู่และใช้งานได้ตลอดไป ไม่ใช่แค่ transitional
+ * (ดู `docs/engine/frontend-arch.md` §16 สำหรับเหตุผลที่ไม่ใช้ HTTP redirect)
+ */
 export default function TodayPage() {
+  const trip = useActiveTripId();
+  if (trip.status !== "ready") return <TripStatusFallback trip={trip} />;
+  return (
+    <TripDataProvider tripId={trip.tripId}>
+      <TodayPageContent tripId={trip.tripId} />
+    </TripDataProvider>
+  );
+}
+
+/** เนื้อหาจริงของหน้า "วันนี้" — ใช้ร่วมกันทั้งหน้า bare (`/today`) และ `/trip/[tripId]/today` */
+export function TodayPageContent({ tripId }: { tripId: string }) {
   const { hotels } = useHotels();
   const { bookings, loaded: bookingsLoaded } = useBookings();
   const { plans, activePlanId, loaded: plansLoaded } = usePlans();
@@ -164,10 +185,10 @@ export default function TodayPage() {
     markVisited,
     unmarkVisited,
     updatePhoto,
-  } = useStops(activePlanId);
+  } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
-  const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides();
-  const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(activePlanId);
+  const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides(tripId);
+  const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
 
   const itinerary = useMemo(
     () => applyOvernightOverrides(ITINERARY, overnightOverrides),

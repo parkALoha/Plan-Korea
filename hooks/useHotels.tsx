@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { hotelRangeKey } from "@/lib/hotelLegs";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
@@ -50,8 +49,9 @@ function toRow(input: HotelInput): TripHotel {
 }
 
 /** ตัวจริงที่ fetch + เปิด realtime channel — เรียกได้ครั้งเดียวทั้งแอปที่ HotelsProvider
- *  (เรียกซ้ำหลายที่ = ดึงทั้งตารางซ้ำ + เปิด channel ใหม่ทุกครั้ง) ที่เหลือใช้ useHotels() อ่านจาก context */
-function useHotelsStore() {
+ *  (เรียกซ้ำหลายที่ = ดึงทั้งตารางซ้ำ + เปิด channel ใหม่ทุกครั้ง) ที่เหลือใช้ useHotels() อ่านจาก context
+ *  🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
+function useHotelsStore(tripId: string | null) {
   const [hotels, setHotels] = useState<Record<string, TripHotel>>({});
   const tripIdRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,7 +59,11 @@ function useHotelsStore() {
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    tripIdRef.current = tripId;
+  }, [tripId]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId) return;
 
     // ชื่อ channel ต้องไม่ซ้ำกันต่อการ mount เพราะ React Strict Mode (dev) รัน effect
     // นี้ 2 รอบ — ถ้าใช้ชื่อเดิม supabase-js จะคืน channel เดิมที่ subscribe() ไปแล้ว
@@ -86,15 +90,7 @@ function useHotelsStore() {
         setLoaded(true);
       }
 
-      if (!supabaseConfigured) return void setLoaded(true);
-
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const res = await fetch(`/api/engine/trips/${trip.tripId}/hotels`);
+      const res = await fetch(`/api/engine/trips/${tripId}/hotels`);
       if (cancelled) return;
       if (res.ok) {
         const rows = (await res.json()) as TripHotel[];
@@ -127,7 +123,7 @@ function useHotelsStore() {
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [tripId]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const refetch = useCallback(async () => {
@@ -235,8 +231,8 @@ function useHotelsStore() {
 
 const HotelsContext = createContext<ReturnType<typeof useHotelsStore> | null>(null);
 
-export function HotelsProvider({ children }: { children: ReactNode }) {
-  const value = useHotelsStore();
+export function HotelsProvider({ tripId, children }: { tripId: string | null; children: ReactNode }) {
+  const value = useHotelsStore(tripId);
   return <HotelsContext.Provider value={value}>{children}</HotelsContext.Provider>;
 }
 

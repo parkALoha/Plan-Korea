@@ -38,6 +38,9 @@ import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
 import { useTripWeather } from "@/hooks/useTripWeather";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useActiveTripId } from "@/hooks/useActiveTripId";
+import { TripDataProvider } from "@/components/TripDataProvider";
+import { TripStatusFallback } from "@/components/TripStatusFallback";
 import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
 
@@ -55,7 +58,24 @@ function defaultTravelModeFor(
   return km < WALK_THRESHOLD_KM ? "walk" : "transit";
 }
 
+/**
+ * 🔴 หน้า **bare** — ไม่มี `[tripId]` ใน URL — `E5-AC1`
+ * resolve ทริปเองผ่าน `useActiveTripId()` แล้วค่อยห่อ `TripDataProvider` + render เนื้อหาจริง
+ * (`HomeContent`) ตัวเดียวกับที่ `/trip/[tripId]` ใช้ (ดู `docs/engine/frontend-arch.md` §16
+ * สำหรับเหตุผลที่ไม่ใช้ HTTP redirect — จะเสียความสามารถแคชออฟไลน์ของ `sw.js`)
+ */
 export default function Home() {
+  const trip = useActiveTripId();
+  if (trip.status !== "ready") return <TripStatusFallback trip={trip} />;
+  return (
+    <TripDataProvider tripId={trip.tripId}>
+      <HomeContent tripId={trip.tripId} />
+    </TripDataProvider>
+  );
+}
+
+/** หน้าวางแผน (แผนที่/ลากจุดแวะ) — ใช้ร่วมกันทั้งหน้า bare (`/`) และ `/trip/[tripId]` */
+export function HomeContent({ tripId }: { tripId: string }) {
   const { hotels, setHotel, clearHotel } = useHotels();
   const {
     bookings,
@@ -71,7 +91,7 @@ export default function Home() {
     toggleItem: toggleChecklistItem,
     removeItem: removeChecklistItem,
     restoreItem: restoreChecklistItem,
-  } = useChecklist();
+  } = useChecklist(tripId);
   const { plans, activePlanId, loaded: plansLoaded, createPlan, renamePlan, deletePlan, switchActivePlan } =
     usePlans();
   const {
@@ -90,27 +110,27 @@ export default function Home() {
     updatePhoto,
     removeStop,
     restoreStop,
-  } = useStops(activePlanId);
+  } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
-  const { placeNotes, stashNote, clearNote } = usePlaceNotes(activePlanId);
+  const { placeNotes, stashNote, clearNote } = usePlaceNotes(tripId, activePlanId);
   const {
     settings: daySettings,
     loaded: daySettingsLoaded,
     setStartTime,
     setReturnTravelMode,
     setDaysLocked,
-  } = useDaySettings(activePlanId);
+  } = useDaySettings(tripId, activePlanId);
   const {
     hiddenPlaceIds,
     loaded: hiddenPlacesLoaded,
     hidePlace,
     unhidePlace,
-  } = useHiddenPlaces();
+  } = useHiddenPlaces(tripId);
   const {
     overnightOverrides,
     loaded: overnightLoaded,
     setOvernightCity,
-  } = useOvernightOverrides();
+  } = useOvernightOverrides(tripId);
 
   // แผนทริปจริงที่ใช้ทั้งหน้า = ITINERARY + คืนที่เลือกเมืองนอนเองไว้ (เช่น คืน 16 ต.ค. คังนึง/ซกโช)
   const itinerary = useMemo(

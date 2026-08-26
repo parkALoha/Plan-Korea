@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 
@@ -21,8 +20,9 @@ function sortItems(items: ChecklistItem[]) {
   });
 }
 
-/** checklist ของที่ต้องเตรียม — trip-wide ไม่แยกตามแผน A/B เหมือน bookings */
-export function useChecklist() {
+/** checklist ของที่ต้องเตรียม — trip-wide ไม่แยกตามแผน A/B เหมือน bookings
+ *  🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
+export function useChecklist(tripId: string | null) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const tripIdRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -30,20 +30,18 @@ export function useChecklist() {
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    tripIdRef.current = tripId;
+  }, [tripId]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId) return;
 
     const channelName = `checklist_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const res = await fetch(`/api/engine/trips/${trip.tripId}/checklist`);
+      const res = await fetch(`/api/engine/trips/${tripId}/checklist`);
       if (cancelled) return;
       if (res.ok) setItems(sortItems((await res.json()) as ChecklistItem[]));
       setLoaded(true);
@@ -65,7 +63,7 @@ export function useChecklist() {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [tripId]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {

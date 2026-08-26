@@ -53,6 +53,9 @@ import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useSignedFiles } from "@/hooks/useSignedFiles";
+import { useActiveTripId } from "@/hooks/useActiveTripId";
+import { TripDataProvider } from "@/components/TripDataProvider";
+import { TripStatusFallback } from "@/components/TripStatusFallback";
 import NoteBody from "@/components/NoteBody";
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
@@ -471,18 +474,32 @@ function SummaryPlaceMeta({ place, dayDate }: { place: Place; dayDate: string })
  * (ดู `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-search-params.md`)
  * — ต้องมี Suspense ครอบ ไม่งั้น build เตือน/พังตอน prerender
  */
+/**
+ * 🔴 หน้า **bare** — ไม่มี `[tripId]` ใน URL — `E5-AC1`
+ * resolve ทริปเองผ่าน `useActiveTripId()` แล้วค่อยห่อ `TripDataProvider` + render เนื้อหาจริง
+ * (`SummaryContent`) ตัวเดียวกับที่ `/trip/[tripId]/summary` ใช้ — ดู `docs/engine/frontend-arch.md` §16
+ * สำหรับเหตุผลที่ไม่ใช้ HTTP redirect (จะเสียความสามารถแคชออฟไลน์ของ `sw.js`)
+ */
 export default function SummaryPage() {
+  const trip = useActiveTripId();
   return (
     <Suspense
       fallback={<div className="px-4 py-10 text-center text-sm text-content-soft">กำลังโหลด...</div>}
     >
-      <SummaryContent />
+      {trip.status === "ready" ? (
+        <TripDataProvider tripId={trip.tripId}>
+          <SummaryContent tripId={trip.tripId} />
+        </TripDataProvider>
+      ) : (
+        <TripStatusFallback trip={trip} />
+      )}
     </Suspense>
   );
 }
 
-/** หน้าสรุปแผนทั้งทริป — ดูอย่างเดียว แก้อะไรไม่ได้ ไว้เปิดอ่านรวดเดียวหรือส่งให้คนอื่นดู */
-function SummaryContent() {
+/** หน้าสรุปแผนทั้งทริป — ดูอย่างเดียว แก้อะไรไม่ได้ ไว้เปิดอ่านรวดเดียวหรือส่งให้คนอื่นดู
+ *  **ใช้ร่วมกันทั้งหน้า bare (`/summary`) และ `/trip/[tripId]/summary`** — ดู `E5-AC1` */
+export function SummaryContent({ tripId }: { tripId: string }) {
   const { lang, setLang, t } = useLang();
   const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const searchParams = useSearchParams();
@@ -495,12 +512,12 @@ function SummaryContent() {
   const signedBookingFiles = useSignedFiles(
     bookings.filter((b) => isImageAttachment(b.file_name, b.file_url)).map((b) => b.file_url)
   );
-  const { items: checklistItems, loaded: checklistLoaded } = useChecklist();
+  const { items: checklistItems, loaded: checklistLoaded } = useChecklist(tripId);
   const { plans, activePlanId, loaded: plansLoaded } = usePlans();
-  const { stops, loaded: stopsLoaded } = useStops(activePlanId);
+  const { stops, loaded: stopsLoaded } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
-  const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(activePlanId);
-  const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides();
+  const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
+  const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides(tripId);
 
   const itinerary = useMemo(
     () => applyOvernightOverrides(ITINERARY, overnightOverrides),

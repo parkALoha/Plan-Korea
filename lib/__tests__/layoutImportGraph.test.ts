@@ -10,11 +10,16 @@ import { describe, expect, it } from "vitest";
  * ตรวจ build จริงแล้วพบว่าหน้า public กับหน้า 404 **ไม่ได้ลากเนื้อหาทริปมาด้วย**
  * (ตอนตรวจครั้งแรกหน้า public คือ `/unlock` · `AC6` ลบมันไปแล้ว 25 ส.ค. 2026 · ตอนนี้คือ `/login`
  *  — ข้อสรุปไม่เปลี่ยน เพราะสิ่งที่วัดคือ **layout** ไม่ใช่หน้าใดหน้าหนึ่ง)
- * เพราะ chain ของ `app/layout.tsx` → `TripDataProvider` → 3 hook ไม่มีตัวไหนแตะ `data/*` เลย
+ * เพราะ chain ของ `app/layout.tsx` ไม่มีตัวไหนแตะ `data/*` เลย
  *
  * 🔴 **แต่นั่นเป็นคุณสมบัติที่ไม่มีใครตั้งใจรักษาไว้** — ใครเติม
- * `import { DAYS } from "@/data/itinerary"` ลง provider ตัวใดตัวหนึ่งเพื่อความสะดวก
+ * `import { DAYS } from "@/data/itinerary"` ลง component ที่ root layout ครอบอยู่เพื่อความสะดวก
  * ข้อสรุปนั้นพลิกทันที **โดยไม่มีอะไรฟ้อง** ไฟล์นี้คือสิ่งที่ฟ้อง
+ *
+ * ⚠️ **แก้ 26 ส.ค. 2026 (`E5-AC1`):** `TripDataProvider` ย้ายออกจาก root layout แล้ว — ต้องมี `tripId`
+ * จริงจาก `/trip/[tripId]` หรือจาก `useActiveTripId()` ที่หน้า bare ไม่ใช่ resolve เองแบบเดิม root layout
+ * จึงครอบแค่ `OfflineBanner`/`SystemModeBanner`/`ServiceWorkerRegistrar`/`ToastHost` เท่านั้น — canary
+ * ข้างล่างเปลี่ยนไปอ้างของกลุ่มนี้แทน `TripDataProvider`/`useBookings` (ที่ไม่อยู่ใน chain นี้อีกแล้ว)
  *
  * ขอบเขตที่ไฟล์นี้ครอบ — เขียนไว้ตรงนี้เพราะ "เหตุผลที่ครอบแคบกว่าที่คนอ่านเข้าใจ"
  * คือชนิดของบั๊กที่เรากำลังกันอยู่พอดี:
@@ -95,12 +100,12 @@ describe("import graph ของ app/layout.tsx", () => {
 
   // 🔴 เคสคู่ที่ขาดไม่ได้ (กฎข้อ 1 ของ README): ถ้า resolver พังเงียบ กราฟจะเหลือไฟล์เดียว
   //    แล้วเคส "ไม่มี data/" ข้างล่างจะเขียวโดยไม่ได้พิสูจน์อะไรเลย
-  it("ตัวไล่กราฟทำงานจริง — ไปถึง provider กับ hook ที่รู้ว่าอยู่ใน chain", () => {
+  it("ตัวไล่กราฟทำงานจริง — ไปถึง component/hook ที่รู้ว่าอยู่ใน chain", () => {
     const reached = [...graph.keys()].map(rel);
-    expect(reached).toContain("components/TripDataProvider.tsx");
-    expect(reached).toContain("hooks/useBookings.tsx");
-    expect(reached).toContain("lib/supabase.ts");
-    expect(graph.size).toBeGreaterThan(10);
+    expect(reached).toContain("components/SystemModeBanner.tsx");
+    expect(reached).toContain("hooks/useOnlineStatus.ts");
+    expect(reached).toContain("lib/toast.ts");
+    expect(graph.size).toBeGreaterThan(5);
   });
 
   it("🔴 chain ของ layout ต้องไม่ไปถึง data/* เลยสักไฟล์", () => {

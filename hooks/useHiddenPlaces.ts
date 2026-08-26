@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
-import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { writeGuard } from "@/lib/writeGuard";
 
 type HiddenPlaceRow = {
@@ -26,12 +25,17 @@ const REFETCH_DEBOUNCE_MS = 300;
  * ## realtime เป็น *สัญญาณ* ไม่ใช่แหล่งข้อมูล (P3 · `§15`)
  * `payload.new` เป็นแถวดิบของสคีมาใหม่ (`catalog_place_id` เป็น `uuid` · ไม่มี slug)
  * **merge ตรง ๆ = ใส่ uuid ลงใน map ที่คีย์ด้วย slug แล้วเงียบ** → ดึงใหม่แทน
+ * 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม
  */
-export function useHiddenPlaces() {
+export function useHiddenPlaces(tripId: string | null) {
   const [hidden, setHidden] = useState<Record<string, HiddenPlaceRow>>({});
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const tripIdRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    tripIdRef.current = tripId;
+  }, [tripId]);
 
   const fetchInto = useCallback(async (tripId: string) => {
     const res = await fetch(`/api/engine/trips/${tripId}/hidden-places`);
@@ -43,19 +47,14 @@ export function useHiddenPlaces() {
   }, []);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    if (!supabaseConfigured || !tripId) return;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
     const channelName = `hidden_places_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const tripsRes = await fetch("/api/engine/trips");
-      if (cancelled || !tripsRes.ok) return void setLoaded(true);
-      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
-      if (cancelled || !trip.ok) return void setLoaded(true);
-      tripIdRef.current = trip.tripId;
-
-      const map = await fetchInto(trip.tripId);
+      const map = await fetchInto(activeTripId);
       if (cancelled) return;
       if (map) setHidden(map);
       setLoaded(true);
@@ -81,7 +80,7 @@ export function useHiddenPlaces() {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [fetchInto]);
+  }, [tripId, fetchInto]);
 
   const reload = useCallback(async () => {
     const id = tripIdRef.current;
