@@ -617,6 +617,12 @@ d="$(mkrepo)"; echo 'fetch("https://objectstorage.ntruss.com/bucket/x");' > "$d/
 git -C "$d" add -A >/dev/null 2>&1
 pyc "api-hosts: NCP ที่ไม่ผ่าน apigw ต้องโดนจับ" fail check-api-hosts.py "$d"
 
+# 🔴 Kakao map tile/CDN — P1 ตัดสิน: **ฝัง SDK = เรียก API โดยให้ SDK เรียกแทน**
+#    ถ้าห้าม dapi.kakao.com แต่ปล่อยให้ฝัง SDK ที่เรียกมันแทนเรา ด่านจะห้ามแค่ *วิธีเขียน*
+d="$(mkrepo)"; echo 'const t = "https://t1.daumcdn.net/mapjsapi/v1/tile.png";' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: Kakao map tile (daumcdn) ต้องโดนจับ" fail check-api-hosts.py "$d"
+
 # ✅ คุมด้าน lookbehind: คำที่ *ลงท้าย* ด้วยชื่อโดเมนแต่ไม่ใช่โดเมนนั้น ต้องไม่โดนจับ
 d="$(mkrepo)"; echo 'const s = "https://notntruss.com/x";' > "$d/lib/x.ts"
 git -C "$d" add -A >/dev/null 2>&1

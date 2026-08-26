@@ -55,6 +55,14 @@ FORBIDDEN = [
     #    (ถ้าใครลอง `DEEPLINKS_OK` จะทำให้ด่านปฏิเสธที่จะรันทันที ซึ่งเป็นพฤติกรรมที่ตั้งใจ)
     ("Naver Maps JS SDK",  "E4-AC5", re.compile(r"(?<![a-z0-9-])(?:openapi|oapi)\.map\.naver\.com", re.I)),
     ("Kakao REST API",     "E4-AC5", re.compile(r"(?<![a-z0-9-])kapi\.kakao\.com", re.I)),
+    # 🔴 เพิ่ม 27 ส.ค. 2026 · **P1 ตัดสิน และแก้กรอบของผม**
+    #    ผมเสนอไปว่า "ห้าม CDN = ขยาย `AC5` จาก *เรียก API* เป็น *ฝัง SDK*" — **P1 ว่าไม่ได้ขยาย และถูก**
+    # 🎯 **ฝัง SDK ของ Kakao = เรียก API ของ Kakao โดยให้ SDK เรียกแทน** · tile คือ*ข้อมูลแผนที่ที่วิ่งมาถึงจอผู้ใช้*
+    #    ถ้าห้าม `dapi.kakao.com` แต่ปล่อยให้ฝัง SDK ที่เรียกมันแทนเรา
+    #    **ด่านจะห้ามแค่ *วิธีเขียน* ไม่ใช่ *สิ่งที่ทำ*** — บังคับตัวอักษรแล้วพลาดเจตนา
+    #    ⚠️ P1 รับความเสี่ยงไว้แล้วว่า `daumcdn.net` เสิร์ฟของอื่นของ Kakao ด้วย ไม่ใช่แค่ tile
+    #       → ถ้าวันหนึ่งแดงใส่ของที่ไม่ใช่แผนที่ **นั่นคือของที่ต้องคุยกัน ไม่ใช่ของที่ต้องรีบปลด**
+    ("Kakao map tile/CDN", "E4-AC5", re.compile(r"(?<![a-z0-9-])daumcdn\.net", re.I)),
 ]
 
 # 🔴 **CANARY ประกอบทีละชิ้น ห้ามเขียนโฮสต์ติดกัน** (P6 · 27 ส.ค. 2026)
@@ -72,6 +80,7 @@ CANARY = "\n".join([
     'const m = "https://apis-navi' + _D + 'kakaomobility' + _D + 'com/v1/directions";',
     'const s = "https://openapi' + _D + 'map' + _D + 'naver' + _D + 'com/openapi/v3/maps.js";',
     'const r = "https://kapi' + _D + 'kakao' + _D + 'com/v2/user/me";',
+    'const t = "https://t1' + _D + 'daumcdn' + _D + 'net/mapjsapi/tile";',
 ])
 
 # ✅ **เคสด้านบวกที่ต้อง *ไม่* ถูกจับ — ปุ่มนำทางที่ `E4-AC4` ตั้งใจสร้าง** (P1 · P5 ยืนยัน)
@@ -102,6 +111,7 @@ MUST_CATCH = [
     # บริการ NCP ที่ **ไม่ผ่าน apigw** — กฎเดิมปล่อยทั้งกลุ่มนี้
     'https://sens' + _D + 'apigw' + _D + 'ntruss' + _D + 'com/sms/v2',
     'https://something' + _D + 'ntruss' + _D + 'com/v1',
+    'https://t1' + _D + 'daumcdn' + _D + 'net/mapjsapi/v1/tile.png',
 ]
 
 
