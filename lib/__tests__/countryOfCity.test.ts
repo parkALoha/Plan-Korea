@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COUNTRY_OF_CITY, countryOfCity, countryOfCitySlug } from "@/data/emergency";
 import { ITINERARY } from "@/data/itinerary";
+import { CITY_LOCALE } from "@/data/places";
 import { capabilitiesOf, shouldSkipTravelApi } from "@/lib/engine/countries";
 
 /**
@@ -55,6 +56,33 @@ describe("countryOfCity — ข้อมูล ไม่ใช่เงื่อ
       expect(shouldSkipTravelApi("jp", "drive")).toBe(false);
       // แต่ประเทศที่ **รู้แล้วว่าไม่มี** ต้องข้าม
       expect(shouldSkipTravelApi("kr", "drive")).toBe(true);
+    });
+  });
+
+  /**
+   * 🔴 **มีตารางที่รู้เรื่องประเทศอยู่ *สองใบ* คนละคีย์ — และมันเคยไม่ตรงกัน**
+   * · `COUNTRY_OF_CITY` (คีย์ = `City` จาก ITINERARY · 6 เมือง)
+   * · `CITY_LOCALE` (คีย์ = `Place["city"]` · **8 เมือง** — มี `bangkok`/`hcmc` เพิ่ม)
+   *
+   * ⚠️ **เทสต์นี้จงใจ *ไม่* ยืนยันว่า "ภาษา ⇒ ประเทศ"** — นั่นคือข้ออนุมานที่ `isKoreanCity()`
+   * ใช้แล้วผิด (ถูกลบ 27 ส.ค. 2026) · เกาหลีพูดเกาหลีเป็นเรื่องบังเอิญของสองประเทศนี้ ไม่ใช่กฎ
+   * 🎯 **สิ่งที่ยืนยันคือ *ความครอบคลุม*: ทุกวันของทริปต้องตอบได้ทั้งประเทศและภาษา**
+   */
+  describe("สองตารางที่รู้เรื่องประเทศ ต้องครอบทุกวันของทริป", () => {
+    it("ทุกเมืองของ ITINERARY มีทั้ง country และ locale", () => {
+      const missing: string[] = [];
+      for (const city of new Set(ITINERARY.map((d) => d.city))) {
+        if (!COUNTRY_OF_CITY[city]) missing.push(`${city}: ไม่มีประเทศ`);
+        if (!CITY_LOCALE[city]) missing.push(`${city}: ไม่มีภาษา`);
+      }
+      expect(missing).toEqual([]);
+    });
+
+    it("เมืองที่มีเฉพาะใน `CITY_LOCALE` → `countryOfCitySlug` ตอบ `null` อย่างซื่อสัตย์", () => {
+      // `bangkok` เป็นไทย · `hcmc` เป็นเวียดนาม — ทั้งคู่เป็นสนามบินต่อเครื่อง ไม่ใช่วันของทริป
+      // 🎯 `null` ที่นี่ **ถูก** เพราะทะเบียนยังไม่รู้จักไทย · เดาว่า "kr" คือสิ่งที่เราเพิ่งลบทิ้ง
+      expect(countryOfCitySlug("bangkok")).toBeNull();
+      expect(CITY_LOCALE.bangkok).toBe("th");
     });
   });
 });
