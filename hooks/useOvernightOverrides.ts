@@ -69,7 +69,7 @@ export function useOvernightOverrides(tripId: string | null) {
       //    ทั้งที่จริงคือ `E7` ยังไม่ได้ย้ายวันมาสักวัน (`P-21` ในรูปที่จะกัดตอน cutover)
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[overnight] ${warn}`);
-      reportDayBridgeWarningIfAny(bridge, rows.length);
+      reportDayBridgeWarningIfAny(bridge);
 
       dayIdRef.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter(

@@ -67,7 +67,7 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       const bridge = buildDayBridge(ITINERARY, dbDays);
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[daySettings] ${warn}`);
-      reportDayBridgeWarningIfAny(bridge, dbDays.length);
+      reportDayBridgeWarningIfAny(bridge);
       dayIdRef.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );

@@ -109,7 +109,7 @@ export function useStops(tripId: string | null, planId: string | null) {
       const { ITINERARY } = await import("@/data/itinerary");
       const dbDays = (await daysRes.json()) as { id: string; date: string }[];
       const bridge = buildDayBridge(ITINERARY, dbDays);
-      reportDayBridgeWarningIfAny(bridge, dbDays.length);
+      reportDayBridgeWarningIfAny(bridge);
       dayToUuid.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );
