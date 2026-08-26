@@ -60,6 +60,7 @@ import { POST as bookingsPOST } from "@/app/api/engine/trips/[tripId]/bookings/r
 import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist/route";
 import { GET as tripsGET } from "@/app/api/engine/trips/route";
 import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
+import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -129,7 +130,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -183,6 +184,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
   let aDay = "";
+  let aPlan = "";
+  let aClient: SupabaseClient;
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -236,6 +239,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   beforeAll(async () => {
     admin = createClient(URL_, SERVICE, { auth: { persistSession: false }, realtime: noRealtime() });
     const a = await makeUser("a");
+    aClient = a.client;
     const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
     tripA = await mkTrip(a.client, "a");
     await mkTrip(b.client, "b");
@@ -247,6 +251,10 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       .single();
     if (dayIns.error) throw new Error(`mkDay: ${dayIns.error.message}`);
     aDay = dayIns.data.id as string;
+    // admin (service_role) ไม่มี grant บน trip_plans → อ่านด้วย client ของ A (เจ้าของ · ผ่าน RLS)
+    const planRow = await aClient.from("trip_plans").select("id").eq("trip_id", tripA).single();
+    if (planRow.error) throw new Error(`read plan: ${planRow.error.message}`);
+    aPlan = planRow.data.id as string;
     aCookies = await captureCookies(a.session);
     bCookies = await captureCookies(b.session);
   });
@@ -310,5 +318,22 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     // แถวต้องไม่เปลี่ยนจากตอน A แก้ — เปลี่ยน = B แก้วันของ A สำเร็จ (leak)
     const after = await admin.from("trip_days").select("*").eq("id", aDay).single();
     expect(after.data, "[days] B แก้ trip_day ของ A สำเร็จ (leak)").toEqual(before.data);
+  });
+
+  // จับบั๊กที่ owner แก้ไม่ได้ (P4 พบ · P1 แก้ e5e0a42: upsert → update-then-insert · ไม่คืน update บนคีย์)
+  // 🔴 daySettingsWrite.test.ts (fake db) พิสูจน์แค่คอลัมน์ที่ *ส่งออก* · ฐานยอมรับจริงไหม probe สดนี้เท่านั้น
+  it("day-settings PUT — A แก้ตั้งค่าวันตัวเองได้ · B แก้ของแผน A ไม่ได้", async () => {
+    const body = (locked: boolean) => ({ planId: aPlan, rows: [{ tripDayId: aDay, isLocked: locked }] });
+    const aRes = await callAs(aCookies, tripA, daySettingsPUT, "PUT", body(true));
+    expect(aRes.status, `control A ควร 200 (บั๊กเดิม = 403 permission denied): ${aRes.status} ${await aRes.clone().text()}`).toBe(200);
+    // admin ไม่มี grant บนตารางนี้ → A อ่านของตัวเอง (checker คนละคนกับ route caller B · เพียงพอต่อ P-72)
+    const key = () => aClient.from("trip_day_plan_settings").select("*").eq("plan_id", aPlan).eq("trip_day_id", aDay).maybeSingle();
+    const before = await key();
+    if (before.error) throw new Error(`read settings: ${before.error.message}`);
+    const bRes = await callAs(bCookies, tripA, daySettingsPUT, "PUT", body(false));
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[day-settings] B → **${verdict}** (${detail})`).toBe("rejected");
+    const after = await key();
+    expect(after.data, "[day-settings] B แก้ตั้งค่าของ A สำเร็จ (leak)").toEqual(before.data);
   });
 });
