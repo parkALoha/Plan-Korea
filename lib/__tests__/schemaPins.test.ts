@@ -924,7 +924,8 @@ describe("🔴 read-only mode — ทุกตาราง public ต้อง�
    * → อัปเดตตัวเองเมื่อมีคนรันลูปซ้ำ · ไม่มีเลข/ชื่อไฟล์ให้ตามแก้
    *
    * 🔴 zz_read_only_guard เป็น dynamic (ลูปต่อตาราง) → source เห็นแค่ *ลูป* ไม่เห็น *ผลของลูป* — ปักเหตุการณ์ติดได้ ปักความครอบคลุมจริงไม่ได้
-   * ⚠️ ไม่ครอบ drift (แดชบอร์ด) · ⚠️ ยังไม่มี `drop table` จริง (10 แมตช์เป็นคอมเมนต์ rollback) — ถ้ามีวันนั้นต้องหักออกจากรายการ
+   * ⚠️ ไม่ครอบ drift (แดชบอร์ด) · มี `drop table` จริง 1 ตัว (`rls_force_probe` · `20260825224115`) — `tablesFromMigrations()` ตาม create/drop
+   *    ตามลำดับอยู่แล้ว จึงหักตารางที่ถูก drop ออกจากรายการเอง (ตัว drop ในคอมเมนต์ rollback ถูก `stripComments` ตัดทิ้งก่อน scan)
    */
   /** ตารางถูกครอบไหม — สร้างก่อน/พร้อมลูป (ci ≤ lastLoop) หรือมี direct guard ทีหลัง (dg ≥ ci) */
   const guardCovered = (ci: number, lastLoopIdx: number, dgIdx: number | undefined): boolean =>
