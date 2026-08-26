@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPlaceDetails, searchPlacesText } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { knownPlaceLocales } from "@/lib/engine/countries";
 
 // เรียกตอนบันทึกที่พักเท่านั้น นานๆ ครั้ง
 const RATE_LIMIT_PER_MINUTE = 60;
@@ -58,7 +59,22 @@ export async function GET(req: NextRequest) {
 
   const placeId = req.nextUrl.searchParams.get("placeId");
   const query = req.nextUrl.searchParams.get("query");
-  const locale = req.nextUrl.searchParams.get("locale");
+  /**
+   * 🔴 **`locale` เคยรับดิบจาก query string** — แก้ 27 ส.ค. 2026 (P4 พบ · P1 แก้)
+   *
+   * ค่านี้ไหลไปเป็น `languageCode` ของ Google · **ไม่ใช่ช่องรั่วข้อมูล**
+   * (`googlePlaces.ts` `encodeURIComponent` อยู่แล้ว · ยิงพารามิเตอร์ของ Google เพิ่มไม่ได้)
+   * 🎯 **ค่าจริงของ finding คือความไม่สอดคล้อง (`D46`):**
+   * `place-details` ตรวจด้วย `ALLOWED_LOCALES` · `place-name` ตรวจด้วย `ALLOWED_LANGS`
+   * · **`geocode` ไม่ตรวจเลย** — ค่าเดียวกัน สามที่ สามกฎ
+   *
+   * ⚠️ **allowlist มาจาก *ทะเบียนประเทศ* ไม่ใช่รายการที่พิมพ์มือ** — เพิ่มประเทศแล้วรายการนี้โตเอง
+   * ถ้าพิมพ์มือ เราจะได้แหล่งความจริงที่ 4 ทันทีที่รับประเทศใหม่ ซึ่งคือสิ่งที่เพิ่งไล่ปิดไป
+   * 🔴 ค่าที่ไม่รู้จัก → **ทิ้งเป็น `null` ไม่ใช่ตอบ 400** — ภาษาเป็นของเสริม ไม่ใช่เงื่อนไขของคำขอ
+   *    ตอบ 400 จะทำให้ไคลเอนต์รุ่นเก่าที่ส่ง locale อื่นพังทั้งคำขอ ทั้งที่พิกัดยังใช้ได้
+   */
+  const rawLocale = req.nextUrl.searchParams.get("locale");
+  const locale = rawLocale && knownPlaceLocales().includes(rawLocale) ? rawLocale : null;
 
   if (!placeId && !query) {
     return NextResponse.json({ error: "missing query or placeId" }, { status: 400 });

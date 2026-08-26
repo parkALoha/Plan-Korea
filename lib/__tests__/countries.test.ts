@@ -6,6 +6,8 @@ import {
   hasRealTravelTime,
   mapProvidersFor,
   shouldSkipTravelApiForLeg,
+  placeLocaleOf,
+  knownPlaceLocales,
 } from "../engine/countries";
 
 /**
@@ -187,6 +189,36 @@ describe("E4 — ทะเบียนความสามารถรายป
     it("คีย์โปรโตไทป์ยังปลอดภัย", () => {
       expect(() => shouldSkipTravelApiForLeg("constructor", "constructor", "drive")).not.toThrow();
       expect(shouldSkipTravelApiForLeg("constructor", "constructor", "drive")).toBe(false);
+    });
+  });
+
+  /**
+   * 🔴 **ภาษาของสถานที่ — ก่อนวันนี้มีรายการอยู่ 4 ที่ที่ไม่ตรงกัน** (`D46`)
+   * `place-details`=["ko","vi"] · `place-name`=["en","ko","vi"] · `geocode`=**ไม่ตรวจเลย** · `CITY_LOCALE` มี "th"
+   */
+  describe("placeLocaleOf / knownPlaceLocales", () => {
+    it("ประเทศที่รู้จักได้ภาษาท้องถิ่น", () => {
+      expect(placeLocaleOf("kr")).toBe("ko");
+      expect(placeLocaleOf("VN")).toBe("vi");
+    });
+
+    it("🔴 ไม่รู้จัก → `null` **ไม่ใช่ `\"en\"`**", () => {
+      // ไม่รู้ภาษาของที่นั่น ≠ รู้ว่าเป็นอังกฤษ
+      // ส่ง `null` ให้ Google = ให้มันเลือกเอง · ส่ง `"en"` = **สั่งให้ทับชื่อท้องถิ่นด้วยอังกฤษ**
+      expect(placeLocaleOf("jp")).toBeNull();
+      expect(placeLocaleOf(null)).toBeNull();
+      expect(placeLocaleOf("constructor")).toBeNull();
+    });
+
+    it("รายการ allowlist มาจากทะเบียน ไม่ใช่รายการที่พิมพ์มือ", () => {
+      expect([...knownPlaceLocales()].sort()).toEqual(["ko", "vi"]);
+    });
+
+    it("🔴 ทุกประเทศในทะเบียนต้องมีช่องนี้ (ไม่ปล่อยให้เงียบ)", () => {
+      for (const cc of countriesWithCapabilities()) {
+        expect(capabilitiesOf(cc), cc).toHaveProperty("placeLocale");
+        expect(placeLocaleOf(cc), cc).toBeTruthy();
+      }
     });
   });
 });

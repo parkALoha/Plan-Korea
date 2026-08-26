@@ -55,6 +55,11 @@ export type CountryCapabilities = {
   realTravelModes: readonly TravelMode[];
   /** เรียงตามลำดับที่อยากให้ผู้ใช้เห็น · ตัวแรกคือตัวหลัก */
   mapProviders: readonly MapProvider[];
+  /**
+   * ภาษาท้องถิ่นสำหรับขอ **ชื่อสถานที่** จาก Google · `null` = ไม่รู้ ให้ Google เลือกเอง
+   * ⚠️ **ภาษาของ *จุดหมาย* ไม่ใช่ภาษาที่ *ผู้ใช้* อยากอ่าน** — ดู `placeLocaleOf()` ท้ายไฟล์
+   */
+  placeLocale: string | null;
 };
 
 /**
@@ -64,6 +69,9 @@ export type CountryCapabilities = {
 const UNKNOWN_COUNTRY: CountryCapabilities = {
   realTravelModes: [],
   mapProviders: ["google"],
+  // 🔴 `null` ไม่ใช่ `"en"` — **ไม่รู้ภาษาของที่นั่น ต่างจากรู้ว่าเป็นอังกฤษ**
+  //    ส่ง `null` ให้ Google = ให้มันเลือกตามที่ตั้งค่าไว้ · ส่ง `"en"` = สั่งให้ทับชื่อท้องถิ่นด้วยอังกฤษ
+  placeLocale: null,
 };
 
 /**
@@ -91,8 +99,8 @@ function lookup(countryCode: string): CountryCapabilities | null {
  * และ `app/api/travel-time/route.ts:58` มีคอมเมนต์ที่บันทึกอาการเดียวกันไว้ตั้งแต่ก่อนมีไฟล์นี้
  */
 const CAPABILITIES: Readonly<Record<string, CountryCapabilities>> = {
-  kr: { realTravelModes: ["transit"], mapProviders: ["naver", "kakao", "google"] },
-  vn: { realTravelModes: ["transit", "drive", "walk"], mapProviders: ["google"] },
+  kr: { realTravelModes: ["transit"], mapProviders: ["naver", "kakao", "google"], placeLocale: "ko" },
+  vn: { realTravelModes: ["transit", "drive", "walk"], mapProviders: ["google"], placeLocale: "vi" },
 };
 
 /**
@@ -218,4 +226,37 @@ export function shouldSkipTravelApiForLeg(
   // ข้ามประเทศ → ยิงเสมอ · เราไม่มีนิยามว่าความสามารถของขานี้เป็นของใคร **และการเดาที่นี่ราคาแพงกว่าการยิง**
   if (fromCountry.toLowerCase() !== toCountry.toLowerCase()) return false;
   return shouldSkipTravelApi(fromCountry, mode);
+}
+
+/**
+ * ภาษาท้องถิ่นที่ควรใช้ขอ**ชื่อสถานที่**จาก Google สำหรับประเทศนี้ — `null` = ไม่รู้ ให้ Google เลือกเอง
+ *
+ * ## 🔴 ทำไมถึงมาอยู่ในทะเบียน — มีรายการภาษาอยู่ **4 ที่** ก่อนหน้านี้ (P1 · 27 ส.ค. 2026)
+ * ```
+ * app/api/place-details/route.ts:30   ALLOWED_LOCALES = ["ko", "vi"]
+ * app/api/place-name/route.ts:12      ALLOWED_LANGS   = ["en", "ko", "vi"]
+ * app/api/geocode/route.ts            ❌ ไม่ตรวจเลย — รับดิบจาก query string (P4 พบ)
+ * data/places.ts:51                   CITY_LOCALE     คีย์ด้วย *เมือง* มี "th" ด้วย
+ * ```
+ * **ค่าเดียวกันตรวจคนละที่คนละแบบ = `D46`** · และ `geocode` คือตัวที่หลุดออกจากชุด
+ *
+ * 🎯 **แต่ไม่ยุบทั้งหมดเข้าที่นี่ เพราะมันเป็น *สองเรื่อง* ที่หน้าตาเหมือนกัน:**
+ * · **ภาษาของ*จุดหมาย*** (เกาหลี→`ko`) — เป็นคุณสมบัติของประเทศ **อยู่ที่นี่**
+ * · **ภาษาที่*ผู้ใช้*อยากอ่าน** (`en` ใน `place-name`) — ไม่ใช่ของประเทศไหน **ไม่อยู่ที่นี่**
+ * ⚠️ **ยุบสองอันนี้เข้าด้วยกันจะได้ทะเบียนที่ต้องรู้เรื่องผู้ใช้ ซึ่งไม่ใช่หน้าที่มัน**
+ * · P2 เคยแยกไว้แล้วใน `ux-flows.md §4.3` (`UiLang` vs place locale) — อันนี้คือครึ่งหลังของเขา
+ */
+export function placeLocaleOf(countryCode: string | null | undefined): string | null {
+  if (!countryCode) return null;
+  return lookup(countryCode)?.placeLocale ?? null;
+}
+
+/**
+ * ภาษาท้องถิ่นทั้งหมดที่ทะเบียนรู้จัก — **สำหรับสร้าง allowlist ของ route ที่รับ `locale` จากภายนอก**
+ * 🔴 มาจากทะเบียน **ไม่ใช่รายการที่พิมพ์มือซ้ำ** — เพิ่มประเทศแล้วรายการนี้โตเอง
+ */
+export function knownPlaceLocales(): readonly string[] {
+  return Object.values(CAPABILITIES)
+    .map((c) => c.placeLocale)
+    .filter((l): l is string => l !== null);
 }
