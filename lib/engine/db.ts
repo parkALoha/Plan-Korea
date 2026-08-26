@@ -266,7 +266,11 @@ export function tripsVisibleToMe(db: Db) {
   //    `rlsMatrix` ทดสอบสิทธิ์ที่ **ชั้นตาราง** — มันยิง `.from("trips")` เองด้วยชื่อคอลัมน์ของมันเอง
   //    **ไม่เคยเรียก `tripsForUser()`** · helper กับเทสต์จึงเห็นสคีมาคนละใบโดยไม่มีอะไรเทียบให้
   //    → นี่คือเหตุผลที่ `E3-AC9` ② ต้องยิง *route จริง* ไม่ใช่ทดสอบ db helper แยก
-  return engineTable(db, "trips").select("id, title").order("created_at");
+  // 🔴 **`start_date`/`end_date` เพิ่ม 27 ส.ค. 2026 — P2 flag ตอนทำ `TripHeader`**
+  //    หัวหน้าจอเคยฝังช่วงวันที่ตายตัว (`"11–21 ต.ค. · เที่ยวเกาหลี 12–20"`) · P2 **ลบทิ้งแทนที่จะเดาใหม่**
+  //    เพราะ helper นี้ไม่ได้ส่งวันที่มาให้ ทั้งที่ฐานมีคอลัมน์อยู่แล้ว — **ลบดีกว่าเดา**
+  // ⚠️ `revoke` ที่ `20260825122247` ถอนแค่ `insert`/`update` · **`select` ระดับตารางยังอยู่** (ตรวจแล้ว)
+  return engineTable(db, "trips").select("id, title, start_date, end_date").order("created_at");
 }
 
 /**
