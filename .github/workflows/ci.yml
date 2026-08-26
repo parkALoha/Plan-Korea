@@ -10,6 +10,23 @@ on:
     branches: [platform]
   push:
     branches: [platform]
+  # 🔴 **`workflow_dispatch` มีไว้เพื่อ job `readonly-storage` เท่านั้น** (P4 ขอ · P1 เคาะ · 27 ส.ค. 2026)
+  #    job นั้นต้อง **เข้าโหมด read-only จริงและ commit ธง** (storage เป็นคนละ connection
+  #    → เลี่ยง rollback-trick ของ `E3-AC7` ไม่ได้) → **บล็อก write ของทุกเซสชันตลอด window**
+  #    · engine-dev เป็นฐานใบเดียวที่ 8 เซสชันใช้ร่วมกัน → **ห้ามผูกกับ push/PR/schedule เด็ดขาด**
+  #      ไม่งั้นจะมีคนถูกบล็อกโดยไม่มีใครรู้ว่ามีคนกำลังใช้ฐานอยู่หรือเปล่า
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'พิมพ์ engine-dev เพื่อยืนยันว่ารู้ว่านี่จะบล็อก write ของทุกคน'
+        required: true
+        default: ''
+      phase:
+        description: 'reproduce = คาดว่าช่องยังเปิด · verify = คาดว่าปิดแล้ว (หลังลง migration)'
+        required: true
+        default: 'reproduce'
+        type: choice
+        options: [reproduce, verify]
 
 # 🔴 `cancel-in-progress: false` ตั้งแต่ 26 ส.ค. 2026 — เดิมเป็น `true`
 #    เหตุผล (P4 ชี้ · P6 ยืนยันกลไก): job ที่ถูก cancel **ถูก kill ไม่ใช่ throw**
@@ -189,3 +206,86 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # `E3` — เทสต์พฤติกรรม read-only ที่ครอบ **storage** (P4 เป็นเจ้าของเทสต์ · P6 เป็นเจ้าของ job)
+  # ══════════════════════════════════════════════════════════════════════════
+  # 🔴 **job นี้ไม่รันเองตลอดกาล** — `workflow_dispatch` เท่านั้น
+  #    เหตุผลไม่ใช่ความระมัดระวังทั่วไป แต่เป็นข้อเท็จจริงของกลไก:
+  #    เทสต์ต้อง **commit ธงโหมด** (storage คนละ connection → rollback-trick ใช้ไม่ได้)
+  #    → **ทุก write ของทุกเซสชันถูกบล็อกตลอด window** · ฐานใบนี้ 8 เซสชันใช้ร่วมกัน
+  readonly-storage:
+    name: 'E3 · read-only ครอบ storage (ต้องกดเอง)'
+    # 🔴 กันไม่ให้มันติดไปกับ push/PR แม้ `on:` จะมี trigger พวกนั้นสำหรับ job อื่น
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 🔴 **group เดียวกับ job `rls` โดยเจตนา — ข้อนี้สำคัญที่สุดในไฟล์นี้**
+    #    `rls` ยิงเมทริกซ์ที่ **เขียนจริง** ใส่ engine-dev · ถ้าสองอันนี้คนละ group
+    #    มันจะทับหน้าต่างกันได้ → เมทริกซ์ RLS จะแดงเพราะ *เขียนไม่ได้* ไม่ใช่เพราะ policy ผิด
+    #    **และมันจะดูเหมือนบั๊กความปลอดภัยทุกประการ** · ผู้ใช้จะไล่ผิดทางทั้งวัน
+    concurrency:
+      group: engine-dev-live
+      cancel-in-progress: false
+    steps:
+      # ① ยืนยันด้วยการพิมพ์ — กันการกดพลาดจากหน้า Actions
+      - name: ยืนยันว่ารู้ว่ากำลังทำอะไร
+        run: |
+          if [ "${{ inputs.confirm }}" != "engine-dev" ]; then
+            echo "🔴 ต้องพิมพ์ engine-dev ในช่อง confirm"
+            echo "   job นี้จะ **บล็อก write ของทุกเซสชัน** ตลอดหน้าต่างที่รัน"
+            exit 1
+          fi
+          echo "▶️ phase = ${{ inputs.phase }}"
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.12.2'
+          cache: npm
+      - run: npm ci
+
+      - name: ยืนยันว่า secret ชี้ engine-dev ก่อนแตะ DB
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+          ALLOWED_PROJECT_REF: ${{ secrets.DEV_PROJECT_REF }}
+        run: .github/check-ci-target.py
+
+      # ② 🔴 **ปฏิเสธที่จะเริ่ม ถ้าโหมดเปิดค้างอยู่แล้ว**
+      #    โหมดเปิดอยู่ = มีคนอื่นอยู่ในหน้าต่างของเขา หรือหน้าต่างก่อนหน้าค้าง
+      #    ทั้งสองกรณี **การเข้าไปซ้อนจะทำให้ cleanup ของสองฝั่งชนกัน**
+      - name: pre-flight — โหมดต้องปิดอยู่ก่อนเริ่ม
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+        run: .github/check-readonly-mode.py
+
+      - name: รันเทสต์ (เข้าโหมดจริง)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+          READ_ONLY_MODE_TEST: '1'
+          READ_ONLY_MODE_PHASE: ${{ inputs.phase }}
+        run: npx vitest run lib/__tests__/readOnlyStorage.test.ts
+
+      # ③ 🔴 **ตรวจ *เสมอ* ว่าโหมดปิดแล้ว — รวมถึงตอนเทสต์ล้มหรือถูกยกเลิก**
+      #    `afterAll` ของ vitest ไม่รันเมื่อ job ถูก kill · ตาข่ายจริงคือ expiry ฝั่ง DB (P4 ตั้งสั้น)
+      #    ขั้นนี้ไม่ได้ *ปิด* ให้ — มันทำให้ "ฐานค้างอยู่ในโหมด read-only" **ดังแทนที่จะเงียบ**
+      #    🎯 ต่างกันตรงที่: เงียบ = คนถัดไปเจอ write ล้มโดยไม่รู้สาเหตุ · ดัง = มีคนไปปิดได้ทันที
+      - name: post-flight — โหมดต้องกลับไปปิด (รันเสมอ)
+        if: always()
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+        run: |
+          if .github/check-readonly-mode.py; then
+            echo "✅ โหมดปิดแล้ว — ฐานกลับสู่สภาพปกติ"
+          else
+            echo "::error::🔴 engine-dev **ยังอยู่ในโหมด read-only** หลัง job จบ"
+            echo "::error::ทุกเซสชันจะเขียนไม่ได้จนกว่า expiry จะหมด หรือมีคนปิดด้วยมือ"
+            echo "::error::→ ปิดด้วย set_system_mode (ใช้ named params) แล้วรัน .github/check-readonly-mode.py ยืนยัน"
+            exit 1
+          fi
