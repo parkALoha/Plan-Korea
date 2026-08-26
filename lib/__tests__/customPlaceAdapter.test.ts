@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCustomPlace } from "../engine/customPlaces";
+import { toCustomPlace } from "../engine/customPlaceShape";
 
 /**
  * `E3` — ชั้นแปลงรูป `custom_places` (P1 · 26 ส.ค. 2026)
