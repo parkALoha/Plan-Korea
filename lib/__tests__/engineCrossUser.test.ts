@@ -63,6 +63,7 @@ import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
 import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
 import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[tripId]/hotels/route";
+import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom-places/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -132,7 +133,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -397,5 +398,22 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       return data.length;
     };
     expect(await cnt(), "[hotels] B บันทึกที่พักในทริป A สำเร็จ (leak)").toBe(1);
+  });
+
+  it("custom-places POST — B สร้างสถานที่ของทริป A ไม่ได้", async () => {
+    const body = (name: string) => ({ city: citySlug, category: "food", maps_query: "q", name_th: name, lat: 37.5, lng: 127.0 });
+    const aRes = await postAs(aCookies, tripA, customPlacesPOST, body("cp-a"));
+    expect(aRes.status, `control A ควร 201: ${aRes.status} ${await aRes.clone().text()}`).toBe(201);
+    const cnt = async () => {
+      // admin ไม่การันตีมี grant บน custom_places → A อ่านของตัวเอง (checker คนละคนกับ B)
+      const { data, error } = await aClient.from("custom_places").select("id").eq("trip_id", tripA);
+      if (error) throw new Error(`read custom_places: ${error.message}`);
+      return data.length;
+    };
+    const n1 = await cnt();
+    const bRes = await postAs(bCookies, tripA, customPlacesPOST, body("cp-b"));
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[custom-places] B → **${verdict}** (${detail})`).toBe("rejected");
+    expect(await cnt(), "[custom-places] จำนวนเพิ่มหลัง B ยิง = B สร้างในทริป A สำเร็จ (leak)").toBe(n1);
   });
 });
