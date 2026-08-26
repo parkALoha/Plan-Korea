@@ -4142,6 +4142,14 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       //    แก้พร้อม migration `20260826121226` ในคอมมิตเดียวกันตามที่ข้อความของด่านสั่ง
       "custom_places.insert": ["category","city_id","google_place_id","lat","legacy_added_by","lng","maps_query","trip_id"],
       "custom_places.update": ["category","city_id","google_place_id","lat","lng","maps_query"],
+      // 🔴 26 ส.ค. 2026 — ตารางนี้เพิ่งมีทะเบียนเป็นครั้งแรก เพราะเดิมเป็น `grant` **ระดับตาราง**
+      //    (`…145708_e2_trip_content.sql`) → ไคลเอนต์ตั้ง `hidden_at` + `hidden_by_user` เองได้
+      //    `…122247_e2_freeze_row_times.sql` เตือนไว้เองว่าไฟล์ใหม่จะเปิดรูกลับได้ **และมันเกิดจริง 3 ชม.ถัดมา**
+      //    ปิดด้วย `20260826163000_e2_hidden_places_freeze_row_times.sql` ในคอมมิตเดียวกันตามที่ข้อความของด่านสั่ง
+      //    ⚠️ ด่าน `client_writable_timestamps()` มองไม่เห็นเคสนี้เพราะค่าเริ่มต้นของมันเป็น
+      //       **รายชื่อคอลัมน์** (`created_at`/`updated_at`/`updated_by_user`) ส่วนตารางนี้ตั้งชื่อว่า `hidden_at`
+      //       — เรื่องขยายด่านเป็นของ P4 ตัดสิน ผมแจ้งแล้ว ไม่แก้ให้ (`P-72`)
+      "hidden_places.insert": ["catalog_place_id","legacy_hidden_by","trip_id"],
       "place_notes.insert": ["catalog_place_id","custom_place_id","legacy_added_by","note","photo_path","plan_id","trip_id"],
       "place_notes.update": ["note","photo_path"],
       "profiles.insert": ["display_name","home_country","id","locale"],

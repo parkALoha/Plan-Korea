@@ -362,7 +362,8 @@ export function hiddenPlacesOfTrip(db: Db, tripId: string) {
 export function hidePlaceBySlug(db: Db, tripId: string, placeId: string, legacyHiddenBy: string | null) {
   return engineTable(db, "hidden_places")
     .insert({ trip_id: tripId, catalog_place_id: placeId, legacy_hidden_by: legacyHiddenBy })
-    .select("catalog_place_id");
+    // `hidden_at` มาจาก `default now()` ฝั่งฐาน — ดึงกลับมาด้วย ไม่ให้ไคลเอนต์ปั้นเอง (`D7`)
+    .select("catalog_place_id, hidden_at");
 }
 
 export function unhidePlace(db: Db, tripId: string, placeId: string) {
@@ -424,7 +425,8 @@ export function upsertPlaceNote(
       },
       { onConflict: row.catalogPlaceId ? "plan_id,catalog_place_id" : "plan_id,custom_place_id" }
     )
-    .select("id");
+    // 🔴 `updated_at` ต้องเดินทางกลับไปถึงไคลเอนต์ (`D7`) — ไม่งั้นฝั่งนั้นจะปั้นเวลาจากนาฬิกาตัวเอง
+    .select("id, updated_at");
 }
 
 /**
@@ -477,7 +479,8 @@ export function tripHotelsOfTrip(db: Db, tripId: string) {
  * → ต้อง **ลบช่วงเดิมก่อนแล้วค่อยเขียนใหม่** ในคำสั่งของผู้เรียก · ที่นี่ทำแค่ `insert`
  */
 export function insertTripHotel(db: Db, row: Record<string, unknown>) {
-  return engineTable(db, "trip_hotels").insert(row).select("id");
+  // `updated_at` มาจาก trigger ฝั่งฐาน — ดึงกลับมาด้วย ไม่ให้ไคลเอนต์ปั้นเอง (`D7`)
+  return engineTable(db, "trip_hotels").insert(row).select("id, updated_at");
 }
 
 /** หาแถวที่ครอบช่วงวันนั้นพอดี — `null` = ยังไม่มีที่พักของช่วงนี้ */
@@ -520,7 +523,8 @@ export function insertChecklistItem(db: Db, row: { tripId: string; text: string;
 
 /** แก้รายการ — grant เปิดแค่ `text` · `category` · `is_checked` เท่านั้น */
 export function updateChecklistItem(db: Db, id: string, patch: Record<string, unknown>) {
-  return engineTable(db, "checklist_items").update(patch).eq("id", id).select("id");
+  // `updated_at` มาจาก trigger ฝั่งฐาน — ดึงกลับมาด้วย ไม่ให้ไคลเอนต์ปั้นเอง (`D7`)
+  return engineTable(db, "checklist_items").update(patch).eq("id", id).select("id, updated_at");
 }
 
 export function softDeleteChecklistItem(db: Db, id: string) {

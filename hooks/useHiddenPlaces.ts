@@ -8,7 +8,8 @@ import { writeGuard } from "@/lib/writeGuard";
 type HiddenPlaceRow = {
   place_id: string;
   hidden_by: string | null;
-  hidden_at: string;
+  /** 🔴 ฐานเป็นคนเขียน (`D7`) — `null` = ยังไม่ได้รับคำตอบกลับมา */
+  hidden_at: string | null;
 };
 
 /** หน่วงก่อนดึงใหม่ — realtime ยิงถี่ตอนซ่อนหลายที่ติดกัน */
@@ -91,10 +92,14 @@ export function useHiddenPlaces() {
 
   /** เขียนไม่ผ่าน → ดึงของจริงมาทับ state ที่เดาไว้ (สัญญาที่ `writeGuard` เขียนไว้ในหัวไฟล์ตัวเอง) */
   const guard = useCallback(
-    async (label: string, run: () => Promise<Response>) => {
+    // `onOk` มีไว้อ่าน body ของคำตอบที่สำเร็จ — body อ่านได้ครั้งเดียว จึงต้องอ่านตรงนี้ที่เดียว
+    async (label: string, run: () => Promise<Response>, onOk?: (body: Record<string, unknown>) => void) => {
       const ok = await writeGuard(label, async () => {
         const res = await run();
-        if (res.ok) return { error: null };
+        if (res.ok) {
+          if (onOk) onOk((await res.json().catch(() => ({}))) as Record<string, unknown>);
+          return { error: null };
+        }
         const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
         return { error: { code: b.code ?? String(res.status), message: b.error } };
       });
@@ -110,14 +115,23 @@ export function useHiddenPlaces() {
       if (!supabaseConfigured || !tripId) return;
       setHidden((prev) => ({
         ...prev,
-        [placeId]: { place_id: placeId, hidden_by: hiddenBy ?? null, hidden_at: new Date().toISOString() },
+        // 🔴 `null` จนกว่าฐานจะตอบ (`D7`) — เวลานี้เป็นของ `default now()` ไม่ใช่ของนาฬิกาเครื่องนี้
+        [placeId]: { place_id: placeId, hidden_by: hiddenBy ?? null, hidden_at: null },
       }));
-      await guard("ซ่อนสถานที่", () =>
-        fetch(`/api/engine/trips/${tripId}/hidden-places`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ placeId, hiddenBy: hiddenBy ?? null }),
-        })
+      await guard(
+        "ซ่อนสถานที่",
+        () =>
+          fetch(`/api/engine/trips/${tripId}/hidden-places`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ placeId, hiddenBy: hiddenBy ?? null }),
+          }),
+        (body) => {
+          const stamped = typeof body.hiddenAt === "string" ? body.hiddenAt : null;
+          if (stamped) {
+            setHidden((prev) => (prev[placeId] ? { ...prev, [placeId]: { ...prev[placeId], hidden_at: stamped } } : prev));
+          }
+        }
       );
     },
     [guard]

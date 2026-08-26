@@ -163,7 +163,8 @@ function useBookingsStore() {
       note: input.note ?? null,
       added_by: input.addedBy ?? null,
       created_at: now,
-      updated_at: now,
+      // 🔴 `null` = ยังไม่มีเวลาจากเซิร์ฟเวอร์ (`D7`) · ใช้เฉพาะเส้นทางที่ยังไม่ตั้งค่า Supabase
+      updated_at: null,
       file_url: input.fileUrl ?? null,
       file_name: input.fileName ?? null,
       status: input.status ?? "booked",

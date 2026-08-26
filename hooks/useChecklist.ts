@@ -9,6 +9,11 @@ function makeChecklistId() {
   return `cl-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
+/** เวลาจริงจาก trigger ฝั่งฐาน — `D7` ไคลเอนต์อ่านอย่างเดียว ไม่เคยเป็นคนเขียน */
+function stampOf(body: Record<string, unknown>): string | null {
+  return typeof body.updatedAt === "string" ? body.updatedAt : null;
+}
+
 function sortItems(items: ChecklistItem[]) {
   return [...items].sort((a, b) => {
     if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1;
@@ -80,10 +85,14 @@ export function useChecklist() {
 
   /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
   const guard = useCallback(
-    async (label: string, run: () => Promise<Response>) => {
+    // `onOk` มีไว้อ่าน body ของคำตอบที่สำเร็จ — body อ่านได้ครั้งเดียว จึงต้องอ่านตรงนี้ที่เดียว
+    async (label: string, run: () => Promise<Response>, onOk?: (body: Record<string, unknown>) => void) => {
       const ok = await writeGuard(label, async () => {
         const res = await run();
-        if (res.ok) return { error: null };
+        if (res.ok) {
+          if (onOk) onOk((await res.json().catch(() => ({}))) as Record<string, unknown>);
+          return { error: null };
+        }
         const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
         return { error: { code: b.code ?? String(res.status), message: b.error } };
       });
@@ -103,7 +112,9 @@ export function useChecklist() {
         checked_by: null,
         added_by: addedBy ?? null,
         created_at: now,
-        updated_at: now,
+        // 🔴 `null` = ยังไม่มีเวลาจากเซิร์ฟเวอร์ (`D7`) — เส้นทางนี้คือตอนยังไม่ตั้งค่า Supabase
+        //    ปั้นเวลาเองจะกลายเป็นค่าที่ดูเหมือนของฐานแต่มาจากนาฬิกาเครื่องนี้
+        updated_at: null,
         category,
       };
       const tripId = tripIdRef.current;
@@ -130,21 +141,27 @@ export function useChecklist() {
   );
 
   const toggleItem = useCallback(async (itemId: string, checked: boolean, checkedBy?: string | null) => {
+    // 🔴 ไม่มี `updated_at` ในนี้ (`D7`) — แถวยังไม่ได้รับการยืนยัน เวลาที่แสดงจึงยังเป็นของเดิม
     const patch = {
       is_checked: checked,
       checked_by: checked ? checkedBy ?? null : null,
-      updated_at: new Date().toISOString(),
     };
     setItems((prev) => sortItems(prev.map((i) => (i.id === itemId ? { ...i, ...patch } : i))));
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !tripId) return;
-    if (!supabaseConfigured) return;
-    await guard("ติ๊กของที่ต้องเตรียม", () =>
-      fetch(`/api/engine/trips/${tripId}/checklist`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: itemId, isChecked: checked }),
-      })
+    await guard(
+      "ติ๊กของที่ต้องเตรียม",
+      () =>
+        fetch(`/api/engine/trips/${tripId}/checklist`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: itemId, isChecked: checked }),
+        }),
+      // เวลาที่แท้จริงมาจาก trigger ฝั่งฐาน · เขียนลง state เมื่อคำตอบกลับมาแล้วเท่านั้น
+      (body) => {
+        const stamped = stampOf(body);
+        if (stamped) setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, updated_at: stamped } : i)));
+      }
     );
   }, [guard]);
 

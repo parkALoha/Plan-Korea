@@ -109,7 +109,8 @@ export function usePlaceNotes(planId: string | null) {
         place_id: placeId,
         note,
         photo_url: photoUrl,
-        updated_at: new Date().toISOString(),
+        // 🔴 `null` จนกว่าฐานจะตอบ (`D7`) — เวลาของแถวนี้ไม่ใช่ของนาฬิกาเครื่องนี้
+        updated_at: null,
       };
       setNotes((prev) => ({ ...prev, [placeId]: row }));
       if (!supabaseConfigured || !tripId) return true;
@@ -120,7 +121,17 @@ export function usePlaceNotes(planId: string | null) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ planId, placeId, note, photoUrl }),
         });
-        if (res.ok) return { error: null };
+        if (res.ok) {
+          // เวลาจริงจาก trigger ฝั่งฐาน — เติมเข้าแถวที่วางไว้ล่วงหน้า (`D7`)
+          const b = (await res.json().catch(() => ({}))) as { updatedAt?: unknown };
+          const stamped = typeof b.updatedAt === "string" ? b.updatedAt : null;
+          if (stamped) {
+            setNotes((prev) =>
+              prev[placeId] ? { ...prev, [placeId]: { ...prev[placeId], updated_at: stamped } } : prev
+            );
+          }
+          return { error: null };
+        }
         const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
         return { error: { code: b.code ?? String(res.status), message: b.error } };
       });

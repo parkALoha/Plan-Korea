@@ -22,7 +22,9 @@ export type TripHotel = {
   formatted_address: string | null;
   lat: number;
   lng: number;
-  updated_at: string;
+  /** 🔴 เซิร์ฟเวอร์เป็นคนเขียนเท่านั้น (`D7`) — `null` = แถวนี้ยังไม่ได้รับคำตอบจากฐาน
+   *  ห้ามปั้นจาก `new Date()` ฝั่งไคลเอนต์ เครื่องที่นาฬิกาผิดจะชนะ LWW ตลอดกาลอย่างเงียบ ๆ */
+  updated_at: string | null;
   /** ชื่อ/ที่อยู่ภาษาท้องถิ่นของที่พัก (migration 0026) — ส่งเข้า Naver/Kakao และให้คนขับแท็กซี่ดู
    *  ปิดงานค้างของเฟส 14 ที่ทำให้จุดแวะไปแล้วแต่ที่พักยังส่งชื่อไทยอยู่
    *  optional เพราะแถวที่บันทึกไว้ก่อน migration จะไม่มีค่าเหล่านี้ (ต้องกดบันทึกที่พักใหม่ถึงจะเติมให้) */
@@ -78,7 +80,9 @@ export type PlaceNote = {
   place_id: string;
   note: string | null;
   photo_url: string | null;
-  updated_at: string;
+  /** 🔴 เซิร์ฟเวอร์เป็นคนเขียนเท่านั้น (`D7`) — `null` = แถวนี้ยังไม่ได้รับคำตอบจากฐาน
+   *  ห้ามปั้นจาก `new Date()` ฝั่งไคลเอนต์ เครื่องที่นาฬิกาผิดจะชนะ LWW ตลอดกาลอย่างเงียบ ๆ */
+  updated_at: string | null;
 };
 
 export type TripStop = {
@@ -96,7 +100,9 @@ export type TripStop = {
    *  optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase อาจไม่มีฟิลด์นี้ */
   photo_url?: string | null;
   added_by: string | null;
-  updated_at: string;
+  /** 🔴 เซิร์ฟเวอร์เป็นคนเขียนเท่านั้น (`D7`) — `null` = แถวนี้ยังไม่ได้รับคำตอบจากฐาน
+   *  ห้ามปั้นจาก `new Date()` ฝั่งไคลเอนต์ เครื่องที่นาฬิกาผิดจะชนะ LWW ตลอดกาลอย่างเงียบ ๆ */
+  updated_at: string | null;
   /** "place" (ปกติ) | "intercity" (แถวเดินทางข้ามเมือง กินเวลาใน timeline แต่ไม่ใช่สถานที่)
    *  | "transfer" (ไปสนามบิน/สถานี — มี place_id จริงจาก data/transferPoints.ts เวลาเดินทางจึงเป็นของจริง)
    *  | "hotel" (แวะที่พักกลางวัน เช็คอิน/ฝากกระเป๋า — place_id ฝังพิกัดที่พักไว้ในตัว `hotel@lat,lng`)
@@ -142,7 +148,9 @@ export type TripBooking = {
   note: string | null;
   added_by: string | null;
   created_at: string;
-  updated_at: string;
+  /** 🔴 เซิร์ฟเวอร์เป็นคนเขียนเท่านั้น (`D7`) — `null` = แถวนี้ยังไม่ได้รับคำตอบจากฐาน
+   *  ห้ามปั้นจาก `new Date()` ฝั่งไคลเอนต์ เครื่องที่นาฬิกาผิดจะชนะ LWW ตลอดกาลอย่างเงียบ ๆ */
+  updated_at: string | null;
   file_url: string | null;
   file_name: string | null;
   /** จองแล้ว/รอจอง (migration 0030) — default 'booked' ฝั่ง DB เพราะแถวเก่าส่วนใหญ่มีเลขที่จองอยู่แล้ว */
@@ -161,7 +169,9 @@ export type ChecklistItem = {
   checked_by: string | null;
   added_by: string | null;
   created_at: string;
-  updated_at: string;
+  /** 🔴 เซิร์ฟเวอร์เป็นคนเขียนเท่านั้น (`D7`) — `null` = แถวนี้ยังไม่ได้รับคำตอบจากฐาน
+   *  ห้ามปั้นจาก `new Date()` ฝั่งไคลเอนต์ เครื่องที่นาฬิกาผิดจะชนะ LWW ตลอดกาลอย่างเงียบ ๆ */
+  updated_at: string | null;
   category: ChecklistCategory;
 };
 

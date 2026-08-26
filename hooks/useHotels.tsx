@@ -24,6 +24,11 @@ export type HotelInput = {
   localized?: HotelLocalized | null;
 };
 
+/** เวลาจริงจาก trigger ฝั่งฐาน — `D7` ไคลเอนต์อ่านอย่างเดียว ไม่เคยเป็นคนเขียน */
+function stampOf(body: Record<string, unknown>): string | null {
+  return typeof body.updatedAt === "string" ? body.updatedAt : null;
+}
+
 function toRow(input: HotelInput): TripHotel {
   return {
     // 🔴 ไม่มี `leg_id` แล้ว (`D51`) — ช่วงวันที่คือตัวระบุ
@@ -39,7 +44,8 @@ function toRow(input: HotelInput): TripHotel {
     name_en: input.localized?.nameEn ?? null,
     address_en: input.localized?.addressEn ?? null,
     phone: input.localized?.phone ?? null,
-    updated_at: new Date().toISOString(),
+    // 🔴 `null` จนกว่าฐานจะตอบ (`D7`) — trigger ฝั่งฐานเป็นเจ้าของเวลานี้
+    updated_at: null,
   };
 }
 
@@ -140,10 +146,14 @@ function useHotelsStore() {
 
   /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
   const guard = useCallback(
-    async (label: string, run: () => Promise<Response>) => {
+    // `onOk` มีไว้อ่าน body ของคำตอบที่สำเร็จ — body อ่านได้ครั้งเดียว จึงต้องอ่านตรงนี้ที่เดียว
+    async (label: string, run: () => Promise<Response>, onOk?: (body: Record<string, unknown>) => void) => {
       const ok = await writeGuard(label, async () => {
         const res = await run();
-        if (res.ok) return { error: null };
+        if (res.ok) {
+          if (onOk) onOk((await res.json().catch(() => ({}))) as Record<string, unknown>);
+          return { error: null };
+        }
         const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
         return { error: { code: b.code ?? String(res.status), message: b.error } };
       });
@@ -177,7 +187,12 @@ function useHotelsStore() {
           addressEn: input.localized?.addressEn ?? null,
           phone: input.localized?.phone ?? null,
         }),
-      })
+      }),
+      // เวลาจริงจาก trigger ฝั่งฐาน — เติมทีหลังเมื่อคำตอบกลับมา
+      (body) => {
+        const stamped = stampOf(body);
+        if (stamped) setHotels((prev) => (prev[key] ? { ...prev, [key]: { ...prev[key], updated_at: stamped } } : prev));
+      }
     );
   }, [guard]);
 

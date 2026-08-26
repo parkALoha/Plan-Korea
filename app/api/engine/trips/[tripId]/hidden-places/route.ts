@@ -78,7 +78,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
   if (!data || data.length === 0) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์ซ่อนสถานที่ในทริปนี้", code: "42501" }, { status: 403 });
   }
-  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
+  // 🔴 เวลาจริงจาก `default now()` ฝั่งฐาน — `D7` ไคลเอนต์ห้ามปั้นเวลาเอง
+  const hiddenAt = (data[0] as { hidden_at?: string }).hidden_at ?? null;
+  return NextResponse.json({ ok: true, hiddenAt }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 /** เลิกซ่อน — `?placeId=<slug>` */

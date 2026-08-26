@@ -108,7 +108,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   if (!data || data.length === 0) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์เขียนโน้ตในแผนนี้", code: "42501" }, { status: 403 });
   }
-  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
+  // 🔴 คืน `updated_at` ของจริงกลับไป — `D7` ไคลเอนต์ห้ามปั้นเวลาเอง
+  //    trigger ฝั่งฐานเป็นคนเขียน เครื่องที่นาฬิกาผิดจึงชนะ LWW ไม่ได้อีก
+  const updatedAt = (data[0] as { updated_at?: string }).updated_at ?? null;
+  return NextResponse.json({ ok: true, updatedAt }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 /** ล้างโน้ต — `?planId=&placeId=` · **ผ่าน RPC soft delete ไม่ใช่ `DELETE` ตรง ๆ** (`E2-AC12`) */
