@@ -72,3 +72,57 @@ export function testClient(key: string): SupabaseClient {
  * ```
  * 📌 มีอยู่แล้วใน `guardedStorage.test.ts` · `signStoredFile.test.ts` — ก๊อปจากที่นี่ให้ตรง (พร้อมคำเตือน)
  */
+
+/** ล็อกที่ถืออยู่ · `release()` ปลดเมื่อจบชุด */
+export type FixtureLock = { readonly holder: string; release: () => Promise<void> };
+
+/**
+ * ล็อกชุดสด — กันสองเซสชัน seed รหัส `TEST_COUNTRY_CODES` เดียวกัน*พร้อมกัน* (`R11`/`P-68`) · P1 RPC · P4 wire
+ *
+ * 🔴 **แถว+expiry ไม่ใช่ `pg_advisory_lock`** — supabase-js เป็น REST (pooled ทุก request) ถือ session lock ข้ามชุดไม่ได้
+ *    (P4 วัด: `.env.local` ไม่มี pg connection string) · expiry แก้ "แถวค้าง" แบบเดียวกับ `app.system_mode` (P1)
+ * 🔴 **forward-compat:** RPC ยังไม่ลง (`PGRST202`) → คืน no-op **เงียบสนิท** (ไม่ล็อก ไม่ spam) จนกว่า migration ที่ 3 จะมา
+ * 🔴 **bounded-retry แล้ว fail-loud** (ไม่ skip · `D72`: คน push ต้องยืนยันหรือแดง ไม่ใช่เขียวกลวง) · ข้อความบอก *ใคร* ถือ
+ * 🔴 **release เช็คว่ายังถือ** — ถ้าหลุด (`③` ของ P1: TTL สั้นกว่าเวลาชุด) → **ดัง console.error ไม่ throw** (throw ใน afterAll กลบผลเคสที่เพิ่งรัน)
+ */
+export async function acquireFixtureLock(
+  admin: SupabaseClient,
+  holder: string,
+  opts: { ttlSeconds?: number; timeoutMs?: number; pollMs?: number } = {},
+): Promise<FixtureLock> {
+  const ttl = opts.ttlSeconds ?? 300;
+  const timeoutMs = opts.timeoutMs ?? 240_000;
+  const pollMs = opts.pollMs ?? 2000;
+  const noop: FixtureLock = { holder, release: async () => {} };
+  const started = Date.now();
+  for (;;) {
+    const { data, error } = await admin.rpc("acquire_fixture_lock", { p_holder: holder, p_ttl_seconds: ttl });
+    if (error) {
+      if (error.code === "PGRST202") return noop; // RPC ยังไม่ลง → เงียบ (ยังไม่มีการกันชน จนกว่าจะลง)
+      throw new Error(`acquire_fixture_lock: ${error.message}`);
+    }
+    if (data === true) {
+      return {
+        holder,
+        release: async () => {
+          const cur = await admin.rpc("fixture_lock_holder");
+          const stillMine = (cur.data as { held_by?: string } | null)?.held_by === holder;
+          await admin.rpc("release_fixture_lock", { p_holder: holder });
+          if (!stillMine) {
+            console.error(
+              `\n🔴 fixture lock '${holder}' หลุดกลางรัน (ตอนนี้: ${JSON.stringify(cur.data)}) — ` +
+                `**TTL (${ttl}s) สั้นกว่าเวลาชุดสด** · ชุดรันแบบไม่กันชนบางช่วง (③ ของ P1) → เพิ่ม TTL ให้ > เวลาชุด\n`,
+            );
+          }
+        },
+      };
+    }
+    if (Date.now() - started > timeoutMs) {
+      const h = await admin.rpc("fixture_lock_holder");
+      throw new Error(
+        `ขอ fixture lock ไม่ได้ใน ${timeoutMs}ms — ถือโดย ${JSON.stringify(h.data)} · มีชุดสดค้าง? ไปดู **ไม่ใช่ของพัง** (R11 · รอ+retry แล้วยังไม่ว่าง)`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}

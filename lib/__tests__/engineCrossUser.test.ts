@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
 import { readEnvKey, requireLiveCreds, TEST_COUNTRY_CODES } from "./_helpers";
+import { acquireFixtureLock, type FixtureLock } from "./_testClient";
 import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -202,6 +203,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let place3Id = "";
   const placeSlug4 = `exp4-${stamp}`;
   let place4Id = "";
+  let fixtureLock: FixtureLock | undefined; // R11 lock — no-op เงียบจนกว่า RPC (migration ที่ 3) จะลง
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -289,6 +291,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
 
   beforeAll(async () => {
     admin = createClient(URL_, SERVICE, { auth: { persistSession: false }, realtime: noRealtime() });
+    fixtureLock = await acquireFixtureLock(admin, `engineCrossUser-${stamp}`); // กันชน R11 · ก่อน seed
     await seedCatalog();
     const a = await makeUser("a");
     aClient = a.client;
@@ -337,6 +340,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       if (error) console.warn(`cleanup user ${id}: ${error.message}`);
     }
     await purgeCatalog();
+    await fixtureLock?.release();
   });
 
   it("pin: GET /api/engine/trips = 200 (กันถอย fae94fe — helper อ้างคอลัมน์ที่ไม่มี = 502)", async () => {

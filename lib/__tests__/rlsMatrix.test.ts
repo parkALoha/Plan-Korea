@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { type SupabaseClient } from "@supabase/supabase-js";
-import { testClient } from "./_testClient";
+import { testClient, acquireFixtureLock, type FixtureLock } from "./_testClient";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   TEST_COUNTRY_CODES,
@@ -456,8 +456,11 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     return error ? error.message : null;
   }
 
+  let fixtureLock: FixtureLock | undefined; // R11 lock — no-op เงียบจนกว่า RPC (migration ที่ 3) จะลง
+
   beforeAll(async () => {
     admin = testClient(SERVICE);
+    fixtureLock = await acquireFixtureLock(admin, `rlsMatrix-${stamp}`); // กันชน R11 · ก่อนแตะ fixture
     D = testClient(ANON);
 
     // 🔴 ก่อนอย่างอื่นทั้งหมด — ฐานอยู่ในสภาพที่ผลมีความหมายหรือเปล่า
@@ -554,6 +557,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       const { error } = await admin.auth.admin.deleteUser(id);
       if (error) console.warn(`\n⚠️  ลบผู้ใช้ทดสอบ ${id} ไม่สำเร็จ: ${error.message}\n`);
     }
+    await fixtureLock?.release();
   });
 
   // ── ด้านบวก: precondition ของทั้งชุด ────────────────────────────────────
