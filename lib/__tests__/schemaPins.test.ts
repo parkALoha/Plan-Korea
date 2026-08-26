@@ -768,3 +768,127 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่บันทึก ต้องไม่เพิ่มเงียบ ๆ", () => {
+  /**
+   * คลาสที่โตขึ้นโดยไม่มีใครนับ: **การเปลี่ยนแถวจริงที่ `updated_at` ไม่ขยับ**
+   * (① FK `on delete set null` · ② `preserve_authorship` · ③ promote-on-delete) — ทั้งหมดเพราะ
+   * `touch_updated_at` มี `if pg_trigger_depth() > 1 then return` (ถูกต้อง ไม่แก้) · `E6-AC9` (ห้าม
+   * delta sync บน `updated_at`) พึ่งคลาสนี้ · **trigger/FK ตัวที่ 4 จะเพิ่มโดยไม่มีอะไรส่งเสียง** (P7 เสนอ · P1 อนุมัติ)
+   *
+   * ## แกน (ข้อค้าน P4 · 26 ส.ค.): ด่านไม่ตีความ SQL — จับว่า *มีของเปลี่ยน* แล้วโยนภาระอธิบายกลับไปคนเปลี่ยน
+   * ## source ไม่ใช่ catalog: หมุดต้องพูด **ตอน diff อยู่บนจอ** · catalog เห็นหลัง apply = ผิดเวลา + ข้ามเงียบตอนไม่มี creds
+   *
+   * ⚠️ **ขอบ — ชุดนี้จับ migration-declared เท่านั้น ไม่ครอบ drift**
+   * ใครรัน `create or replace` ในแดชบอร์ด/SQL Editor (วิธีปกติที่นี่ · PLAN.md §5) → ฐานต่างจากไฟล์ โดยรายชื่อ migration
+   * ไม่ขยับ · หมุดพวกนี้มองไม่เห็น · drift ต้องเป็นเช็คมีชื่อตัวเองในชุดสด — **ช่องที่รู้จัก ยังไม่ปิด**
+   *
+   * 🔴 `zz_read_only_guard` ยกเว้นโดยตั้งใจ — สร้างด้วย `execute format(... %I)` ลูปต่อตาราง = พลวัต static regex เห็นไม่ได้
+   * ความครบของมันเป็นงานของ `pin:read-only-coverage` คนละหมุด · ตั้งชื่อไม่ใช้เลข (เลขซ้ำอ่านผ่านรีวิวได้ · รอย "ข้อยกเว้นที่ 4")
+   */
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+
+  function staticTriggerDefs(): Map<string, string> {
+    const defs = new Map<string, string>();
+    for (const f of migrationFiles) {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      for (const m of sql.matchAll(
+        /create\s+(?:constraint\s+)?trigger\s+(\w+)\b[\s\S]*?;|drop\s+trigger\s+(?:if\s+exists\s+)?(\w+)/gi,
+      )) {
+        if (m[1]) {
+          const name = m[1];
+          const stmt = norm(m[0]);
+          if (name === "zz_read_only_guard" || stmt.includes("%I")) continue;
+          defs.set(name, stmt);
+        } else if (m[2] && m[2] !== "zz_read_only_guard") {
+          defs.delete(m[2]);
+        }
+      }
+    }
+    return defs;
+  }
+
+  it("🔴 pin:trigger-registry — รายชื่อ trigger (static) ต้องไม่เปลี่ยน", () => {
+    expect(
+      [...staticTriggerDefs().keys()].sort(),
+      "trigger static เพิ่ม/หาย/เปลี่ยนชื่อ — ตัวใหม่ที่เขียนแถวโดยไม่ stamp คือสิ่งที่ E6-AC9 กลัว\n" +
+        "  → ประกาศว่า stamp หรือไม่ ก่อนขึ้นทะเบียน แล้วค่อยแก้ค่านี้ (ไม่ใช่แก้ให้เขียว)",
+    ).toEqual([
+      "bookings_stamp_added_by", "bookings_touch", "catalog_cities_touch", "catalog_countries_touch",
+      "catalog_country_contacts_touch", "catalog_place_access_touch", "catalog_place_descriptions_touch",
+      "catalog_place_names_touch", "catalog_places_touch", "checklist_items_stamp_added_by",
+      "checklist_items_stamp_checked_by", "checklist_items_touch", "custom_place_descriptions_touch",
+      "custom_place_names_touch", "custom_places_not_in_use", "custom_places_stamp_added_by",
+      "custom_places_touch", "hidden_places_stamp_hidden_by", "on_auth_user_created",
+      "place_notes_stamp_added_by", "place_notes_touch", "profiles_preserve_authorship", "profiles_touch",
+      "tdps_touch", "trip_days_no_orphan_stops", "trip_days_touch", "trip_hotels_stamp_added_by",
+      "trip_hotels_touch", "trip_members_keep_owner", "trip_plans_keep_one", "trip_plans_touch",
+      "trip_stops_stamp_added_by", "trip_stops_touch", "trips_bootstrap_owner", "trips_freeze_created_by",
+      "trips_touch",
+    ]);
+  });
+
+  it("🔴 pin:trigger-when — เนื้อ definition (when/timing/ฟังก์ชันที่ผูก) ต้องไม่เปลี่ยนเงียบ", () => {
+    const defs = [...staticTriggerDefs().entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    expect(
+      sha(JSON.stringify(defs)),
+      "definition ของ trigger สักตัวเปลี่ยน (when/timing/ฟังก์ชัน) โดยรายชื่อไม่ขยับ\n" +
+        "  🔴 ถอด `when (...)` ตัวเดียว = updated_at เปลี่ยนความหมายทั้งตาราง · log `[...staticTriggerDefs().entries()]` (ตัวสกัดอยู่ใน describe นี้) ดูตัวที่เปลี่ยน",
+    ).toBe("08c13364639b11f4622b7dcb2b3c2ef4382c31ada93578847a2085e5ab9ccc35");
+  });
+
+  it("🔴 pin:trigger-fn-body — body ของ trigger function ต้องไม่เปลี่ยนเงียบ (จับ ②③)", () => {
+    const fns = new Set<string>();
+    for (const stmt of staticTriggerDefs().values()) {
+      const m = stmt.match(/execute\s+(?:function|procedure)\s+([\w.]+)/i);
+      if (m) fns.add(m[1].toLowerCase());
+    }
+    const names = [...fns].sort();
+    expect(names, "trigger function เพิ่ม/หาย — ตัวใหม่ต้องประกาศว่า stamp หรือไม่").toEqual([
+      "app.assert_day_has_no_stops", "app.assert_place_not_in_use", "app.assert_trip_has_owner",
+      "app.assert_trip_has_plan", "app.bootstrap_trip_owner", "app.freeze_created_by",
+      "app.handle_new_user", "app.preserve_authorship", "app.stamp_added_by", "app.stamp_checked_by",
+      "app.stamp_hidden_by", "app.touch_updated_at", "app.touch_updated_at_only",
+    ]);
+    const eff = effectiveFunctions();
+    const bodies = names.map((n) => [n, eff.get(n) ?? "MISSING"] as const);
+    expect(bodies.every(([, b]) => b !== "MISSING"), "หา body ของ trigger function บางตัวไม่เจอ").toBe(true);
+    expect(
+      sha(JSON.stringify(bodies)),
+      "body ของ trigger function สักตัวเปลี่ยน — `create or replace` เปลี่ยน body ได้โดย def ของ trigger ไม่ขยับ (②③ ซ่อนตรงนี้)",
+    ).toBe("7c10b876b567a7fe8ec51a066e817adda21a23fcfe54ecd4ca505f63e09b9b01");
+  });
+
+  it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
+    const fk = new Set<string>();
+    for (const f of migrationFiles) {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      for (const m of sql.matchAll(
+        /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_0-9]+)\s*\(([\s\S]*?)\n\);/gi,
+      )) {
+        const tbl = m[1].toLowerCase();
+        for (const c of m[2].matchAll(/([a-z_]\w*)\s+uuid[^,]*?references[^,]*?on\s+delete\s+set\s+null/gi))
+          fk.add(`${tbl}.${c[1].toLowerCase()}`);
+      }
+      for (const m of sql.matchAll(
+        /alter\s+table\s+(?:only\s+)?public\.([a-z_0-9]+)\s+add\s+column\s+(?:if\s+not\s+exists\s+)?([a-z_]\w*)[^;]*?on\s+delete\s+set\s+null/gi,
+      ))
+        fk.add(`${m[1].toLowerCase()}.${m[2].toLowerCase()}`);
+    }
+    expect(
+      [...fk].sort(),
+      "FK `on delete set null` เพิ่ม/หาย — set null เขียนคอลัมน์ตอน trigger depth > 0 → updated_at ไม่ขยับ\n" +
+        "  🔴 หมุด trigger/function จับข้อนี้ไม่ได้ (FK ไม่มี body) · ตัวใหม่ = ตัวเขียนเงียบที่ delta sync (E6-AC9) พลาด",
+    ).toEqual([
+      "bookings.added_by_user", "bookings.updated_by_user", "checklist_items.added_by_user",
+      "checklist_items.checked_by_user", "checklist_items.updated_by_user", "custom_places.added_by_user",
+      "custom_places.updated_by_user", "hidden_places.hidden_by_user", "place_notes.added_by_user",
+      "place_notes.updated_by_user", "profiles.updated_by_user", "trip_day_plan_settings.updated_by_user",
+      "trip_days.updated_by_user", "trip_hotels.added_by_user", "trip_hotels.updated_by_user",
+      "trip_members.invited_by", "trip_plans.updated_by_user", "trip_stops.added_by_user",
+      "trip_stops.updated_by_user", "trips.updated_by_user",
+    ]);
+  });
+});
