@@ -378,6 +378,39 @@ if [ -d "$ROOT/lib" ] && [ -f "$DYNFROM" ]; then
   fi
 fi
 
+# ── config ของ API ที่เส้นแบ่งความปลอดภัยพึ่งอยู่ (P4 ขอ · 26 ส.ค. 2026) ─────────
+# 🔴 P4 พิสูจน์ว่าไคลเอนต์ตั้ง `app.*` GUC ไม่ได้ 5 เส้นทาง · เส้นที่เกือบเป็นทางคือ
+#    claim ใน JWT ซึ่ง PostgREST map เป็น `request.jwt.claim.<key>` **ไม่ใช่ `<key>` ตรง ๆ**
+#    → trigger ที่อ่าน `app.*` จึงไม่เห็น · **แต่เส้นนี้เปราะต่อ config**:
+#    ถ้ามีคนตั้ง `db_pre_request` ที่ copy claim → GUC **เส้นนั้นจะเปิดทันที**
+#
+# ⚠️ **ขอบเขต: นี่คือครึ่งฝั่งไฟล์เท่านั้น** — โปรเจกต์บนคลาวด์ตั้งค่านี้จากแดชบอร์ดได้
+#    โดยไม่ผ่าน `config.toml` เลย · **ครึ่งที่เหลือต้องเป็นเคสสดถาวร** (ปลูก claim แล้วยืนยันว่า
+#    มันไม่กลายเป็น GUC) ไม่ใช่การทดสอบครั้งเดียวแล้วจบ
+APICFG="$ROOT/supabase-platform/supabase/config.toml"
+if [ -f "$APICFG" ]; then
+  cfgbad=""
+  # ตัดคอมเมนต์ก่อน — บรรทัดที่ถูก comment ไว้ไม่ใช่การตั้งค่า
+  cfg="$(sed -e 's/#.*//' "$APICFG")"
+  if printf '%s' "$cfg" | grep -qiE 'db[-_]pre[-_]request'; then
+    cfgbad="$cfgbad  db_pre_request ถูกตั้งไว้ — เส้นทาง claim→GUC จะเปิด
+"
+  fi
+  # schema `app` ต้องไม่ถูก expose ทาง REST — ตารางสวิตช์ read-only อยู่ในนั้น
+  if printf '%s' "$cfg" | grep -E '^\s*schemas\s*=' | grep -q '"app"'; then
+    cfgbad="$cfgbad  schema \`app\` ถูก expose ทาง REST — ตารางภายในจะเรียกจากไคลเอนต์ได้
+"
+  fi
+  if [ -n "$cfgbad" ]; then
+    echo "🔴 api-config: การตั้งค่าที่เส้นแบ่งความปลอดภัยพึ่งอยู่ ถูกเปลี่ยน"
+    printf '%s' "$cfgbad"
+    echo "   ถ้าตั้งใจจริง ต้องคุยกับ P1/P4 ก่อน — มันเปลี่ยนสมมติฐานของ trigger ที่อ่าน app.*"
+    fail=1
+  else
+    echo "✅ api-config: ไม่มี db_pre_request · schema app ไม่ถูก expose"
+  fi
+fi
+
 # ── ข้อมูล (ไม่ใช่ด่าน): HEAD กับ origin ห่างกันแค่ไหน ────────────────────────────
 # 🔴 ปัญหาจริง 25 ส.ค. 2026: CI แดงค้าง ~2 ชม. ขณะที่ทุกเครื่องเขียวสนิท
 #    ตัวแก้เขียนเสร็จแล้วแต่ **นอนค้างในเครื่อง ไม่ได้ push** พร้อมอีก 10 ตัว

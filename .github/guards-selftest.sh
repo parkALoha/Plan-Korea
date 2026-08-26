@@ -479,4 +479,38 @@ dref "นิยามกลุ่ม (P-30 · P-31) นับทุกตัว"
 dref "ธรรมเนียมเก่า (เปล่า) กับใหม่ (backtick) ใช้ได้ทั้งคู่" pass '### 🔴 P-24 — เก่า
 ### 🔴 `P-61` — ใหม่'
 
+# ── ด่าน api-config (P4 ขอ · เส้นแบ่งที่ trigger อ่าน app.* พึ่งอยู่) ─────────────
+mkcfg() {  # mkcfg <dir> <เนื้อ config.toml>
+  mkdir -p "$1/supabase-platform/supabase"
+  printf '%s\n' "$2" > "$1/supabase-platform/supabase/config.toml"
+}
+
+# ㊷ db_pre_request ถูกตั้ง -> ต้องโดนจับ (เส้นทาง claim→GUC จะเปิด)
+d="$(mk)"; mkcfg "$d" '[api]
+db_pre_request = "public.copy_claims"'
+check "api-config จับ db_pre_request ที่ถูกตั้ง" fail "$d"
+
+# ㊸ เขียนแบบขีดกลางก็ต้องจับ
+d="$(mk)"; mkcfg "$d" '[api]
+db-pre-request = "x"'
+check "api-config จับ db-pre-request (ขีดกลาง)" fail "$d"
+
+# ㊹ 🔴 ถูก comment ไว้ **ต้องไม่โดนจับ** — บรรทัดที่ปิดไว้ไม่ใช่การตั้งค่า
+#    ถ้าฟ้อง จะแดงใส่ config ที่มีคำอธิบายอยู่ ซึ่งไฟล์จริงเต็มไปด้วยคอมเมนต์
+d="$(mk)"; mkcfg "$d" '[api]
+# db_pre_request = "public.copy_claims"   ← ปิดไว้โดยตั้งใจ
+schemas = ["public", "graphql_public"]'
+check "api-config ไม่ฟ้อง db_pre_request ที่ถูก comment ไว้" pass "$d"
+
+# ㊺ schema app ถูก expose -> ต้องโดนจับ (ตารางสวิตช์จะเรียกจากไคลเอนต์ได้)
+d="$(mk)"; mkcfg "$d" '[api]
+schemas = ["public", "app", "graphql_public"]'
+check "api-config จับ schema app ที่ถูก expose" fail "$d"
+
+# ㊻ config ปกติ ต้องผ่าน
+d="$(mk)"; mkcfg "$d" '[api]
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]'
+check "api-config ผ่านกับ config ที่ถูกต้อง" pass "$d"
+
 exit $rc
