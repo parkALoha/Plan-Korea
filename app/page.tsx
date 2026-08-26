@@ -400,6 +400,7 @@ export function HomeContent({ tripId }: { tripId: string }) {
     >
       <main className="min-h-full">
         <TripHeader
+          tripId={tripId}
           who={who}
           onWhoChange={setWho}
           stopsCount={stops.length}
