@@ -24,16 +24,6 @@ import { hotelAnchorId } from "@/lib/hotelLegs";
 import { shouldSkipTravelApi } from "@/lib/engine/countries";
 import { countryOfCity } from "@/data/emergency";
 
-// 🔴 lib/schedule.ts TravelMode ("walk"|"transit"|"drive") ≠ lib/engine/countries.ts TravelMode
-// ("WALK"|"TRANSIT"|"DRIVE", ตรงกับค่าที่ Google Routes API ใช้จริง) — tsc จับได้ตอนเรียก
-// shouldSkipTravelApi ตรงๆ ว่าสอง type เข้ากันไม่ได้ทั้งที่ความหมายเดียวกัน แปลงตรงนี้แทนแก้ type
-// ของไฟล์ไหน เพราะทั้งสองฝั่งมีเหตุผลของ casing ตัวเอง (schedule.ts เดิม, countries.ts ตาม Google)
-const REGISTRY_MODE: Record<TravelMode, "WALK" | "TRANSIT" | "DRIVE"> = {
-  walk: "WALK",
-  transit: "TRANSIT",
-  drive: "DRIVE",
-};
-
 /**
  * ตรรกะคำนวณตารางเวลาทั้งวัน — ดึงออกมาจาก DayStopsSection (เดิมฝังอยู่ในนั้นล้วนๆ)
  * เพื่อให้หน้า "วันนี้" (เฟส 6) ใช้ตรรกะเดียวกันเป๊ะกับหน้าแผน ไม่ต้องคำนวณซ้ำแล้วเสี่ยงเวลาไม่ตรงกัน
@@ -107,7 +97,7 @@ export function useDaySchedule({
       if (!mode) return;
       // รู้แน่ว่าประเทศนี้ไม่เคยตอบโหมดนี้จริง (เช่น kr/DRIVE) — ข้ามได้ ประหยัด quota + ไม่ต้องรอ
       // ประเทศที่ไม่มีในทะเบียนเลย shouldSkipTravelApi คืน false เสมอ (ต้องยิง ให้ผลจริงสอนทะเบียนต่อไป)
-      if (shouldSkipTravelApi(country, REGISTRY_MODE[mode])) return;
+      if (shouldSkipTravelApi(country, mode)) return;
       pairs.push({
         fromId: from.id,
         toId: to.id,
