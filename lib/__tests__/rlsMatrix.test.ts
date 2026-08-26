@@ -3945,6 +3945,148 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 Q6 — คำบรรยายสถานที่ 2 ใบ: คลังกลางเขียนไม่ได้เลย · ของทริปผูกสิทธิ์ทริป", () => {
+    /**
+     * `catalog_place_descriptions` — **ไม่มี policy ฝั่งเขียนเลยสักตัว** และไม่มี grant ฝั่งเขียน
+     * รูปเดียวกับ `catalog_places`: **ปิดสองชั้น** (ไม่มี policy = RLS ปฏิเสธ · ไม่มี grant = ไม่ถึง RLS ด้วยซ้ำ)
+     * · 🔴 **ต้องยิงทั้ง `insert`/`update`/`delete` แยกกัน** — ชั้นที่ปฏิเสธต่างกันให้รหัสต่างกัน
+     *   และ *"ปฏิเสธเพราะไม่มีสิทธิ์"* กับ *"ปฏิเสธเพราะ RLS"* คนละกลไก **ถ้าวันหนึ่งมีคน `grant` กลับ
+     *   ชั้นที่เหลือคือ RLS และเราต้องรู้ว่ามันยังอยู่**
+     *
+     * `custom_place_descriptions` — policy ครบ 4 ผูก `can_read_trip`/`can_write_trip`
+     * ⚠️ **`update` ของตารางนี้ไม่มี error ให้ดูเมื่อถูกปฏิเสธ** (มี column grant · RLS กรองแถวออก)
+     * → เคส viewer/คนนอกต้อง **อ่านค่ากลับ** ไม่ใช่เช็ค error · เหมือน 5 กิ่งที่ตัวนับ `E2-AC11` เจอ
+     */
+    const ccG = TEST_COUNTRY_CODES.descriptions;
+    let tripG = "", cityG = "", catG = "", myG = "";
+
+    beforeAll(async () => {
+      await purgeCountry(ccG);
+      await admin.from("catalog_countries").insert({ id: ccG, name_th: "ทดสอบคำบรรยาย", name_en: "DESC" });
+      const ci = await admin.from("catalog_cities")
+        .insert({ country_id: ccG, name_th: "เมืองG", name_en: "CityG", lat: 35, lng: 129, timezone: "Asia/Seoul" })
+        .select("id").single();
+      if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+      cityG = ci.data.id as string;
+      const cp = await admin.from("catalog_places")
+        .insert({ city_id: cityG, category: "sight", lat: 35, lng: 129 })
+        .select("id").single();
+      if (cp.error) throw new Error(`seed place: ${cp.error.message}`);
+      catG = cp.data.id as string;
+      const cd = await admin.from("catalog_place_descriptions")
+        .insert({ place_id: catG, locale: "th", description: `คำบรรยายกลาง ${stamp}` });
+      if (cd.error) throw new Error(`seed catalog desc: ${cd.error.message}`);
+
+      const t = await A.rpc("create_trip", {
+        p_title: `desc-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
+      });
+      if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
+      tripG = t.data.id as string;
+      // `C` เป็น viewer · `B` เป็นคนนอกโดยตั้งใจ
+      const inv = await A.from("trip_members").insert({ trip_id: tripG, user_id: ids.c, role: "viewer" });
+      if (inv.error) throw new Error(`เชิญ C: ${inv.error.message}`);
+
+      const mp = await A.from("custom_places")
+        .insert({ trip_id: tripG, city_id: cityG, category: "cafe", lat: 35.1, lng: 129.1 })
+        .select("id").single();
+      if (mp.error) throw new Error(`custom place: ${mp.error.message}`);
+      myG = mp.data.id as string;
+    });
+
+    afterAll(async () => {
+      await admin.from("trips").delete().eq("id", tripG);
+      await admin.from("catalog_places").delete().eq("id", catG);
+      const error = await purgeCountry(ccG);
+      if (error) console.warn(`\n⚠️  เก็บกวาดคลังของบล็อกคำบรรยายไม่สำเร็จ: ${error}\n`);
+    });
+
+    describe("`catalog_place_descriptions` — อ่านได้ทุกคน เขียนไม่ได้เลย", () => {
+      it("ด้านบวก: ผู้ใช้ที่ล็อกอินอ่านคำบรรยายกลางได้", async () => {
+        const r = await C.from("catalog_place_descriptions").select("description").eq("place_id", catG);
+        expect(r.error?.message ?? null).toBeNull();
+        expect(r.data, "คลังกลางอ่านไม่ได้ — เคสด้านลบข้างล่างจะไม่ได้พิสูจน์อะไร").toHaveLength(1);
+      });
+
+      it("🔴 เขียนคลังกลางไม่ได้ทั้ง 3 verb — ยิงแยกเพราะชั้นที่ปฏิเสธต่างกัน", async () => {
+        const ins = await A.from("catalog_place_descriptions")
+          .insert({ place_id: catG, locale: "en", description: "hacked" });
+        expect(ins.error?.code, "ไคลเอนต์เพิ่มคำบรรยายลงคลังกลางได้").toBe("42501");
+
+        const upd = await A.from("catalog_place_descriptions")
+          .update({ description: "hacked" }).eq("place_id", catG);
+        expect(upd.error?.code, "ไคลเอนต์แก้คำบรรยายของคลังกลางได้").toBe("42501");
+
+        const del = await A.from("catalog_place_descriptions").delete().eq("place_id", catG);
+        expect(del.error?.code, "ไคลเอนต์ลบคำบรรยายของคลังกลางได้").toBe("42501");
+
+        // แถวต้องยังอยู่ครบหลังลองทั้งสามทาง
+        const still = await admin.from("catalog_place_descriptions").select("description").eq("place_id", catG);
+        expect(still.data, "แถวหายไปทั้งที่ทุก verb ถูกปฏิเสธ").toHaveLength(1);
+      });
+
+      it("🔴 `anon` ไม่ได้อะไรเลย", async () => {
+        const r = await D.from("catalog_place_descriptions").select("description").eq("place_id", catG);
+        // คลังกลางเปิดให้ `authenticated` เท่านั้น — `anon` ต้องไม่เห็น
+        expect(r.data ?? [], "anon อ่านคลังกลางได้").toEqual([]);
+      });
+    });
+
+    describe("`custom_place_descriptions` — ผูกกับสิทธิ์ของทริป", () => {
+      it("ด้านบวก: เจ้าของเพิ่มและแก้คำบรรยายของสถานที่ตัวเองได้", async () => {
+        const ins = await A.from("custom_place_descriptions")
+          .insert({ trip_id: tripG, place_id: myG, locale: "th", description: `เดิม ${stamp}` });
+        expect(ins.error?.message ?? null, "เจ้าของเพิ่มไม่ได้").toBeNull();
+
+        const upd = await A.from("custom_place_descriptions")
+          .update({ description: `แก้แล้ว ${stamp}` }).eq("place_id", myG).eq("locale", "th");
+        expect(upd.error?.message ?? null).toBeNull();
+
+        const back = await A.from("custom_place_descriptions")
+          .select("description").eq("place_id", myG).eq("locale", "th").single();
+        expect(back.data!.description).toBe(`แก้แล้ว ${stamp}`);
+      });
+
+      it("🔴 viewer อ่านได้ แต่แก้ไม่ได้ — **ต้องอ่านค่ากลับ ไม่ใช่ดู error**", async () => {
+        const seen = await C.from("custom_place_descriptions").select("description").eq("place_id", myG);
+        expect(seen.data, "viewer อ่านคำบรรยายของทริปที่ตัวเองอยู่ไม่ได้").toHaveLength(1);
+
+        const byViewer = await C.from("custom_place_descriptions")
+          .update({ description: "แก้โดย viewer" }).eq("place_id", myG).eq("locale", "th");
+        const after = await A.from("custom_place_descriptions")
+          .select("description").eq("place_id", myG).eq("locale", "th").single();
+        expect(
+          after.data!.description,
+          `viewer แก้ได้จริง (error = ${byViewer.error?.message ?? "ไม่มี"})\n` +
+            "  🔴 อย่าเปลี่ยนไปเช็ค error — มี column grant · RLS กรองแถวออกเฉย ๆ แล้วคืนว่าสำเร็จ",
+        ).toBe(`แก้แล้ว ${stamp}`);
+      });
+
+      it("🔴 viewer เพิ่มและลบไม่ได้", async () => {
+        const ins = await C.from("custom_place_descriptions")
+          .insert({ trip_id: tripG, place_id: myG, locale: "en", description: "viewer" });
+        expect(ins.error?.code, "viewer เพิ่มคำบรรยายได้").toBe("42501");
+
+        await C.from("custom_place_descriptions").delete().eq("place_id", myG).eq("locale", "th");
+        const still = await A.from("custom_place_descriptions").select("locale").eq("place_id", myG);
+        expect(still.data, "viewer ลบคำบรรยายได้ — วัดจากจำนวนแถว ไม่ใช่จาก error").toHaveLength(1);
+      });
+
+      it("🔴 คนนอกไม่เห็นและแตะไม่ได้เลย", async () => {
+        const seen = await B.from("custom_place_descriptions").select("description").eq("place_id", myG);
+        expect(seen.data ?? [], "คนนอกเห็นคำบรรยายของทริปที่ไม่ได้อยู่").toEqual([]);
+
+        const ins = await B.from("custom_place_descriptions")
+          .insert({ trip_id: tripG, place_id: myG, locale: "ja", description: "คนนอก" });
+        expect(ins.error?.code).toBe("42501");
+
+        await B.from("custom_place_descriptions").delete().eq("place_id", myG);
+        const still = await A.from("custom_place_descriptions").select("locale").eq("place_id", myG);
+        expect(still.data, "คนนอกลบคำบรรยายของทริปคนอื่นได้").toHaveLength(1);
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2-AC1 — คนนอกอ่านอะไรของทริป A ไม่ได้เลย **ทุกตารางที่ผูกกับทริป**", () => {
     /**
      * **`US-E2` เขียนไว้ตรงตัว:** *"ในฐานะผู้ใช้ C ฉันต้องไม่สามารถอ่านหรือแก้อะไรของทริป A ได้เลย
@@ -4001,6 +4143,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       const rows: Array<[string, Record<string, unknown>]> = [
         ["trip_day_plan_settings", { trip_id: tripS, plan_id: planS, trip_day_id: dayS, start_time: "08:00" }],
         ["custom_place_names", { trip_id: tripS, place_id: myS, locale: "th", name: `ชื่อ ${stamp}` }],
+        ["custom_place_descriptions", { trip_id: tripS, place_id: myS, locale: "th", description: `คำบรรยาย ${stamp}` }],
         ["trip_stops", { trip_id: tripS, plan_id: planS, trip_day_id: dayS, kind: "place", custom_place_id: myS, rank: "m" }],
         ["place_notes", { trip_id: tripS, plan_id: planS, custom_place_id: myS, note: `โน้ต ${stamp}` }],
         ["hidden_places", { trip_id: tripS, catalog_place_id: cp.data.id }],

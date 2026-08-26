@@ -163,6 +163,8 @@ export const TEST_COUNTRY_CODES = {
   stopEvents: "xv",
   /** บล็อก `search_place_names()` (`D56`) — P4 */
   placeSearch: "xw",
+  /** บล็อกคำบรรยายสถานที่ (`Q6`) — P4 */
+  descriptions: "xy",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */
