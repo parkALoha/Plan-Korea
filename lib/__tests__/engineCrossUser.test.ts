@@ -11,8 +11,9 @@ import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
  * ## ทำไมต้องยิง route จริง ไม่ใช่แค่ทดสอบ db helper
  * `rlsMatrix.test.ts` วัด RLS ที่ **ชั้นตาราง** · แต่ route ประกอบหลายอย่างเข้าด้วยกัน
  * (getUser → createServerSupabase → db helper → RPC) และบั๊กอยู่ที่ *การประกอบ* ได้
- * · พิสูจน์แล้ววันแรกที่สร้าง harness นี้: `GET /api/engine/trips` คืน 502 ทุกคน เพราะ
- *   `tripsVisibleToMe` select `trips.name` ที่ไม่มีจริง (`db.ts:261`) — **ไม่มีเทสต์ชั้นตารางจับได้**
+ * · พิสูจน์แล้ววันแรกที่สร้าง harness นี้: `GET /api/engine/trips` **เคย**คืน 502 ทุกคน เพราะ
+ *   `tripsVisibleToMe` select `trips.name` ที่ไม่มีจริง — **ไม่มีเทสต์ชั้นตารางจับได้**
+ *   (P1 แก้แล้ว `fae94fe` · `db.ts:261` `name`→`title`) · เก็บไว้เป็นเหตุผลว่าทำไม probe ยิง route จริง
  *
  * ## harness: in-process ยิงในนาม B — **ไม่ต้องมีเซิร์ฟเวอร์ รันใน CI ได้**
  * mock `next/headers` ให้คืนคุกกี้ ssr ของ B ที่ capture มา → route เรียก `getUser()` ตรวจ JWT
