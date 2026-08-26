@@ -621,3 +621,48 @@ export function duplicatePlan(db: Db, tripId: string, sourcePlanId: string, name
     p_trip_id: tripId, p_source_plan_id: sourcePlanId, p_name: name,
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// จุดแวะ — `E3` · `D6` (`rank` แทน `order_index`)
+// ───────────────────────────────────────────────────────────────────────────
+
+const STOP_COLS =
+  "id, trip_day_id, kind, rank, dwell_minutes, travel_mode, note, photo_path," +
+  " intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label," +
+  " visited_at, legacy_added_by, updated_at, custom_place_id," +
+  " catalog_places(legacy_slug)";
+
+/** จุดแวะของแผน **ที่ยังไม่ถูกลบ** เรียง `(rank, id)` — `D81` ③ */
+export function stopsOfPlan(db: Db, tripId: string, planId: string) {
+  return engineTable(db, "trip_stops")
+    .select(STOP_COLS)
+    .eq("trip_id", tripId)
+    .eq("plan_id", planId)
+    .is("deleted_at", null)
+    .order("rank", { ascending: true })
+    .order("id", { ascending: true });
+}
+
+/** `rank` ของจุดแวะในวันหนึ่ง เรียงแล้ว — ใช้คำนวณตำแหน่งแทรก */
+export function ranksInDay(db: Db, tripId: string, planId: string, tripDayId: string) {
+  return engineTable(db, "trip_stops")
+    .select("id, rank")
+    .eq("trip_id", tripId)
+    .eq("plan_id", planId)
+    .eq("trip_day_id", tripDayId)
+    .is("deleted_at", null)
+    .order("rank", { ascending: true })
+    .order("id", { ascending: true });
+}
+
+export function insertStop(db: Db, row: Record<string, unknown>) {
+  return engineTable(db, "trip_stops").insert(row).select(STOP_COLS).single();
+}
+
+export function updateStop(db: Db, id: string, patch: Record<string, unknown>) {
+  return engineTable(db, "trip_stops").update(patch).eq("id", id).select("id");
+}
+
+export function softDeleteStop(db: Db, id: string) {
+  return db.rpc("soft_delete_trip_stop", { p_id: id });
+}

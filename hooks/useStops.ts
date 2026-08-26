@@ -1,14 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { supabase, supabaseConfigured, TripStop } from "@/lib/supabase";
-import { nextOrderIndex, orderIndexAtPosition } from "@/lib/stopOrdering";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
+import { buildDayBridge } from "@/lib/engine/dayBridge";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
-function makeStopId() {
-  return `stop-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-}
+/**
+ * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
+ *
+ * ## 🔴 `order_index` ไม่ใช่ค่าที่เก็บอีกต่อไป
+ * `D6` เปลี่ยนเป็นคีย์เรียงได้ (`rank`) ตั้งแต่ `E2` · **route คำนวณ `order_index` จากตำแหน่งให้**
+ * และ **เซิร์ฟเวอร์เป็นเจ้าของ `rank`** — ฝั่งนี้พูดเป็น *ตำแหน่ง* เท่านั้น
+ *
+ * 🎯 **ผลที่ `D6` ซื้อมาอยู่ตรงนี้:** ลากจุดแวะหนึ่งจุด **เขียนแถวเดียว**
+ * ของเดิมต้องเลื่อน `order_index` ของทั้งวัน → **สองคนลากพร้อมกันเขียนทับกันทั้งชุด**
+ * · `shiftForInsert` ที่เคยเลื่อนทั้งวันจึง **หายไปทั้งฟังก์ชัน ไม่ใช่ถูกแปลง**
+ *
+ * ## สะพาน `"d0"` → uuid อยู่ฝั่งนี้ (`P-72`) · slug → uuid อยู่ฝั่ง route
+ * เลือกฝั่งตาม **ข้อมูลอยู่ที่ไหน**: `"d0"` อยู่ในไฟล์ TS · `legacy_slug` อยู่ในฐาน
+ */
+/** อ้างอิงคงที่ — คืน `[]` ใหม่ทุกครั้งจะทำให้ผู้เรียกที่ใช้ `useMemo` คำนวณใหม่ทุก render */
+const EMPTY_STOPS: TripStop[] = [];
 
 function sortStops(stops: TripStop[]) {
   return [...stops].sort((a, b) =>
@@ -16,504 +30,362 @@ function sortStops(stops: TripStop[]) {
   );
 }
 
-async function fetchStops(planId: string) {
-  const { data } = await supabase.from("trip_stops").select("*").eq("plan_id", planId);
-  return (data as TripStop[] | null) ?? null;
-}
+type StopDto = Omit<TripStop, "day_id" | "plan_id"> & { trip_day_id: string };
 
 export function useStops(planId: string | null) {
   const [stops, setStops] = useState<TripStop[]>([]);
+
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+  const tripIdRef = useRef<string | null>(null);
+  const dayToUuid = useRef<Map<string, string>>(new Map());
+  const uuidToDay = useRef<Map<string, string>>(new Map());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchRef = useRef<(() => Promise<void>) | null>(null);
 
-  /** ดึงของจริงจาก DB มาทับ state — ใช้ตอนเขียนไม่ผ่าน เพื่อให้หน้าจอเลิกโชว์ค่าที่เดาไว้ (เฟส 20.2) */
-  const reload = useCallback(async () => {
-    if (!supabaseConfigured || !planId) return;
-    const data = await fetchStops(planId);
-    if (!data) return;
-    setStops(sortStops(data));
-    writeCache(`stops:${planId}`, data);
-  }, [planId]);
-
-  /** เขียนลง DB แบบมีเสียง — พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
-  const guard = useCallback(
-    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
-      const ok = await writeGuard(label, run);
-      if (!ok) await reload();
-      return ok;
-    },
-    [reload]
+  const mapRows = useCallback(
+    (rows: StopDto[]): TripStop[] =>
+      rows
+        .map((r) => {
+          const dayId = uuidToDay.current.get(r.trip_day_id);
+          // ⚠️ วันที่ไม่มีในไฟล์เดิม → **ข้าม** ไม่ใช่ใส่ uuid ที่ UI หาไม่เจอ
+          if (!dayId) return null;
+          return { ...r, plan_id: planId ?? "", day_id: dayId } as TripStop;
+        })
+        .filter((s): s is TripStop => s !== null),
+    [planId]
   );
 
+  const reload = useCallback(async () => {
+    const tripId = tripIdRef.current;
+    if (!supabaseConfigured || !tripId || !planId) return;
+    const res = await fetch(`/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`);
+    if (!res.ok) return;
+    const mapped = sortStops(mapRows((await res.json()) as StopDto[]));
+    setStops(mapped);
+    writeCache(`stops:${planId}`, mapped);
+  }, [planId, mapRows]);
+
   useEffect(() => {
+    refetchRef.current = reload;
+  }, [reload]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !planId) return;
     const channelName = `trip_stops_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      if (!supabaseConfigured || !planId) {
-        setStops([]);
-        return;
-      }
-
-      // ขึ้นจากแคชในเครื่องก่อน แล้วค่อยทับด้วยของสดเมื่อ Supabase ตอบ (เฟส 18)
-      // ตอนเน็ตหลุด คำขอด้านล่างจะ throw/คืนค่าว่าง แต่หน้ายังมีข้อมูลชุดล่าสุดให้ดู
       const cached = readCache<TripStop[]>(`stops:${planId}`);
       if (cached) {
         setStops(sortStops(cached));
         setLoaded(true);
       }
 
-      const data = await fetchStops(planId);
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const daysRes = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      if (cancelled || !daysRes.ok) return void setLoaded(true);
+      // 🔴 `import()` ไม่ใช่ static — `useStops` ถูกเรียกจากหลายหน้า และเราไม่อยาก
+      //    ให้ `data/itinerary.ts` ติดไปกับบันเดิลที่ไม่ต้องใช้ (บทเรียนจาก `useBookings`)
+      const { ITINERARY } = await import("@/data/itinerary");
+      const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
+      dayToUuid.current = new Map(
+        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
+      );
+      uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
+
+      await refetchRef.current?.();
       if (cancelled) return;
-      if (data) {
-        setStops(sortStops(data as TripStop[]));
-        writeCache(`stops:${planId}`, data);
-      }
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "trip_stops", filter: `plan_id=eq.${planId}` },
-          (payload) => {
-            setStops((prev) => {
-              if (payload.eventType === "DELETE") {
-                return prev.filter((s) => s.id !== (payload.old as TripStop).id);
-              }
-              const row = payload.new as TripStop;
-              const exists = prev.some((s) => s.id === row.id);
-              const next = exists ? prev.map((s) => (s.id === row.id ? row : s)) : [...prev, row];
-              return sortStops(next);
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "trip_stops" }, () => {
+          // 🔴 ไม่แตะ payload — แถวดิบมี `rank` ไม่มี `order_index` และ `trip_day_id` เป็น uuid
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => void refetchRef.current?.(), 300);
+        })
         .subscribe();
     }
 
     init();
-
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
   }, [planId]);
 
-  // คืน id ของจุดแวะที่เพิ่งเพิ่ม (ให้ผู้เรียกเอาไปเล่น animation "เพิ่งถูกเพิ่ม" ต่อได้)
+  /** เขียนแบบมีเสียง แล้วดึงของจริงมาทับ state ที่เดาไว้ตอนล้ม */
+  const call = useCallback(
+    async (label: string, run: () => Promise<Response>) => {
+      const ok = await writeGuard(label, async () => {
+        const res = await run();
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await reload();
+      return ok;
+    },
+    [reload]
+  );
+
+  /** เพิ่มจุดแวะที่ตำแหน่งหนึ่ง — **เขียนแถวเดียว** เซิร์ฟเวอร์คำนวณ `rank` ให้ */
+  const insertAt = useCallback(
+    async (dayId: string, atIndex: number | undefined, body: Record<string, unknown>) => {
+      const tripId = tripIdRef.current;
+      const tripDayId = dayToUuid.current.get(dayId);
+      if (!supabaseConfigured || !tripId || !planId) return undefined;
+      if (!tripDayId) {
+        // 🔴 วันนั้นยังไม่มีในฐาน — **หยุดและบอก** ไม่ใช่ส่งไปให้ FK ฟ้องแบบอ่านไม่ออก
+        console.error("[stops] วันนี้ยังไม่มีในฐาน — E7 อาจยังไม่ได้ย้ายข้อมูล", dayId);
+        return undefined;
+      }
+      let created: TripStop | undefined;
+      const ok = await call("เพิ่มจุดแวะ", async () => {
+        const res = await fetch(`/api/engine/trips/${tripId}/stops`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planId, tripDayId, atIndex, ...body }),
+        });
+        if (res.ok) {
+          const dto = (await res.json()) as StopDto;
+          created = mapRows([dto])[0];
+        }
+        return res;
+      });
+      if (ok) await reload();
+      return created?.id;
+    },
+    [planId, call, reload, mapRows]
+  );
+
   const addStop = useCallback(
     async (
       dayId: string,
       placeId: string,
       addedBy?: string,
       travelMode?: string | null,
-      /** โน้ต/รูปที่เคยฝากไว้กับสถานที่นี้ในคลัง (เฟส 22) — ติดกลับมากับจุดแวะใหม่ตอนลากลงวันอีกครั้ง */
       stashed?: { note: string | null; photoUrl: string | null }
-    ) => {
-      if (!planId) return undefined;
-      const dayStops = stops.filter((s) => s.day_id === dayId);
-      const newStop: TripStop = {
-        id: makeStopId(),
-        plan_id: planId,
-        day_id: dayId,
-        place_id: placeId,
-        order_index: nextOrderIndex(dayStops),
-        dwell_minutes: null,
-        travel_mode: travelMode ?? null,
-        note: stashed?.note ?? null,
-        photo_url: stashed?.photoUrl ?? null,
-        added_by: addedBy ?? null,
-        updated_at: new Date().toISOString(),
-      };
-      // อัปเดต state ทันทีเสมอ ไม่รอ realtime echo อย่างเดียวเหมือนเดิม — ไม่งั้นถ้า insert พัง
-      // ผู้ใช้จะเห็นแค่ "กดปุ่ม + แล้วไม่มีอะไรเกิดขึ้น" (แถม flashNewStop ก็ไฮไลต์ id ที่ไม่มีจริง)
-      // แถวจริงจาก realtime จะมาทับตัวนี้เองเพราะ id ตรงกัน
-      setStops((prev) => sortStops([...prev, newStop]));
-      if (!supabaseConfigured) return newStop.id;
-      // เขียนไม่ผ่าน = คืน undefined (guard ดึงของจริงมาทับ state ให้แล้ว แถวนี้จึงไม่มีอยู่จริง)
-      // ผู้เรียกจะได้ไม่ไปไฮไลต์ id ที่ไม่มี และไม่ล้างโน้ตที่ฝากไว้ในคลังทิ้งทั้งที่จุดแวะไม่ได้ถูกสร้าง (เฟส 22)
-      const ok = await guard("เพิ่มจุดแวะ", () => supabase.from("trip_stops").insert(newStop));
-      return ok ? newStop.id : undefined;
-    },
-    [planId, stops, guard]
+    ) =>
+      insertAt(dayId, undefined, {
+        placeId, addedBy: addedBy ?? null, travelMode: travelMode ?? null,
+        note: stashed?.note ?? null, photoUrl: stashed?.photoUrl ?? null,
+      }),
+    [insertAt]
   );
 
-  /** ดัน order_index ของจุดแวะที่อยู่ >= atIndex ในวันเดียวกันขึ้นไปทีละ 1 (ให้ที่ว่างสำหรับแทรกจุดใหม่ตรง atIndex)
-   *  อัปเดต state local ก่อนเลย (optimistic) กัน UI สะดุดระหว่างรอ realtime — คืนแถวที่ต้อง shift ไว้ให้เขียนลง DB ต่อ */
-  const shiftForInsert = useCallback(
-    (dayId: string, atIndex: number) => {
-      const toShift = stops.filter((s) => s.day_id === dayId && s.order_index >= atIndex);
-      setStops((prev) =>
-        prev.map((s) =>
-          s.day_id === dayId && s.order_index >= atIndex
-            ? { ...s, order_index: s.order_index + 1 }
-            : s
-        )
-      );
-      return toShift;
-    },
-    [stops]
-  );
-
-  const writeInsert = useCallback(
-    async (toShift: TripStop[], newStop: TripStop) => {
-      if (!supabaseConfigured) return newStop.id;
-      await guard("เพิ่มจุดแวะ", () =>
-        Promise.all([
-          ...toShift.map((s) =>
-            supabase
-              .from("trip_stops")
-              .update({ order_index: s.order_index + 1, updated_at: new Date().toISOString() })
-              .eq("id", s.id)
-          ),
-          supabase.from("trip_stops").insert(newStop),
-        ])
-      );
-      return newStop.id;
-    },
-    [guard]
-  );
-
-  /** ใช้ตอน "แทรกร้านตรงนี้" — เพิ่มจุดแวะแทรกกลางวันที่ atIndex แทนที่จะต่อท้ายวันเสมอเหมือน addStop */
   const insertStopAt = useCallback(
-    async (
-      dayId: string,
-      placeId: string,
-      atIndex: number,
-      addedBy?: string,
-      travelMode?: string | null
-    ) => {
-      if (!planId) return undefined;
-      const dayStops = stops.filter((s) => s.day_id === dayId);
-      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
-      const newStop: TripStop = {
-        id: makeStopId(),
-        plan_id: planId,
-        day_id: dayId,
-        place_id: placeId,
-        order_index: targetOrderIndex,
-        dwell_minutes: null,
-        travel_mode: travelMode ?? null,
-        note: null,
-        added_by: addedBy ?? null,
-        updated_at: new Date().toISOString(),
-      };
-      const toShift = shiftForInsert(dayId, targetOrderIndex);
-      setStops((prev) => sortStops([...prev, newStop]));
-      return writeInsert(toShift, newStop);
-    },
-    [planId, stops, shiftForInsert, writeInsert]
+    async (dayId: string, placeId: string, atIndex: number, addedBy?: string, travelMode?: string | null) =>
+      insertAt(dayId, atIndex, { placeId, addedBy: addedBy ?? null, travelMode: travelMode ?? null }),
+    [insertAt]
   );
 
-  /** ใช้ตอน "แทรกเดินทางข้ามเมืองตรงนี้" — เหมือน insertStopAt แต่เป็นแถว kind="intercity" ไม่ใช่สถานที่
-   *  place_id ว่างเปล่าโดยตั้งใจ (ไม่ใช่สถานที่จริง) dwell_minutes เก็บระยะเวลาเดินทางที่กินเวลาใน timeline จริง */
   const insertIntercityAt = useCallback(
     async (
-      dayId: string,
-      atIndex: number,
+      dayId: string, atIndex: number,
       input: { from: string; to: string; mode: "bus" | "ktx" | "other"; minutes: number },
       addedBy?: string
-    ) => {
-      if (!planId) return undefined;
-      const dayStops = stops.filter((s) => s.day_id === dayId);
-      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
-      const newStop: TripStop = {
-        id: makeStopId(),
-        plan_id: planId,
-        day_id: dayId,
-        place_id: "",
-        order_index: targetOrderIndex,
-        dwell_minutes: input.minutes,
-        travel_mode: null,
-        note: null,
-        kind: "intercity",
-        intercity_from: input.from,
-        intercity_to: input.to,
-        intercity_mode: input.mode,
-        added_by: addedBy ?? null,
-        updated_at: new Date().toISOString(),
-      };
-      const toShift = shiftForInsert(dayId, targetOrderIndex);
-      setStops((prev) => sortStops([...prev, newStop]));
-      return writeInsert(toShift, newStop);
-    },
-    [planId, stops, shiftForInsert, writeInsert]
+    ) =>
+      insertAt(dayId, atIndex, {
+        kind: "intercity", addedBy: addedBy ?? null,
+        intercityFrom: input.from, intercityTo: input.to, intercityMode: input.mode,
+        dwellMinutes: input.minutes,
+      }),
+    [insertAt]
   );
 
-  /** ใช้ตอน "แทรกที่พักตรงนี้" — แวะเช็คอิน/ฝากกระเป๋า/พักกลางวัน แล้วออกไปเที่ยวต่อ
-   *  place_id ฝังพิกัดที่พักไว้ในตัว (`hotel@lat,lng` — ดู hotelAnchorId) เวลาเดินทางเข้า/ออกจึง
-   *  เป็นของจริงจาก Routes API เหมือนจุดแวะปกติ · dwell_minutes = เวลาที่อยู่ที่พัก
-   *  ใช้ id เดียวกับ anchor หัว-ท้ายวันโดยตั้งใจ แคชเวลาเดินทางจึงใช้ร่วมกันได้ ไม่ยิง API ซ้ำ */
   const insertHotelAt = useCallback(
     async (
-      dayId: string,
-      atIndex: number,
+      dayId: string, atIndex: number,
       input: { hotelPlaceId: string; dwellMinutes: number; travelMode: string | null },
       addedBy?: string
-    ) => {
-      if (!planId) return undefined;
-      const dayStops = stops.filter((s) => s.day_id === dayId);
-      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
-      const newStop: TripStop = {
-        id: makeStopId(),
-        plan_id: planId,
-        day_id: dayId,
-        place_id: input.hotelPlaceId,
-        order_index: targetOrderIndex,
-        dwell_minutes: input.dwellMinutes,
-        travel_mode: input.travelMode,
-        note: null,
-        kind: "hotel",
-        added_by: addedBy ?? null,
-        updated_at: new Date().toISOString(),
-      };
-      const toShift = shiftForInsert(dayId, targetOrderIndex);
-      setStops((prev) => sortStops([...prev, newStop]));
-      return writeInsert(toShift, newStop);
-    },
-    [planId, stops, shiftForInsert, writeInsert]
+    ) =>
+      insertAt(dayId, atIndex, {
+        kind: "hotel", addedBy: addedBy ?? null,
+        dwellMinutes: input.dwellMinutes, travelMode: input.travelMode,
+      }),
+    [insertAt]
   );
 
-  /** ใช้ตอน "แทรกไปสนามบินตรงนี้" — ต่างจาก intercity ตรงที่แถวนี้มี place_id จริง (สนามบิน)
-   *  เวลาเดินทางจากจุดก่อนหน้าจึงมาจาก Routes API เหมือนจุดแวะปกติ ส่วน dwell = เวลาเผื่อเช็คอินที่สนามบิน */
   const insertTransferAt = useCallback(
     async (
-      dayId: string,
-      atIndex: number,
+      dayId: string, atIndex: number,
       input: {
-        placeId: string;
-        checkinBufferMinutes: number;
-        targetTime: string | null;
-        targetLabel: string | null;
-        travelMode: string | null;
+        placeId: string; checkinBufferMinutes: number;
+        targetTime: string | null; targetLabel: string | null; travelMode: string | null;
       },
       addedBy?: string
-    ) => {
-      if (!planId) return undefined;
-      const dayStops = stops.filter((s) => s.day_id === dayId);
-      const targetOrderIndex = orderIndexAtPosition(dayStops, atIndex);
-      const newStop: TripStop = {
-        id: makeStopId(),
-        plan_id: planId,
-        day_id: dayId,
-        place_id: input.placeId,
-        order_index: targetOrderIndex,
-        dwell_minutes: input.checkinBufferMinutes,
-        travel_mode: input.travelMode,
-        note: null,
-        kind: "transfer",
-        transfer_target_time: input.targetTime,
-        transfer_target_label: input.targetLabel,
-        added_by: addedBy ?? null,
-        updated_at: new Date().toISOString(),
-      };
-      const toShift = shiftForInsert(dayId, targetOrderIndex);
-      setStops((prev) => sortStops([...prev, newStop]));
-      return writeInsert(toShift, newStop);
-    },
-    [planId, stops, shiftForInsert, writeInsert]
+    ) =>
+      insertAt(dayId, atIndex, {
+        kind: "transfer", placeId: input.placeId, addedBy: addedBy ?? null,
+        dwellMinutes: input.checkinBufferMinutes, travelMode: input.travelMode,
+        transferTargetTime: input.targetTime, transferTargetLabel: input.targetLabel,
+      }),
+    [insertAt]
   );
 
-  const updateStopPlace = useCallback(async (stopId: string, placeId: string) => {
-    if (!supabaseConfigured) {
+  const patch = useCallback(
+    async (label: string, stopId: string, body: Record<string, unknown>) => {
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return;
+      await call(label, () =>
+        fetch(`/api/engine/trips/${tripId}/stops`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: stopId, ...body }),
+        })
+      );
+    },
+    [call]
+  );
+
+  const updateStopPlace = useCallback(
+    async (stopId: string, placeId: string) => {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, place_id: placeId } : s)));
-      return;
-    }
-    await guard("เปลี่ยนสถานที่", () =>
-      supabase
-        .from("trip_stops")
-        .update({ place_id: placeId, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+      // ⚠️ **เปลี่ยนสถานที่ของจุดแวะเดิมไม่รองรับใน route** — `catalog_place_id`/`custom_place_id`
+      //    ต้องเลือกทางเดียว และการสลับข้ามชนิดเปลี่ยนความหมายของแถว
+      //    → ดึงของจริงมาทับเพื่อไม่ให้หน้าจอค้างอยู่กับค่าที่ฐานไม่รับ
+      console.error("[stops] เปลี่ยนสถานที่ของจุดแวะเดิมยังไม่รองรับใน E3 — ลบแล้วเพิ่มใหม่แทน");
+      await reload();
+    },
+    [reload]
+  );
 
-  const updateDwellMinutes = useCallback(async (stopId: string, dwellMinutes: number | null) => {
-    if (!supabaseConfigured) {
-      setStops((prev) =>
-        prev.map((s) => (s.id === stopId ? { ...s, dwell_minutes: dwellMinutes } : s))
-      );
-      return;
-    }
-    await guard("เวลาที่อยู่", () =>
-      supabase
-        .from("trip_stops")
-        .update({ dwell_minutes: dwellMinutes, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+  const updateDwellMinutes = useCallback(
+    async (stopId: string, dwellMinutes: number | null) => {
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, dwell_minutes: dwellMinutes } : s)));
+      await patch("เวลาที่ใช้ที่จุดแวะ", stopId, { dwellMinutes });
+    },
+    [patch]
+  );
 
-  const updateTravelMode = useCallback(async (stopId: string, travelMode: string | null) => {
-    if (!supabaseConfigured) {
-      setStops((prev) =>
-        prev.map((s) => (s.id === stopId ? { ...s, travel_mode: travelMode } : s))
-      );
-      return;
-    }
-    await guard("โหมดเดินทาง", () =>
-      supabase
-        .from("trip_stops")
-        .update({ travel_mode: travelMode, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+  const updateTravelMode = useCallback(
+    async (stopId: string, travelMode: string | null) => {
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, travel_mode: travelMode } : s)));
+      await patch("โหมดเดินทาง", stopId, { travelMode });
+    },
+    [patch]
+  );
 
-  const updateNote = useCallback(async (stopId: string, note: string | null) => {
-    if (!supabaseConfigured) {
+  const updateNote = useCallback(
+    async (stopId: string, note: string | null) => {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, note } : s)));
-      return;
-    }
-    await guard("โน้ต", () =>
-      supabase
-        .from("trip_stops")
-        .update({ note, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+      await patch("โน้ตของจุดแวะ", stopId, { note });
+    },
+    [patch]
+  );
 
-  const updatePhoto = useCallback(async (stopId: string, photoUrl: string | null) => {
-    if (!supabaseConfigured) {
+  const updatePhoto = useCallback(
+    async (stopId: string, photoUrl: string | null) => {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, photo_url: photoUrl } : s)));
-      return;
-    }
-    await guard("รูปของจุดแวะ", () =>
-      supabase
-        .from("trip_stops")
-        .update({ photo_url: photoUrl, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+      await patch("รูปของจุดแวะ", stopId, { photoUrl });
+    },
+    [patch]
+  );
 
-  const updateOrderIndex = useCallback(async (stopId: string, orderIndex: number) => {
-    if (!supabaseConfigured) {
+  /** 🔴 ย้ายไปตำแหน่งที่ `orderIndex` ในวันเดิม — เซิร์ฟเวอร์คำนวณ `rank` ให้ */
+  const updateOrderIndex = useCallback(
+    async (stopId: string, orderIndex: number) => {
+      const stop = stops.find((s) => s.id === stopId);
+      const tripDayId = stop ? dayToUuid.current.get(stop.day_id) : undefined;
+      if (!stop || !tripDayId || !planId) return;
+      await patch("ลำดับจุดแวะ", stopId, { planId, tripDayId, atIndex: orderIndex });
+      await reload();
+    },
+    [stops, planId, patch, reload]
+  );
+
+  const reorderStops = useCallback(
+    async (dayId: string, orderedStopIds: string[]) => {
+      const tripId = tripIdRef.current;
+      const tripDayId = dayToUuid.current.get(dayId);
+      if (!supabaseConfigured || !tripId || !planId || !tripDayId) return;
+      const order = new Map(orderedStopIds.map((id, i) => [id, i]));
       setStops((prev) =>
-        sortStops(prev.map((s) => (s.id === stopId ? { ...s, order_index: orderIndex } : s)))
+        sortStops(prev.map((s) => (order.has(s.id) ? { ...s, order_index: order.get(s.id)! } : s)))
       );
-      return;
-    }
-    await guard("ลำดับจุดแวะ", () =>
-      supabase
-        .from("trip_stops")
-        .update({ order_index: orderIndex, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+      await call("จัดลำดับจุดแวะ", () =>
+        fetch(`/api/engine/trips/${tripId}/stops`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planId, tripDayId, orderedIds: orderedStopIds }),
+        })
+      );
+      await reload();
+    },
+    [planId, call, reload]
+  );
 
-  /** ใช้ตอนลากจัดลำดับใหม่ (drag-and-drop) — รับ id ทั้งวันเรียงตามลำดับใหม่ แล้วเขียน order_index ทับทั้งชุด
-   *  อัปเดต state local ก่อนเลย (optimistic) กัน UI สะดุด/เด้งกลับระหว่างรอ realtime echo กลับมาทีละแถว */
-  const reorderStops = useCallback(async (dayId: string, orderedStopIds: string[]) => {
-    const orderMap = new Map(orderedStopIds.map((id, i) => [id, i]));
-    setStops((prev) =>
-      sortStops(
-        prev.map((s) =>
-          s.day_id === dayId && orderMap.has(s.id) ? { ...s, order_index: orderMap.get(s.id)! } : s
-        )
-      )
-    );
-    if (!supabaseConfigured) return;
-    await guard("ลำดับจุดแวะ", () =>
-      Promise.all(
-        orderedStopIds.map((id, i) =>
-          supabase
-            .from("trip_stops")
-            .update({ order_index: i, updated_at: new Date().toISOString() })
-            .eq("id", id)
-        )
-      )
-    );
-  }, [guard]);
-
-  /** ใช้ตอนลากจุดแวะข้ามไปอีกวันหนึ่ง (คนละ day_id) — ต่อท้ายวันปลายทางเสมอ
-   *  จัด order_index ของวันต้นทางที่เหลือให้ต่อเนื่อง 0..n-1 ทันทีหลังย้ายออก (บั๊ก 8.1 — เดิมปล่อยเป็นช่องว่างไว้เฉยๆ
-   *  เช่นเหลือ 0,2,3 แล้ว addStop ครั้งถัดไปที่วันต้นทางใช้ dayStops.length เป็น order_index ใหม่ ชนกับแถวเดิม
-   *  ทำให้ sortStops ตัดสินลำดับไม่ได้ = 2 เครื่องเห็นลำดับไม่ตรงกัน) */
   const moveStopToDay = useCallback(
     async (stopId: string, targetDayId: string) => {
-      const movingStop = stops.find((s) => s.id === stopId);
-      if (!movingStop) return;
-      const sourceDayId = movingStop.day_id;
-      const targetDayStops = stops.filter((s) => s.day_id === targetDayId);
-      const newOrderIndex = nextOrderIndex(targetDayStops);
-
-      const remainingSourceStops = stops
-        .filter((s) => s.day_id === sourceDayId && s.id !== stopId)
-        .sort((a, b) => a.order_index - b.order_index);
-      const renumbered = remainingSourceStops
-        .map((s, i) => ({ id: s.id, order_index: i }))
-        .filter((r, i) => remainingSourceStops[i].order_index !== r.order_index);
-      const renumberedById = new Map(renumbered.map((r) => [r.id, r.order_index]));
-
-      setStops((prev) =>
-        sortStops(
-          prev.map((s) => {
-            if (s.id === stopId) return { ...s, day_id: targetDayId, order_index: newOrderIndex };
-            const newIndex = renumberedById.get(s.id);
-            return newIndex != null ? { ...s, order_index: newIndex } : s;
-          })
-        )
-      );
-      if (!supabaseConfigured) return;
-      await guard("ย้ายจุดแวะข้ามวัน", () =>
-        Promise.all([
-          supabase
-            .from("trip_stops")
-            .update({ day_id: targetDayId, order_index: newOrderIndex, updated_at: new Date().toISOString() })
-            .eq("id", stopId),
-          ...renumbered.map((r) =>
-            supabase
-              .from("trip_stops")
-              .update({ order_index: r.order_index, updated_at: new Date().toISOString() })
-              .eq("id", r.id)
-          ),
-        ])
-      );
+      const tripDayId = dayToUuid.current.get(targetDayId);
+      if (!tripDayId || !planId) return;
+      await patch("ย้ายจุดแวะข้ามวัน", stopId, { planId, tripDayId });
+      await reload();
     },
-    [stops, guard]
+    [planId, patch, reload]
   );
 
-  /** ติ๊ก/ยกเลิกติ๊ก "มาถึงแล้ว" จากหน้า "วันนี้" — visitedAt = null ล้างค่า (ยกเลิกติ๊ก) */
-  const setVisitedAt = useCallback(async (stopId: string, visitedAt: string | null) => {
-    if (!supabaseConfigured) {
+  const setVisitedAt = useCallback(
+    async (stopId: string, visitedAt: string | null) => {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, visited_at: visitedAt } : s)));
-      return;
-    }
-    await guard("สถานะมาถึงแล้ว", () =>
-      supabase
-        .from("trip_stops")
-        .update({ visited_at: visitedAt, updated_at: new Date().toISOString() })
-        .eq("id", stopId)
-    );
-  }, [guard]);
+      await patch("ติ๊กว่ามาถึงแล้ว", stopId, { visitedAt });
+    },
+    [patch]
+  );
 
   const markVisited = useCallback(
     (stopId: string) => setVisitedAt(stopId, new Date().toISOString()),
     [setVisitedAt]
   );
-
   const unmarkVisited = useCallback((stopId: string) => setVisitedAt(stopId, null), [setVisitedAt]);
 
-  /** คืนแถวที่เพิ่งลบทั้งแถว (โน้ต/รูป/โหมดเดินทาง/ลำดับ ครบ) ให้ผู้เรียกเก็บไว้ทำปุ่ม "เลิกทำ" ได้ */
   const removeStop = useCallback(
     async (stopId: string): Promise<TripStop | undefined> => {
+      const tripId = tripIdRef.current;
       const snapshot = stops.find((s) => s.id === stopId);
       setStops((prev) => prev.filter((s) => s.id !== stopId));
-      if (!supabaseConfigured) return snapshot;
-      await guard("ลบจุดแวะ", () => supabase.from("trip_stops").delete().eq("id", stopId));
+      if (!supabaseConfigured || !tripId) return snapshot;
+      await call("ลบจุดแวะ", () =>
+        fetch(`/api/engine/trips/${tripId}/stops?id=${encodeURIComponent(stopId)}`, { method: "DELETE" })
+      );
       return snapshot;
     },
-    [stops, guard]
+    [stops, call]
   );
 
-  /** เอาแถวที่ลบไปใส่กลับที่เดิมเป๊ะๆ — order_index ติดมากับ snapshot อยู่แล้วจึงกลับไปอยู่ตำแหน่งเดิม */
+  /**
+   * กู้จุดแวะคืน — 🔴 **ได้ `id` ใหม่** ด้วยเหตุผลเดียวกับ `useChecklist.restoreItem`
+   * ไคลเอนต์ตั้ง `id` ไม่ได้ และแถวเดิมเป็น tombstone ถาวร (`D76`)
+   */
   const restoreStop = useCallback(
     async (stop: TripStop) => {
-      setStops((prev) => sortStops([...prev.filter((s) => s.id !== stop.id), stop]));
-      if (!supabaseConfigured) return;
-      await guard("กู้จุดแวะคืน", () => supabase.from("trip_stops").insert(stop));
+      await insertAt(stop.day_id, stop.order_index, {
+        placeId: stop.place_id, kind: stop.kind ?? "place",
+        addedBy: stop.added_by, travelMode: stop.travel_mode,
+        dwellMinutes: stop.dwell_minutes, note: stop.note, photoUrl: stop.photo_url,
+        intercityFrom: stop.intercity_from, intercityTo: stop.intercity_to,
+        intercityMode: stop.intercity_mode,
+        transferTargetTime: stop.transfer_target_time,
+        transferTargetLabel: stop.transfer_target_label,
+        visitedAt: stop.visited_at,
+      });
     },
-    [guard]
+    [insertAt]
   );
 
   return {
-    stops,
+    // 🔴 ไม่มีแผน = ไม่มีจุดแวะ · **กรองตอนคืนค่า ไม่ใช่ `setState` ในเอฟเฟกต์**
+    //    `react-hooks/set-state-in-effect` ห้ามอันหลัง เพราะมันทำให้ render ซ้อน
+    //    (กฎเดียวกับที่จับงานของ P2 เมื่อคืน) · ค่าที่คำนวณได้ ไม่ต้องเก็บเป็น state
+    stops: planId ? stops : EMPTY_STOPS,
     loaded,
     addStop,
     insertStopAt,
