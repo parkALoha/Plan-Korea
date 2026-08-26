@@ -129,26 +129,55 @@ fi
 #    (shell wrapper = ต่อเครื่อง อยู่นอก version control · ยึดพาธ `.temp` เป็นไฟล์ = เปราะและ error สับสน)
 #    → **อย่าอ่านด่านนี้ว่า "กันได้"** · มันย่นเวลาที่สภาพผิดจะถูกพบ ไม่ได้ทำให้สภาพผิดเกิดไม่ได้
 #
-# 📌 แต่มันจับได้ *เร็วกว่า* ที่คิด — วัดแล้ว 26 ส.ค. 2026:
+# 📌 วัดแล้ว 26 ส.ค. 2026:
 #    · `.temp/linked-project.json` อย่างเดียว → `db push` **ยังล้ม** (`Cannot find project ref`)
 #    · `.temp/project-ref` ต่างหากที่ทำให้ push เดินต่อได้จริง
-#    → ด่านนี้จับที่ **ตัวโฟลเดอร์** จึงเห็น *สภาพตั้งต้น* ก่อนที่ไฟล์อันตรายจะมี · **ตั้งใจให้กว้างแบบนี้**
+#
+# 🔴 **แก้ 27 ส.ค. 2026 — เดิมด่านนี้จับที่ *ตัวโฟลเดอร์* โดยเขียนกำกับว่า "ตั้งใจให้กว้างแบบนี้"
+#    เพื่อเห็นสภาพตั้งต้นก่อนไฟล์อันตรายจะมี · ~~เหตุผลนั้นตั้งอยู่บนสมมติฐานที่ผิด~~** (P1 ชี้)
+#    **`.temp/` ไม่ใช่ *สภาพตั้งต้นของการ link* — CLI สร้างมันจากการเช็คเวอร์ชัน
+#    ซึ่งมันทำแทบทุกคำสั่ง รวมทั้ง `supabase --version`**
+#    · ของจริงที่เจอ: `supabase/.temp/` มีไฟล์เดียวคือ `cli-latest` (8 ไบต์ · เลขเวอร์ชัน)
+#      ขณะที่ทรีที่ link จริงมี 10 ไฟล์ รวม `project-ref` · `pooler-url` · `linked-project.json`
+#    🎯 **ด่านจึงรายงาน "มีคนรันคำสั่ง supabase จากตรงนี้" ว่าเป็น "ตรงนี้ถูก link แล้ว"**
+#      — สองเหตุ ข้อความเดียว และข้อความนั้นบรรยายเหตุที่ไม่ได้เกิด
+#    · และ `db push` ที่ไม่มี `project-ref` **ล้มเอง** → เหตุที่ 2 ไม่มีอันตรายเลยแม้แต่ทางเดียว
+#
+# ⚠️ **ทำไมถึงต้องแก้ ไม่ใช่ปล่อย:** `D72` ข้อ 2 บอกว่าคน push ต้องเห็นหัว branch เขียวทั้งหัว
+#    → **แดงตัวนี้บล็อก push ของทั้ง 8 คน** · และ **แดงที่ผิดบ่อย ๆ สอนให้คนเลิกอ่าน**
+#    จบที่เดียวกับเขียวหลอก แค่ใช้เวลานานกว่า
+#    🎯 ตัวที่แยกสองเหตุออกจากกันคือ **`project-ref` มีอยู่ไหม** ไม่ใช่ **`.temp/` มีอยู่ไหม**
 ALLOWED_TEMP="$ROOT/supabase-platform/supabase/.temp"
-strays=""
+linked=""      # 🔴 link จริง — อันตราย
+touched=""     # ℹ️ แค่มีคนรันคำสั่ง supabase จากตรงนั้น — ไม่อันตราย
 while IFS= read -r d; do
   [ -z "$d" ] && continue
   [ "$d" = "$ALLOWED_TEMP" ] && continue
-  strays="$strays  $d
+  # `project-ref` คือไฟล์ที่ `db push` อ่านเพื่อรู้ปลายทาง · `pooler-url` มี connection string
+  if [ -f "$d/project-ref" ] || [ -f "$d/pooler-url" ]; then
+    linked="$linked  $d ($(cat "$d/project-ref" 2>/dev/null || echo 'มี pooler-url'))
 "
+  else
+    touched="$touched  $d
+"
+  fi
 done < <(find "$ROOT" -type d -path '*/supabase/.temp' -not -path '*/node_modules/*' 2>/dev/null | sort)
-if [ -n "$strays" ]; then
+if [ -n "$linked" ]; then
   echo "🔴 link อยู่ผิดที่ — workdir เดียวที่ link ได้คือ supabase-platform/"
-  printf '%s' "$strays"
+  printf '%s' "$linked"
   echo "   ที่นี่ถูก link = \`supabase db push\` จากตรงนั้นจะรัน migration ของทริปใส่ DB ที่ link ไว้"
   echo "   ลบโฟลเดอร์ .temp/ นั้นทิ้ง แล้วใส่ --workdir supabase-platform เสมอ"
   fail=1
 else
   echo "✅ link: ไม่มี link นอก supabase-platform/"
+fi
+# ℹ️ **ไม่ทำให้แดง** — `.temp/` ที่ไม่มี `project-ref` เกิดจาก `supabase --version` ก็ได้
+#    บอกไว้เฉย ๆ เพราะมันแปลว่ามีคนรันคำสั่ง supabase จาก workdir ที่ไม่ใช่ supabase-platform
+#    ซึ่งเป็น *นิสัย* ที่พาไปสู่ของจริง แม้ตัวมันเองจะไม่มีอันตราย
+if [ -n "$touched" ]; then
+  echo "ℹ️ .temp: มีร่องรอยการรัน supabase นอก supabase-platform/ (ไม่ได้ link · ไม่ทำให้แดง)"
+  printf '%s' "$touched"
+  echo "   → เคยชินกับ --workdir supabase-platform ไว้ · ลบทิ้งได้ ไม่มีอะไรข้างใน"
 fi
 
 # ── allowlist ของ ref ที่อนุญาต — อ่านจากไฟล์ที่ commit ไม่ใช่จาก env ──────────────

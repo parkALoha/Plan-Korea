@@ -138,12 +138,25 @@ d="$(mk)"; mkdir -p "$d/supabase/.temp"; echo "pmvxwcimjebogjfimzqy" > "$d/supab
 ( DEV_PROJECT_REF=pmvxwcimjebogjfimzqy; export DEV_PROJECT_REF
   check "จับ link ที่ราก แม้ ref จะเป็น engine-dev ที่ถูกต้อง" fail "$d" ) || rc=1
 
-# ⑯ link ที่ราก แม้ยังไม่มีไฟล์ project-ref (เพิ่งสร้าง .temp) ก็ต้องโดนจับ
+# ⑯ 🔴 **เคสนี้เคยคาด `fail` และถูกกลับด้านเมื่อ 27 ส.ค. 2026** (P1 ชี้ · P6 ยืนยันด้วยของจริง)
+#    ~~"โฟลเดอร์ .temp ที่รากแม้ยังไม่มี project-ref ก็ต้องโดนจับ"~~
+#    เหตุผลเดิม: `.temp/` คือ *สภาพตั้งต้นของการ link* จับไว้ก่อนดีกว่า
+#    🔴 **สมมติฐานนั้นผิด** — CLI สร้าง `.temp/cli-latest` จากการเช็คเวอร์ชัน
+#    ซึ่งมันทำแทบทุกคำสั่ง **รวมทั้ง `supabase --version`**
+#    · ของจริงที่ P1 เจอ: `.temp/` มีไฟล์เดียว 8 ไบต์ = เลขเวอร์ชัน · ไม่มีอะไรถูก link
+#    · และ `db push` ที่ไม่มี `project-ref` **ล้มเอง** → ไม่มีอันตรายเลยแม้แต่ทางเดียว
+#    ⚠️ แดงตัวนี้ **บล็อก push ของทั้ง 8 คน** (`D72` ข้อ 2) และ **แดงที่ผิดบ่อย ๆ สอนให้คนเลิกอ่าน**
+d="$(mk)"; mkdir -p "$d/supabase/.temp"; echo "v2.115.0" > "$d/supabase/.temp/cli-latest"
+check ".temp ที่มีแค่ cli-latest ต้อง *ไม่* แดง (แค่มีคนรัน supabase จากตรงนั้น)" pass "$d"
+
+# ⑯a แต่ `pooler-url` อย่างเดียวก็ต้องแดง — มันมี connection string และแปลว่า link เกิดจริง
 d="$(mk)"; mkdir -p "$d/supabase/.temp"
-check "จับโฟลเดอร์ .temp ที่รากแม้ยังไม่มี project-ref" fail "$d"
+echo "postgresql://postgres.xxx:p@host:5432/postgres" > "$d/supabase/.temp/pooler-url"
+check "จับ .temp ที่มี pooler-url แม้ไม่มี project-ref" fail "$d"
 
 # ⑰ workdir แปลกปลอมอื่นก็ต้องโดนจับ ไม่ใช่ hardcode เฉพาะราก
 d="$(mk)"; mkdir -p "$d/somewhere/supabase/.temp"
+echo "pmvxwcimjebogjfimzqy" > "$d/somewhere/supabase/.temp/project-ref"
 check "จับ link ใน workdir แปลกปลอมที่ไม่ใช่ราก" fail "$d"
 
 # ⑱ ล็อกขอบเขต: link ที่ supabase-platform/ (ที่เดียวที่อนุญาต) + ref ถูก ต้องผ่าน
