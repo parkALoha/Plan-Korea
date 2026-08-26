@@ -103,7 +103,7 @@
 | `lat` | คงเดิม |  |
 | `lng` | คงเดิม |  |
 | `maps_query` | คงเดิม |  |
-| `description` | คงเดิม |  |
+| `description` | 🔴 **ย้ายไป `custom_place_descriptions(place_id, locale, description)`** (`Q6` · 26 ส.ค. 2026) | ผู้ใช้ตัดสิน: **แยกภาษาตั้งแต่แรก** · ⚠️ **คอลัมน์เดิมยังอยู่ชั่วคราว** เพราะ `hooks/useCustomPlaces.tsx:81` `insert(newPlace)` ส่งทั้งอ็อบเจกต์ → drop แล้ว insert พังทันที · **drop ในคอมมิตเดียวกับที่ `E3` ย้าย hook** · ตรึงเงื่อนไขไว้ที่ [`descriptionSplit.test.ts`](../../lib/__tests__/descriptionSplit.test.ts) |
 | `created_at` | คงเดิม |  |
 | `google_place_id` | คงเดิม |  |
 | `name_ko` | `custom_place_names(...)` | B6 · `D75` |
@@ -309,7 +309,7 @@ D36 — ห้อยกับ `trip_days` เป็นหลัก · `plan_id` 
 | `category` | `catalog_places.category` | |
 | `lat` · `lng` | คงเดิม | |
 | **`mapsQuery`** | ✅ **`catalog_places.maps_query`** 🆕 | 🔴 **คีย์ของ `place_details_cache`/`place_photo_cache`** (`placeQuery.ts:17`) |
-| **`descriptionTh`** | ✅ **`catalog_places.description`** 🆕 | ⚠️ ภาษาเดียว สมมาตรกับ `custom_places` — **`Q6`** |
+| **`descriptionTh`** | ✅ **`catalog_place_descriptions(place_id, 'th', description)`** (`Q6` · แก้ 26 ส.ค. 2026) | เดิมชี้ `catalog_places.description` ซึ่ง**ถูก drop แล้ว** · ค่าเดิมถูกย้ายเข้าตารางใหม่เป็น `locale='th'` 🔴 **ป้าย `th` ไม่ใช่การเดา — ชื่อฟิลด์เดิมคือ `descriptionTh`** · เดาผิดข้าง = คำบรรยายไทยถูกป้ายว่าอังกฤษ โดยไม่มีอะไรฟ้อง |
 | **`googlePlaceId?`** | ✅ **`catalog_places.google_place_id`** 🆕 | |
 | **`youtubeQuery`** | ✅ **`catalog_places.youtube_query`** 🆕 | ไม่เพิ่มให้ `custom_places` — ผู้ใช้ไม่ได้กรอกค่านี้ |
 | — | `weather_sensitivity` · `source` | คอลัมน์ใหม่ที่ไม่มีต้นทางในไฟล์ (P5 · `D53`) |

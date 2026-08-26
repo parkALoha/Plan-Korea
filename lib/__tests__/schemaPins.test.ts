@@ -163,12 +163,21 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ⚠️ **ต้องถูกเติมเข้ารายชื่อของ `E2-AC2` ด้วย ไม่ใช่ผ่านเพราะขึ้นต้นด้วย `catalog_`** (`D48`)
       "catalog_country_contacts.catalog_country_contacts_select",
       "catalog_place_access.catalog_place_access_select",
+      // 🔴 เพิ่ม 26 ส.ค. (P1 · `Q6`) — คำบรรยายแยกภาษา · ผู้ใช้ตัดสิน "แยกตั้งแต่แรก"
+      //    คลัง**กลาง** = `select` อย่างเดียวเหมือนคลังกลางตัวอื่นทุกใบ · ไม่มี policy ฝั่งเขียนโดยตั้งใจ
+      "catalog_place_descriptions.catalog_place_descriptions_select",
       "catalog_place_names.catalog_place_names_select",
       "catalog_places.catalog_places_select",
       // 🔴 คลัง**ของผู้เช่า** — ครบ 4 verb ต่างจากคลังกลางที่มีแต่ `select` (`D75`)
       "checklist_items.checklist_items_insert",
       "checklist_items.checklist_items_select",
       "checklist_items.checklist_items_update",
+      // 🔴 เพิ่ม 26 ส.ค. (P1 · `Q6`) — คลัง**ของผู้เช่า** ครบ 4 verb ผูก `app.can_*_trip`
+      //    รูปเดียวกับ `custom_place_names` เป๊ะ · เคสอยู่ที่ `rlsMatrix.test.ts` (P4 · `34abfbf`)
+      "custom_place_descriptions.custom_place_descriptions_delete",
+      "custom_place_descriptions.custom_place_descriptions_insert",
+      "custom_place_descriptions.custom_place_descriptions_select",
+      "custom_place_descriptions.custom_place_descriptions_update",
       "custom_place_names.custom_place_names_delete",
       "custom_place_names.custom_place_names_insert",
       "custom_place_names.custom_place_names_select",
@@ -281,7 +290,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       if (body.includes("can_write_trip")) content.add(key.split(".")[0]);
     }
     expect([...content].sort()).toEqual([
-      "bookings", "checklist_items", "custom_place_names", "custom_places",
+      "bookings", "checklist_items",
+      // 🔴 `Q6` 26 ส.ค. — คำบรรยายของคลัง*ทริป* เป็นข้อมูลผู้เช่า จึงอยู่ในทะเบียนนี้
+      //    ส่วน `catalog_place_descriptions` **ไม่อยู่** เพราะเป็นคลังสาธารณะ เหมือน `catalog_places`
+      "custom_place_descriptions", "custom_place_names", "custom_places",
       "hidden_places", "place_notes",
       "trip_day_plan_settings", "trip_days", "trip_hotels", "trip_plans", "trip_stops",
     ]);
@@ -423,7 +435,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ที่เปลี่ยนคือ **เพิ่ม 2 policy ใหม่** (`catalog_country_contacts_select` · `catalog_place_access_select`)
       //    ทั้งคู่เป็น `for select to authenticated using (true)` — รูปเดียวกับคลังกลางอีก 4 ใบเป๊ะ
       //    **ไม่มี policy เดิมตัวไหนถูกแก้เงื่อนไข** (ยืนยันจากรายชื่อข้างบนที่เพิ่มอย่างเดียว ไม่มีตัวหาย)
-      "59e8fee6172690dc",
+      "429926002f8accf5",
     );
   });
 
