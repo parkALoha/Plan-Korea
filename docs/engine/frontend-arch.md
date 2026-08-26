@@ -1213,3 +1213,51 @@ overnight ผ่าน DB แล้ว — **โครงวัน (วันท
 (`platform-dev`) preview ของผมเข้าไม่ถึง ไม่ได้พยายามแย่งพอร์ต/แก้ config ที่ทีมใช้ร่วมกัน — ยืนยันด้วยโค้ด
 รีวิว (เงื่อนไข if เดียว ไม่มี state ซับซ้อน) + eslint/tsc/test suite แทน ถ้าใครมี dev server ว่างอยู่
 ลองเปิดทริปที่ `dbDaysCount === 0` จริงแล้วดูว่าเห็นข้อความแทนเนื้อหาผิดได้จะช่วยปิดช่องว่างนี้
+
+---
+
+## 22. gate ผิดชั้น → ย้ายลงระดับหน้า (`6cd2b15`) + แก้แฟลชที่ P2 วัดเจอ
+
+P2 ยิงจริงกับบิลด์ `08c591c` (gate ที่ `TripDataProvider`) พบว่า `/today`/`/summary` ไม่ถูก gate ทั้งที่
+โครงเหมือน `/`/`​/trip/{id}` เป๊ะ — P1 ตรวจโครงซ้ำแล้วยังหาสาเหตุไม่เจอ (สงสัย stale build/HMR หรือ
+`useTripDaysGate` ค้างที่ `"unknown"` แบบไม่คงเส้นคงวา) **แต่ระหว่างนั้นพบปัญหาที่ใหญ่กว่าตำแหน่งที่ P2 เจอ**
+
+**ตรวจแล้วพบว่า gate เดิมผิดชั้นทั้งหมด — ไม่ใช่แค่ 2 หน้าที่ P2 เจอ:** ไม่มี provider ไหนใน
+`TripDataProvider` (`useHotels`/`useBookings`/`useCustomPlaces`) พึ่ง `trip_days` เลยสักตัว การบล็อกที่นั่น
+เท่ากับบล็อกที่พัก/booking/สถานที่ที่เพิ่มเองที่ใช้งานได้จริงไปด้วย ทุกครั้งที่ทริปยังไม่มีวัน ไม่ว่าทริปนั้นจะ
+มีข้อมูลจริงอยู่แค่ไหน — กว้างกว่าที่ P1 กลัวตอนแรก (ซึ่งเสนอให้แคบแค่ `/trip/[id]` vs bare — ข้อเสนอนั้นยัง
+พังแบบเดียวกันถ้าทริปมีที่พัก/booking จริงแต่ยังไม่มีวัน เพราะปัญหาอยู่ที่*แหล่งข้อมูล* ไม่ใช่*เส้นทาง*)
+
+**ย้าย gate ลงมาที่ระดับหน้า เฉพาะส่วนที่มาจาก `ITINERARY` จริง ๆ:**
+ใช้ agent สำรวจโครง JSX ของ 3 หน้าก่อนแก้ (แทนอ่านเองทั้งไฟล์ 600-1000+ บรรทัด):
+- `app/page.tsx` (`HomeContent`) — แยกได้ชัดเจน: `TripPrepPanel` (ที่พัก/booking/checklist) อยู่คนละก้อนกับ
+  `itinerary.map(...) → <DayStopsSection>` gate เฉพาะ `DayJumpBar` + ลูปการ์ดวัน + `PlaceSidebar`
+- `app/summary/page.tsx` (`SummaryContent`) — แยกชัดกว่าอีก: ส่วน hotels-all/bookings-all/checklist เป็น
+  `<section>` แยกกันอยู่แล้ว gate เฉพาะสถิติหัวหน้าที่นับจาก `itinerary.length`, คำเตือน
+  `daysWithoutStops`, ส่วน hotels-all (เพราะ `hotelLegs` มาจาก `useHotelSchedule(itinerary, hotels)` —
+  คำนวณช่วงวันจาก `ITINERARY` แม้ `hotels` เองจะไม่ผูกกับ `trip_days`), `ImmigrationSheet`, และ breakdown
+  รายวัน — bookings-all/checklist ไม่ถูกแตะเลย
+- `app/today/page.tsx` (`TodayPageContent`) — **ไม่มีส่วนแยกได้เลย** เป็นหน้า drill-down วันเดียว
+  (`day = itinerary[dayIndex]` ไหลไปทั้งหน้า แม้แต่ header ก็โชว์ชื่อเมือง/วันที่/พยากรณ์ของวันนั้น) →
+  gate ทั้งหน้าเหมือนของเดิม แต่ตอนนี้ scope แค่หน้านี้หน้าเดียว ไม่ใช่ provider ที่ทุกหน้าใช้ร่วมกัน
+
+ทั้ง 3 หน้ามี `/trip/[tripId]/*` เรียก `HomeContent`/`TodayPageContent`/`SummaryContent` ตัวเดียวกันเป๊ะ
+(ยืนยันจากโค้ด) — แก้ 3 ไฟล์นี้จึงครอบทั้ง 6 entry point (bare 3 + `/trip/[tripId]` 3) โดยไม่ต้องแตะ route
+files แยก
+
+**แก้แฟลชที่ P2 วัดเจอด้วย:** `useTripDaysGate` เดิม state `"unknown"` render เนื้อหาจริงแบบ optimistic
+ทันที ทำให้เห็นแผนของทริปอื่นแวบหนึ่งก่อน fetch เสร็จ (P2 วัดกับ `/trip/{id}`) — แยก `"loading"` (โชว์
+skeleton ไม่ใช่เนื้อหา) ออกจาก `"ready"` (ยืนยันมีวันจริง **หรือ** fetch ล้มแล้ว — fail-open ยังอยู่ แต่เป็น
+ทางออกหลังลองแล้วเท่านั้น ไม่ใช่ค่าเริ่มต้นที่โชว์เนื้อหาผิดก่อนเสมอ)
+
+⚠️ **ยังไม่ได้ยืนยันสาเหตุที่แท้จริงว่าทำไม `/today`/`/summary` ไม่ถูก gate ในบิลด์ `08c591c`** (stale
+build vs race ที่ P1 ตั้งสมมติฐานไว้) — เนื่องจากโค้ดที่ P2 ทดสอบถูกแทนที่ทั้งหมดแล้วด้วยรอบนี้ (คนละ
+กลไก คนละตำแหน่ง) จึงไม่มีประโยชน์ไล่หาสาเหตุของโค้ดที่ไม่ใช้แล้ว — **ขอให้ P2 ยิงทั้ง 6 entry point ใหม่
+กับบิลด์นี้แทน** ตามที่ P1 ขอ ไม่อนุมานจากหน้าเดียว
+
+⚠️ **caveat ที่ยังไม่แก้ (พบระหว่างสำรวจ ไม่ใช่ขอบเขตของรอบนี้):** `hotelLegs` (ใช้ทั้งใน `page.tsx`
+`TripPrepPanel`/`HotelLegsPanel` และ `summary/page.tsx` hotels-all) มาจาก `useHotelSchedule(itinerary,
+hotels)` ซึ่งต้องใช้ `itinerary` (จาก `ITINERARY`) คำนวณช่วงวันที่ของแต่ละ "leg" — ใน `page.tsx` ส่วนนี้
+ยังไม่ถูก gate (อยู่ใน `TripPrepPanel` เดียวกับ `BookingsPanel`/`ChecklistPanel` ที่ตั้งใจให้โชว์เสมอ) ถ้า
+ทริปแพลตฟอร์มมีที่พักจริง ผู้ใช้อาจเห็นช่วงวันที่ของ leg เป็นวันที่ของทริปเกาหลีแทน — รายงานไว้ ยังไม่ตัดสินใจ
+แก้เอง เพราะกระทบการจัดกลุ่ม UI ที่ `TripPrepPanel` ตั้งใจไว้ (ที่พัก/booking/checklist โชว์พร้อมกันเสมอ)
