@@ -21,6 +21,18 @@ import { useDayOpeningHours } from "@/hooks/useDayOpeningHours";
 import { isOpenDuring } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { hotelAnchorId } from "@/lib/hotelLegs";
+import { shouldSkipTravelApi } from "@/lib/engine/countries";
+import { countryOfCity } from "@/data/emergency";
+
+// 🔴 lib/schedule.ts TravelMode ("walk"|"transit"|"drive") ≠ lib/engine/countries.ts TravelMode
+// ("WALK"|"TRANSIT"|"DRIVE", ตรงกับค่าที่ Google Routes API ใช้จริง) — tsc จับได้ตอนเรียก
+// shouldSkipTravelApi ตรงๆ ว่าสอง type เข้ากันไม่ได้ทั้งที่ความหมายเดียวกัน แปลงตรงนี้แทนแก้ type
+// ของไฟล์ไหน เพราะทั้งสองฝั่งมีเหตุผลของ casing ตัวเอง (schedule.ts เดิม, countries.ts ตาม Google)
+const REGISTRY_MODE: Record<TravelMode, "WALK" | "TRANSIT" | "DRIVE"> = {
+  walk: "WALK",
+  transit: "TRANSIT",
+  drive: "DRIVE",
+};
 
 /**
  * ตรรกะคำนวณตารางเวลาทั้งวัน — ดึงออกมาจาก DayStopsSection (เดิมฝังอยู่ในนั้นล้วนๆ)
@@ -82,11 +94,20 @@ export function useDaySchedule({
       }
     : null;
 
+  // ประเทศของวันนี้ — ใช้แค่ตัดสินว่า "ควรยิง API ไหม" (shouldSkipTravelApi) ไม่ใช่ตัดสิน "จริงหรือประมาณ"
+  // ซึ่งยังเป็นหน้าที่ของ isTravelTimeReal (ผลจริงที่ยิงมาแล้ว) เหมือนเดิมทุกจุด — สองคำถามคนละคำถามกัน
+  // (P1: "ทะเบียนตอบว่า 'อย่ายิง' ไม่ใช่ 'อย่าเชื่อ'") ยังใช้ countryOfCity() ชั่วคราวเหมือน app/today/page.tsx
+  // รอ P3 ใส่ country ระดับสถานที่จริงเข้า hook แล้วค่อยสลับ
+  const country = countryOfCity(day.city);
+
   // คู่จุดที่เลือกโหมดเดินทางแล้วเท่านั้นที่ต้องขอเวลาจริง — คู่ที่ยังไม่เลือกโหมดใช้แค่ตัวเลือกในหน้า picker
   const travelPairs = useMemo(() => {
     const pairs: TravelTimePair[] = [];
     const push = (from: PointRef, to: PointRef, mode: TravelMode | null) => {
       if (!mode) return;
+      // รู้แน่ว่าประเทศนี้ไม่เคยตอบโหมดนี้จริง (เช่น kr/DRIVE) — ข้ามได้ ประหยัด quota + ไม่ต้องรอ
+      // ประเทศที่ไม่มีในทะเบียนเลย shouldSkipTravelApi คืน false เสมอ (ต้องยิง ให้ผลจริงสอนทะเบียนต่อไป)
+      if (shouldSkipTravelApi(country, REGISTRY_MODE[mode])) return;
       pairs.push({
         fromId: from.id,
         toId: to.id,
@@ -122,6 +143,7 @@ export function useDaySchedule({
     startAnchor?.mode,
     endAnchor?.id,
     endAnchor?.mode,
+    country,
   ]);
 
   const realTravelTimes = useDayTravelTimes(travelPairs);
