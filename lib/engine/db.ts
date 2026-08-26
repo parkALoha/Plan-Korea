@@ -443,7 +443,42 @@ export function placeNotesOfPlan(db: Db, tripId: string, planId: string) {
 }
 
 /** เขียนโน้ต — ผู้เรียกต้องระบุแล้วว่าเป็นสถานที่ชนิดไหน (คลังกลาง vs ของทริป) */
-export function upsertPlaceNote(
+/**
+ * 🔴 **ไม่ใช้ `.upsert()` — ตัวที่สองของวัน · คนละกลไกกับ `upsertDaySettings` แต่ตระกูลเดียวกัน** (P4 พบ)
+ *
+ * ## อาการ: **เจ้าของทริป PUT โน้ตของตัวเองก็ได้ `502`**
+ * ```
+ * 42P10 there is no unique or exclusion constraint matching the ON CONFLICT specification
+ * ```
+ *
+ * ## เหตุ
+ * ดัชนีกันซ้ำของตารางนี้เป็น **partial** (`20260826132428`):
+ * ```sql
+ * create unique index place_notes_one_per_catalog_place
+ *   on public.place_notes (plan_id, catalog_place_id)
+ *   where catalog_place_id is not null;      -- ← predicate
+ * ```
+ * `ON CONFLICT (cols)` จะ match ดัชนี partial ได้ **ก็ต่อเมื่อมี `WHERE` ที่ตรงกันด้วย**
+ * แต่ PostgREST `.upsert()` ส่งแค่**รายชื่อคอลัมน์** ไม่ส่ง predicate → planner หาไม่เจอ → **ล้มทุกคน**
+ * · เป็นความล้มเหลวตอน *วางแผน* → ไม่เกี่ยวกับ RLS/fixture · **เจ้าของก็โดน**
+ *
+ * ## 🎯 ทางที่ **ไม่** เลือก: ทำให้ดัชนีเลิก partial
+ * migration เขียนเหตุผลไว้เอง: *"**ไม่ partial ตาม `deleted_at`** — tombstone ต้องกันที่ของมันไว้
+ * ไม่งั้นลบโน้ตแล้วเขียนใหม่จะได้สองแถว แล้ว `D76` จะทำให้มันค้างตลอดไป"*
+ * · และ predicate `is not null` ก็จำเป็น เพราะแถวหนึ่งผูกกับ *คลัง* หรือ *สถานที่ของทริป* อย่างใดอย่างหนึ่ง
+ * 🔴 **แก้ดัชนีให้เข้ากับ `.upsert()` = เปลี่ยนโครงข้อมูลเพื่อให้เข้ากับไลบรารี — กลับหัวกลับหาง**
+ *
+ * ## ทางที่เลือก: `update` → `insert` เฉพาะที่ยังไม่มี — **รูปเดียวกับ `upsertDaySettings`**
+ * · `update` ส่งเฉพาะ `note`/`photo_path` ซึ่งเป็น **ทั้งหมดที่ `authenticated` มีสิทธิ์เขียน**
+ * · ชน `23505` → แก้ทับ (อีกเครื่องสร้างแทรกระหว่างสองจังหวะ)
+ *
+ * ⚠️ **พฤติกรรมกับ tombstone เหมือนเดิมทุกประการโดยตั้งใจ** — `update` ไม่กรอง `deleted_at`
+ * เพราะ `.upsert()` เดิมก็เขียนทับแถว tombstone เหมือนกัน (`ON CONFLICT DO UPDATE` ไม่รู้จัก soft delete)
+ * 🔴 **นั่นแปลว่า "ลบโน้ตแล้วเขียนใหม่" ยังได้แถวที่ถูกซ่อนอยู่ — ผู้ใช้พิมพ์แล้วไม่เห็นอะไร**
+ *    **เป็นบั๊กที่มีอยู่ก่อน ไม่ใช่ของใหม่จากการแก้นี้** · รายงานแยกแล้ว **ไม่แก้เงียบ ๆ พร้อมของอื่น**
+ *    เพราะทางแก้ต้องตัดสินก่อนว่า "เขียนใหม่" ควรปลุกแถวเดิมไหม — และไคลเอนต์เขียน `deleted_at` ไม่ได้ตามการออกแบบ
+ */
+export async function upsertPlaceNote(
   db: Db,
   row: {
     tripId: string;
@@ -455,20 +490,37 @@ export function upsertPlaceNote(
     legacyAddedBy?: string | null;
   }
 ) {
-  return engineTable(db, "place_notes")
-    .upsert(
-      {
-        trip_id: row.tripId,
-        plan_id: row.planId,
-        catalog_place_id: row.catalogPlaceId ?? null,
-        custom_place_id: row.customPlaceId ?? null,
-        note: row.note,
-        photo_path: row.photoPath,
-        legacy_added_by: row.legacyAddedBy ?? null,
-      },
-      { onConflict: row.catalogPlaceId ? "plan_id,catalog_place_id" : "plan_id,custom_place_id" }
-    )
+  const keyCol = row.catalogPlaceId ? "catalog_place_id" : "custom_place_id";
+  const keyVal = row.catalogPlaceId ?? row.customPlaceId ?? null;
+  const patch = { note: row.note, photo_path: row.photoPath };
+
+  const upd = await engineTable(db, "place_notes")
+    .update(patch)
+    .eq("plan_id", row.planId)
+    .eq(keyCol, keyVal)
+    .select("id, updated_at");
+  if (upd.error) return upd;
+  if (upd.data && upd.data.length > 0) return upd;
+
+  const ins = await engineTable(db, "place_notes")
+    .insert({
+      trip_id: row.tripId,
+      plan_id: row.planId,
+      catalog_place_id: row.catalogPlaceId ?? null,
+      custom_place_id: row.customPlaceId ?? null,
+      note: row.note,
+      photo_path: row.photoPath,
+      legacy_added_by: row.legacyAddedBy ?? null,
+    })
     // 🔴 `updated_at` ต้องเดินทางกลับไปถึงไคลเอนต์ (`D7`) — ไม่งั้นฝั่งนั้นจะปั้นเวลาจากนาฬิกาตัวเอง
+    .select("id, updated_at");
+  if (!ins.error) return ins;
+  if (ins.error.code !== "23505") return ins;
+
+  return engineTable(db, "place_notes")
+    .update(patch)
+    .eq("plan_id", row.planId)
+    .eq(keyCol, keyVal)
     .select("id, updated_at");
 }
 

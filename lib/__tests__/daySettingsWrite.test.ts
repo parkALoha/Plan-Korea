@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { upsertDaySettings, type Db } from "@/lib/engine/db";
+import { upsertDaySettings, upsertPlaceNote, type Db } from "@/lib/engine/db";
 
 /**
  * `upsertDaySettings` — **บั๊กจริงที่ probe ของ P4 จับได้ 27 ส.ค. 2026**
@@ -104,3 +104,61 @@ describe("upsertDaySettings — คอลัมน์คีย์ต้องไ
     expect(calls.filter((c) => c.op === "insert")).toHaveLength(1);
   });
 });
+
+/**
+ * `upsertPlaceNote` — **บั๊กตัวที่ 3 ที่ harness ของ P4 จับได้** (27 ส.ค. 2026)
+ * `42P10 there is no unique or exclusion constraint matching the ON CONFLICT specification`
+ *
+ * ดัชนีกันซ้ำเป็น **partial** (`where catalog_place_id is not null`) · `ON CONFLICT (cols)`
+ * match ดัชนี partial ได้ **ก็ต่อเมื่อมี `WHERE` ตรงกัน** แต่ PostgREST ส่งแค่รายชื่อคอลัมน์
+ * → **ล้มตอนวางแผน · เจ้าของทริปก็เขียนโน้ตของตัวเองไม่ได้**
+ */
+describe("upsertPlaceNote — คีย์ของแถวต้องไม่อยู่ใน `update`", () => {
+  const CATALOG = { tripId: "T", planId: "P", catalogPlaceId: "C1", note: "x", photoPath: null };
+  const CUSTOM  = { tripId: "T", planId: "P", customPlaceId: "U1", note: "y", photoPath: null };
+
+  it("🔴 `update` ส่งเฉพาะ `note`/`photo_path` — ทั้งหมดที่ `authenticated` เขียนได้", async () => {
+    const { db, calls } = fakeDb([], new Set(["P/C1"]));
+    await upsertPlaceNote(db, CATALOG);
+    const upd = calls.find((c) => c.op === "update");
+    expect(upd!.payload).toEqual({ note: "x", photo_path: null });
+    expect(upd!.eq).toEqual([["plan_id", "P"], ["catalog_place_id", "C1"]]);
+  });
+
+  it("โน้ตของสถานที่ที่ผู้ใช้เพิ่มเอง ใช้คีย์อีกคอลัมน์", async () => {
+    const { db, calls } = fakeDb([], new Set(["P/U1"]));
+    await upsertPlaceNote(db, CUSTOM);
+    expect(calls.find((c) => c.op === "update")!.eq).toEqual([["plan_id", "P"], ["custom_place_id", "U1"]]);
+  });
+
+  it("ยังไม่มีแถว → `insert` ส่งคีย์ครบทั้งสองช่อง (ช่องที่ไม่ใช้เป็น `null`)", async () => {
+    const { db, calls } = fakeDb();
+    await upsertPlaceNote(db, CATALOG);
+    const ins = calls.find((c) => c.op === "insert")!.payload as Record<string, unknown>;
+    expect(ins.catalog_place_id).toBe("C1");
+    expect(ins.custom_place_id).toBeNull();
+    expect(ins.trip_id).toBe("T");
+  });
+
+  it("🔴 ชน `23505` → แก้ทับ ไม่ใช่ล้ม", async () => {
+    const { db, calls } = fakeDb([{ code: "23505", message: "duplicate key" }]);
+    const r = await upsertPlaceNote(db, CATALOG);
+    expect(r.error).toBeNull();
+    expect(calls.filter((c) => c.op === "update")).toHaveLength(2);
+  });
+
+  it("error อื่นคืนออกไป ไม่กลืน", async () => {
+    const { db } = fakeDb([{ code: "42501", message: "permission denied" }]);
+    expect((await upsertPlaceNote(db, CATALOG)).error).toEqual({ code: "42501", message: "permission denied" });
+  });
+
+  it("🔴 `updated_at` ต้องเดินทางกลับทุกเส้นทาง (`D7`)", async () => {
+    // ถ้าเส้นไหนลืม `.select("id, updated_at")` ไคลเอนต์จะปั้นเวลาจากนาฬิกาตัวเอง
+    for (const existing of [new Set(["P/C1"]), new Set<string>()]) {
+      const { db, calls } = fakeDb([], existing);
+      await upsertPlaceNote(db, CATALOG);
+      expect(calls.length, "ต้องมีอย่างน้อย 1 คำสั่ง").toBeGreaterThan(0);
+    }
+  });
+});
+
