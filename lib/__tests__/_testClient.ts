@@ -104,8 +104,12 @@ export async function acquireFixtureLock(
     const { data, error } = await admin.rpc("acquire_fixture_lock", { p_holder: holder, p_ttl_seconds: ttl });
     if (error) {
       if (error.code === "PGRST202") return noop; // RPC ยังไม่ลง → เงียบ (ยังไม่มีการกันชน จนกว่าจะลง)
-      // 🔴 พารามิเตอร์ผิด (22023) = deterministic · retry ไม่ช่วย → throw ทันที
-      if (error.code === "22023") throw new Error(`acquire_fixture_lock (พารามิเตอร์ผิด): ${error.message}`);
+      // 🔴 deterministic → throw *เร็ว* (retry ไม่ช่วย) · P1: fail-loud ที่ช้า (240s) เชิญให้ Ctrl-C = ต้นทางที่ทำให้ fixture 890 ใบค้าง
+      //    22023 = RPC raise เอง (holder/ttl ผิด) · `42*` = SQLSTATE class "syntax/access rule violation" — deterministic ทุกตัวตามนิยาม Postgres
+      //    (42501 = grant service_role หายหลัง migration ลง · 42P01 = ตารางหาย ฯลฯ) · transient (เน็ต/JWT blip/503) ไม่ถือรหัส 42* → retry ต่อปลอดภัย
+      const code = error.code ?? "";
+      if (code === "22023" || code.startsWith("42"))
+        throw new Error(`acquire_fixture_lock (deterministic ${code || "?"}): ${error.message}`);
       // 🔴 P1 (หัว branch แดง 26 ส.ค.): เดิม throw ทุก error ที่ไม่ใช่ PGRST202 → JWT blip ครั้งเดียว = ชุดสดหายทั้งชุด (273 skipped)
       //    asymmetry: retry เกินหนึ่งรอบ = ช้า ~2 วิ · throw เร็วหนึ่งครั้ง = ชุดหาย · "เรียกไม่สำเร็จ" ≠ "ล็อกถูกถือ" แต่ทั้งคู่ควรรอแล้วลองใหม่
       //    → ตกลงมาที่ timeout-check + poll ด้านล่าง (retry) แทนการ throw

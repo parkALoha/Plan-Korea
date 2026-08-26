@@ -51,7 +51,18 @@ describe("acquireFixtureLock — การจัดแยก error", () => {
       calls += 1;
       return { data: null, error: { code: "22023", message: "TTL ต้องอยู่ระหว่าง 1–1800" } };
     });
-    await expect(acquireFixtureLock(admin, "t", { pollMs: 1, timeoutMs: 5000 })).rejects.toThrow(/พารามิเตอร์ผิด/);
+    await expect(acquireFixtureLock(admin, "t", { pollMs: 1, timeoutMs: 5000 })).rejects.toThrow(/deterministic 22023/);
     expect(calls, "deterministic error = ไม่ retry").toBe(1);
+  });
+
+  it("🔴 42501 (permission denied · grant service_role หาย) → throw ทันที ไม่ retry (คลาส 42 · P1)", async () => {
+    // SQLSTATE class 42 = syntax/access violation = deterministic ทุกตัว → retry 240s แล้ว Ctrl-C = สุสาน fixture (890)
+    let calls = 0;
+    const admin = fakeAdmin(() => {
+      calls += 1;
+      return { data: null, error: { code: "42501", message: "permission denied for function acquire_fixture_lock" } };
+    });
+    await expect(acquireFixtureLock(admin, "t", { pollMs: 1, timeoutMs: 5000 })).rejects.toThrow(/deterministic 42501/);
+    expect(calls, "42* = deterministic = ไม่ retry").toBe(1);
   });
 });
