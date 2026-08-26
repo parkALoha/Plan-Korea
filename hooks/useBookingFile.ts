@@ -1,5 +1,4 @@
-import { BOOKING_FILES_BUCKET, supabase } from "@/lib/supabase";
-import { writeGuard } from "@/lib/writeGuard";
+import { guardedUpload, guardedRemove } from "@/lib/engine/guardedStorage";
 import { forgetSignedFile } from "@/lib/engine/files";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -9,28 +8,22 @@ function randomSuffix() {
 }
 
 /**
- * choke point เดียวของการเขียน Supabase Storage สำหรับไฟล์แนบตั๋ว (`E3-AC4`)
+ * choke point ของ `BookingEditModal.tsx` สำหรับไฟล์แนบตั๋ว (`E3-AC4`) — เรียกผ่าน
+ * `lib/engine/guardedStorage.ts` เท่านั้น (ที่เดียวในโปรเจกต์ที่แตะ `supabase.storage.*` เพื่อเขียนได้)
+ * ไม่เรียก `supabase.storage` ตรงจากที่นี่อีกต่อไป — `guardedStorage.ts` ห่อ `writeGuard` ให้ในตัวเอง
+ * ผู้เรียกข้ามไม่ได้ (ต่างจากรุ่นก่อนที่ห่อ `writeGuard` เองตรงนี้ แล้วมีช่องให้คนถัดไปลืมห่อ)
  *
- * เดิม `BookingEditModal.tsx` ยิง `supabase.storage.from(...)` ตรงจาก component 4 จุด
- * (upload, ลบตัวที่เพิ่งอัปโหลดซ้ำ, ลบไฟล์ที่บันทึกแล้ว, ลบไฟล์ค้างตอนปิดโมดัลไม่บันทึก) —
- * ไม่ต่างจาก 67 จุดเดิมที่ตารางเจอมาก่อน `writeGuard` ห่อให้ ดึงออกมาเป็น hook เดียวกับอีก 10 hook
- * ของตาราง ไม่ใช่ข้อยกเว้นให้ Storage
- *
- * 🔴 **`allowNoRows` ตัดสินแยกทีละจุด ไม่ลอกจากจุดข้างเคียง** (ตามที่ `writeGuard.ts` เขียนกำกับไว้เอง
- * ว่า "ต้องระบุที่จุดเรียก") — ดูเหตุผลของแต่ละจุดในคอมเมนต์ตรงนั้น
+ * 🔴 **`allowNoRows` ตัดสินแยกทีละจุด ไม่ลอกจากจุดข้างเคียง แม้ `guardedRemove` จะรับหลาย path พร้อมกันได้**
+ * — `removePendingBookingFile` กับ `removeSavedBookingFile` ต้อง**ไม่รวมเป็นการเรียกเดียว** เพราะ
+ * `allowNoRows` ของสองฟังก์ชันต่างกันจริง (เหตุผลอยู่ในคอมเมนต์ของแต่ละฟังก์ชันด้านล่าง) รวมกันจะทำให้
+ * ตัวหนึ่งได้ค่า `allowNoRows` ของอีกตัว
  */
 export function useBookingFile() {
   /**
    * อัปโหลดไฟล์ใหม่ — คืน path (ไม่ใช่ URL, bucket เป็น private แล้ว) หรือข้อความ error ที่แสดงได้เลย
    *
-   * 🔴 **`.upload()` คืน `{ data: { path, id, fullPath }, error }` — `data` เป็น object ไม่ใช่ array**
-   * ต่างจาก `.remove()` ที่คืน array ตรงๆ — ที่นี่ตั้งใจส่งแค่ `{ error }` เข้า `writeGuard` (ไม่ส่ง `data`)
-   * เพราะการเช็ค "0 แถว" ของ `writeGuard` ใช้กับรูปนี้ไม่ได้อยู่แล้วโดยธรรมชาติของ API
-   * (`Array.isArray(object)` เป็น `false` เสมอ) — **ถูกต้องแล้วที่มันไม่มีผล ไม่ใช่ช่องโหว่ที่พลาด**
-   * ไม่มี `error` ก็แปลว่าไฟล์ขึ้นจริง ไม่ต้องพึ่งการนับแถวเพิ่ม
-   *
-   * `allowNoRows: false` (ค่าจริงที่ตั้งใจ แม้จะไม่มีผลตามข้อข้างบน) — อัปโหลดใหม่ไม่มีเหตุผลอะไรที่
-   * "ปกติ" จะเจอ 0 แถว การเขียนอย่างตั้งใจดีกว่าเดาว่าอาจไม่ต้องคิด
+   * `allowNoRows` ของ `guardedUpload` ไม่มีให้ระบุเลย เพราะไม่มีผลกับรูปนี้อยู่แล้วโดยธรรมชาติของ API
+   * (`.upload()` คืน `data` เป็น object ไม่ใช่ array — ดูเหตุผลเต็มที่ `guardedStorage.ts`)
    */
   async function uploadBookingFile(
     file: File,
@@ -40,14 +33,7 @@ export function useBookingFile() {
       return { error: "ไฟล์ใหญ่เกิน 10MB กรุณาเลือกไฟล์อื่น" };
     }
     const path = `${existingId ?? "new"}-${Date.now()}-${randomSuffix()}-${file.name}`;
-    const ok = await writeGuard(
-      "แนบไฟล์",
-      async () => {
-        const { error } = await supabase.storage.from(BOOKING_FILES_BUCKET).upload(path, file);
-        return { error };
-      },
-      { allowNoRows: false }
-    );
+    const ok = await guardedUpload("แนบไฟล์", path, file);
     if (!ok) return { error: "อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง" };
     return { path };
   }
@@ -60,11 +46,7 @@ export function useBookingFile() {
    * สัญญาณว่ามีอะไรผิดปกติจริง (เช่น upload ที่ผ่านมาไม่ได้ persist แม้ไม่มี error) ไม่ใช่ race ที่คาดไว้
    */
   async function removePendingBookingFile(path: string): Promise<boolean> {
-    const ok = await writeGuard(
-      "ลบไฟล์ที่อัปโหลดค้างไว้",
-      () => supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]),
-      { allowNoRows: false }
-    );
+    const ok = await guardedRemove("ลบไฟล์ที่อัปโหลดค้างไว้", [path], { allowNoRows: false });
     if (ok) forgetSignedFile(path);
     return ok;
   }
@@ -77,11 +59,7 @@ export function useBookingFile() {
    * แล้วอยู่แล้ว" ซึ่งเป็นผลลัพธ์ที่ผู้ใช้ต้องการอยู่ดี ไม่ใช่ความล้มเหลว
    */
   async function removeSavedBookingFile(path: string): Promise<boolean> {
-    const ok = await writeGuard(
-      "ลบไฟล์แนบ",
-      () => supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]),
-      { allowNoRows: true }
-    );
+    const ok = await guardedRemove("ลบไฟล์แนบ", [path], { allowNoRows: true });
     if (ok) forgetSignedFile(path);
     return ok;
   }

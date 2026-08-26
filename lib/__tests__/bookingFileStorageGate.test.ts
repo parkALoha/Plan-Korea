@@ -17,12 +17,9 @@ import { describe, expect, it } from "vitest";
 // **ในไฟล์ที่อนุญาตเอง** ไม่ได้ · ทางแก้คือทำให้ **ที่เดียวที่อนุญาต = ที่ที่ห่อเสมอ**
 // → `lib/engine/guardedStorage.ts` ห่อ `writeGuard` ให้ในตัวมันเอง ผู้เรียกข้ามไม่ได้
 // 🎯 **สองคำถามกลายเป็นคำถามเดียว** · รูปเดียวกับ `lib/engine/db.ts` ที่เป็นไฟล์เดียวที่พิมพ์ชื่อตารางได้
-// ⚠️ `hooks/useBookingFile.ts` ยังอยู่ในรายการชั่วคราว — **P2 กำลังย้ายมันมาที่นี่** (ตกลงกันแล้ว)
-//    ลบบรรทัดนั้นทิ้งเมื่อย้ายเสร็จ · `lib/stopPhoto.ts` ย้ายแล้ว จึงถูกถอดออกจากรายการ
-const ALLOWED_FILES = [
-  "lib/engine/guardedStorage.ts",
-  "hooks/useBookingFile.ts",
-];
+// ✅ `hooks/useBookingFile.ts` ย้ายไปเรียกผ่าน `guardedUpload`/`guardedRemove` แล้ว (P2, 27 ส.ค. 2026)
+//    เหลือไฟล์เดียวในรายการ — จุดที่เกณฑ์ `E3-AC4` ปิดได้จริงตามที่ P1 ตั้งเป้าไว้
+const ALLOWED_FILES = ["lib/engine/guardedStorage.ts"];
 
 const WRITE_METHOD = /\.storage\.from\([^)]*\)\s*\.\s*(upload|remove|update|move|copy)\s*\(/;
 
@@ -70,8 +67,8 @@ describe("E3-AC4 — ห้ามมีจุดเขียน Supabase Storage
     const offenders = scan();
     expect(
       offenders,
-      "พบการเขียน Supabase Storage ตรงจากไฟล์นอก choke point — ย้ายเข้า hooks/useBookingFile.ts\n" +
-        "  (หรือขยาย ALLOWED_FILES ถ้าเป็นจุดใหม่ที่ตั้งใจจริงๆ พร้อมเหตุผลกำกับ)\n" +
+      "พบการเขียน Supabase Storage ตรงจากไฟล์นอก choke point — เรียกผ่าน guardedUpload/guardedRemove\n" +
+        "  จาก lib/engine/guardedStorage.ts แทน (หรือขยาย ALLOWED_FILES ถ้าเป็นจุดใหม่ที่ตั้งใจจริงๆ พร้อมเหตุผลกำกับ)\n" +
         `  ไฟล์: ${offenders.join(" · ")}`
     ).toEqual([]);
   });
