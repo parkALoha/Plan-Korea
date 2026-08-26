@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { buildDayBridge } from "@/lib/engine/dayBridge";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
@@ -37,6 +39,11 @@ export type NewBooking = {
  *  ตัวจริงที่ fetch + เปิด realtime channel เรียกครั้งเดียวที่ BookingsProvider ที่เหลืออ่านผ่าน useBookings() */
 function useBookingsStore() {
   const [bookings, setBookings] = useState<TripBooking[]>([]);
+  const tripIdRef = useRef<string | null>(null);
+  const dayToUuid = useRef<Map<string, string>>(new Map());
+  const uuidToDay = useRef<Map<string, string>>(new Map());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchRef = useRef<(() => Promise<void>) | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
@@ -47,37 +54,56 @@ function useBookingsStore() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
+      // 🔴 คืนการใช้แคชที่ผมทำหายตอนเขียนใหม่ — `eslint` จับให้ (import ค้างโดยไม่มีใครใช้)
+      //    แคชคือสิ่งที่ทำให้หน้าขึ้นทันทีตอนเปิดและยังอ่านได้ตอนเน็ตหลุด (เฟส 18)
       const cached = readCache<TripBooking[]>("bookings");
       if (cached) {
         setBookings(sortBookings(cached));
         setLoaded(true);
       }
 
-      const { data } = await supabase.from("bookings").select("*");
+      if (!supabaseConfigured) return void setLoaded(true);
+
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const daysRes = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      if (cancelled || !daysRes.ok) return void setLoaded(true);
+      // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — `layoutImportGraph` จับได้ว่า
+      //    hook นี้อยู่ใน `TripDataProvider` ซึ่งอยู่ใน root layout
+      //    → static import จะลาก `data/itinerary.ts` (2,290 บรรทัด) **เข้าบันเดิลของทุกหน้า
+      //    รวม `/login` และ 404 ซึ่งไม่ต้องล็อกอินด้วยซ้ำ**
+      //    ⚠️ ด่านจับให้ ไม่ใช่ผมเห็นเอง · hook อื่นที่ import ตรง ๆ ได้เพราะไม่ได้อยู่ใน layout
+      const { ITINERARY } = await import("@/data/itinerary");
+      const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
+      dayToUuid.current = new Map(
+        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
+      );
+      uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
+
+      const res = await fetch(`/api/engine/trips/${trip.tripId}/bookings`);
       if (cancelled) return;
-      if (data) {
-        setBookings(sortBookings(data as TripBooking[]));
-        writeCache("bookings", data);
+      if (res.ok) {
+        const rows = (await res.json()) as (TripBooking & { trip_day_id: string | null })[];
+        // 🔴 `day_id` ที่ route คืนมาเป็น uuid — แปลงเป็น `"d0"` ที่นี่
+        //    วันที่ไม่มีในไฟล์เดิม → `day_id` เป็น `null` **ไม่ใช่ uuid ดิบ** ที่ UI หาไม่เจอ
+        const mapped = rows.map((r) => ({
+          ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
+        }));
+        setBookings(sortBookings(mapped));
+        writeCache("bookings", mapped);
       }
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "bookings" },
-          (payload) => {
-            setBookings((prev) => {
-              if (payload.eventType === "DELETE") {
-                return prev.filter((b) => b.id !== (payload.old as TripBooking).id);
-              }
-              const row = payload.new as TripBooking;
-              const exists = prev.some((b) => b.id === row.id);
-              const next = exists ? prev.map((b) => (b.id === row.id ? row : b)) : [...prev, row];
-              return sortBookings(next);
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => void refetchRef.current?.(), 300);
+        })
         .subscribe();
     }
 
@@ -85,23 +111,40 @@ function useBookingsStore() {
 
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
-    if (!supabaseConfigured) return;
-    const { data } = await supabase.from("bookings").select("*");
-    if (!data) return;
-    setBookings(sortBookings(data as TripBooking[]));
-    writeCache("bookings", data);
+    const tripId = tripIdRef.current;
+    if (!supabaseConfigured || !tripId) return;
+    const res = await fetch(`/api/engine/trips/${tripId}/bookings`);
+    if (!res.ok) return;
+    const rows = (await res.json()) as (TripBooking & { trip_day_id: string | null })[];
+    const mapped = rows.map((r) => ({
+      ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
+    }));
+    setBookings(sortBookings(mapped));
+    writeCache("bookings", mapped);
   }, []);
 
-  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  useEffect(() => {
+    refetchRef.current = reload;
+  }, [reload]);
+
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
   const guard = useCallback(
-    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
-      if (!(await writeGuard(label, run))) await reload();
+    async (label: string, run: () => Promise<Response>) => {
+      const ok = await writeGuard(label, async () => {
+        const res = await run();
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await reload();
+      return ok;
     },
     [reload]
   );
@@ -126,27 +169,60 @@ function useBookingsStore() {
       status: input.status ?? "booked",
       book_by_days_before: input.bookByDaysBefore ?? null,
     };
-    setBookings((prev) => sortBookings([...prev, newBooking]));
-    if (!supabaseConfigured) return newBooking.id;
-    await guard("เพิ่มตั๋ว/booking", () => supabase.from("bookings").insert(newBooking));
-    return newBooking.id;
+    const tripId = tripIdRef.current;
+    if (!supabaseConfigured || !tripId) {
+      setBookings((prev) => sortBookings([...prev, newBooking]));
+      return newBooking.id;
+    }
+    // 🔴 **เขียนก่อนแล้วค่อยใส่ state** — `id` มาจากฐาน (grant ไม่เปิด `id`)
+    const res = await fetch(`/api/engine/trips/${tripId}/bookings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        category: input.category, title: input.title,
+        tripDayId: input.dayId ? dayToUuid.current.get(input.dayId) ?? null : null,
+        date: input.date ?? null, time: input.time ?? null,
+        confirmationNumber: input.confirmationNumber ?? null,
+        link: input.link ?? null, note: input.note ?? null,
+        fileUrl: input.fileUrl ?? null, fileName: input.fileName ?? null,
+        status: input.status ?? "booked",
+        bookByDaysBefore: input.bookByDaysBefore ?? null,
+        addedBy: input.addedBy ?? null,
+      }),
+    });
+    if (!res.ok) {
+      await guard("เพิ่มตั๋ว/booking", async () => res);
+      return newBooking.id;
+    }
+    const created = (await res.json()) as TripBooking & { trip_day_id: string | null };
+    const mapped: TripBooking = {
+      ...created,
+      day_id: created.trip_day_id ? uuidToDay.current.get(created.trip_day_id) ?? null : null,
+    };
+    setBookings((prev) => sortBookings([...prev, mapped]));
+    return mapped.id;
   }, [guard]);
 
   const updateBooking = useCallback(
     async (bookingId: string, patch: Partial<NewBooking>) => {
-      const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      // ⚠️ ส่งเป็นชื่อของ route (camelCase) · route แปลงเป็นชื่อคอลัมน์เอง
+      //    และ **ส่งเฉพาะช่องที่ grant เปิด** — `updated_at` เซิร์ฟเวอร์เขียนเอง (`D7`)
+      const dbPatch: Record<string, unknown> = {};
       if (patch.category !== undefined) dbPatch.category = patch.category;
       if (patch.title !== undefined) dbPatch.title = patch.title;
-      if (patch.dayId !== undefined) dbPatch.day_id = patch.dayId;
+      // 🔴 `dayId` เป็น `"d0"` → ต้องแปลงเป็น uuid ก่อนส่ง
+      if (patch.dayId !== undefined) {
+        dbPatch.tripDayId = patch.dayId ? dayToUuid.current.get(patch.dayId) ?? null : null;
+      }
       if (patch.date !== undefined) dbPatch.date = patch.date;
       if (patch.time !== undefined) dbPatch.time = patch.time;
-      if (patch.confirmationNumber !== undefined) dbPatch.confirmation_number = patch.confirmationNumber;
+      if (patch.confirmationNumber !== undefined) dbPatch.confirmationNumber = patch.confirmationNumber;
       if (patch.link !== undefined) dbPatch.link = patch.link;
       if (patch.note !== undefined) dbPatch.note = patch.note;
-      if (patch.fileUrl !== undefined) dbPatch.file_url = patch.fileUrl;
-      if (patch.fileName !== undefined) dbPatch.file_name = patch.fileName;
+      if (patch.fileUrl !== undefined) dbPatch.fileUrl = patch.fileUrl;
+      if (patch.fileName !== undefined) dbPatch.fileName = patch.fileName;
       if (patch.status !== undefined) dbPatch.status = patch.status;
-      if (patch.bookByDaysBefore !== undefined) dbPatch.book_by_days_before = patch.bookByDaysBefore;
+      if (patch.bookByDaysBefore !== undefined) dbPatch.bookByDaysBefore = patch.bookByDaysBefore;
 
       if (!supabaseConfigured) {
         setBookings((prev) =>
@@ -179,7 +255,11 @@ function useBookingsStore() {
         return;
       }
       await guard("แก้ตั๋ว/booking", () =>
-        supabase.from("bookings").update(dbPatch).eq("id", bookingId)
+        fetch(`/api/engine/trips/${tripIdRef.current}/bookings`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: bookingId, ...dbPatch }),
+        })
       );
     },
     [guard]
@@ -189,7 +269,9 @@ function useBookingsStore() {
     async (bookingId: string) => {
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
       if (!supabaseConfigured) return;
-      await guard("ลบตั๋ว/booking", () => supabase.from("bookings").delete().eq("id", bookingId));
+      await guard("ลบตั๋ว/booking", () =>
+        fetch(`/api/engine/trips/${tripIdRef.current}/bookings?id=${encodeURIComponent(bookingId)}`, { method: "DELETE" })
+      );
     },
     [guard]
   );

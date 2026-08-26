@@ -48,7 +48,8 @@ export type EngineTable =
   | "place_notes"
   | "trip_hotels"
   | "checklist_items"
-  | "trip_day_plan_settings";
+  | "trip_day_plan_settings"
+  | "bookings";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -546,4 +547,32 @@ export function upsertDaySettings(db: Db, rows: Record<string, unknown>[]) {
   return engineTable(db, "trip_day_plan_settings")
     .upsert(rows, { onConflict: "plan_id,trip_day_id" })
     .select("trip_day_id");
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ตั๋ว/การจอง — `E3`
+// ───────────────────────────────────────────────────────────────────────────
+
+const BOOKING_COLS =
+  "id, trip_day_id, category, title, date, time, confirmation_number, link, note," +
+  " file_path, file_name, status, book_by_days_before, legacy_added_by, created_at, updated_at";
+
+export function bookingsOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "bookings")
+    .select(BOOKING_COLS)
+    .eq("trip_id", tripId)
+    .is("deleted_at", null)
+    .order("created_at");
+}
+
+export function insertBooking(db: Db, row: Record<string, unknown>) {
+  return engineTable(db, "bookings").insert(row).select(BOOKING_COLS).single();
+}
+
+export function updateBooking(db: Db, id: string, patch: Record<string, unknown>) {
+  return engineTable(db, "bookings").update(patch).eq("id", id).select("id");
+}
+
+export function softDeleteBooking(db: Db, id: string) {
+  return db.rpc("soft_delete_booking", { p_id: id });
 }
