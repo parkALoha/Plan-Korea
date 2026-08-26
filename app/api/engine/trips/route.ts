@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase, getUser } from "@/lib/auth/server";
+import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { tripsForUser } from "@/lib/engine/trip";
 import { createTrip } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   if (limited) return limited;
 
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!user) return unauthenticatedResponse();
 
   try {
     const db = await createServerSupabase();
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   if (limited) return limited;
 
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!user) return unauthenticatedResponse();
 
   let b: Record<string, unknown>;
   try {

@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
@@ -87,4 +88,29 @@ export async function requireUser(): Promise<User> {
   const user = await getUser();
   if (!user) redirect("/login");
   return user;
+}
+
+/**
+ * คำตอบมาตรฐานตอนยังไม่ได้ล็อกอิน — **จุดเดียวในระบบ** (P1 · 27 ส.ค. 2026 · P2 พบ)
+ *
+ * ## 🔴 ปัญหาที่มันแก้
+ * `{ error: "unauthenticated" }` ถูกเขียนมือซ้ำใน **13 route** — เหมือนกันทุกตัวอักษร
+ * และ **เป็นอังกฤษ ขณะที่ error อื่นทั้งหมดของ route พวกนั้นเป็นไทย**
+ * · ฝั่ง UI แสดง `error` ตรง ๆ → **session หมดอายุกลางทาง ผู้ใช้เห็นคำว่า `"unauthenticated"`**
+ * 🎯 **รูปเดียวกับ `"rate limited"` เมื่อชั่วโมงก่อนเป๊ะ** — ข้อความที่ไม่เคยถูกเขียนให้ผู้ใช้อ่าน
+ *    เพราะตอนเขียนมันยังไม่ได้อยู่หลังฟอร์มที่ผู้ใช้กรอก
+ *
+ * ## 📌 `code` สำคัญกว่าข้อความ
+ * ฝั่งเรียกต้องแยกกรณีจาก `code` **ไม่ใช่จากข้อความ** (ข้อความเปลี่ยนได้ · แปลได้ · ยาวได้)
+ *
+ * ## 🔴 ตัดสินแล้วว่า **ไม่** ให้ไคลเอนต์เด้งไป `/login` อัตโนมัติเมื่อเจอ `401`
+ * ผู้ใช้ที่กรอกฟอร์มยาวแล้ว session หมดอายุ **จะเสียสิ่งที่พิมพ์ทั้งหมด**
+ * · เกณฑ์เดียวกับที่ P7 ตั้งไว้เรื่องโหมดอ่านอย่างเดียว: ***"ราคาอยู่ที่งานที่เสียไปก่อนจะถึงปุ่ม"***
+ * · → แสดงข้อความ + ปุ่มเข้าสู่ระบบใหม่ **โดยเก็บสิ่งที่กรอกไว้** · การเด้งอัตโนมัติทำได้กับหน้าที่แค่*อ่าน*
+ */
+export function unauthenticatedResponse(): NextResponse {
+  return NextResponse.json(
+    { error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่", code: "unauthenticated" },
+    { status: 401 },
+  );
 }

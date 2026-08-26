@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase, getUser } from "@/lib/auth/server";
+import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import {
   deletePlan, duplicatePlan, insertPlan, plansOfTrip, renamePlan, setActivePlan,
 } from "@/lib/engine/db";
@@ -21,7 +21,7 @@ async function ctx(req: NextRequest) {
   const limited = rateLimitGuard(req, "engine-plans", RATE_LIMIT_PER_MINUTE);
   if (limited) return { stop: limited };
   const user = await getUser();
-  if (!user) return { stop: NextResponse.json({ error: "unauthenticated" }, { status: 401 }) };
+  if (!user) return { stop: unauthenticatedResponse() };
   const db = await createServerSupabase();
   const trip = await soleTrip(db);
   if (!trip.ok) {

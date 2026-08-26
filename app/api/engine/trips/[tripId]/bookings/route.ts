@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase, getUser } from "@/lib/auth/server";
+import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { bookingsOfTrip, insertBooking, softDeleteBooking, updateBooking } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import type { TripBooking } from "@/lib/supabase";
@@ -53,7 +53,7 @@ async function guard(req: NextRequest, tripId: string) {
   const limited = rateLimitGuard(req, "engine-bookings", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!user) return unauthenticatedResponse();
   if (!UUID.test(tripId)) return NextResponse.json({ error: "tripId ไม่ถูกต้อง" }, { status: 400 });
   return null;
 }

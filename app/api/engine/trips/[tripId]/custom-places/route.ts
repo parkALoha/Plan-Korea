@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase, getUser } from "@/lib/auth/server";
+import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { customPlacesOfTrip, oneCustomPlace } from "@/lib/engine/customPlaces";
 import { createCustomPlace } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
@@ -53,7 +53,7 @@ export async function GET(
   if (limited) return limited;
 
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!user) return unauthenticatedResponse();
 
   const { tripId } = await params;
   // 🔴 ตรวจรูปแบบก่อนส่งเข้าฐาน — ไม่ใช่เพื่อความปลอดภัย (RLS ทำหน้าที่นั้น)
@@ -91,7 +91,7 @@ export async function POST(
   if (limited) return limited;
 
   const user = await getUser();
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!user) return unauthenticatedResponse();
 
   const { tripId } = await params;
   if (!UUID.test(tripId)) {
