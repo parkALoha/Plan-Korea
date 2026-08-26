@@ -26,26 +26,34 @@ function dateRangeLabel(hotel: TripHotel) {
  * (ระบุ city/ช่วงวันจาก `ITINERARY`) ทริปแพลตฟอร์มยังไม่มีทางป้อนที่พักใหม่แบบไม่ผูก leg ได้เลย — เป็นงาน
  * แยกที่ยังไม่ได้ตัดสินใจ (ไม่ใช่ขอบเขตของ gate นี้) วันนี้ยังไม่มีทริปแพลตฟอร์มใบไหนมีที่พักจริงสักที
  * (P1 ยืนยัน) รายการนี้จึงยังว่างเปล่าเสมอในทางปฏิบัติ — เตรียมไว้ก่อนที่จะมีของจริง ไม่ใช่ตอนมีคนรายงาน
+ *
+ * 🔴 **แก้ 27 ส.ค. 2026 (P1/P2) — เดิม `return null` ตอนไม่มีที่พัก ไม่ตรงกับรูปแบบที่เหลือของแอป**
+ * `BookingsPanel`/`HotelLegsPanel` (ที่ใช้ตอน `dayPlanReady`) โชว์หัวข้อ + ข้อความ empty-state เสมอ ไม่เคย
+ * ซ่อน section ทั้งก้อนเพราะไม่มีข้อมูล — `return null` เดิมทำให้ทริปที่ยังไม่มีที่พักจริงไม่เห็นแม้แต่หัวข้อ
+ * "🏨 ที่พักของทริป" เลย ต่างจากทริปเดียวกันตอนอยู่ที่ `HotelLegsPanel` (โชว์หัวข้อ + "ยังไม่ได้ตั้ง" เสมอ)
  */
 export function HotelsFlatList({ hotels }: { hotels: Record<string, TripHotel> }) {
   const rows = Object.values(hotels).sort((a, b) => a.check_in.localeCompare(b.check_in));
-  if (rows.length === 0) return null;
 
   return (
     <section className="mb-5">
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
         🏨 ที่พักของทริป
       </h2>
-      <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
-        {rows.map((hotel) => (
-          <div key={`${hotel.check_in}_${hotel.check_out}`} className="px-3 py-2.5 text-sm">
-            <div className="text-xs text-content-soft">
-              {hotel.city} · {dateRangeLabel(hotel)}
+      {rows.length === 0 ? (
+        <p className="text-sm text-content-soft">ยังไม่มีที่พักบันทึกไว้</p>
+      ) : (
+        <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
+          {rows.map((hotel) => (
+            <div key={`${hotel.check_in}_${hotel.check_out}`} className="px-3 py-2.5 text-sm">
+              <div className="text-xs text-content-soft">
+                {hotel.city} · {dateRangeLabel(hotel)}
+              </div>
+              <div className="font-medium text-content">{hotel.hotel_name}</div>
             </div>
-            <div className="font-medium text-content">{hotel.hotel_name}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
