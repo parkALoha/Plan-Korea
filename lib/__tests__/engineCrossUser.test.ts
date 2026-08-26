@@ -59,6 +59,7 @@ vi.mock("next/headers", () => ({
 import { POST as bookingsPOST } from "@/app/api/engine/trips/[tripId]/bookings/route";
 import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist/route";
 import { GET as tripsGET } from "@/app/api/engine/trips/route";
+import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -100,6 +101,18 @@ async function postAs(cookies: Cookie[], tripId: string, handler: Handler, body:
   return handler(req, { params: Promise.resolve({ tripId }) });
 }
 
+// ยิง handler ด้วย method ใด ๆ (PATCH/PUT/DELETE) — สำหรับ probe แบบ modify
+async function callAs(cookies: Cookie[], tripId: string, handler: Handler, method: string, body?: unknown): Promise<Response> {
+  jar.cookies = cookies;
+  const init: { method: string; headers: Record<string, string>; body?: string } = {
+    method,
+    headers: { "content-type": "application/json" },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const req = new NextRequest(`http://localhost:3300/api/engine/trips/${tripId}/x`, init);
+  return handler(req, { params: Promise.resolve({ tripId }) });
+}
+
 /**
  * แยกผลของ B ออกเป็น 3 ทาง — หัวใจของด่านนี้
  * · `rejected`  = 401/403 (RLS/auth) หรือ 404/409 (`0-rows`/stale) → **ด่านทำงาน**
@@ -116,7 +129,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist"]);
+const COVERED = new Set(["bookings", "checklist", "days"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -169,6 +182,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let tripA = "";
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
+  let aDay = "";
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -225,6 +239,14 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
     tripA = await mkTrip(a.client, "a");
     await mkTrip(b.client, "b");
+    // A สร้าง trip_day ของตัวเองผ่าน client ผู้ใช้จริง (grant ราย column: id,trip_id,date,timezone,city_id — ห้ามส่งอื่น)
+    const dayIns = await a.client
+      .from("trip_days")
+      .insert({ trip_id: tripA, date: "2026-10-12", timezone: "Asia/Seoul" })
+      .select("id")
+      .single();
+    if (dayIns.error) throw new Error(`mkDay: ${dayIns.error.message}`);
+    aDay = dayIns.data.id as string;
     aCookies = await captureCookies(a.session);
     bCookies = await captureCookies(b.session);
   });
@@ -272,5 +294,21 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       bodyA: { text: "xu-a", category: "todo" }, bodyB: { text: "xu-b", category: "todo" },
       table: "checklist_items", col: "text", valueA: "xu-a", valueB: "xu-b",
     });
+  });
+
+  it("days PATCH — B แก้ overnight ของวัน A ไม่ได้", async () => {
+    // control: A แก้วันตัวเองได้ (พิสูจน์ route ไม่ได้พังทุกคน)
+    const aRes = await callAs(aCookies, tripA, daysPATCH, "PATCH", { dayId: aDay, kind: "undecided" });
+    expect(aRes.status, `control A ควร 200: ${aRes.status} ${await aRes.clone().text()}`).toBe(200);
+    // snapshot แถว trip_day หลัง A แก้ (admin · P-72 — คนละเจ้าของกับ route)
+    const before = await admin.from("trip_days").select("*").eq("id", aDay).single();
+    if (before.error) throw new Error(`admin read trip_day: ${before.error.message}`);
+    // attack: B แก้วันของ A
+    const bRes = await callAs(bCookies, tripA, daysPATCH, "PATCH", { dayId: aDay, kind: "none" });
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[days] B → **${verdict}** (${detail}) · rejected=ด่านทำงาน · leak=แก้ได้ · server-bug=บั๊กเรา`).toBe("rejected");
+    // แถวต้องไม่เปลี่ยนจากตอน A แก้ — เปลี่ยน = B แก้วันของ A สำเร็จ (leak)
+    const after = await admin.from("trip_days").select("*").eq("id", aDay).single();
+    expect(after.data, "[days] B แก้ trip_day ของ A สำเร็จ (leak)").toEqual(before.data);
   });
 });
