@@ -48,7 +48,7 @@ create table public.copilot_proposals (
 
   -- ⚠️ P-06: soft delete (D7) ทำให้ `on delete cascade` ของ day_id **ไม่เคยทำงาน**
   --    เพราะไม่มีใคร DELETE จริงอีกแล้ว · FK นี้จึงกันได้แค่การลบแข็ง ซึ่งจะไม่เกิด
-  --    → ต้องตรวจว่าวันยังไม่ถูก soft delete ใน app.decide_proposal() ไม่ใช่พึ่ง FK
+  --    → ต้องตรวจว่าวันยังไม่ถูก soft delete ใน public.decide_proposal() ไม่ใช่พึ่ง FK
   day_id        uuid references public.trip_days(id) on delete cascade,
 
   -- ใครขอ --------------------------------------------------------------------
@@ -191,7 +191,7 @@ create policy copilot_proposals_write on public.copilot_proposals
 grant select, insert on public.copilot_proposals to authenticated;
 
 -- 🔴 จงใจไม่ให้ update/delete — ตรงกับที่ไม่มี policy สองตัวนั้น (P-01)
---    การเปลี่ยน status ทำผ่าน app.decide_proposal() ทางเดียวเท่านั้น
+--    การเปลี่ยน status ทำผ่าน public.decide_proposal() ทางเดียวเท่านั้น
 --    ⚠️ ถ้าวันหนึ่งมีคนเจอว่า "เปลี่ยน status ไม่ได้" แล้วมาเติม update ตรงนี้
 --       เขาจะปิดฟีเจอร์ได้สำเร็จและเปิดช่องพร้อมกัน — ทางที่ถูกคือดูที่ grant execute ข้างล่าง
 
@@ -282,7 +282,7 @@ end $$;
 -- 🔴 security definer ข้าม RLS → **ต้องตรวจสมาชิกเองข้างในทุกครั้ง**
 --    ถ้าลืมบรรทัด can_write_trip ฟังก์ชันนี้จะกลายเป็นช่องให้ใครก็ตัดสินข้อเสนอ
 --    ของทริปใครก็ได้ — อันตรายกว่าการไม่มีฟังก์ชันนี้เลย
-create or replace function app.decide_proposal(p_id uuid, p_accept boolean)
+create or replace function public.decide_proposal(p_id uuid, p_accept boolean)
 returns text language plpgsql security definer set search_path = '' as $$
 declare
   v_trip    uuid;
@@ -400,13 +400,13 @@ end $$;
 -- ✅ ตัวเดียวที่เป็นทางเข้าอย่างเป็นทางการ — ต้อง grant ให้เรียกได้
 --    ปลอดภัยเพราะตัวมันเองตรวจสมาชิก + base_versions + ล็อกแถวไว้ครบ
 --    (อยู่ schema `app` ซึ่งไม่ expose ให้ PostgREST → browser ยิงตรงไม่ได้ ต้องผ่าน Server Action)
-grant execute on function app.decide_proposal(uuid, boolean) to authenticated;
+grant execute on function public.decide_proposal(uuid, boolean) to authenticated;
 
 -- ✅ 2 ตัวนี้ revoke ถูกแล้ว — เป็นชิ้นส่วนภายใน ถูกเรียกจาก decide_proposal
 --    ด้วยสิทธิ์ owner ของ definer อยู่แล้ว ไม่ต้องให้ใครเรียกตรง
 revoke all on function app.apply_proposal(uuid)              from public, anon, authenticated;
 revoke all on function app.base_versions_match(uuid, jsonb)  from public, anon, authenticated;
-revoke all on function app.decide_proposal(uuid, boolean)    from public, anon;
+revoke all on function public.decide_proposal(uuid, boolean)    from public, anon;
 
 -- 🔴 กฎข้อ 5 ของ README (จาก P-09): **ห้าม `grant ... on all ... in schema`** ที่ไหนก็ตาม
 --    ไฟล์นี้ตรวจแล้วไม่มี · ทุกบรรทัดข้างบนระบุชื่อฟังก์ชันพร้อม signature เต็ม
