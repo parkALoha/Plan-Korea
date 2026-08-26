@@ -61,6 +61,7 @@ import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist
 import { GET as tripsGET } from "@/app/api/engine/trips/route";
 import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
+import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -130,7 +131,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops"]);
 
 /** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -335,5 +336,23 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(verdict, `[day-settings] B → **${verdict}** (${detail})`).toBe("rejected");
     const after = await key();
     expect(after.data, "[day-settings] B แก้ตั้งค่าของ A สำเร็จ (leak)").toEqual(before.data);
+  });
+
+  it("stops POST — B สร้างจุดแวะในแผน/วันของ A ไม่ได้", async () => {
+    // kind hotel/intercity = ไม่ต้องมีสถานที่ (trip_stops_place_by_kind) → fixture แค่ plan+day
+    const body = { planId: aPlan, tripDayId: aDay, kind: "hotel" };
+    const aRes = await postAs(aCookies, tripA, stopsPOST, body);
+    expect(aRes.status, `control A ควร 201: ${aRes.status} ${await aRes.clone().text()}`).toBe(201);
+    const count = async () => {
+      const { data, error } = await admin.from("trip_stops").select("id").eq("trip_day_id", aDay);
+      if (error) throw new Error(`admin count trip_stops: ${error.message}`);
+      return data.length;
+    };
+    const n1 = await count();
+    const bRes = await postAs(bCookies, tripA, stopsPOST, body);
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(verdict, `[stops] B → **${verdict}** (${detail})`).toBe("rejected");
+    const n2 = await count();
+    expect(n2, "[stops] จำนวนจุดแวะในวัน A เพิ่มหลัง B ยิง = B สร้างในทริป A สำเร็จ (leak)").toBe(n1);
   });
 });
