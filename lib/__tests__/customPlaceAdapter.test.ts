@@ -26,7 +26,26 @@ describe("toCustomPlace", () => {
       name_en: null, name_ko: null, category: "food", lat: 1, lng: 2,
       maps_query: "q", google_place_id: null, description: null,
       created_at: "2026-08-01T00:00:00Z",
+      // 🔴 เพิ่ม 27 ส.ค. 2026 — `country` เข้ามาตอน `c59b678` แล้ว **ผมไม่ได้แตะเทสต์เลย**
+      //    เทสต์นี้แดงมาหลายชั่วโมงโดยไม่มีใครรู้ เพราะทรีถูก refactor ค้างจนรันชุดเต็มไม่ได้
+      //    🎯 **และที่รู้ก็เพราะ `toEqual` ไม่ใช่ `toMatchObject`** — ถ้าเป็น `toMatchObject`
+      //       ช่องใหม่จะเงียบสนิท ตรงกับที่หัวไฟล์เตือนไว้เป๊ะ · **การยืนยันแบบครบช่องคือสิ่งที่จับได้**
+      country: null,
     });
+  });
+
+  it("🔴 `country` มาจาก **เมือง** และมีเคสจริงที่มันไม่ใช่ `null`", () => {
+    // ⚠️ ก่อน 27 ส.ค. 2026 ช่องนี้ไม่มีเทสต์แตะเลยสักเคส — มีแต่ `null` ที่มาจากการไม่ตั้งค่า
+    //    `null` ที่ได้จาก "ไม่มีข้อมูล" พิสูจน์การแมปไม่ได้ เพราะโค้ดที่ *ลืมแมปทั้งบรรทัด*
+    //    ก็คืน `undefined`/`null` เหมือนกัน → ต้องมีเคสที่ค่า **ไม่ใช่** `null` ถึงจะแยกสองอย่างนี้ออก
+    const r = row({ catalog_cities: { legacy_slug: "busan", country_id: "kr-uuid" } });
+    expect(toCustomPlace(r).country).toBe("kr-uuid");
+  });
+
+  it("เมืองที่ไม่มี `country_id` → `null` ไม่ใช่ `undefined`", () => {
+    // ช่องนี้ไหลเข้า UI ตรง ๆ · `undefined` กับ `null` ต่างกันตอน serialize ข้าม network
+    const r = row({ catalog_cities: { legacy_slug: "busan", country_id: null } });
+    expect(toCustomPlace(r).country).toBeNull();
   });
 
   it("🔴 หลายชื่อในภาษาเดียว → เอา `priority` น้อยสุด **ไม่ใช่ตัวแรกที่ฐานคืนมา**", () => {
