@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripTsComments } from "./_helpers";
 
 /**
  * `E4-AC5` / `E4-AC6` — เกณฑ์สองข้อที่ผ่านด้วย **การไม่มีอยู่** (P1 · 27 ส.ค. 2026)
@@ -33,28 +34,28 @@ const FORBIDDEN: { name: string; ac: string; re: RegExp }[] = [
 ];
 
 /**
- * ⚠️ **ตัดคอมเมนต์ออกก่อนตรวจ** — ไฟล์ของทีมนี้อธิบาย*ข้อห้าม*ด้วยการเขียนชื่อโฮสต์ที่ห้าม
- * ถ้าไม่ตัด ด่านจะแดงใส่คนที่เขียนคำเตือน แล้วคำเตือนจะถูกลบเพื่อให้ CI เขียว — ตรงข้ามกับที่ต้องการ
- * · ตัดแบบหยาบพอ (`//` ทั้งบรรทัด · `/* … *\/` · บรรทัดที่ขึ้นต้นด้วย `*`) เพราะ **พลาดฝั่งเข้มงวดเกิน
- *   ดีกว่าพลาดฝั่งหลวมเกิน** — ถ้าตัดไม่หมด อย่างมากคือแดงแล้วมีคนมาดู
+ * 🔴 **ใช้ `stripTsComments` ของกลาง — ห้ามเขียนเอง** (P1 · 27 ส.ค. 2026)
+ *
+ * ฉบับแรกของด่านนี้เขียนตัวตัดคอมเมนต์ขึ้นมาใหม่ แล้วมันตัดที่ `//` ตัวแรกจนจบบรรทัด
+ * → `"https://dapi.kakao.com/…"` เหลือ `"https:` เพราะ `//` ของ **โปรโตคอล**
+ * → **ด่านลบ URL ทุกตัวที่มันมีหน้าที่หา แล้วรายงานว่าสะอาด**
+ *
+ * ## 🎯 ทีมนี้จ่ายค่าบทเรียนเดียวกันนี้มาแล้ว 3 ครั้งก่อนหน้า
+ * ① `stripTsComments` เดิมเขียนกำกับตัวเองไว้ว่า *"ตัดแบบไร้เดียงสาจะกิน `//` ใน `https://`
+ *    แล้วกลืนโค้ดจริง → จับของจริงไม่เจอ ซึ่งเป็นทิศที่แย่กว่าจับผิด"*
+ * ② `_helpers.ts` **ถูกสร้างขึ้นมาเพื่อกันไม่ให้ `stripTsComments` มี 2 ที่** (ดูหัวไฟล์นั้น)
+ * ③ `.github/check-dynamic-from.py` เจอซ้ำในภาษา Python · P6 สรุปไว้ว่า
+ *    *"บทเรียนที่จ่ายแล้วไม่ข้ามไปอีกฝั่งเอง"* (คนละภาษา)
+ *
+ * 🔴 **ครั้งนี้แย่กว่าทั้งสามครั้ง เพราะมันไม่ได้ข้ามภาษาเลย — ผมเขียนตัวซ้ำ *ในโฟลเดอร์เดียวกัน
+ * กับไฟล์ที่ถูกสร้างมาเพื่อกันการซ้ำนั้น***
+ * 🎯 บทเรียนที่เขียนไว้เฉย ๆ ไม่ป้องกันอะไร · **ของกลางป้องกันได้ก็ต่อเมื่อคนถัดไป *เจอมันก่อน*
+ * ที่จะพิมพ์ของตัวเอง** — และไม่มีอะไรในเครื่องมือของเราที่ทำให้เจอก่อน
  */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    // 🔴 `(?<!:)` จำเป็น **ไม่ใช่ของตกแต่ง** — ฉบับแรกเขียน `/\/\/.*$/` เฉย ๆ
-    //    แล้ว `"https://dapi.kakao.com/…"` ถูกตัดเหลือ `"https:` เพราะ `//` ของ *โปรโตคอล*
-    //    → **ด่านลบ URL ทุกตัวที่มันมีหน้าที่หา** แล้วรายงานว่าสะอาด
-    //    ⚠️ เคส self-test ที่ป้อน*สตริง*ให้ regex ตรง ๆ **ผ่านฉลุย** เพราะไม่ได้เดินผ่านบรรทัดนี้
-    //    · เคสที่จับได้คือเคสที่เขียนไฟล์ลงดิสก์จริงแล้วเรียก `violationsIn()` ทั้งเส้น
-    .map((l) => (/^\s*(\/\/|\*)/.test(l) ? "" : l.replace(/(?<!:)\/\/.*$/, "")))
-    .join("\n");
-}
-
 function violationsIn(files: string[]): string[] {
   const hits: string[] = [];
   for (const f of files) {
-    const code = stripComments(readFileSync(f, "utf8"));
+    const code = stripTsComments(readFileSync(f, "utf8"));
     for (const { name, ac, re } of FORBIDDEN) {
       const lines = code.split("\n");
       lines.forEach((l, i) => {
@@ -82,7 +83,7 @@ describe("E4-AC5/AC6 — โฮสต์ API ที่ห้ามเรีย�
 
   it("self-test: คอมเมนต์ที่*อธิบาย*ข้อห้าม ต้องไม่ทำให้ด่านแดง", () => {
     const doc = "// ห้ามเรียก maps.googleapis.com/maps/api/* ดู AGENTS.md\nconst x = 1;";
-    expect(stripComments(doc)).not.toMatch(/maps\.googleapis\.com/);
+    expect(stripTsComments(doc)).not.toMatch(/maps\.googleapis\.com/);
   });
 
   it("🔴 self-test เส้นทางเต็ม: อ่านไฟล์จริงจากดิสก์แล้วต้องแดง", () => {
@@ -109,7 +110,7 @@ describe("E4-AC5/AC6 — โฮสต์ API ที่ห้ามเรีย�
   it("🔴 URL บนบรรทัดโค้ดที่มีคอมเมนต์ต่อท้าย — ต้องเห็น URL และตัดคอมเมนต์", () => {
     // เคสนี้คือจุดที่ `(?<!:)` ตัดสินใจถูกหรือผิด · ทั้งสองฝั่งของบรรทัดต้องทำงานพร้อมกัน
     const line = 'const u = "https://api.odsay.com/v1"; // ตัวนี้ห้ามใช้ ดู dapi.kakao.com ด้วย';
-    const stripped = stripComments(line);
+    const stripped = stripTsComments(line);
     expect(stripped).toContain("api.odsay.com");   // URL ในโค้ด: ต้องเหลือ
     expect(stripped).not.toContain("dapi.kakao");  // ชื่อในคอมเมนต์: ต้องหาย
   });
