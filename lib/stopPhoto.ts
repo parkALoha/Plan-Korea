@@ -1,6 +1,5 @@
-import { supabase } from "@/lib/supabase";
-import { writeGuard } from "@/lib/writeGuard";
-import { BOOKING_FILES_BUCKET, storageKeyOf } from "@/lib/engine/storageKey";
+import { storageKeyOf } from "@/lib/engine/storageKey";
+import { guardedRemove, guardedUpload } from "@/lib/engine/guardedStorage";
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
@@ -30,14 +29,7 @@ export async function uploadStopPhoto(
   //    `writeGuard` ตรวจครบทุกมิติให้แล้ว
   // ⚠️ ผู้ใช้ยังต้องได้ข้อความในบริบทของหน้าจอด้วย (`{ error }` ที่คืนไป) — toast ของ guard
   //    บอกว่า *อะไร*ล้ม · ตัวที่คืนบอกว่า*ตอนนี้ทำอะไรต่อได้* · คนละหน้าที่ ไม่ใช่ซ้ำกัน
-  // 🎯 **ตัวชนิดพูดข้อเดียวกันนี้เองก่อนที่ผมจะเขียนคอมเมนต์เสร็จ:**
-  //    `WriteResult.data` เป็น `unknown[] | null` · `.upload()` คืน object → `tsc` ปฏิเสธ
-  //    ทางที่ง่ายคือขยาย `WriteResult.data` เป็น `unknown` **ซึ่งจะทำให้ชนิดเลิกบอกว่า "data คือแถว"**
-  //    → เลือกทิ้ง `data` ตรงนี้แทน **ให้ความไม่เข้ากันปรากฏที่จุดเรียก ไม่ใช่ถูกกลบที่นิยาม**
-  const uploaded = await writeGuard("อัปโหลดรูปจุดแวะ", async () => {
-    const { error } = await supabase.storage.from(BOOKING_FILES_BUCKET).upload(path, file);
-    return { error };
-  });
+  const uploaded = await guardedUpload("อัปโหลดรูปจุดแวะ", path, file);
   if (!uploaded) return { error: "อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง" };
 
   // 🔴 `allowNoRows: true` — รูปเก่ามาจากแถวที่มีอยู่จริง · อีกเครื่องอาจเปลี่ยนรูปเดียวกันไปก่อน
@@ -45,13 +37,7 @@ export async function uploadStopPhoto(
   // ⚠️ **ไม่บล็อกผลลัพธ์ของการอัปโหลด** — ลบของเก่าไม่สำเร็จไม่ได้แปลว่ารูปใหม่ใช้ไม่ได้
   //    ที่แย่ที่สุดคือไฟล์กำพร้าค้างใน bucket ซึ่งดังผ่าน toast แล้ว
   const oldPath = storageKeyOf(existingPhotoUrl);
-  if (oldPath) {
-    await writeGuard(
-      "ลบรูปเดิมของจุดแวะ",
-      () => supabase.storage.from(BOOKING_FILES_BUCKET).remove([oldPath]),
-      { allowNoRows: true }
-    );
-  }
+  if (oldPath) await guardedRemove("ลบรูปเดิมของจุดแวะ", [oldPath], { allowNoRows: true });
 
   // 🔴 คืน **path** ไม่ใช่ public URL — แก้ 27 ส.ค. 2026
   //    `getPublicUrl()` บน bucket ที่ปิดไปแล้ว (`E2-AC13` ①) คืน URL ที่เปิดไม่ได้
@@ -74,9 +60,5 @@ export async function uploadStopPhoto(
 export async function removeStopPhoto(photoUrl: string | null | undefined): Promise<void> {
   const path = storageKeyOf(photoUrl);
   if (!path) return;
-  await writeGuard(
-    "ลบรูปจุดแวะ",
-    () => supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]),
-    { allowNoRows: true }
-  );
+  await guardedRemove("ลบรูปจุดแวะ", [path], { allowNoRows: true });
 }

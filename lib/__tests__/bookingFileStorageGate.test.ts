@@ -12,11 +12,16 @@ import { describe, expect, it } from "vitest";
  * แทนที่จะพยายามปิดที่ผลลัพธ์ — แพทเทิร์นเดียวกับด่าน `.maybeSingle()` ใน `writeGuard.test.ts`
  * (ตรรกะแยกไม่ได้จากผลลัพธ์เพียวๆ แต่ไฟล์แยกได้)
  */
+// 🔴 **แก้ 27 ส.ค. 2026 (P1 · หลัง P2 ชี้ช่องของด่านตัวเองและตกลงกันแล้ว)**
+// ด่านนี้บังคับ *ที่ไหน* ไม่ได้บังคับ *ห่อหรือไม่ห่อ* — regex จับ `.upload()` ดิบ ๆ ที่เขียน
+// **ในไฟล์ที่อนุญาตเอง** ไม่ได้ · ทางแก้คือทำให้ **ที่เดียวที่อนุญาต = ที่ที่ห่อเสมอ**
+// → `lib/engine/guardedStorage.ts` ห่อ `writeGuard` ให้ในตัวมันเอง ผู้เรียกข้ามไม่ได้
+// 🎯 **สองคำถามกลายเป็นคำถามเดียว** · รูปเดียวกับ `lib/engine/db.ts` ที่เป็นไฟล์เดียวที่พิมพ์ชื่อตารางได้
+// ⚠️ `hooks/useBookingFile.ts` ยังอยู่ในรายการชั่วคราว — **P2 กำลังย้ายมันมาที่นี่** (ตกลงกันแล้ว)
+//    ลบบรรทัดนั้นทิ้งเมื่อย้ายเสร็จ · `lib/stopPhoto.ts` ย้ายแล้ว จึงถูกถอดออกจากรายการ
 const ALLOWED_FILES = [
+  "lib/engine/guardedStorage.ts",
   "hooks/useBookingFile.ts",
-  // ครึ่งของ P1 (E3-AC4) — เขียนแยกกันโดยตั้งใจ ไม่คุยระหว่างทาง เพื่อเทียบรูปกันตอนรวม
-  // ลบบรรทัดนี้ทิ้งเมื่อ lib/stopPhoto.ts ย้ายเข้า writeGuard เสร็จ
-  "lib/stopPhoto.ts",
 ];
 
 const WRITE_METHOD = /\.storage\.from\([^)]*\)\s*\.\s*(upload|remove|update|move|copy)\s*\(/;
@@ -50,11 +55,15 @@ function scan(): string[] {
 
 describe("E3-AC4 — ห้ามมีจุดเขียน Supabase Storage นอก choke point ที่กำหนด", () => {
   it("ด่านต้องทำงานได้จริงก่อน — ไม่งั้นเคสข้างล่างเขียวเพราะไม่เจออะไรเลย", () => {
-    // ยืนยันว่า regex จับรูปแบบจริงได้ ด้วยไฟล์ที่รู้อยู่แล้วว่ามี (lib/stopPhoto.ts ที่ยกเว้นไว้)
-    const src = readFileSync(resolve(process.cwd(), "lib/stopPhoto.ts"), "utf8");
-    expect(WRITE_METHOD.test(src), "regex ไม่จับ lib/stopPhoto.ts ทั้งที่รู้ว่ามีการเขียนจริง").toBe(
-      true
-    );
+    // 🔴 **เดิมชี้ที่ `lib/stopPhoto.ts` — ไฟล์ที่ *ตั้งใจให้เปลี่ยน* จึงเป็นจุดยึดชั่วคราว**
+    //    พอมันย้ายเข้า `guardedStorage` เคสควบคุมก็แดงทันที ทั้งที่ด่านทำงานถูก
+    // 🎯 ย้ายมายึดที่ **ที่ถาวร**: `guardedStorage.ts` คือที่เดียวที่จะมีการเขียนตรงตลอดไป
+    //    ถ้าวันหนึ่งมันไม่มี = ไม่มีการเขียน Storage ในโปรเจกต์แล้ว ซึ่งควรเป็นการตัดสินใจ ไม่ใช่อุบัติเหตุ
+    const src = readFileSync(resolve(process.cwd(), "lib/engine/guardedStorage.ts"), "utf8");
+    expect(
+      WRITE_METHOD.test(src),
+      "regex ไม่จับ lib/engine/guardedStorage.ts ทั้งที่รู้ว่ามีการเขียนจริง"
+    ).toBe(true);
   });
 
   it("ไม่มีไฟล์ไหนนอกรายการที่อนุญาตเรียก storage.from(...).upload/remove/update/move/copy ตรงๆ", () => {
