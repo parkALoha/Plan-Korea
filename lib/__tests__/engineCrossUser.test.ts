@@ -4,6 +4,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
 import { readEnvKey, requireLiveCreds } from "./_helpers";
 import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
+import { existsSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 /**
  * `E3-AC9` ② (runtime) — Server Action แทน A แตะทริป B ไม่ได้ · เจ้าของ: P4-QA/Sec (26 ส.ค. 2026)
@@ -14,8 +16,9 @@ import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
  * · พิสูจน์แล้ววันแรกที่สร้าง harness นี้: `GET /api/engine/trips` **เคย**คืน 502 ทุกคน เพราะ
  *   `tripsVisibleToMe` select `trips.name` ที่ไม่มีจริง — **ไม่มีเทสต์ชั้นตารางจับได้**
  *   (P1 แก้แล้ว `fae94fe` · `db.ts:261` `name`→`title`) · เก็บไว้เป็นเหตุผลว่าทำไม probe ยิง route จริง
- *   🎯 `rlsMatrix` ยิง `.from("trips")` ด้วยชื่อคอลัมน์ *ของมันเอง* (ถูก) แต่ **ไม่เคยเรียก `tripsForUser()`**
- *      → helper กับเทสต์เห็นสคีมาคนละใบ ไม่มีอะไรเทียบให้ · `P-76` ในรูปของ coverage (P1)
+ *   🎯 **641 เคสเขียวทั้งวัน ขณะที่ endpoint นี้คืน 502 ให้ทุกคน:** `rlsMatrix` ยิง `.from("trips")`
+ *      ด้วยชื่อคอลัมน์ *ของมันเอง* (เขียนถูก) แต่ **ไม่เคยเรียก `tripsForUser()`** → helper กับเทสต์
+ *      เห็นสคีมาคนละใบ ไม่มีอะไรเทียบให้ · `P-76` ในรูปของ coverage (P1) — เขียวหลอกที่มีคำอธิบายฟังขึ้น
  *
  * ## harness: in-process ยิงในนาม B — **ไม่ต้องมีเซิร์ฟเวอร์ รันใน CI ได้**
  * mock `next/headers` ให้คืนคุกกี้ ssr ของ B ที่ capture มา → route เรียก `getUser()` ตรวจ JWT
@@ -111,6 +114,41 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
   if (s >= 200 && s < 300) return { verdict: "leak", detail };
   return { verdict: "server-bug", detail }; // 502 (คอลัมน์/ helper) · 400 (body ผิด = probe พัง) · อื่น
 }
+
+/** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
+const COVERED = new Set(["bookings", "checklist"]);
+
+/** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
+function tripScopedRouteNames(): string[] {
+  const base = resolve(process.cwd(), "app/api/engine/trips/[tripId]");
+  try {
+    return readdirSync(base, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && existsSync(join(base, e.name, "route.ts")))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+// 🔴 แบนเนอร์ความครอบคลุม — **รันเสมอ ไม่ต้องมี creds** เพื่อให้ตัวเลขโผล่ทุกครั้งที่รัน
+//    ไม่ใช่แค่คอมเมนต์ (P1): กันคนเห็นไฟล์เขียวแล้วสรุปว่า cross-user ถูกทดสอบครบ
+describe("E3-AC9 ② — ความครอบคลุม (ต้องเห็นตอนรัน)", () => {
+  it("📊 coverage — เขียวไม่ได้แปลว่าครบ 9 · ตัวเลขต้องโผล่ตอนรัน", () => {
+    const all = tripScopedRouteNames();
+    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(9);
+    const covered = [...COVERED].sort();
+    const stale = covered.filter((c) => !all.includes(c));
+    expect(stale, `COVERED ชี้ route ที่ไม่มีบนดิสก์: ${stale.join(", ")}`).toEqual([]);
+    const remaining = all.filter((r) => !COVERED.has(r));
+    const banner =
+      remaining.length === 0
+        ? `\n✅ AC9② cross-user: ครอบครบ ${covered.length}/${all.length} trip-route\n`
+        : `\n⚠️  AC9② cross-user: ครอบ ${covered.length}/${all.length} trip-route — เขียวไม่ได้แปลว่า cross-user ถูกทดสอบครบ\n` +
+          `    เหลือ: ${remaining.join(" · ")}\n`;
+    console.warn(banner);
+  });
+});
 
 describe("การรันชุดนี้", () => {
   it("🔴 ถ้าบังคับไว้ ต้องมี creds ครบ — ไม่ใช่ข้ามเงียบ ๆ", () => {
