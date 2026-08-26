@@ -460,7 +460,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
   beforeAll(async () => {
     admin = testClient(SERVICE);
-    fixtureLock = await acquireFixtureLock(admin, `rlsMatrix-${stamp}`); // กันชน R11 · ก่อนแตะ fixture
+    fixtureLock = await acquireFixtureLock(admin, `rlsMatrix-${stamp}`); // กันชน R11 · ก่อนแตะ fixture · ล็อกนี้ทำให้ชุดนี้เรียงกับ engineCrossUser (ช้าลง โดยดีไซน์ · ดู acquireFixtureLock)
     D = testClient(ANON);
 
     // 🔴 ก่อนอย่างอื่นทั้งหมด — ฐานอยู่ในสภาพที่ผลมีความหมายหรือเปล่า

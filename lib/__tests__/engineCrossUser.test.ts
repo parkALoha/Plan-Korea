@@ -291,7 +291,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
 
   beforeAll(async () => {
     admin = createClient(URL_, SERVICE, { auth: { persistSession: false }, realtime: noRealtime() });
-    fixtureLock = await acquireFixtureLock(admin, `engineCrossUser-${stamp}`); // กันชน R11 · ก่อน seed
+    fixtureLock = await acquireFixtureLock(admin, `engineCrossUser-${stamp}`); // กันชน R11 · ก่อน seed · ล็อกนี้ทำให้ชุดนี้เรียงกับ rlsMatrix (ช้าลง โดยดีไซน์ · ดู acquireFixtureLock)
     await seedCatalog();
     const a = await makeUser("a");
     aClient = a.client;

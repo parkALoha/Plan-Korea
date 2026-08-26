@@ -83,7 +83,10 @@ export type FixtureLock = { readonly holder: string; release: () => Promise<void
  *    (P4 วัด: `.env.local` ไม่มี pg connection string) · expiry แก้ "แถวค้าง" แบบเดียวกับ `app.system_mode` (P1)
  * 🔴 **forward-compat:** RPC ยังไม่ลง (`PGRST202`) → คืน no-op **เงียบสนิท** (ไม่ล็อก ไม่ spam) จนกว่า migration ที่ 3 จะมา
  * 🔴 **bounded-retry แล้ว fail-loud** (ไม่ skip · `D72`: คน push ต้องยืนยันหรือแดง ไม่ใช่เขียวกลวง) · ข้อความบอก *ใคร* ถือ
- * 🔴 **release เช็คว่ายังถือ** — ถ้าหลุด (`③` ของ P1: TTL สั้นกว่าเวลาชุด) → **ดัง console.error ไม่ throw** (throw ใน afterAll กลบผลเคสที่เพิ่งรัน)
+ * 🔴 **release ใช้ค่าที่ RPC คืน — atomic** — `release_fixture_lock` คืน `false` = ไม่ได้ถือแล้ว = หลุดกลางรัน
+ *    (`③` ของ P1: TTL สั้นกว่าเวลาชุด) → **ดัง console.error ไม่ throw** (throw ใน afterAll กลบผลเคสที่เพิ่งรัน)
+ *    · **ไม่อ่าน holder ก่อนปลด** — สองคำสั่งมีช่อง TOCTOU (ล็อกหมดอายุคั่นกลาง) · P1 ชี้ · ใช้ `fixture_lock_holder()` แค่ตอน*อยากรู้ว่าใคร*ถือ (ข้อความ)
+ * ⚠️ **หลังล็อกลง ชุดเต็มช้าลง ~30s** — `rlsMatrix`(~140s)+`engineCrossUser`(~30s) ที่เคยรัน*ขนาน* จะ*เรียงกัน* · **ดีไซน์ ไม่ใช่ regression** (P1: เขียนไว้ตรงที่คนสงสัยจะมาอ่าน)
  */
 export async function acquireFixtureLock(
   admin: SupabaseClient,
@@ -105,13 +108,21 @@ export async function acquireFixtureLock(
       return {
         holder,
         release: async () => {
-          const cur = await admin.rpc("fixture_lock_holder");
-          const stillMine = (cur.data as { held_by?: string } | null)?.held_by === holder;
-          await admin.rpc("release_fixture_lock", { p_holder: holder });
-          if (!stillMine) {
+          // 🔴 ③ ของ P1 — ค่าที่ release_fixture_lock คืน *คือ* คำตอบว่าเรายังถืออยู่ไหม (atomic คำสั่งเดียว)
+          //    ไม่อ่าน holder ก่อนปลด: อ่าน-แล้ว-ปลด เป็นสองคำสั่ง มีช่องให้ล็อกหมดอายุคั่นกลาง = รายงานผิดได้ทั้งสองทิศ
+          const { data, error } = await admin.rpc("release_fixture_lock", { p_holder: holder });
+          if (error) {
+            // RPC หายกลางรัน (แทบเป็นไปไม่ได้ถ้า acquire สำเร็จ) — เงียบ/ดังเบา ไม่ throw ให้ afterAll พัง
+            if (error.code !== "PGRST202") console.error(`\n🔴 release_fixture_lock '${holder}': ${error.message}\n`);
+            return;
+          }
+          // false = held_by ≠ holder แล้ว → หลุดกลางรัน (TTL สั้นกว่าเวลาชุด) · holder() เรียกเพื่อ *ข้อความ* เท่านั้น
+          if (data !== true) {
+            const who = await admin.rpc("fixture_lock_holder");
             console.error(
-              `\n🔴 fixture lock '${holder}' หลุดกลางรัน (ตอนนี้: ${JSON.stringify(cur.data)}) — ` +
-                `**TTL (${ttl}s) สั้นกว่าเวลาชุดสด** · ชุดรันแบบไม่กันชนบางช่วง (③ ของ P1) → เพิ่ม TTL ให้ > เวลาชุด\n`,
+              `\n🔴 fixture lock '${holder}' หลุดกลางรัน — release_fixture_lock คืน ${JSON.stringify(data)} ` +
+                `(ตอนนี้ถือโดย: ${JSON.stringify(who.data)}) · **TTL (${ttl}s) สั้นกว่าเวลาชุดสด** · ` +
+                `ชุดรันแบบไม่กันชนบางช่วง (③ ของ P1) → เพิ่ม TTL ให้ > เวลาชุด\n`,
             );
           }
         },
