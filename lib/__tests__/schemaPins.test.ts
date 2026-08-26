@@ -344,6 +344,15 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "app.bootstrap_trip_owner",
       "app.can_read_trip",
       "app.can_write_trip",
+      // 🔴 เพิ่ม 26 ส.ค. (P1) — `E3-AC7` โหมด read-only · **สองตัวนี้คือด่านเอง ไม่ใช่ของที่ผ่านด่าน**
+      //    `deny_write_when_read_only` = trigger บนทุกตารางใน `public`
+      //    `write_is_blocked`          = ตัวตัดสิน แยกออกมาเพื่อให้เทสต์เรียกตรงได้
+      //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์เลยทั้งคู่ · ไม่มี DML · อ่าน `app.system_mode` + GUC**
+      //    · `revoke execute … from public, anon, authenticated` ทั้งคู่ — ไม่มีใครเรียกได้นอกจาก trigger
+      //    เหตุผลที่ต้องเป็น definer: อ่าน `app.system_mode` ซึ่ง `authenticated` แตะไม่ได้เลย
+      //    🎯 **และเป็นเหตุผลที่ trigger ต้องอยู่ระดับนี้:** `revoke` หยุด `security definer` ไม่ได้
+      //       → 7 RPC (`create_trip` + `soft_delete_*`) จะเขียนทะลุ read-only ถ้าใช้ `revoke` อย่างเดียว
+      "app.deny_write_when_read_only",
       "app.handle_new_user",
       // 🔴 เพิ่ม 25 ส.ค. (P1) — `P-55`/`D78`/`Q4`: เขียน `display_name` ลง `legacy_<x>_by`
       //    ก่อน FK จะ `set null` ตอนลบ `profiles` · **`before delete` ไม่ใช่ `after`**
@@ -363,6 +372,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "app.shares_trip_with",
       "app.trip_owner_count",
       "app.trip_role",
+      "app.write_is_blocked",
       // 🔴 เพิ่ม 25 ส.ค. (P1) — รายการคู่คอลัมน์ที่ `app.preserve_authorship` เดินตาม
       //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · อ่าน `pg_catalog` อย่างเดียว · ไม่แตะข้อมูลผู้ใช้**
       //    แยกจาก trigger โดยตั้งใจ เพื่อให้เทสต์เห็นขอบเขตจริงว่ามันครอบตารางไหนบ้าง
@@ -398,6 +408,11 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.soft_delete_place_note",
       "public.soft_delete_trip_hotel",
       "public.soft_delete_trip_stop",
+      // 🔴 เพิ่ม 26 ส.ค. (P1) — ทางอ่านธงโหมด read-only (`P-50`: *ธงที่อ่านไม่ได้ ไม่ใช่ธง*)
+      //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · ไม่มี DML · คืนแค่ `read_only` + `reason`**
+      //    · **ไม่คืน `allow_maintenance_write`** เพราะไม่ใช่เรื่องของผู้ใช้ และเป็นครึ่งหนึ่งของด่าน
+      //    · `grant execute` ให้ `anon` ด้วย — คนที่ยังไม่ล็อกอินต้องเห็น banner ก่อนเริ่มพิมพ์ (P7 ③)
+      "public.system_mode",
       // 🔴 เพิ่ม 25 ส.ค. (P1) — **ตัวตรวจสภาพปลายทาง จากประตูบานที่ 3/4 ที่ P7 ชี้**
       //    (view ที่ไม่ได้ตั้ง `security_invoker` · สมาชิกภาพใน publication ที่ dashboard เปิดได้โดยไม่ผ่านไฟล์)
       //    คำตอบของคำถามข้างบน: **ไม่รับคอลัมน์ของตารางไหนเลย** — พารามิเตอร์เดียวคือ `text[]` ของ*ชื่อตาราง*
