@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   TEST_COUNTRY_CODES,
@@ -952,5 +953,70 @@ describe("🔴 read-only mode — ทุกตาราง public ต้อง�
     expect(guardCovered(3, 5, undefined), "สร้างก่อน/พร้อมลูป = ครอบ").toBe(true);
     expect(guardCovered(10, 5, 12), "มี direct guard หลังสร้าง = ครอบ").toBe(true);
     expect(guardCovered(10, 5, 8), "direct guard ก่อนสร้าง ไม่นับ = ไม่ครอบ").toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+describe("🔴 reachability — ทุก RPC ที่แอปเรียก ต้องยังเข้าถึงได้ (pin:rpc-reachable)", () => {
+  /**
+   * P1 (จาก P5) · ด่านเดิมถาม *"ใครเข้ามาได้เกินที่ควร"* — ไม่มีด่านถาม *"ของที่เราวางไว้ ยังมีคนเข้าถึงได้อยู่ไหม"*
+   * P5 เจอเอง: `app.decide_proposal` grant ให้ `authenticated` ครบ **แต่ PostgREST เรียก `app.*` ไม่ได้** → migration เขียว · ปุ่มยืนยันไม่ทำงาน
+   *
+   * เกณฑ์: ทุก `.rpc("X")` ในโค้ดแอป (`app/` + `lib/` ไม่รวม `__tests__`) ต้องมี
+   *   `grant execute on function public.X(...) to authenticated` (หรือ `anon`)
+   * 🔴 ถ้า X อยู่ `app.*` แทน `public` → ไม่มี `public.X` → PostgREST เรียกไม่ได้ → แดง (จับเคส P5 ตรง ๆ)
+   *
+   * ⚠️ regex grant ต้องทน **arg list หลายบรรทัด** + **ช่องว่างหลายตัวก่อน `to`** — ทั้งสองรูปมีจริงในรีโป (P1 พลาดทั้งคู่)
+   *    `[^;]` คร่อม newline · `\s+to` ทนช่องว่าง · ตัวจัดรูปให้คนอ่าน ไม่ได้จัดให้ regex อ่าน (`naive-strip`)
+   * ⚠️ `.rpc(ตัวแปร)` ที่ชื่อไม่ใช่ literal → มองไม่เห็น (limitation · วันนี้ทุกตัวเป็น literal · positive control กัน regex พังเงียบ)
+   */
+  function appRpcNames(): string[] {
+    const out = new Set<string>();
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir)) {
+        if (e === "__tests__" || e === "node_modules" || e === ".next") continue;
+        const p = join(dir, e);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(e))
+          for (const m of readFileSync(p, "utf8").matchAll(/\.rpc\(\s*["'`]([a-z_][a-z0-9_]*)["'`]/gi))
+            out.add(m[1].toLowerCase());
+      }
+    };
+    for (const d of ["app", "lib"]) walk(resolve(process.cwd(), d));
+    return [...out].sort();
+  }
+
+  function reachablePublicFns(): Set<string> {
+    const reachable = new Set<string>();
+    for (const f of migrationFiles) {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      // [^;] คร่อม newline (arg list หลายบรรทัด) · \s+to ทนช่องว่างหลายตัว
+      for (const m of sql.matchAll(
+        /grant\s+execute\s+on\s+function\s+public\.(\w+)\s*\([^;]*?\)\s+to\s+([^;]+?);/gi,
+      ))
+        if (/\b(authenticated|anon)\b/i.test(m[2])) reachable.add(m[1].toLowerCase());
+    }
+    return reachable;
+  }
+
+  it("🔴 ทุก RPC ที่แอปเรียก ต้องมี grant execute บน public.<fn> ให้ authenticated/anon", () => {
+    const rpcs = appRpcNames();
+    const reachable = reachablePublicFns();
+    // positive controls — walker/regex พัง ต้องไม่กลายเป็น "ผ่านหมด" (subscribers > 0)
+    expect(rpcs.length, "ไม่เจอ .rpc() เลย — walker พัง ไม่ใช่ 'แอปไม่เรียก RPC'").toBeGreaterThan(0);
+    expect(reachable.size, "ไม่เจอ grant execute สาธารณะเลย — regex พัง ไม่ใช่ 'ไม่มี grant'").toBeGreaterThan(0);
+
+    const missing = rpcs.filter((r) => !reachable.has(r));
+    expect(
+      missing,
+      "RPC ที่แอปเรียก แต่ไม่มี public.<fn> grant ให้ authenticated/anon\n" +
+        "  🔴 ฟังก์ชันอยู่ app.* → PostgREST เรียกไม่ได้ · migration เขียวแต่ปุ่มพัง (เคส P5)",
+    ).toEqual([]);
+  });
+
+  it("🔴 ตัวตรวจ reachable ต้องแยกได้ 2 ทิศ — ไม่งั้นเซตยอมรับทุกชื่อ แล้ว pin ข้างบนเขียวลวง", () => {
+    const reachable = reachablePublicFns();
+    expect(reachable.has("create_trip"), "RPC จริงต้องอยู่ในเซต").toBe(true);
+    expect(reachable.has("this_fn_does_not_exist_zzz"), "ชื่อมั่วต้องไม่อยู่").toBe(false);
   });
 });
