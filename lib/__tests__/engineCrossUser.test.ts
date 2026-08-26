@@ -14,6 +14,8 @@ import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
  * · พิสูจน์แล้ววันแรกที่สร้าง harness นี้: `GET /api/engine/trips` **เคย**คืน 502 ทุกคน เพราะ
  *   `tripsVisibleToMe` select `trips.name` ที่ไม่มีจริง — **ไม่มีเทสต์ชั้นตารางจับได้**
  *   (P1 แก้แล้ว `fae94fe` · `db.ts:261` `name`→`title`) · เก็บไว้เป็นเหตุผลว่าทำไม probe ยิง route จริง
+ *   🎯 `rlsMatrix` ยิง `.from("trips")` ด้วยชื่อคอลัมน์ *ของมันเอง* (ถูก) แต่ **ไม่เคยเรียก `tripsForUser()`**
+ *      → helper กับเทสต์เห็นสคีมาคนละใบ ไม่มีอะไรเทียบให้ · `P-76` ในรูปของ coverage (P1)
  *
  * ## harness: in-process ยิงในนาม B — **ไม่ต้องมีเซิร์ฟเวอร์ รันใน CI ได้**
  * mock `next/headers` ให้คืนคุกกี้ ssr ของ B ที่ capture มา → route เรียก `getUser()` ตรวจ JWT
@@ -21,17 +23,19 @@ import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
  *
  * ## รูป probe (เหมือน `E2-AC1` outsider sweep แต่ผ่าน route)
  * ต่อ route: ① A ทำ write สำเร็จ (control — พิสูจน์ว่า route ไม่ได้พังทุกคน)
- *           ② B (นอกทริป A) ทำ write เดียวกันใส่ tripA → ต้องถูกปฏิเสธ (403/`42501`)
- *           ③ admin อ่านฐานยืนยัน: มีแค่แถวของ A · ของ B ไม่เกิดขึ้นจริงสักแถว
- * 🔴 ③ สำคัญ: ถ้าไม่อ่านฐาน เราจะเชื่อสถานะ HTTP ที่ route คืน — ซึ่ง *route เป็นคนพูด*
- *    การอ่านฐานด้วย admin คือ **checker ที่คนละเจ้าของกับสิ่งที่ถูก check** (`P-72`)
+ *           ② B (นอกทริป A) ทำ write เดียวกันใส่ tripA → ต้องถูกปฏิเสธ
+ *           ③ admin อ่านฐานยืนยัน: มีแค่แถวของ A · ของ B ไม่เกิดขึ้นจริงสักแถว (`P-72`)
+ *
+ * ## 🔴 แยก 502 ออกจาก 403 ให้ขาด (P1 · 27 ส.ค. 2026)
+ * บั๊กชนิด "helper อ้างคอลัมน์ที่ไม่มี" (แบบ `trips.name`) เกิดได้กับ **ทุก helper** และโผล่เป็น `502`
+ * → **`502` = บั๊กของเรา · `403`/`0-rows` = ด่านทำงาน** · สองอย่างนี้ห้ามนับรวมเป็น "ถูกปฏิเสธ"
+ * `verdictFor()` แยกให้: `server-bug`(502/อื่น) แดงพร้อมป้าย "บั๊กเรา" · `leak`(2xx) แดง · `rejected` ผ่าน
+ * → File 2 จับบั๊กคอลัมน์ของ **ทุกเส้น**ที่มัน probe ได้ฟรี โดยไม่ต้องเขียน pin ทีละเส้น
  *
  * ## 🔴 สถานะความครอบคลุม (เขียนตรง ๆ ไม่ให้เข้าใจว่าครบ)
- * ครอบแล้ว: **bookings** (POST) · เหลืออีก 8 ใน 9 trip-scoped route
- *   checklist · custom-places · hidden-places · stops (POST/PUT/PATCH/DELETE) ·
- *   day-settings · days · hotels · place-notes (PUT/PATCH — ต้อง seed child ของ A ก่อน)
- * · `engineAttackSurface.test.ts` ค้ำว่าทั้ง 9 ถูกจำแนกไว้ · **ด่านบังคับ "ครบทั้ง 9"**
- *   จะเปิดในไฟล์นี้เมื่อ probe ครบ — ยังไม่เปิดตอนนี้เพราะจะแดงทั้งที่ไม่ใช่ regression
+ * ครอบแล้ว: **bookings · checklist** (POST) + pin `GET /trips`=200 · เหลืออีก 7 ใน 9 trip-scoped route
+ *   custom-places · hidden-places · stops (POST) · day-settings · days · hotels · place-notes (PUT/PATCH)
+ * · `engineAttackSurface.test.ts` ค้ำว่าทั้ง 9 ถูกจำแนกไว้ · **ด่านบังคับ "ครบทั้ง 9"** จะเปิดเมื่อ probe ครบ
  */
 
 const URL_ = readEnvKey("NEXT_PUBLIC_SUPABASE_URL");
@@ -39,7 +43,6 @@ const ANON = readEnvKey("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 const SERVICE = readEnvKey("SUPABASE_SERVICE_ROLE_KEY");
 const hasCreds = Boolean(URL_ && ANON && SERVICE);
 
-// คุกกี้ที่ mock ของ next/headers เสิร์ฟ — ตั้งต่อ probe (persona ที่กำลังยิง)
 const jar = vi.hoisted(() => ({ cookies: [] as { name: string; value: string }[] }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
@@ -51,8 +54,11 @@ vi.mock("next/headers", () => ({
 
 // import handler หลัง vi.mock (vitest hoist mock ให้)
 import { POST as bookingsPOST } from "@/app/api/engine/trips/[tripId]/bookings/route";
+import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist/route";
+import { GET as tripsGET } from "@/app/api/engine/trips/route";
 
 type Cookie = { name: string; value: string };
+type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
 
 function noRealtime<T>(): T {
   return { transport: NO_REALTIME_TRANSPORT } as unknown as T;
@@ -81,8 +87,6 @@ async function captureCookies(session: { access_token: string; refresh_token: st
   return out;
 }
 
-type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
-
 async function postAs(cookies: Cookie[], tripId: string, handler: Handler, body: unknown): Promise<Response> {
   jar.cookies = cookies;
   const req = new NextRequest(`http://localhost:3300/api/engine/trips/${tripId}/x`, {
@@ -91,6 +95,21 @@ async function postAs(cookies: Cookie[], tripId: string, handler: Handler, body:
     body: JSON.stringify(body),
   });
   return handler(req, { params: Promise.resolve({ tripId }) });
+}
+
+/**
+ * แยกผลของ B ออกเป็น 3 ทาง — หัวใจของด่านนี้
+ * · `rejected`  = 401/403 (RLS/auth) หรือ 404/409 (`0-rows`/stale) → **ด่านทำงาน**
+ * · `leak`      = 2xx → **B เขียน/อ่านของ A สำเร็จ**
+ * · `server-bug`= 502 หรืออื่น (400/500) → **บั๊กของเรา** (helper อ้างคอลัมน์ที่ไม่มี ฯลฯ) — แยกไปแก้ ไม่นับเป็นผ่าน
+ */
+async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak" | "server-bug"; detail: string }> {
+  const body = await res.clone().json().catch(() => null);
+  const detail = `HTTP ${res.status} ${JSON.stringify(body)}`;
+  const s = res.status;
+  if (s === 401 || s === 403 || s === 404 || s === 409) return { verdict: "rejected", detail };
+  if (s >= 200 && s < 300) return { verdict: "leak", detail };
+  return { verdict: "server-bug", detail }; // 502 (คอลัมน์/ helper) · 400 (body ผิด = probe พัง) · อื่น
 }
 
 describe("การรันชุดนี้", () => {
@@ -105,6 +124,8 @@ describe("การรันชุดนี้", () => {
 
 describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผู้ใช้ไม่ได้", () => {
   const stamp = String(Date.now());
+  // ตารางลูกที่ probe แตะ — เก็บกวาดลูกก่อนพ่อใน afterAll (grant service_role ตามข้อยกเว้น #4)
+  const CHILD_TABLES = ["bookings", "checklist_items"];
   let admin: SupabaseClient;
   const ids: Record<string, string> = {};
   let tripA = "";
@@ -132,10 +153,38 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     return data.id as string;
   }
 
+  /** ① A create ได้ · ② B (นอกทริป) create ในทริป A ไม่ได้ · ③ ฐานมีแค่ของ A */
+  async function createBlockedForB(opts: {
+    label: string; handler: Handler; bodyA: unknown; bodyB: unknown;
+    table: string; col: string; valueA: string; valueB: string;
+  }) {
+    const aRes = await postAs(aCookies, tripA, opts.handler, opts.bodyA);
+    expect(
+      aRes.status,
+      `[${opts.label}] control A ควร 201 — ถ้าไม่ใช่ route พังก่อนถึงเคสจริง: ${aRes.status} ${await aRes.clone().text()}`,
+    ).toBe(201);
+
+    const bRes = await postAs(bCookies, tripA, opts.handler, opts.bodyB);
+    const { verdict, detail } = await verdictFor(bRes);
+    expect(
+      verdict,
+      `[${opts.label}] B (นอกทริป) → **${verdict}** (${detail})\n` +
+        "  rejected = ด่านทำงาน · leak = B เขียนเข้าทริป A สำเร็จ · server-bug(502) = บั๊ก helper/คอลัมน์ของเรา แยกไปแก้ ไม่นับเป็นผ่าน",
+    ).toBe("rejected");
+
+    const { data, error } = await admin.from(opts.table).select(`id,${opts.col}`).eq("trip_id", tripA);
+    if (error) throw new Error(`[${opts.label}] admin read ${opts.table}: ${error.message}`);
+    const vals = (data ?? []).map((r) => (r as Record<string, string>)[opts.col]).sort();
+    expect(
+      vals,
+      `[${opts.label}] ในทริป A ต้องมีแค่ของ A (${opts.valueA}) · ถ้าเจอ '${opts.valueB}' = B เขียนเข้าทริป A สำเร็จ (leak)`,
+    ).toEqual([opts.valueA]);
+  }
+
   beforeAll(async () => {
     admin = createClient(URL_, SERVICE, { auth: { persistSession: false }, realtime: noRealtime() });
     const a = await makeUser("a");
-    const b = await makeUser("b"); // B ไม่ได้เป็นสมาชิกทริป A — B มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
+    const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
     tripA = await mkTrip(a.client, "a");
     await mkTrip(b.client, "b");
     aCookies = await captureCookies(a.session);
@@ -144,10 +193,11 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
 
   afterAll(async () => {
     const userIds = Object.values(ids);
-    // ลูกก่อนพ่อ: ลบ bookings ของทริปพวกนี้ก่อน เผื่อ FK ไม่ใช่ cascade (grant service_role ตามข้อยกเว้น #4)
     if (tripA) {
-      const { error } = await admin.from("bookings").delete().eq("trip_id", tripA);
-      if (error) console.warn(`cleanup bookings: ${error.message}`);
+      for (const t of CHILD_TABLES) {
+        const { error } = await admin.from(t).delete().eq("trip_id", tripA);
+        if (error) console.warn(`cleanup ${t}: ${error.message}`);
+      }
     }
     if (userIds.length) {
       const { error } = await admin.from("trips").delete().in("created_by", userIds);
@@ -159,26 +209,30 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     }
   });
 
-  it("bookings POST — A สร้างได้ · B (นอกทริป) สร้างในทริป A ไม่ได้ · ฐานยืนยัน", async () => {
-    // ① control: A สร้างในทริปตัวเอง
-    const aRes = await postAs(aCookies, tripA, bookingsPOST, { title: "xu-a", category: "hotel" });
-    expect(aRes.status, `control A ควร 201 — ถ้าไม่ใช่ route พังก่อนถึงเคสจริง: ${aRes.status} ${await aRes.clone().text()}`).toBe(201);
-
-    // ② attack: B สร้างในทริป A
-    const bRes = await postAs(bCookies, tripA, bookingsPOST, { title: "xu-b", category: "hotel" });
-    const bBody = await bRes.clone().json().catch(() => null);
+  it("pin: GET /api/engine/trips = 200 (กันถอย fae94fe — helper อ้างคอลัมน์ที่ไม่มี = 502)", async () => {
+    jar.cookies = aCookies;
+    const res = await tripsGET(new NextRequest("http://localhost:3300/api/engine/trips"));
     expect(
-      [401, 403].includes(bRes.status),
-      `🔴 B ควรถูกปฏิเสธ (403/42501) แต่ได้ ${bRes.status}: ${JSON.stringify(bBody)}\n` +
-        "  ถ้าได้ 201 = ยิงข้ามผู้ใช้สำเร็จ (leak) · ถ้าได้ 502 = บั๊กอื่นใน route หรือ db helper — แยกไปดู อย่านับเป็นผ่าน",
-    ).toBe(true);
+      res.status,
+      `ควร 200 · 502 = helper อ้างคอลัมน์ที่ไม่มี (แบบ trips.name เดิม): ${await res.clone().text()}`,
+    ).toBe(200);
+    const body = await res.json();
+    expect(JSON.stringify(body).includes(tripA), "A ควรเห็นทริปตัวเองในรายการ").toBe(true);
+  });
 
-    // ③ P-72: อ่านฐานด้วย admin (คนละเจ้าของกับ route) — มีแค่แถวของ A
-    const { data, error } = await admin.from("bookings").select("id,title").eq("trip_id", tripA);
-    if (error) throw new Error(`admin read bookings: ${error.message}`);
-    expect(
-      data?.map((r) => (r as { title: string }).title).sort(),
-      `ในทริป A ต้องมีแค่ booking ของ A · ถ้ามี 'xu-b' = B เขียนเข้าทริป A สำเร็จ (leak)`,
-    ).toEqual(["xu-a"]);
+  it("bookings POST — B สร้างในทริป A ไม่ได้", async () => {
+    await createBlockedForB({
+      label: "bookings", handler: bookingsPOST,
+      bodyA: { title: "xu-a", category: "hotel" }, bodyB: { title: "xu-b", category: "hotel" },
+      table: "bookings", col: "title", valueA: "xu-a", valueB: "xu-b",
+    });
+  });
+
+  it("checklist POST — B สร้างในทริป A ไม่ได้", async () => {
+    await createBlockedForB({
+      label: "checklist", handler: checklistPOST,
+      bodyA: { text: "xu-a", category: "todo" }, bodyB: { text: "xu-b", category: "todo" },
+      table: "checklist_items", col: "text", valueA: "xu-a", valueB: "xu-b",
+    });
   });
 });
