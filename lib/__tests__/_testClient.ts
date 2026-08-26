@@ -98,13 +98,23 @@ export async function acquireFixtureLock(
   const pollMs = opts.pollMs ?? 2000;
   const noop: FixtureLock = { holder, release: async () => {} };
   const started = Date.now();
+  let lastError: string | undefined;
+  let warnedTransient = false;
   for (;;) {
     const { data, error } = await admin.rpc("acquire_fixture_lock", { p_holder: holder, p_ttl_seconds: ttl });
     if (error) {
       if (error.code === "PGRST202") return noop; // RPC ยังไม่ลง → เงียบ (ยังไม่มีการกันชน จนกว่าจะลง)
-      throw new Error(`acquire_fixture_lock: ${error.message}`);
-    }
-    if (data === true) {
+      // 🔴 พารามิเตอร์ผิด (22023) = deterministic · retry ไม่ช่วย → throw ทันที
+      if (error.code === "22023") throw new Error(`acquire_fixture_lock (พารามิเตอร์ผิด): ${error.message}`);
+      // 🔴 P1 (หัว branch แดง 26 ส.ค.): เดิม throw ทุก error ที่ไม่ใช่ PGRST202 → JWT blip ครั้งเดียว = ชุดสดหายทั้งชุด (273 skipped)
+      //    asymmetry: retry เกินหนึ่งรอบ = ช้า ~2 วิ · throw เร็วหนึ่งครั้ง = ชุดหาย · "เรียกไม่สำเร็จ" ≠ "ล็อกถูกถือ" แต่ทั้งคู่ควรรอแล้วลองใหม่
+      //    → ตกลงมาที่ timeout-check + poll ด้านล่าง (retry) แทนการ throw
+      lastError = error.message;
+      if (!warnedTransient) {
+        console.warn(`\n⚠️ acquire_fixture_lock พลาดชั่วคราว: ${error.message} — retry (ไม่ throw ทันที) จนกว่าจะได้หรือครบ ${timeoutMs}ms\n`);
+        warnedTransient = true;
+      }
+    } else if (data === true) {
       return {
         holder,
         release: async () => {
@@ -129,9 +139,18 @@ export async function acquireFixtureLock(
       };
     }
     if (Date.now() - started > timeoutMs) {
-      const h = await admin.rpc("fixture_lock_holder");
+      let h: { data: unknown } = { data: null };
+      try {
+        h = await admin.rpc("fixture_lock_holder"); // อาจพลาดด้วย (transient) → ใช้ null ต่อ ไม่ให้กลบ error หลัก
+      } catch {
+        /* transient — ปล่อยเป็น null */
+      }
       throw new Error(
-        `ขอ fixture lock ไม่ได้ใน ${timeoutMs}ms — ถือโดย ${JSON.stringify(h.data)} · มีชุดสดค้าง? ไปดู **ไม่ใช่ของพัง** (R11 · รอ+retry แล้วยังไม่ว่าง)`,
+        `ขอ fixture lock ไม่ได้ใน ${timeoutMs}ms — ` +
+          (lastError
+            ? `พลาดชั่วคราวซ้ำจนหมดเวลา (ล่าสุด: ${lastError})`
+            : `ถือโดย ${JSON.stringify(h.data)} · มีชุดสดค้าง? ไปดู`) +
+          ` **ไม่ใช่ของพัง** (R11 · รอ+retry แล้วยังไม่ผ่าน)`,
       );
     }
     await new Promise((r) => setTimeout(r, pollMs));
