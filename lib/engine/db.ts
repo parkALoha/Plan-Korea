@@ -288,3 +288,47 @@ export function createCustomPlace(
     p_legacy_added_by: input.legacyAddedBy ?? null,
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// วันของทริป — `E3` · `D80` (ความตั้งใจเรื่องที่นอนอยู่บน `trip_days`)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * วันทั้งหมดของทริป **พร้อม slug ของเมืองที่ตั้งใจนอน ในคำขอเดียว**
+ *
+ * 🔴 `order by date` ไม่ใช่เพื่อความสวยงาม — [`dayBridge.ts`](./dayBridge.ts) จับคู่ด้วย `date`
+ * และผลที่ลำดับไม่แน่นอนทำให้ *ตัวไหนชนะตอนวันที่ซ้ำ* เปลี่ยนไปมาระหว่างเครื่อง
+ */
+export function tripDaysOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "trip_days")
+    .select("id, date, overnight_kind, overnight_city_id, catalog_cities!trip_days_overnight_city_id_fkey(legacy_slug)")
+    .eq("trip_id", tripId)
+    .order("date");
+}
+
+/**
+ * ตั้ง *ความตั้งใจ* เรื่องที่นอนของวันหนึ่ง — `D80`
+ *
+ * 🔴 **`overnight_kind` กับ `overnight_city_id` ต้องเขียนพร้อมกันเสมอ**
+ * `trip_days_overnight_consistent` บังคับให้ทั้งคู่สอดคล้องกัน → เขียนทีละตัวจะชน `check`
+ * · `null` = **ยังไม่ตัดสิน** ซึ่งต่างจาก `'none'` (ตั้งใจไม่นอนโรงแรม) — `D80` ห้ามยุบสองอันนี้
+ */
+export function setOvernightIntent(
+  db: Db,
+  dayId: string,
+  intent: { kind: "city"; cityId: string } | { kind: "none" } | { kind: "undecided" }
+) {
+  const patch =
+    intent.kind === "city"
+      ? { overnight_kind: "city", overnight_city_id: intent.cityId }
+      : intent.kind === "none"
+        ? { overnight_kind: "none", overnight_city_id: null }
+        : { overnight_kind: null, overnight_city_id: null };
+  // `.select()` เพื่อให้ `writeGuard` เห็นว่าแตะกี่แถว — 0 แถว = RLS กรองออก ไม่ใช่สำเร็จ
+  return engineTable(db, "trip_days").update(patch).eq("id", dayId).select("id");
+}
+
+/** หา `city_id` จาก slug เดิม — `null` = ไม่รู้จักเมืองนั้น */
+export function cityIdBySlug(db: Db, slug: string) {
+  return engineTable(db, "catalog_cities").select("id").eq("legacy_slug", slug).maybeSingle();
+}
