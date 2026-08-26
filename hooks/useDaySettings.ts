@@ -6,6 +6,7 @@ import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { showToast } from "@/lib/toast";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 import { reportReadFailure } from "@/lib/reportReadFailure";
@@ -62,10 +63,11 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
         reportReadFailure(daysRes.status);
         return void setLoaded(true);
       }
-      const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
+      const dbDays = (await daysRes.json()) as { id: string; date: string }[];
+      const bridge = buildDayBridge(ITINERARY, dbDays);
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[daySettings] ${warn}`);
-      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
+      reportDayBridgeWarningIfAny(bridge, dbDays.length);
       dayIdRef.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );
@@ -153,6 +155,7 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       // 🔴 วันที่ยังไม่มีในฐาน → **หยุดและบอก** ไม่ใช่ส่งไปให้ FK ฟ้องด้วยข้อความที่อ่านไม่ออก
       if (mapped.some((m) => !m.tripDayId)) {
         console.error("[daySettings] มีวันที่ยังไม่มีในฐาน — E7 อาจยังไม่ได้ย้ายข้อมูล");
+        showToast("error", "บางวันยังไม่มีในระบบของทริปนี้ — ตั้งค่ายังไม่ได้ตอนนี้");
         await reload();
         return;
       }

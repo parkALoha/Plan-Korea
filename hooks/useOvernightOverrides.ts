@@ -7,6 +7,7 @@ import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
+import { showToast } from "@/lib/toast";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 import { reportReadFailure } from "@/lib/reportReadFailure";
 
@@ -68,7 +69,7 @@ export function useOvernightOverrides(tripId: string | null) {
       //    ทั้งที่จริงคือ `E7` ยังไม่ได้ย้ายวันมาสักวัน (`P-21` ในรูปที่จะกัดตอน cutover)
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[overnight] ${warn}`);
-      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
+      reportDayBridgeWarningIfAny(bridge, rows.length);
 
       dayIdRef.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter(
@@ -99,6 +100,9 @@ export function useOvernightOverrides(tripId: string | null) {
       if (!supabaseConfigured || !tripId || !dbDayId) {
         // 🔴 ไม่มีวันนั้นในฐาน — **ห้ามอัปเดตหน้าจอเงียบ ๆ** ผู้ใช้จะเชื่อว่าบันทึกแล้ว
         //    (เดิมโค้ดนี้ตั้ง state ก่อนเสมอ แล้วถอนคืนตอนล้ม · ถ้าไม่มีปลายทางเลยก็ไม่ควรตั้งตั้งแต่แรก)
+        if (supabaseConfigured && tripId) {
+          showToast("error", "วันนี้ยังไม่มีในระบบของทริปนี้ — บันทึกที่นอนยังไม่ได้ตอนนี้");
+        }
         return;
       }
 

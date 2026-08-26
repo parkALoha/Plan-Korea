@@ -52,11 +52,25 @@ export function useDayBridgeIncomplete(): boolean {
 
 /**
  * เรียกทันทีหลัง `buildDayBridge()` ทุกครั้งที่ 4 hook สร้างสะพาน — ตั้ง/ล้างสถานะแถบตามผลจริงของ
- * สะพานปัจจุบัน (ไม่สะสม ไม่ latch ค้าง) `matched === 0` (มีวันในไฟล์แต่ไม่มีคู่ในฐานเลยสักวัน) หรือ
- * `unmatchedLegacy` ไม่ว่าง (มีบางวันหลุด) ทั้งสองแบบคือ "สะพานนี้ใช้ไม่ได้เต็มที่"
+ * สะพานปัจจุบัน (ไม่สะสม ไม่ latch ค้าง)
+ *
+ * 🔴 **แก้ 27 ส.ค. 2026 (P1 ไล่จน P2 เจอของจริง) — `unmatchedLegacy.length > 0` เดิมผิด ไม่ใช่แค่กว้างไป**
+ * เดิมคิดว่า "มีวันในไฟล์ที่ไม่มีคู่ในฐาน" แปลว่าสะพานพัง — แต่ `dayBridge.ts` เขียนไว้เองว่า
+ * `unmatchedDb`/`unmatchedLegacy` ที่ **ไม่ทับกันเลย** คือ**ปกติของทริปที่สร้างบนแพลตฟอร์ม** (วันที่ของ
+ * มันไม่มีทางตรงกับปฏิทิน 11 วันของทริปเกาหลี) → `unmatchedLegacy.length` จะเป็นค่าคงที่ (~11) **ตลอดไป
+ * ทุกทริปที่ไม่ใช่ทริปเกาหลี** ไม่ว่า `trip_days` ของทริปนั้นจะสมบูรณ์แค่ไหน — เดิมจะดังทุกครั้งตลอดกาล
+ * สำหรับทริปแพลตฟอร์มทุกใบ ไม่ใช่แค่ตอนว่างเปล่า — **ผิดแบบเดียวกับ toast ที่เพิ่งแก้ไปเมื่อครู่**
+ *
+ * 🎯 เงื่อนไขที่ถูก: มีแค่ **2 กรณีที่ควรเตือนจริง**
+ * 1. `dbDaysCount === 0` — ทริปนี้ไม่มีวันเลยสักวัน (กรณีที่ P2 วัดได้จริงกับทริปทดสอบ)
+ * 2. `bridge.matched > 0 && bridge.unmatchedLegacy.length > 0` — สะพาน**จับคู่ได้บางส่วน** (แปลว่านี่คือ
+ *    ทริปที่มีความเกี่ยวพันกับ `ITINERARY` จริง เช่นทริปเกาหลีหลัง `E7`) แต่ยังหลุดบางวัน — ของเดิมที่ P1
+ *    ต้องการรักษาไว้สำหรับกรณี "ย้ายข้อมูลบางส่วน"
+ * · `matched === 0` เฉย ๆ (ไม่เกี่ยวกับ `dbDaysCount`) **ไม่ใช่สัญญาณของอะไรทั้งนั้นอีกต่อไป** — เป็นสภาพ
+ *   ปกติของทริปแพลตฟอร์มทุกใบตราบใดที่ `E5` ยังไม่ลง
  */
-export function reportDayBridgeWarningIfAny(bridge: DayBridge, totalLegacyDays: number): void {
-  const looksBroken = (totalLegacyDays > 0 && bridge.matched === 0) || bridge.unmatchedLegacy.length > 0;
+export function reportDayBridgeWarningIfAny(bridge: DayBridge, dbDaysCount: number): void {
+  const looksBroken = dbDaysCount === 0 || (bridge.matched > 0 && bridge.unmatchedLegacy.length > 0);
   setDayBridgeIncomplete(looksBroken);
 }
 

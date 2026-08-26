@@ -82,8 +82,9 @@ function useBookingsStore(tripId: string | null) {
       //    แต่ dynamic import ยังไม่มีเหตุผลให้เปลี่ยนกลับเป็น static (ไม่มีประโยชน์เพิ่ม แค่ไม่มีโทษ) จึง
       //    ปล่อยไว้แบบเดิม — ไม่ใช่ว่าเหตุผลนี้ยังใช้ได้ ไม่ใช่ว่ายังจำเป็นเหมือนก่อน
       const { ITINERARY } = await import("@/data/itinerary");
-      const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
-      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
+      const dbDays = (await daysRes.json()) as { id: string; date: string }[];
+      const bridge = buildDayBridge(ITINERARY, dbDays);
+      reportDayBridgeWarningIfAny(bridge, dbDays.length);
       dayToUuid.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );
