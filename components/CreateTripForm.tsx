@@ -20,6 +20,8 @@ export function CreateTripForm() {
   const [endDate, setEndDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // เซสชันหมดอายุแยกจาก error ทั่วไป — ต้องมีปุ่มเข้าสู่ระบบใหม่ ไม่ใช่แค่ข้อความ (P1 27 ส.ค. 2026)
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // ปิดที่ทางเข้าตอนอ่านสถานะ — ฟอร์มนี้เป็นแบบเดียวกับ BookingEditModal ฯลฯ ทุกประการ (กรอกชื่อ+
   // วันที่แล้วเจอ 503 ตอนจบคือแรงที่เสียเปล่า) route เองก็ไม่ตรวจโหมดนี้โดยตั้งใจ (ให้ trigger กันแทน)
@@ -32,15 +34,30 @@ export function CreateTripForm() {
     if (submitting || readOnly) return;
     setSubmitting(true);
     setError(null);
+    setSessionExpired(false);
     try {
       const res = await fetch("/api/engine/trips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: title.trim(), startDate, endDate }),
       });
-      const data = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        error?: string;
+        code?: string;
+      };
       if (!res.ok || !data.id) {
-        setError(data.error ?? "สร้างทริปไม่สำเร็จ — ลองใหม่อีกครั้ง");
+        // 🔴 เช็คจาก `code` ไม่ใช่ข้อความ — ข้อความเปลี่ยนได้ (P1 27 ส.ค. 2026)
+        if (data.code === "unauthenticated") {
+          setSessionExpired(true);
+        } else {
+          setError(data.error ?? "สร้างทริปไม่สำเร็จ — ลองใหม่อีกครั้ง");
+        }
+        // 🔴 **ไม่เด้งไป /login เอง ไม่ว่ากรณีไหน** (P1 27 ส.ค. 2026) — ฟอร์มนี้มีของที่ผู้ใช้พิมพ์ไว้แล้ว
+        // (ชื่อทริป + วันที่) การ redirect อัตโนมัติเสียของนั้นทันที เกณฑ์เดียวกับที่ตัดสินให้ปิด (ไม่ใช่ซ่อน)
+        // ทางเข้าตอน read-only: "ราคาอยู่ที่งานที่เสียไปก่อนจะถึงปุ่ม" (P7) — auto-redirect ใช้ได้กับหน้าที่
+        // แค่*อ่าน*เท่านั้น ไม่ใช่หน้าที่กำลังกรอกฟอร์ม จึงโชว์ปุ่มให้ผู้ใช้กดเองแทน (ดู JSX ด้านล่าง)
+        // ⚠️ อย่าเพิ่ม redirect ตรงนี้ทีหลังเพราะ "ดูเป็นของที่ควรมี" — เหตุผลด้านบนคือคำตอบแล้ว
         setSubmitting(false);
         return;
       }
@@ -100,6 +117,17 @@ export function CreateTripForm() {
           />
         </div>
       </div>
+      {sessionExpired && (
+        <div className="rounded-lg bg-panel-maple/70 px-3 py-2 text-xs text-panel-maple-ink">
+          <p className="mb-1.5">เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่ — ชื่อทริปกับวันที่ที่กรอกไว้ยังอยู่ตรงนี้</p>
+          <a
+            href="/login"
+            className="inline-block rounded-lg bg-maple px-3 py-1.5 font-semibold text-white hover:bg-maple-dark"
+          >
+            เข้าสู่ระบบใหม่
+          </a>
+        </div>
+      )}
       {error && <p className="text-xs text-red-600">{error}</p>}
       <button
         type="submit"
