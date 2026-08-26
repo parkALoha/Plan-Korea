@@ -95,5 +95,17 @@ export function countryOfCity(city: City): CountryCode {
  */
 export function countryOfCitySlug(slug: string | null | undefined): CountryCode | null {
   if (!slug) return null;
-  return COUNTRY_OF_CITY[slug.toLowerCase() as City] ?? null;
+  // 🔴 `trim()` **ไม่ใช่การเผื่อไว้เฉย ๆ** — ฝั่ง*อ่าน*ต้องผ่อนปรน ฝั่ง*เขียน*ต้องเข้มงวด
+  //    ถ้า `catalog_cities.legacy_slug` มี `" seoul"` หลุดเข้ามา ผลของการเข้มงวดตรงนี้คือ
+  //    **คนที่อยู่โซลไม่เห็นเบอร์ฉุกเฉิน** ซึ่งแย่กว่าการยอมรับช่องว่างมาก
+  //    ⚠️ ที่ควรเข้มงวดคือ **CHECK constraint ตอนเขียน** ไม่ใช่ตรงนี้ — จดไว้ว่ายังไม่มี
+  const key = slug.trim().toLowerCase();
+  // 🔴 **`Object.hasOwn` จำเป็น ไม่ใช่ของประดับ** — พบด้วยเทสต์ 27 ส.ค. 2026
+  //    ฉบับแรกเขียน `COUNTRY_OF_CITY[key as City] ?? null` → `key = "constructor"`
+  //    **คืนฟังก์ชัน `Object` ออกไปเป็นรหัสประเทศ** · `"__proto__"` คืน `Object.prototype`
+  //    ทั้งคู่เป็นค่า truthy → `?? null` ไม่ช่วยเลย
+  //    ⚠️ **`as City` เป็นตัวบัง** — มันบอก `tsc` ว่าคีย์ปลอดภัยแล้ว ทั้งที่ค่ามาจากฐาน
+  //       การ cast ไม่ได้ทำให้ปลอดภัย มันแค่ทำให้ *ไม่มีใครถาม*
+  if (!Object.hasOwn(COUNTRY_OF_CITY, key)) return null;
+  return COUNTRY_OF_CITY[key as City];
 }

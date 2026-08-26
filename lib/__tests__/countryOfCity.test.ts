@@ -39,8 +39,22 @@ describe("countryOfCity — ข้อมูล ไม่ใช่เงื่อ
       expect(countryOfCitySlug(undefined)).toBeNull();
     });
 
-    it("ตัวพิมพ์ใหญ่จากฐานยังแมปได้ (`Seoul` = `seoul`)", () => {
+    it("ตัวพิมพ์ใหญ่/ช่องว่างจากฐานยังแมปได้", () => {
+      // 🎯 ฝั่ง**อ่าน**ผ่อนปรนโดยตั้งใจ · ผลของการเข้มงวดตรงนี้คือ
+      //    **คนที่อยู่โซลไม่เห็นเบอร์ฉุกเฉิน** ซึ่งแย่กว่ายอมรับช่องว่างมาก
+      //    ⚠️ ที่ควรเข้มงวดคือ CHECK constraint ตอนเขียน — **ยังไม่มี จดไว้แล้ว**
       expect(countryOfCitySlug("Seoul")).toBe("kr");
+      expect(countryOfCitySlug("  seoul  ")).toBe("kr");
+      expect(countryOfCitySlug("\tSEOUL\n")).toBe("kr");
+    });
+
+    it("🔴 สตริงที่ *ดูเหมือน* เมือง แต่ไม่ใช่ → ยังต้องเป็น `null`", () => {
+      // ผ่อนปรนเรื่องช่องว่าง **ไม่ใช่**ผ่อนปรนเรื่องความถูกต้อง
+      expect(countryOfCitySlug("seoul/../x")).toBeNull();
+      expect(countryOfCitySlug("seoul2")).toBeNull();
+      expect(countryOfCitySlug("se oul")).toBeNull();
+      expect(countryOfCitySlug("__proto__")).toBeNull();
+      expect(countryOfCitySlug("constructor")).toBeNull();
     });
   });
 

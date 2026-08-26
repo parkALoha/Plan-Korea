@@ -78,4 +78,43 @@ describe("E4 — ทะเบียนความสามารถรายป
       expect(shouldSkipTravelApi("jp", "drive")).toBe(false); // แต่ยังต้องยิงเพื่อไปรู้
     });
   });
+
+  /**
+   * 🔴 **สายโปรโตไทป์ — บั๊กจริงที่เจอด้วยเทสต์ 27 ส.ค. 2026 ไม่ใช่การเผื่อไว้**
+   *
+   * ฉบับก่อนหน้าเขียน `CAPABILITIES[countryCode.toLowerCase()] ?? UNKNOWN_COUNTRY`
+   * · `"constructor"` → คืนฟังก์ชัน `Object` **ออกมาเป็นความสามารถของประเทศ**
+   * · `"__proto__"` → คืน `Object.prototype`
+   * ทั้งคู่เป็นค่า truthy → `??` ไม่ทำงาน → `.mapProviders` เป็น `undefined`
+   * → `mapActionsFor()` เรียก `.map()` บนนั้น → **`TypeError` พัง UI ทั้งหน้า**
+   *
+   * 🎯 **จับได้เพราะลงมือเขียนเคส ไม่ใช่เพราะนึกออก** — ผมกำลังจะฝากช่องนี้ให้ P4 ไปลอง
+   * ทั้งที่รู้อยู่แล้วว่ามันอยู่ตรงไหน · **การส่งต่อช่องที่ตัวเองรู้แล้ว คือละคร ไม่ใช่การทดสอบ**
+   */
+  describe("คีย์ที่เป็นสมบัติของ Object ไม่ใช่ประเทศ", () => {
+    const HOSTILE = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"];
+
+    it("ไม่โยน `TypeError` สักตัว", () => {
+      for (const k of HOSTILE) {
+        expect(() => capabilitiesOf(k), k).not.toThrow();
+        expect(() => mapProvidersFor(k), k).not.toThrow();
+        expect(() => shouldSkipTravelApi(k, "drive"), k).not.toThrow();
+      }
+    });
+
+    it("ได้ค่าของ 'ประเทศที่ไม่รู้จัก' เหมือนสตริงมั่วทั่วไป", () => {
+      for (const k of HOSTILE) {
+        expect(capabilitiesOf(k).mapProviders, k).toEqual(["google"]);
+        expect(capabilitiesOf(k).realTravelModes, k).toEqual([]);
+        // ⚠️ ไม่รู้จัก → **ยิง** ไม่ใช่ข้าม (ให้ผลจริงสอนเรา) เหมือน `"jp"` ทุกประการ
+        expect(shouldSkipTravelApi(k, "drive"), k).toBe(false);
+      }
+    });
+
+    it("ไม่โผล่ในรายชื่อประเทศที่ทะเบียนรู้จัก", () => {
+      const known = countriesWithCapabilities();
+      for (const k of HOSTILE) expect(known, k).not.toContain(k);
+      expect([...known].sort()).toEqual(["kr", "vn"]);
+    });
+  });
 });

@@ -67,6 +67,24 @@ const UNKNOWN_COUNTRY: CountryCapabilities = {
 };
 
 /**
+ * 🔴 **ค้นทะเบียนอย่างปลอดภัย — ห้าม index ตรง ๆ** (พบด้วยเทสต์ 27 ส.ค. 2026)
+ *
+ * ฉบับแรกเขียน `CAPABILITIES[countryCode.toLowerCase()] ?? UNKNOWN_COUNTRY`
+ * → `countryCode = "constructor"` **คืนฟังก์ชัน `Object` ออกมาเป็นความสามารถของประเทศ**
+ *   (`"__proto__"` คืน `Object.prototype`) · ทั้งคู่ truthy → `??` ไม่ช่วยเลย
+ * → แล้ว `mapActionsFor()` เรียก `.map()` บน `undefined` → **`TypeError` พัง UI ทั้งหน้า**
+ *
+ * ⚠️ **วันนี้ยังไม่มีใครยิงค่านี้เข้ามาได้** (`catalog_cities` ไม่มี policy ฝั่งเขียนเลย)
+ * — **แต่นั่นคือเหตุผลที่ต้องปิดตอนนี้ ไม่ใช่เหตุผลที่จะปล่อย** · `E7` จะ seed ตารางนั้น
+ *   และแพลตฟอร์มจะให้ผู้ใช้สร้างเมืองในที่สุด · ตอนนั้นจะไม่มีใครกลับมาอ่านบรรทัดนี้
+ * 🎯 **ฟังก์ชันที่โยน `TypeError` ใส่สตริงธรรมดา เป็นบั๊กอยู่แล้ว ไม่ต้องรอให้มีคนใช้ประโยชน์**
+ */
+function lookup(countryCode: string): CountryCapabilities | null {
+  const key = countryCode.toLowerCase();
+  return Object.hasOwn(CAPABILITIES, key) ? CAPABILITIES[key] : null;
+}
+
+/**
  * ⚠️ **นี่คือ *ข้อมูล* ไม่ใช่ *ตรรกะ*** — เพิ่มประเทศ = เพิ่มแถว · ห้ามมี `if` ไหนอ่านโค้ดประเทศตรง ๆ
  * 🔴 **เกาหลี `realTravelModes: ["TRANSIT"]` ไม่ใช่การเดา** — `PLAN.md §2` บันทึกไว้ว่า
  * ทดสอบจริงแล้ว Google ไม่คืนเส้นทาง `DRIVE`/`WALK` ในเกาหลีใต้ (ข้อจำกัดทางกฎหมาย)
@@ -85,7 +103,7 @@ const CAPABILITIES: Readonly<Record<string, CountryCapabilities>> = {
  */
 export function capabilitiesOf(countryCode: string | null | undefined): CountryCapabilities {
   if (!countryCode) return UNKNOWN_COUNTRY;
-  return CAPABILITIES[countryCode.toLowerCase()] ?? UNKNOWN_COUNTRY;
+  return lookup(countryCode) ?? UNKNOWN_COUNTRY;
 }
 
 /**
@@ -134,7 +152,7 @@ export function shouldSkipTravelApi(
   mode: TravelMode
 ): boolean {
   if (!countryCode) return false;
-  const known = CAPABILITIES[countryCode.toLowerCase()];
+  const known = lookup(countryCode);
   if (!known) return false; // ไม่รู้จัก → ยิง แล้วให้ผลจริงสอนเรา
   return !known.realTravelModes.includes(mode);
 }
