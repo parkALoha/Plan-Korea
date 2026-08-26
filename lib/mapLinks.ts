@@ -134,10 +134,16 @@ function actionFor(provider: MapProvider, t: MapTarget): MapAction {
  * · ประเทศที่ยังไม่มีในทะเบียน (เช่น ญี่ปุ่นวันนี้) ได้ `["google"]` — **ใช้งานได้ ไม่ใช่ปุ่มหาย**
  * · 🔴 **`switch` ตัวเดียวในไฟล์นี้ ไม่ใช่ `switch` กระจายตามหน้า** — เพิ่มผู้ให้บริการรายใหม่
  *   แก้ที่นี่ที่เดียว และ `switch` จะไม่ compile ถ้าลืมเคสใหม่ (`MapProvider` เป็น union)
+ *
+ * ## `navProvidersFromDb` — ช่องรับ `catalog_countries.nav_providers` (เพิ่ม 27 ส.ค. 2026)
+ * **ไม่ใส่ก็ทำงานเหมือนเดิมทุกประการ** — ใส่เมื่อผู้เรียกมีข้อมูลจากฐานอยู่ในมือแล้ว
+ * 🎯 **ทำให้ผู้เรียกส่งได้ *ก่อน* ที่จะมีใครมีข้อมูลส่ง เป็นเรื่องตั้งใจ** — ช่องที่เปิดรอ
+ * ทำให้การต่อสายเป็นการแก้ *จุดเรียก* ไม่ใช่การแก้ *ทะเบียน* · ซึ่งคือทั้งหมดที่ `E4-AC1` ขอ
  */
 export function mapActionsFor(
   countryCode: string | null | undefined,
-  target: MapTarget
+  target: MapTarget,
+  navProvidersFromDb?: readonly string[] | null
 ): MapAction[] {
-  return mapProvidersFor(countryCode).map((p) => actionFor(p, target));
+  return mapProvidersFor(countryCode, navProvidersFromDb).map((p) => actionFor(p, target));
 }

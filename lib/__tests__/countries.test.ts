@@ -117,4 +117,40 @@ describe("E4 — ทะเบียนความสามารถรายป
       expect([...known].sort()).toEqual(["kr", "vn"]);
     });
   });
+
+  /**
+   * 🔴 **`nav_providers` จากฐานเป็นเจ้าของ · ตารางในโค้ดเป็นค่าสำรอง** (27 ส.ค. 2026)
+   * คอลัมน์นี้มีในฐานมาตั้งแต่ `20260825132854` และ `rlsMatrix` ทดสอบมันอยู่
+   * **แต่ไม่มีโค้ดแอปไหนอ่านมันเลย** — ผมสร้างตารางในโค้ดขึ้นมาตอบคำถามเดียวกันโดยไม่รู้
+   */
+  describe("nav_providers จากฐาน", () => {
+    it("ฐานตอบมา → ใช้ของฐาน ไม่ใช่ของโค้ด", () => {
+      // เกาหลีในตารางโค้ดคือ ["naver","kakao","google"] · ฐานสั่งให้เหลือ google อย่างเดียวได้
+      expect(mapProvidersFor("kr", ["google"])).toEqual(["google"]);
+      expect(mapProvidersFor("vn", ["kakao", "google"])).toEqual(["kakao", "google"]);
+    });
+
+    it("🔴 ลิสต์ว่าง = **ยังไม่ตั้งค่า** ไม่ใช่ **ไม่มีแผนที่**", () => {
+      // `nav_providers` มี `default '{}'` → ทุกประเทศที่เพิ่งเพิ่มจะว่าง
+      // ถ้าตีความว่า "ไม่มีแผนที่" **ประเทศใหม่จะไม่มีปุ่มนำทางเลยสักปุ่ม**
+      expect(mapProvidersFor("kr", [])).toEqual(["naver", "kakao", "google"]);
+      expect(mapProvidersFor("jp", [])).toEqual(["google"]);
+      expect(mapProvidersFor("jp", null)).toEqual(["google"]);
+      expect(mapProvidersFor("jp", undefined)).toEqual(["google"]);
+    });
+
+    it("🔴 ค่าที่ไม่รู้จักจากฐานถูกทิ้ง — `text[]` ไม่มี CHECK บังคับ", () => {
+      expect(mapProvidersFor("kr", ["bing", "naver", "here"])).toEqual(["naver"]);
+    });
+
+    it("🔴 ถ้าทิ้งจนหมด ต้องตกไปใช้ค่าสำรอง ไม่ใช่คืนลิสต์ว่าง", () => {
+      // แถวที่ข้อมูลพังทั้งแถว **ต้องไม่ทำให้ผู้ใช้ไม่มีปุ่มนำทาง**
+      expect(mapProvidersFor("kr", ["bing", "here"])).toEqual(["naver", "kakao", "google"]);
+      expect(mapProvidersFor("jp", ["bing"])).toEqual(["google"]);
+    });
+
+    it("คีย์โปรโตไทป์จากฐานก็ถูกทิ้งเหมือนกัน", () => {
+      expect(mapProvidersFor("jp", ["constructor", "__proto__"])).toEqual(["google"]);
+    });
+  });
 });

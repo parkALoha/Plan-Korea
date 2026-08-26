@@ -117,9 +117,39 @@ export function hasRealTravelTime(countryCode: string | null | undefined, mode: 
 /**
  * ผู้ให้บริการแผนที่ที่ควรแสดงสำหรับประเทศนี้ เรียงตามลำดับ
  * 🔴 มีไว้แทนการ **ไม่ถามเลย** ซึ่งเป็นสภาพวันนี้ (`app/today/page.tsx` โชว์ Kakao เสมอ)
+ *
+ * ## 🔴 **ฐานเป็นเจ้าของ · ตารางในโค้ดเป็นค่าสำรอง** (แก้ 27 ส.ค. 2026 — P1 พบว่าตัวเองสร้างของซ้ำ)
+ * `catalog_countries.nav_providers text[]` **มีอยู่ในฐานตั้งแต่ `20260825132854` แล้ว**
+ * และคอมเมนต์ของ migration นั้นเขียนไว้ตรง ๆ ว่ามันคือปลายทางของคำถาม
+ * *"วันนี้อยู่ประเทศไหน ใช้ Naver ได้ไหม"* พร้อมเหตุผลว่าทำไมเป็นรายชื่อ ไม่ใช่ `has_naver`
+ * → **ผมสร้าง `CAPABILITIES` ในโค้ดขึ้นมาตอบคำถามเดียวกัน โดยไม่รู้ว่าฐานตอบได้อยู่แล้ว**
+ * · `rlsMatrix.test.ts:1950` ทดสอบคอลัมน์นั้นอยู่ **แต่ไม่มีโค้ดแอปไหนอ่านมันเลยสักบรรทัด**
+ *
+ * 🎯 **และนี่คือสิ่งที่ทำให้ `E4-AC1` ผ่านไม่ได้:** เกณฑ์บอกว่าเพิ่มประเทศ = แก้ข้อมูล 1 ที่
+ * แล้ว `git diff --stat` ของโฟลเดอร์โค้ดต้องได้ **0 ไฟล์** — **ถ้าทะเบียนอยู่ในโค้ด มันได้ 1 เสมอ**
+ *
+ * ⚠️ **แต่ไม่ได้ย้ายทั้งหมดไปฐาน** — `realTravelModes` ยังอยู่ในโค้ดโดยตั้งใจ
+ * เพราะมันไม่ใช่คุณสมบัติของ*ประเทศ* แต่เป็นคุณสมบัติของ**การต่อ Google ของเรา**
+ * (เกาหลี*มี*เส้นทางขับรถ · Google แค่ไม่ให้เรา) → เปลี่ยนเมื่อเราเปลี่ยนผู้ให้บริการ ไม่ใช่เมื่อโลกเปลี่ยน
+ *
+ * 🔴 **`nav_providers` มี `default '{}'`** → ประเทศที่ยังไม่ตั้งค่าจะได้ลิสต์ว่าง
+ * **ลิสต์ว่างต้องแปลว่า "ยังไม่ตั้งค่า" ไม่ใช่ "ไม่มีแผนที่"** — ไม่งั้นประเทศใหม่จะไม่มีปุ่มนำทางเลย
  */
-export function mapProvidersFor(countryCode: string | null | undefined): readonly MapProvider[] {
-  return capabilitiesOf(countryCode).mapProviders;
+export function mapProvidersFor(
+  countryCode: string | null | undefined,
+  navProvidersFromDb?: readonly string[] | null,
+): readonly MapProvider[] {
+  const fromDb = (navProvidersFromDb ?? []).filter(isMapProvider);
+  return fromDb.length > 0 ? fromDb : capabilitiesOf(countryCode).mapProviders;
+}
+
+/**
+ * 🔴 **กรองค่าที่ฐานส่งมา — `nav_providers` เป็น `text[]` เปล่า ๆ ไม่มี CHECK บังคับ**
+ * แถวที่มี `"bing"` อยู่ข้างในจะทำให้ `actionFor()` เจอ provider ที่ไม่มีตัวสร้างลิงก์
+ * · ทิ้งตัวที่ไม่รู้จัก **แล้วถ้าทิ้งจนหมด ให้ตกไปใช้ค่าสำรอง** ไม่ใช่คืนลิสต์ว่าง
+ */
+function isMapProvider(v: string): v is MapProvider {
+  return v === "google" || v === "naver" || v === "kakao";
 }
 
 /** ประเทศที่มีแถวจริงในทะเบียน — สำหรับเทสต์และเครื่องมือ **ไม่ใช่สำหรับตรรกะของแอป** */
