@@ -33,6 +33,9 @@
 import re
 import sys
 
+sys.path.insert(0, __file__.rsplit("/", 1)[0])
+from _tsscan import strip_comments  # noqa: E402
+
 CALL = re.compile(r"\.from\s*\(")
 # ผู้รับที่ไม่ใช่ตาราง: JS builtin กับ Storage API
 BUILTIN = re.compile(r"(^|[^A-Za-z0-9_$])(Array|Buffer|Object)$")
@@ -40,52 +43,27 @@ RECV = re.compile(r"([A-Za-z0-9_$\.\]\)]+)\s*$", re.S)
 LITERAL = re.compile(r"[\"\'`]([a-z0-9_]+)[\"\'`]")
 
 
-def strip_comments(src: str) -> str:
-    """คืนซอร์สที่ **คอมเมนต์ถูกแทนด้วยช่องว่าง** โดยความยาวและเลขบรรทัดไม่เปลี่ยน
-
-    🔴 ต้องรู้ว่าอยู่ในสตริงหรือไม่ · ฉบับแรกใช้ `re.sub(r"//.*$", "", line)` ทีละบรรทัด
-       → `"https://…"` มี `//` อยู่ข้างใน **regex จึงกลืนโค้ดจริงที่เหลือทั้งบรรทัด**
-       ผลคือ `supabase.from(t)` ที่ตามหลัง URL บนบรรทัดเดียวกัน **หลุดเงียบ**
-    🎯 ทีมนี้จ่ายค่าบทเรียนนี้ไปแล้วครั้งหนึ่งที่ `lib/__tests__/_helpers.ts` (`stripTsComments`)
-       ซึ่งเขียนกำกับไว้เองว่า *"ตัดแบบไร้เดียงสาจะกิน `//` ใน `https://` แล้วกลืนโค้ดจริง
-       → จับของจริงไม่เจอ ซึ่งเป็นทิศที่แย่กว่าจับผิด"*
-       🔴 **แต่มันอยู่คนละภาษา (TS) กับที่นี่ (Python) — บทเรียนที่จ่ายแล้วไม่ข้ามไปอีกฝั่งเอง**
-    """
-    out = list(src)
-    i, n, state = 0, len(src), None
-    while i < n:
-        c = src[i]
-        nxt = src[i + 1] if i + 1 < n else ""
-        if state is None:
-            if c == "/" and nxt == "/":
-                state, out[i], out[i + 1] = "//", " ", " "; i += 2; continue
-            if c == "/" and nxt == "*":
-                state, out[i], out[i + 1] = "/*", " ", " "; i += 2; continue
-            if c in "\"'`":
-                state = c
-            i += 1; continue
-        if state == "//":
-            if c == "\n": state = None
-            else: out[i] = " "
-            i += 1; continue
-        if state == "/*":
-            if c == "*" and nxt == "/":
-                out[i], out[i + 1], state = " ", " ", None; i += 2; continue
-            if c != "\n": out[i] = " "
-            i += 1; continue
-        if c == "\\":
-            i += 2; continue
-        if c == state:
-            state = None
-        i += 1
-    return "".join(out)
+# 🔴 `strip_comments` เคยอยู่ในไฟล์นี้ · ย้ายไป `_tsscan.py` เมื่อ 27 ส.ค. 2026
+#    เพราะ `check-api-hosts.py` ต้องใช้ตัวเดียวกัน — **ตัวตัดคอมเมนต์ 2 ชุดที่ต่างกันนิดเดียว
+#    ทำให้ด่าน 2 ตัวมองไฟล์เดียวกันคนละแบบ และช่องจะอยู่ตรงตัวที่หลวมกว่า** (`D46`)
 
 
 def scan(path: str) -> list:
+    """🔴 **อ่านไฟล์ไม่ได้ ≠ ไฟล์สะอาด** (P6 · 27 ส.ค. 2026)
+
+    ฉบับเดิม `except OSError: return []` → ไฟล์ที่ไม่มีอยู่จริง หรือพาธที่เป็นไดเรกทอรี
+    (`IsADirectoryError` **เป็นลูกของ `OSError`**) ให้ผลเหมือนไฟล์ที่ตรวจแล้วไม่เจออะไร
+    → `check-dynamic-from.py .` พิมพ์ `✅ ตรวจ 1 ไฟล์` แล้ว **exit 0**
+
+    🎯 `guards.sh` ประกอบรายชื่อไฟล์เองด้วย `while read` — วันที่รายชื่อนั้นเพี้ยน
+       (เปลี่ยนโครงโฟลเดอร์ · พาธมีช่องว่าง · ย้ายไฟล์) **ด่านจะเขียวโดยไม่ได้อ่านอะไรเลย**
+       และเขียวหลอกอันตรายกว่าแดงหลอก เพราะแดงหลอกยังมีคนไปดู
+    """
     try:
         src = open(path, encoding="utf-8").read()
-    except OSError:
-        return []
+    except OSError as e:
+        raise SystemExit(f"🔴 dynamic-from: อ่าน {path} ไม่ได้ — {e.__class__.__name__}\n"
+                         f"   ด่านนี้ไม่ถือว่า 'อ่านไม่ได้' เท่ากับ 'สะอาด' · หยุดทั้งด่าน")
     code = strip_comments(src)
     hits = []
     for m in CALL.finditer(code):

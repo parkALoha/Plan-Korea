@@ -551,4 +551,99 @@ check "anchor นับหัวข้อที่เยื้อง 1–3 ช�
 d="$(mk)"; printf '      ### หัวข้อเยื้องหกช่อง\n\n[ไป](#หัวข้อเยื้องหกช่อง)\n' > "$d/docs/engine/x.md"
 check "anchor ไม่นับบรรทัดเยื้อง 4+ ช่องว่าเป็นหัวข้อ" fail "$d"
 
+# ── api-hosts + naive-strip (P6 · 27 ส.ค. 2026) ────────────────────────────────
+# 🔴 **เคสกลุ่มนี้เกิดขึ้นเพราะ self-test ชุดเดิมมองไม่เห็นความพังที่เพิ่งเกิด:**
+#    ตอนต่อสายด่านสองตัวนี้ ผมกั้นด้วย `[ -d "$ROOT/.git" ]` ซึ่ง **เป็นเท็จในทรีที่สร้างด้วย
+#    `git worktree`** (ที่นั่น `.git` เป็นไฟล์) → ด่านทั้งสองตัวเงียบหายจากทรีจริง **แต่ guards.sh ยังเขียว**
+#    · ทรีจำลองของ self-test ไม่มี lib/ อยู่แล้ว จึงข้ามด่านนี้ทั้งคู่ **ทุกเคสยังเขียวหมด**
+#    🎯 บทเรียน: **เคสที่ทดสอบ *ด่าน* ไม่ได้ทดสอบ *สายที่ต่อด่านเข้ากับ guards.sh*
+#       "ด่านไม่ได้รัน" กับ "ด่านรันแล้วสะอาด" ต่างกันแค่บรรทัด ✅ ที่หายไป — และไม่มีใครนับบรรทัด**
+
+mkrepo() {  # git repo จริงที่มี lib/ และไฟล์ .ts มากพอให้ด่านยอมทำงาน
+  d="$(mktemp -d)"; mkdir -p "$d/lib" "$d/docs/engine/schema" "$d/.github"
+  echo "-- ร่าง" > "$d/docs/engine/schema/ok.sql"
+  i=0; while [ $i -lt 110 ]; do echo "export const v$i = 1;" > "$d/lib/f$i.ts"; i=$((i+1)); done
+  git -C "$d" init -q . && git -C "$d" add -A >/dev/null 2>&1
+  echo "$d"
+}
+
+pyc() {  # pyc <ชื่อ> <pass|fail> <สคริปต์> <dir>
+  name="$1"; want="$2"; scr="$3"; dir="$4"
+  if python3 "$(cd "$(dirname "$0")" && pwd)/$scr" "$dir" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  rm -rf "$dir"
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got"; rc=1; return 1
+}
+
+d="$(mkrepo)"; pyc "api-hosts: ทรีสะอาดต้องผ่าน" pass check-api-hosts.py "$d"
+
+d="$(mkrepo)"; echo 'fetch("https://dapi.kakao.com/v2/local");' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: เรียก Kakao ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+d="$(mkrepo)"; echo 'const u = "https://maps.googleapis.com/maps/api/js";' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: Maps legacy ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+# 🔴 ไฟล์ที่อธิบายว่า "ห้ามเรียกโฮสต์นี้" ย่อมมีชื่อโฮสต์อยู่ในคอมเมนต์เสมอ (`D40`)
+d="$(mkrepo)"; echo '// ห้ามเรียก https://api.odsay.com/v1 — E4-AC5' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: ชื่อโฮสต์ในคอมเมนต์ต้องไม่โดนจับ" pass check-api-hosts.py "$d"
+
+d="$(mkrepo)"; pyc "naive-strip: ทรีสะอาดต้องผ่าน" pass check-naive-strip.py "$d"
+
+d="$(mkrepo)"; printf 'x = re.sub(r"//.*$", "", line)\n' > "$d/lib/s.py"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "naive-strip: รูป Python ต้องโดนจับ" fail check-naive-strip.py "$d"
+
+d="$(mkrepo)"; printf 'const o = s.replace(/\\/\\/.*/g, "");\n' > "$d/lib/s.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "naive-strip: รูป TS ต้องโดนจับ" fail check-naive-strip.py "$d"
+
+# 🎯 ควบคุมด้านบวกที่สำคัญที่สุดของด่านนี้ — ถ้ามันแดงใส่ของถูก มันจะถูกปิดใน 1 เดือน (`P-35`)
+d="$(mkrepo)"; printf 'const u = "https://dapi.kakao.example/x";\nconst p = u.split("//")[1];\n' > "$d/lib/s.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "naive-strip: URL จริง + split(\"//\") ต้องไม่โดนจับ" pass check-naive-strip.py "$d"
+
+d="$(mkrepo)"; printf '"""อย่าเขียน re.sub(r"//.*$", ...) นะ"""\nreal = 1\n' > "$d/lib/s.py"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "naive-strip: รูปที่ห้าม ซึ่งอยู่ใน docstring ต้องไม่โดนจับ" pass check-naive-strip.py "$d"
+
+# ── ควบคุม "สาย" ไม่ใช่ "ด่าน" ────────────────────────────────────────────────
+# 🔴 **ฉบับแรกของเคสนี้ใช้ `mkrepo` อย่างเดียว และมันจับบั๊กที่มันถูกเขียนขึ้นมาเพื่อจับ *ไม่ได้***
+#    ผมลองใส่บั๊ก `[ -d "$ROOT/.git" ]` กลับเข้าไป → **สองเคสนี้ยังเขียวทั้งคู่**
+#    ขณะที่ทรีจริงรันด่านไป **0 ตัว** · เพราะ `mkrepo` สร้าง repo ธรรมดาที่ `.git` เป็นไดเรกทอรี
+#    **แต่ทรีที่ทีมนี้ทำงานอยู่จริงเป็น `git worktree` ซึ่ง `.git` เป็นไฟล์**
+# 🎯 บทเรียนซ้อนบทเรียน: **ควบคุมที่ไม่เคยแดง กับควบคุมที่พัง หน้าตาเหมือนกันเป๊ะ —
+#    รวมถึงตอนที่เราเพิ่งเขียนมันเองเมื่อ 5 นาทีที่แล้ว** · ต้องพิสูจน์ว่ามันแดงได้ก่อนถึงจะนับ
+mkworktree() {  # ทรีที่ `.git` เป็น *ไฟล์* — รูปเดียวกับ /Users/park/plan-korea-platform
+  b="$(mktemp -d)"; mkdir -p "$b/up/lib" "$b/up/docs/engine/schema"
+  echo "-- ร่าง" > "$b/up/docs/engine/schema/ok.sql"
+  i=0; while [ $i -lt 110 ]; do echo "export const v$i = 1;" > "$b/up/lib/f$i.ts"; i=$((i+1)); done
+  git -C "$b/up" init -q . >/dev/null 2>&1
+  git -C "$b/up" add -A >/dev/null 2>&1
+  git -C "$b/up" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+  git -C "$b/up" worktree add -q "$b/wt" -b wtbranch >/dev/null 2>&1
+  echo "$b"
+}
+
+wiring() {  # wiring <ชื่อทรี> <path>
+  label="$1"; dir="$2"
+  out="$("$G" "$dir" 2>&1)"
+  for want in api-hosts naive-strip; do
+    if printf '%s' "$out" | grep -q "$want"; then
+      echo "✅ สาย ($label): guards.sh เรียก $want จริง"
+    else
+      echo "🔴 สาย ($label): guards.sh **ไม่ได้เรียก** $want — ด่านเงียบหายแต่ผลรวมยังเขียว"; rc=1
+    fi
+  done
+}
+
+d="$(mkrepo)"; wiring "repo ธรรมดา" "$d"; rm -rf "$d"
+b="$(mkworktree)"
+[ -f "$b/wt/.git" ] && echo "✅ fixture: .git ของ worktree เป็นไฟล์จริงตามที่ตั้งใจ" \
+  || { echo "🔴 fixture: .git ของ worktree ไม่ใช่ไฟล์ — เคสข้างล่างไม่ได้ทดสอบสิ่งที่ตั้งใจ"; rc=1; }
+wiring "git worktree" "$b/wt"
+git -C "$b/up" worktree remove --force "$b/wt" >/dev/null 2>&1; rm -rf "$b"
+
 exit $rc
