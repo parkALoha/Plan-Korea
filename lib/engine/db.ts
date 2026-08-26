@@ -588,10 +588,67 @@ export function daySettingsOfPlan(db: Db, tripId: string, planId: string) {
  * 🔴 PK คือ `(plan_id, trip_day_id)` → `upsert` ใช้ได้จริง **ต่างจาก `trip_hotels`**
  * ที่กันด้วย exclusion constraint ซึ่ง `on conflict` ใช้ไม่ได้
  */
-export function upsertDaySettings(db: Db, rows: Record<string, unknown>[]) {
-  return engineTable(db, "trip_day_plan_settings")
-    .upsert(rows, { onConflict: "plan_id,trip_day_id" })
-    .select("trip_day_id");
+/**
+ * 🔴 **ไม่ใช้ `.upsert()` — และเหตุผลไม่ใช่รสนิยม** (P1 · 27 ส.ค. 2026 · P4 probe จับได้)
+ *
+ * ## อาการ: **เจ้าของทริปแก้ตั้งค่าวันของตัวเองไม่ได้เลย** — `42501 permission denied`
+ * เคส *ด้านบวก* ของ `engineCrossUser` แดง (A ควรได้ `200` แต่ได้ `403`)
+ *
+ * ## เหตุ
+ * `.upsert(rows, { onConflict })` ให้ PostgREST สร้าง
+ * `insert … on conflict (…) do update set <ทุกคอลัมน์ใน payload> = excluded.<col>`
+ * → **`SET` รวม `trip_id` · `plan_id` · `trip_day_id`**
+ *
+ * แต่ `20260825125024_e2_narrow_key_grants` **ถอน `update` บนคอลัมน์คีย์ออกโดยตั้งใจ**:
+ * > *"`grant update` ระดับตารางบน `trip_day_plan_settings` — **คือการให้ไคลเอนต์เขียนคีย์ของแถวตัวเอง**"*
+ *
+ * `authenticated` จึงมี `update` แค่ `start_time` · `return_travel_mode` · `is_locked` (+ `note` จาก `Q8`)
+ * ⚠️ **Postgres ตรวจสิทธิ์ของ `DO UPDATE SET` ตอน *วางแผน* ไม่ใช่ตอนชน**
+ * → **ล้มทุกครั้ง แม้แถวยังไม่มีอยู่เลย** · นั่นคือเหตุที่มันพังตั้งแต่การบันทึกครั้งแรก
+ *
+ * ## 🎯 ทางที่ **ไม่** เลือก: คืน `update` ให้คอลัมน์คีย์
+ * นั่นคือการเปิดรูที่ migration นั้นตั้งใจปิด — **ไคลเอนต์จะย้ายแถวข้ามแผน/ข้ามวันได้ด้วยการเขียนคีย์ทับ**
+ * · **อาการที่ง่ายที่สุดที่จะซ่อม คือการถอนด่านความปลอดภัย** — รูปเดียวกับที่ `S6` เตือนไว้
+ *
+ * ## ทางที่เลือก: `update` ก่อน แล้ว `insert` เฉพาะที่ยังไม่มี
+ * `update` ส่ง **เฉพาะคอลัมน์ที่เขียนได้** · `insert` ส่งครบ (สิทธิ์ `insert` ครอบทั้ง 6 อยู่แล้ว)
+ * · ไม่ต้องเพิ่ม RPC ใหม่ = **ไม่เพิ่มพื้นผิวที่ผู้ใช้เรียกได้** ซึ่งต้องรีวิวความปลอดภัยของตัวเอง
+ * · 🔴 **แข่งกันเขียนจาก 2 เครื่อง:** `insert` อาจชน `23505` → **ตกไป `update` อีกรอบ ไม่ใช่โยนทิ้ง**
+ *   (ผลที่ผู้ใช้ต้องการคือ "ค่าล่าสุดถูกบันทึก" ไม่ใช่ "ใครถึงก่อนได้ก่อน")
+ */
+const DAY_SETTING_KEYS = ["trip_id", "plan_id", "trip_day_id"] as const;
+
+export async function upsertDaySettings(db: Db, rows: Record<string, unknown>[]) {
+  const touched: string[] = [];
+
+  for (const row of rows) {
+    const dayId = row.trip_day_id as string;
+    const planId = row.plan_id as string;
+    const patch = Object.fromEntries(
+      Object.entries(row).filter(([k]) => !(DAY_SETTING_KEYS as readonly string[]).includes(k)),
+    );
+
+    // ① ลองแก้ของที่มีอยู่ — ส่งเฉพาะคอลัมน์ที่ `authenticated` มีสิทธิ์ `update`
+    if (Object.keys(patch).length > 0) {
+      const upd = await engineTable(db, "trip_day_plan_settings")
+        .update(patch).eq("plan_id", planId).eq("trip_day_id", dayId).select("trip_day_id");
+      if (upd.error) return { data: null, error: upd.error };
+      if (upd.data && upd.data.length > 0) { touched.push(dayId); continue; }
+    }
+
+    // ② ยังไม่มีแถว → สร้าง (สิทธิ์ `insert` ครอบคอลัมน์คีย์อยู่แล้ว)
+    const ins = await engineTable(db, "trip_day_plan_settings").insert(row).select("trip_day_id");
+    if (!ins.error) { touched.push(dayId); continue; }
+
+    // ③ มีคนสร้างแทรกระหว่าง ① กับ ② → แก้ทับ ไม่ใช่ล้ม
+    if (ins.error.code !== "23505") return { data: null, error: ins.error };
+    const retry = await engineTable(db, "trip_day_plan_settings")
+      .update(patch).eq("plan_id", planId).eq("trip_day_id", dayId).select("trip_day_id");
+    if (retry.error) return { data: null, error: retry.error };
+    if (retry.data && retry.data.length > 0) touched.push(dayId);
+  }
+
+  return { data: touched.map((trip_day_id) => ({ trip_day_id })), error: null };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
