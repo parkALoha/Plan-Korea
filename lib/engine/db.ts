@@ -49,7 +49,8 @@ export type EngineTable =
   | "trip_hotels"
   | "checklist_items"
   | "trip_day_plan_settings"
-  | "bookings";
+  | "bookings"
+  | "trip_plans";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -575,4 +576,48 @@ export function updateBooking(db: Db, id: string, patch: Record<string, unknown>
 
 export function softDeleteBooking(db: Db, id: string) {
   return db.rpc("soft_delete_booking", { p_id: id });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// แผน — `E3` · `D52` (ไม่มี `trips.active_plan_id` · ใช้ `trip_plans.is_active`)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function plansOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "trip_plans")
+    .select("id, name, is_active, created_at")
+    .eq("trip_id", tripId)
+    .order("created_at");
+}
+
+export function insertPlan(db: Db, tripId: string, name: string) {
+  return engineTable(db, "trip_plans")
+    .insert({ trip_id: tripId, name, is_active: false })
+    .select("id, name, is_active, created_at")
+    .single();
+}
+
+export function renamePlan(db: Db, id: string, name: string) {
+  return engineTable(db, "trip_plans").update({ name }).eq("id", id).select("id");
+}
+
+export function deletePlan(db: Db, id: string) {
+  return engineTable(db, "trip_plans").delete().eq("id", id).select("id");
+}
+
+/**
+ * 🔴 สลับแผนผ่าน RPC เพราะ `trip_plans_one_active` เป็น **partial unique index** (`D52`)
+ * ปลดของเก่าแล้วตั้งของใหม่ต้องอยู่ทรานแซกชันเดียว **ไม่งั้นชน index ระหว่างทาง**
+ */
+export function setActivePlan(db: Db, tripId: string, planId: string) {
+  return db.rpc("set_active_plan", { p_trip_id: tripId, p_plan_id: planId });
+}
+
+/**
+ * ก๊อปแผนทั้งใบ **ในทรานแซกชันเดียว** — `P-71`
+ * ของเดิมเขียนทีละคำสั่งแล้วทิ้งผลลัพธ์ → **แผนที่ก๊อปมาไม่ครบโดยไม่มีใครรู้**
+ */
+export function duplicatePlan(db: Db, tripId: string, sourcePlanId: string, name: string) {
+  return db.rpc("duplicate_trip_plan", {
+    p_trip_id: tripId, p_source_plan_id: sourcePlanId, p_name: name,
+  });
 }

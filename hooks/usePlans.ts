@@ -1,26 +1,55 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { supabase, supabaseConfigured, TripPlan } from "@/lib/supabase";
-import { writeGuard } from "@/lib/writeGuard";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase, supabaseConfigured, type TripPlan } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
+import { writeGuard } from "@/lib/writeGuard";
 
-function makePlanId() {
-  return `plan-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-}
+type PlanRow = TripPlan & { is_active: boolean };
 
-type CreatePlanOptions = { id?: string; duplicateFrom?: string; activate?: boolean };
-
+/**
+ * แผนของทริป — **`E3` ผ่าน route แล้ว** · `D52`
+ *
+ * ## 🔴 `activePlanId` ไม่ได้มาจาก `trip_meta` อีกแล้ว
+ * `D52` ตัดสินว่า **ไม่มี `trips.active_plan_id`** — ใช้ `trip_plans.is_active`
+ * + partial unique index แทน → **ไม่มี FK วน ไม่ต้องใช้ `deferrable`** (`P-27`)
+ * · สลับแผนจึงต้องปลดของเก่าและตั้งของใหม่**ในทรานแซกชันเดียว** → RPC `set_active_plan`
+ *
+ * ## 🔴 `P-71` แก้ไปพร้อมกัน
+ * ของเดิม `await writeGuard(...)` **ทิ้งค่าที่คืนมา 6 จุด** และ **ไม่มี `reload` ทั้งไฟล์**
+ * → *"ก๊อปจุดแวะมาแผนใหม่"* ล้มได้โดยแอปเดินต่อเหมือนสำเร็จ
+ * **แผนที่ก๊อปมาไม่ครบ ไม่มีทางรู้ว่าขาดอะไร** เพราะไม่เคยมีใครเห็นว่ามันล้ม
+ * · ตอนนี้ **ทุกจุดรับค่าที่คืนมา** และ **การก๊อปทั้งใบอยู่ใน RPC ทรานแซกชันเดียว**
+ *   → ล้ม = ไม่มีแผนใหม่เลย **ซึ่งดีกว่าแผนครึ่งใบ**
+ */
 export function usePlans() {
   const [plans, setPlans] = useState<TripPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchRef = useRef<(() => Promise<void>) | null>(null);
+
+  const applyRows = useCallback((rows: PlanRow[]) => {
+    setPlans(rows.map(({ id, name, created_at }) => ({ id, name, created_at })));
+    // 🔴 แผนที่ active คือแถวที่ `is_active` — **ไม่ใช่ค่าที่เก็บแยกไว้อีกที่** (`D52`)
+    setActivePlanId(rows.find((r) => r.is_active)?.id ?? null);
+  }, []);
+
+  const reload = useCallback(async () => {
+    if (!supabaseConfigured) return;
+    const res = await fetch("/api/engine/plans");
+    if (!res.ok) return;
+    const rows = (await res.json()) as PlanRow[];
+    applyRows(rows);
+    writeCache("plans", { plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })), activePlanId: rows.find((r) => r.is_active)?.id ?? null });
+  }, [applyRows]);
+
+  useEffect(() => {
+    refetchRef.current = reload;
+  }, [reload]);
 
   useEffect(() => {
     if (!supabaseConfigured) return;
-
-    // ชื่อ channel ต้องไม่ซ้ำกันต่อการ mount เพราะ React Strict Mode (dev) รัน effect
-    // นี้ 2 รอบ — ถ้าใช้ชื่อเดิม supabase-js จะคืน channel เดิมที่ subscribe() ไปแล้ว
     const channelName = `trip_plans_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -33,152 +62,135 @@ export function usePlans() {
         setLoaded(true);
       }
 
-      const [{ data: planRows }, { data: metaRow }] = await Promise.all([
-        supabase.from("trip_plans").select("*").order("created_at", { ascending: true }),
-        supabase.from("trip_meta").select("*").eq("id", 1).maybeSingle(),
-      ]);
+      const res = await fetch("/api/engine/plans");
       if (cancelled) return;
-      if (planRows) setPlans(planRows as TripPlan[]);
-      if (metaRow) setActivePlanId(metaRow.active_plan_id);
-      if (planRows) {
+      if (res.ok) {
+        const rows = (await res.json()) as PlanRow[];
+        applyRows(rows);
         writeCache("plans", {
-          plans: planRows,
-          activePlanId: metaRow?.active_plan_id ?? null,
+          plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })),
+          activePlanId: rows.find((r) => r.is_active)?.id ?? null,
         });
       }
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "trip_plans" },
-          (payload) => {
-            setPlans((prev) => {
-              if (payload.eventType === "DELETE") {
-                return prev.filter((p) => p.id !== (payload.old as TripPlan).id);
-              }
-              const row = payload.new as TripPlan;
-              const exists = prev.some((p) => p.id === row.id);
-              return exists ? prev.map((p) => (p.id === row.id ? row : p)) : [...prev, row];
-            });
-          }
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "trip_meta" },
-          (payload) => {
-            const row = payload.new as { active_plan_id: string | null };
-            setActivePlanId(row?.active_plan_id ?? null);
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "trip_plans" }, () => {
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => void refetchRef.current?.(), 300);
+        })
         .subscribe();
     }
 
     init();
-
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [applyRows]);
 
-  const createPlan = useCallback(
-    async (name: string, options?: CreatePlanOptions) => {
-      const id = options?.id ?? makePlanId();
-      const newPlan: TripPlan = { id, name, created_at: new Date().toISOString() };
-
-      if (!supabaseConfigured) {
-        setPlans((prev) => [...prev, newPlan]);
-        if (options?.activate !== false) setActivePlanId(id);
-        return id;
-      }
-
-      if (!(await writeGuard("สร้างแผนใหม่", () => supabase.from("trip_plans").insert(newPlan)))) {
-        return undefined;
-      }
-
-      if (options?.duplicateFrom) {
-        const [{ data: stopRows }, { data: settingRows }] = await Promise.all([
-          supabase.from("trip_stops").select("*").eq("plan_id", options.duplicateFrom),
-          supabase.from("trip_day_settings").select("*").eq("plan_id", options.duplicateFrom),
-        ]);
-        if (stopRows && stopRows.length > 0) {
-          await writeGuard("ก๊อปจุดแวะมาแผนใหม่", () =>
-            supabase.from("trip_stops").insert(
-              stopRows.map((row) => ({
-                ...row,
-                id: `${row.id}-copy-${Math.random().toString(36).slice(2)}`,
-                plan_id: id,
-              }))
-            )
-          );
-        }
-        if (settingRows && settingRows.length > 0) {
-          await writeGuard("ก๊อปตั้งค่ารายวันมาแผนใหม่", () =>
-            supabase
-              .from("trip_day_settings")
-              .insert(settingRows.map((row) => ({ ...row, plan_id: id })))
-          );
-        }
-      }
-
-      if (options?.activate !== false) {
-        await writeGuard("สลับแผนที่ใช้อยู่", () =>
-          supabase.from("trip_meta").upsert({ id: 1, active_plan_id: id })
-        );
-      }
-      return id;
+  /**
+   * 🔴 **ทุกจุดรับค่าที่คืนมา** — `P-71` คือการทิ้งค่าที่คืนมา 6 จุดในไฟล์นี้
+   * และ `reload()` ตอนล้มคือครึ่งที่หายไปอีกครึ่งหนึ่ง
+   */
+  const call = useCallback(
+    async (label: string, run: () => Promise<Response>) => {
+      const ok = await writeGuard(label, async () => {
+        const res = await run();
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await reload();
+      return ok;
     },
-    []
+    [reload]
   );
 
-  const renamePlan = useCallback(async (id: string, name: string) => {
-    if (!supabaseConfigured) {
+  const createPlan = useCallback(
+    async (
+      name: string,
+      // 🔴 คืนรูปเดิมครบ — `activate` มีผู้เรียกอยู่จริง (`app/page.tsx:345`) และ `tsc` เป็นคนจับ
+      //    `id` ของเดิมถูกถอด: ไคลเอนต์ตั้ง `id` ไม่ได้แล้ว (grant ไม่เปิด) ฐานเป็นคนออก
+      options?: { duplicateFrom?: string; activate?: boolean }
+    ): Promise<string | null> => {
+      if (!supabaseConfigured) return null;
+      let newId: string | null = null;
+      const ok = await call("สร้างแผนใหม่", async () => {
+        const res = await fetch("/api/engine/plans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, duplicateFrom: options?.duplicateFrom }),
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { id: string };
+          newId = body.id;
+        }
+        return res;
+      });
+      if (!ok) return null;
+      // ค่าเริ่มต้นคือสลับไปแผนใหม่ทันที — ตรงกับพฤติกรรมเดิม (`activate !== false`)
+      if (newId && options?.activate !== false) {
+        await call("สลับแผนที่ใช้อยู่", () =>
+          fetch("/api/engine/plans", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: newId, makeActive: true }),
+          })
+        );
+      }
+      await reload();
+      return newId;
+    },
+    [call, reload]
+  );
+
+  const renamePlan = useCallback(
+    async (id: string, name: string) => {
+      if (!supabaseConfigured) return;
       setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
-      return;
-    }
-    await writeGuard("เปลี่ยนชื่อแผน", () =>
-      supabase.from("trip_plans").update({ name }).eq("id", id)
-    );
-  }, []);
+      await call("เปลี่ยนชื่อแผน", () =>
+        fetch("/api/engine/plans", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, name }),
+        })
+      );
+    },
+    [call]
+  );
 
   const deletePlan = useCallback(
     async (id: string) => {
-      if (plans.length <= 1) return; // กันลบแผนสุดท้าย
-      if (!supabaseConfigured) {
-        setPlans((prev) => prev.filter((p) => p.id !== id));
-        if (activePlanId === id) {
-          const next = plans.find((p) => p.id !== id);
-          setActivePlanId(next?.id ?? null);
-        }
-        return;
-      }
-      // ลบ trip_plans แล้ว trip_stops/trip_day_settings ของแผนนี้จะถูกลบตามด้วย (on delete cascade)
-      if (!(await writeGuard("ลบแผน", () => supabase.from("trip_plans").delete().eq("id", id)))) {
-        return;
-      }
-      if (activePlanId === id) {
-        const next = plans.find((p) => p.id !== id);
-        if (next) {
-          await writeGuard("สลับแผนที่ใช้อยู่", () =>
-            supabase.from("trip_meta").upsert({ id: 1, active_plan_id: next.id })
-          );
-        }
-      }
+      if (!supabaseConfigured) return;
+      const ok = await call("ลบแผน", () =>
+        fetch(`/api/engine/plans?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+      );
+      // 🔴 ดึงใหม่เสมอแม้สำเร็จ — ลบแผนที่ active อยู่ทำให้ *แผนอื่นกลายเป็น active*
+      //    ซึ่งเป็นผลข้างเคียงที่ฝั่งนี้เดาเองไม่ได้
+      if (ok) await reload();
     },
-    [plans, activePlanId]
+    [call, reload]
   );
 
-  const switchActivePlan = useCallback(async (id: string) => {
-    if (!supabaseConfigured) {
+  const switchActivePlan = useCallback(
+    async (id: string) => {
+      if (!supabaseConfigured) return;
+      const before = activePlanId;
       setActivePlanId(id);
-      return;
-    }
-    await writeGuard("สลับแผนที่ใช้อยู่", () =>
-      supabase.from("trip_meta").upsert({ id: 1, active_plan_id: id })
-    );
-  }, []);
+      const ok = await call("สลับแผนที่ใช้อยู่", () =>
+        fetch("/api/engine/plans", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, makeActive: true }),
+        })
+      );
+      if (!ok) setActivePlanId(before);
+    },
+    [call, activePlanId]
+  );
 
   return {
     plans,
