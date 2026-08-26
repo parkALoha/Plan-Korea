@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lookupPlace, type GoogleOpeningHours, type GoogleReview } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { knownPlaceLocales } from "@/lib/engine/countries";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
@@ -26,9 +27,17 @@ type PlaceDetailsResponse = {
   addressLocal?: string | null;
 };
 
-/** ภาษาที่ยอมรับ — allowlist ฝั่งเซิร์ฟเวอร์ ไม่ปล่อยให้ client ส่ง languageCode อะไรก็ได้เข้า Google */
-const ALLOWED_LOCALES = ["ko", "vi"] as const;
-type Locale = (typeof ALLOWED_LOCALES)[number];
+/**
+ * ภาษาที่ยอมรับ — allowlist ฝั่งเซิร์ฟเวอร์ ไม่ปล่อยให้ client ส่ง `languageCode` อะไรก็ได้เข้า Google
+ *
+ * 🔴 **มาจากทะเบียนประเทศ ไม่ใช่รายการที่พิมพ์มือ** — แก้ 27 ส.ค. 2026 (P4 ชี้ · P1 แก้)
+ * ฉบับเดิม `["ko", "vi"] as const` **ตรงกับทะเบียนโดยบังเอิญ** และจะเลิกตรงทันทีที่รับประเทศใหม่
+ * → `geocode` จะรับภาษาใหม่ · **ที่นี่ไม่รับ** · ค่าเดียวกัน สองเส้น สองกฎ (`D46`)
+ *
+ * ⚠️ **`place-name` ยังใช้ `["en","ko","vi"]` ของตัวเองต่อไป และนั่นถูก** —
+ * `en` เป็น *ภาษาที่ผู้ใช้อยากอ่าน* ไม่ใช่ *ภาษาของจุดหมาย* · **ทะเบียนไม่ควรรู้เรื่องผู้ใช้**
+ */
+type Locale = string;
 
 const CACHE_COLUMNS =
   "maps_query, google_place_id, opening_hours, rating, user_rating_count, primary_type, reviews, name_local, address_local, locale";
@@ -47,7 +56,8 @@ type CacheRow = {
 };
 
 function parseLocale(raw: string | null): Locale | null {
-  return ALLOWED_LOCALES.includes(raw as Locale) ? (raw as Locale) : null;
+  // `includes` บนอาร์เรย์ — ไม่ใช่ index บนออบเจ็กต์ → สายโปรโตไทป์เข้าไม่ถึงตามโครงสร้าง
+  return raw && knownPlaceLocales().includes(raw) ? raw : null;
 }
 
 /** ดึงชื่อ+ที่อยู่ภาษาท้องถิ่นจาก Google (คนละ request กับตัวหลักเพราะขอคนละ languageCode) */
