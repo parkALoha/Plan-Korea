@@ -65,7 +65,7 @@ import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
 import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[tripId]/hotels/route";
 import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom-places/route";
 import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
-import { PUT as placeNotesPUT } from "@/app/api/engine/trips/[tripId]/place-notes/route";
+import { PUT as placeNotesPUT, DELETE as placeNotesDELETE } from "@/app/api/engine/trips/[tripId]/place-notes/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -196,6 +196,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   const CC = TEST_COUNTRY_CODES.engineCrossUser; // "xz" — country code จองในทะเบียน กันชนข้ามเซสชัน
   const citySlug = `ex-${stamp}`;
   const placeSlug = `exp-${stamp}`;
+  const placeSlug2 = `exp2-${stamp}`;
+  let place2Id = "";
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -265,6 +267,10 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     // ชื่ออยู่ catalog_place_names แยกตาราง · probe ต้องการแค่ให้ place *มีอยู่* (ค้นด้วย legacy_slug)
     const pl = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug, category: "food", lat: 37.5, lng: 127.0 });
     if (pl.error) throw new Error(`seed place: ${pl.error.message}`);
+    // place ที่ 2 สำหรับเคส deleted_at (แยกจาก place แรกที่ cross-user probe ใช้ ไม่ให้ชน)
+    const pl2 = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug2, category: "food", lat: 37.6, lng: 127.1 }).select("id").single();
+    if (pl2.error) throw new Error(`seed place2: ${pl2.error.message}`);
+    place2Id = pl2.data.id as string;
   }
 
   beforeAll(async () => {
@@ -456,6 +462,31 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const { verdict, detail } = await verdictFor(bRes);
     expect(verdict, `[place-notes] B → **${verdict}** (${detail})`).toBe("rejected");
     expect(await notes(), "[place-notes] เจอ 'n-b' = B เขียนทับโน้ตของ A สำเร็จ (leak)").toEqual(["n-a"]);
+  });
+
+  // 🔴 บั๊กติดกันที่ P1 *ยังไม่แก้* (จงใจ · ไม่ใช่ของใหม่จากการแก้ upsert): update-then-insert ไม่กรอง deleted_at
+  //    วันนี้ลบโน้ตแล้ว "เขียนใหม่" ได้ **403** (tombstone กันดัชนีไว้) → ผู้ใช้จดโน้ตซ้ำที่เดิมไม่ได้
+  // 🎯 **`it.fails` = xfail:** วันนี้ body ล้ม (403) → เคสนี้ *เขียว* (document ว่า bug เปิด · หัว branch ไม่แดง ตาม D72)
+  //    วินาทีที่ P1 แก้ deleted_at → body ผ่าน → `it.fails` *แดง* = "แก้แล้ว ถอด .fails ออกเป็นเทสต์จริง"
+  //    ⚠️ ถ้าวันหนึ่งมันแดง เช็คก่อนว่าแดงเพราะ fix ลง ไม่ใช่ setup (put d1/delete) พัง
+  it.fails("place-notes deleted_at — ลบโน้ต → เขียนใหม่ → ต้องเห็นโน้ตใหม่ (xfail · bug เปิดอยู่ · พลิกแดงเมื่อ P1 แก้)", async () => {
+    const put = (note: string) => callAs(aCookies, tripA, placeNotesPUT, "PUT", { planId: aPlan, placeId: placeSlug2, note });
+    expect((await put("d1")).status, "setup: เขียนโน้ตแรกควร 200").toBe(200);
+    jar.cookies = aCookies;
+    const delRes = await placeNotesDELETE(
+      new NextRequest(`http://localhost:3300/api/engine/trips/${tripA}/x?planId=${aPlan}&placeId=${placeSlug2}`, { method: "DELETE" }),
+      { params: Promise.resolve({ tripId: tripA }) },
+    );
+    expect(delRes.status, "setup: ลบโน้ตควร 200").toBe(200);
+    // เขียนใหม่หลังลบ — พฤติกรรมที่ผู้ใช้ต้องได้คือ 200 + เห็นโน้ตใหม่ · วันนี้ได้ 403 (นี่คือบั๊ก)
+    const reRes = await put("d2");
+    expect(reRes.status, `เขียนใหม่หลังลบควรได้ 200: ได้ ${reRes.status}`).toBe(200);
+    const active = async () => {
+      const { data, error } = await admin.from("place_notes").select("note,deleted_at").eq("trip_id", tripA).eq("catalog_place_id", place2Id);
+      if (error) throw new Error(`read place_notes: ${error.message}`);
+      return (data ?? []).filter((r) => (r as { deleted_at: string | null }).deleted_at == null).map((r) => (r as { note: string | null }).note);
+    };
+    expect(await active(), "ลบแล้วเขียนใหม่ ต้องเห็นโน้ตใหม่").toEqual(["d2"]);
   });
 
 });
