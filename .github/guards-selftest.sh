@@ -600,6 +600,27 @@ d="$(mkrepo)"; echo 'fetch("https://apis-navi.kakaomobility.com/v1/directions");
 git -C "$d" add -A >/dev/null 2>&1
 pyc "api-hosts: Kakao Mobility ต้องโดนจับ" fail check-api-hosts.py "$d"
 
+# 🔴 Naver Maps JS SDK — **subdomain ข้าง ๆ deep-link แต่เป็น API host** (P4 ชี้ · 27 ส.ค. 2026)
+#    `<script src="https://openapi.map.naver.com/...?ncpClientId=...">` = โค้ดเราฝัง + มี credential
+#    กฎ `openapi\.naver\.com` ไม่แมตช์ เพราะมี `.map.` คั่น → เคยหลุดทั้งที่ดูเหมือนถูกครอบแล้ว
+d="$(mkrepo)"; echo 'const s = "https://openapi.map.naver.com/openapi/v3/maps.js?ncpClientId=x";' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: Naver Maps JS SDK (openapi.map.naver) ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+d="$(mkrepo)"; echo 'fetch("https://kapi.kakao.com/v2/user/me");' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: Kakao REST (kapi) ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+# 🔴 apex domain — `(?:^|\.)` ฉบับแรกพลาดเคสนี้ เพราะมี `/` นำหน้า ไม่ใช่ `.`
+d="$(mkrepo)"; echo 'fetch("https://kakaomobility.com/v1/directions");' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: apex domain (ไม่มี subdomain) ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+# ✅ Google family ใหม่ที่เราใช้จริง ต้องไม่โดนจับ (P4 วัดว่าซอร์สเรามีแค่กลุ่มนี้ + deep-link)
+d="$(mkrepo)"; printf 'const a = "https://places.googleapis.com/v1/places";\nconst b = "https://routes.googleapis.com/directions/v2";\n' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: places/routes.googleapis.com ต้อง *ไม่* โดนจับ" pass check-api-hosts.py "$d"
+
 # ✅ **เคสด้านบวก — ปุ่มนำทางของ `E4-AC4` ต้องรอด** (P1 ขอ · P5 ยืนยันเส้นแบ่ง)
 # 🎯 **ไม่ได้มีไว้ยืนยันว่าวันนี้ถูก · มีไว้กันคนที่ "รัดด่านให้แน่นขึ้น" ในอีก 3 เดือน**
 #    แล้วฆ่า `lib/mapLinks.ts` โดยไม่รู้ตัว — **การรัดเพิ่มดูเหมือนความรอบคอบทุกครั้ง**

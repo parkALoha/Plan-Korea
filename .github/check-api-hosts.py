@@ -32,8 +32,20 @@ FORBIDDEN = [
     # 🔴 เพิ่ม 27 ส.ค. 2026 — P4 วัดแล้วว่า 4 ตัวบนพลาด **โฮสต์จริงที่ provider ใช้กันวันนี้**
     #    `naveropenapi.apigw.ntruss.com` ลงท้าย `.ntruss.com` **ไม่ใช่ `.com` ของ naver**
     #    → regex เดิมไม่แมตช์เลย · ใครเอา Naver Cloud Maps กลับมา **ด่านเขียว** (P1 อนุมัติ)
-    ("Naver Cloud Maps",   "E4-AC5", re.compile(r"(?:^|\.)apigw\.ntruss\.com", re.I)),
-    ("Kakao Mobility",     "E4-AC5", re.compile(r"(?:^|\.)kakaomobility\.com", re.I)),
+    # ⚠️ **`(?<![a-z0-9-])` ไม่ใช่ `(?:^|\.)`** — ฉบับแรกใช้ `(?:^|\.)` แล้ว **พลาด apex domain**
+    #    `https://kakaomobility.com/x` มี `/` นำหน้า ไม่ใช่ `.` และไม่ใช่ต้นบรรทัด → **หลุด**
+    #    lookbehind กันเฉพาะ "ตัวอักษรของ hostname" → `/` `"` `.` ผ่านหมด แต่ `evilkakaomobility` ไม่ผ่าน
+    #    🎯 เจอเพราะ P4 ถามเรื่องความหมายของการแมตช์ prefix — **คำถามที่ไม่ได้เล็งมาที่บั๊กนี้เลย**
+    ("Naver Cloud Maps",   "E4-AC5", re.compile(r"(?<![a-z0-9-])apigw\.ntruss\.com", re.I)),
+    ("Kakao Mobility",     "E4-AC5", re.compile(r"(?<![a-z0-9-])kakaomobility\.com", re.I)),
+    # 🔴 เพิ่ม 27 ส.ค. 2026 (P4 เสนอ · reasoned ไม่ใช่ measured — ยังไม่มีในโค้ดเรา)
+    #    `openapi.map.naver.com` = **Naver Maps JS SDK v3 loader** โหลดด้วย `<script src=...>`
+    #    พร้อม `ncpClientId` → **โค้ดเราฝังเอง + มี credential = API host ต้องห้าม ไม่ใช่ deep-link**
+    #    ⚠️ กฎ `openapi\.naver\.com` ไม่แมตช์ เพราะมี `.map.` คั่น · `oapi.` คือ host รุ่นเก่าของตัวเดียวกัน
+    # 🎯 **ระวังตอนแก้กฎนี้:** ห้ามย่อเป็น `map\.naver\.com` เด็ดขาด — จะกลืน deep-link ของ `E4-AC4`
+    #    (ถ้าใครลอง `DEEPLINKS_OK` จะทำให้ด่านปฏิเสธที่จะรันทันที ซึ่งเป็นพฤติกรรมที่ตั้งใจ)
+    ("Naver Maps JS SDK",  "E4-AC5", re.compile(r"(?<![a-z0-9-])(?:openapi|oapi)\.map\.naver\.com", re.I)),
+    ("Kakao REST API",     "E4-AC5", re.compile(r"(?<![a-z0-9-])kapi\.kakao\.com", re.I)),
 ]
 
 # 🔴 **CANARY ประกอบทีละชิ้น ห้ามเขียนโฮสต์ติดกัน** (P6 · 27 ส.ค. 2026)
@@ -49,6 +61,8 @@ CANARY = "\n".join([
     'const n = "https://openapi' + _D + 'naver' + _D + 'com/v1";',
     'const w = "https://naveropenapi' + _D + 'apigw' + _D + 'ntruss' + _D + 'com/map-direction/v1";',
     'const m = "https://apis-navi' + _D + 'kakaomobility' + _D + 'com/v1/directions";',
+    'const s = "https://openapi' + _D + 'map' + _D + 'naver' + _D + 'com/openapi/v3/maps.js";',
+    'const r = "https://kapi' + _D + 'kakao' + _D + 'com/v2/user/me";',
 ])
 
 # ✅ **เคสด้านบวกที่ต้อง *ไม่* ถูกจับ — ปุ่มนำทางที่ `E4-AC4` ตั้งใจสร้าง** (P1 · P5 ยืนยัน)
@@ -64,6 +78,20 @@ DEEPLINKS_OK = [
     'https://map' + _D + 'naver' + _D + 'com/v5/directions',
 ]
 
+# 🔴 **เคสด้านลบที่ต้องคู่กับ `DEEPLINKS_OK` เสมอ** (P4 ชี้ · 27 ส.ค. 2026)
+#    P4 ถามว่า `DEEPLINKS_OK` ที่ปล่อย `map.naver.com` จะปล่อย `openapi.map.naver.com` ด้วยไหม
+#    **คำตอบคือไม่ เพราะ `DEEPLINKS_OK` ไม่ใช่ allowlist ตอนสแกน** — มันเป็นแค่ข้อยืนยันว่า
+#    "ห้ามมีกฎไหนแมตช์สตริงพวกนี้" · ไฟล์จริงถูกวัดด้วย `FORBIDDEN` เท่านั้น ไม่มีทางลัดไหนข้ามได้
+# 🎯 **แต่คำถามนั้นชี้ของจริง**: subdomain ข้าง ๆ ของ deep-link ที่เป็น API host
+#    → เคสนี้ pin ไว้ว่า **ต้องถูกจับ** เพื่อไม่ให้ใครแก้กฎจน `map.naver.com` กลืนทั้งกลุ่ม
+MUST_CATCH = [
+    'https://openapi' + _D + 'map' + _D + 'naver' + _D + 'com/openapi/v3/maps.js?ncpClientId=x',
+    'https://oapi' + _D + 'map' + _D + 'naver' + _D + 'com/openapi/v3/maps.js',
+    'https://kapi' + _D + 'kakao' + _D + 'com/v2/user/me',
+    'https://kakaomobility' + _D + 'com/x',
+    'https://apigw' + _D + 'ntruss' + _D + 'com/x',
+]
+
 
 def main(argv) -> int:
     root = argv[0] if argv else "."
@@ -75,6 +103,13 @@ def main(argv) -> int:
         print(f"🔴 api-hosts: self-test ล้ม · regex จับไม่ได้แล้ว → {', '.join(missed)}")
         print("   🎯 ถ้าเคสนี้แดง แปลว่าเคสจริงข้างล่าง 'เขียว' เพราะตาบอด ไม่ใช่เพราะสะอาด")
         return 1
+
+    # ②a host ที่ต้องจับให้ได้แม้อยู่ต้น authority หรือเป็น subdomain ข้าง ๆ deep-link
+    for link in MUST_CATCH:
+        if not any(rx.search(link) for _, _, rx in FORBIDDEN):
+            print(f"🔴 api-hosts: self-test ล้ม · **หลุด** host ที่ต้องจับ → {link}")
+            print("   🎯 เช็คว่าใครย่อกฎจนสั้นเกิน หรือใช้ `(?:^|\\.)` ซึ่งพลาด apex domain")
+            return 1
 
     # ② และต้อง **ไม่** จับ deep-link ที่ `E4-AC4` ตั้งใจสร้าง — ด่านที่รัดเกินไปฆ่าปุ่มนำทาง
     for link in DEEPLINKS_OK:
