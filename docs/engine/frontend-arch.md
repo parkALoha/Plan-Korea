@@ -934,3 +934,66 @@ comment ในไฟล์เอง) — ย้ายกลไก cache-for-offl
 `signStoredFile()`/`signStoredFiles()` สัญญาเดิมทุกประการ (`Promise<string | null>`) — ไม่มี consumer
 ไฟล์ไหนถูกแตะ ยืนยันแล้ว: `tsc` เขียว · `eslint` เขียว · ชุดสด **636/636 ผ่าน 0 ข้าม** (มี creds จริง) ·
 `guards.sh` เขียวทั้งชุด · `next build` ผ่าน · **`sw.js` ไม่ถูกแตะเลยสักบรรทัดตามแผน**
+
+---
+
+## 17. `E5-AC1`/`AC2` — `/trip/[tripId]` จริงตัวแรก + 9 hook รับ `tripId` จากผู้เรียก
+
+**ของที่ลง (`3ac3102`):**
+```
+app/trip/[tripId]/layout.tsx           ← useParams() → TripDataProvider tripId={tripId}
+app/trip/[tripId]/page.tsx             ← import HomeContent จาก app/page.tsx
+app/trip/[tripId]/today/page.tsx       ← import TodayPageContent จาก app/today/page.tsx
+app/trip/[tripId]/summary/page.tsx     ← import SummaryContent จาก app/summary/page.tsx
+hooks/useActiveTripId.ts               ← ตัว resolve ทริปสำหรับหน้า bare เท่านั้น
+```
+
+### หน้า bare (`/`, `/today`, `/summary`) — ไม่ใช่ HTTP redirect โดยตั้งใจ
+
+`app/manifest.ts` ปักหมุด `start_url: "/today"` — PWA ที่ติดตั้งไปแล้วจำ URL นี้ตายตัว เปลี่ยนไม่ได้แม้แก้
+manifest ทีหลัง หน้านี้จึงต้องมีอยู่ตลอดไป ไม่ใช่ transitional และ **ห้าม redirect ด้วย HTTP 3xx** —
+`sw.js`'s `isStorable()` ปฏิเสธ response ที่ `redirected === true` เสมอ (กันมาตั้งแต่ `/unlock`/
+`/auth/callback` — §11 หัวข้อ 9) ถ้า `/today` เป็น redirect จะไม่มีวันถูกแคชเป็นเนื้อหาได้เลย → เปิด PWA
+จาก home screen ตอนไม่มีเน็ตในอุโมงค์จะเจอหน้า offline fallback แทนที่จะเจอแผนจริงที่เคยเปิดออนไลน์มาก่อน
+
+**ทางที่เลือก:** แต่ละหน้า bare `export` เนื้อหาจริงเป็น component แยก (`HomeContent`/`TodayPageContent`/
+`SummaryContent`, รับ `tripId: string` เป็น prop) แล้ว `/trip/[tripId]/*` import ตัวเดียวกันมาใช้ —
+หนึ่ง implementation สอง entry point ทั้งคู่แคชได้อิสระจากกันตาม URL จริงของมัน
+
+หน้า bare เอง resolve tripId ผ่าน `useActiveTripId()`: **ทริปล่าสุดที่เคยเปิดจริง (localStorage,
+เขียนจาก `rememberActiveTripId()` ใน `/trip/[tripId]/layout.tsx`) มาก่อน `chooseSoleTrip` เสมอ** —
+เพราะพอมีทริปที่สองจริง `chooseSoleTrip` จะคืน `ambiguous` ตลอดไป ไม่มีวันเลือกให้เองอีกเลย ทริปล่าสุดที่
+เปิดจริงจึงตรงกับความตั้งใจผู้ใช้มากกว่า สถานะ `none`/`ambiguous`/`error` render ผ่าน
+`components/TripStatusFallback.tsx` (จอเดียวกันทั้ง 3 หน้า)
+
+### 9 hook — เปลี่ยนพร้อมกันทั้งชุด ไม่ทำทีละตัว (ตามที่ P1 เตือน)
+
+`useCustomPlaces`/`useHotels`/`useBookings`/`useDaySettings`/`useOvernightOverrides`/`useChecklist`/
+`usePlaceNotes`/`useHiddenPlaces`/`useStops` เดิม resolve tripId เอง (`fetch("/api/engine/trips")` +
+`chooseSoleTrip()`) แยกกันคนละที่ — พอมีทริปที่สอง แต่ละ hook จะได้ `ambiguous` **ไม่พร้อมกัน** ถ้าแปลงแค่
+บางตัว ทุกตัวรับ `tripId: string | null` เป็นพารามิเตอร์แรกแทน (3 ตัวที่อยู่ใน `TripDataProvider` รับผ่าน
+prop ของ Provider, อีก 6 ตัวรับตรงจากหน้าที่เรียก) — `chooseSoleTrip` เองไม่ถูกแตะ ยังอยู่ที่เดียวกับที่
+route ฝั่งเซิร์ฟเวอร์ใช้ (`D38` เดิม) แค่ไม่มี hook ไหนเรียกมันเองอีกต่อไป
+
+### `TripDataProvider` ย้ายออกจาก root layout
+
+เดิมครอบทั้งแอปจาก `app/layout.tsx` รวม `/login`/`/account` ที่ไม่ต้องมีข้อมูลทริปเลย (ส่วนหนึ่งของ
+`E6-AC2` ที่ P1 บันทึกไว้ก่อนหน้า) ตอนนี้ต้องมี `tripId` จริงส่งเข้ามาด้วย จึงย้ายไปอยู่ที่ผู้เรียกแต่ละกลุ่ม:
+`/trip/[tripId]/layout.tsx` ใช้ tripId จาก path ตรง ๆ · หน้า bare ห่อเองหลัง resolve — ไม่ได้ตั้งใจปิด
+`E6-AC2` (ยังมีอีก 6 channel/tripwide ที่ยังไม่รวม ตามที่ P1 วัดไว้) แค่เป็นผลข้างเคียงที่ตรงทางเดียวกัน
+
+### เกณฑ์ที่ได้มาฟรีจาก routing ของ Next เอง — `E5-AC2`
+
+"สลับทริปแล้ว URL เปลี่ยน · refresh แล้วยังอยู่ทริปเดิม · กด back ได้ถูกทริป" ไม่ต้องเขียนกลไกเพิ่มเลย
+เพราะ `tripId` ไม่เคยถูกเก็บเป็น state ที่ไหนนอกจาก URL (`useParams()` อ่านสดทุกครั้ง) — เปลี่ยน URL =
+เปลี่ยนทริปทันที ไม่มี state ค้างให้ sync
+
+### ยืนยันแล้ว — และ 2 เรื่องที่เจอแต่ไม่ใช่ของตัวเอง
+
+`eslint`/`tsc` เขียวทุกไฟล์ที่แตะ · ชุดสด **660/661 ผ่าน** (เคสเดียวที่ล้ม — `customPlaceAdapter.test.ts`
+— เป็น assertion เก่าที่ไม่ทันอัปเดตหลัง `c59b678` เพิ่ม field `country` เข้า `toCustomPlace()`, ยืนยันด้วย
+`git diff`/รันไฟล์เดี่ยวว่าไม่เกี่ยวกับงานนี้ ล้มมาก่อนแล้ว — แจ้ง P1 แทนที่จะแก้เอง) ·
+`layoutImportGraph.test.ts` ปรับ canary ให้ตรงกับ root layout ที่เล็กลงหลังย้าย `TripDataProvider` ออก
+(assertion หลักเรื่อง "ห้ามลาก `data/*`" ไม่ได้แตะ) · เจอ `hooks/useDaySchedule.ts` มี type error จริงระหว่าง
+ตรวจ (`TravelMode` สองโมดูลชนกัน) แต่ `git diff` ยืนยันว่าไม่ใช่ไฟล์ของงานนี้ — เป็นงานที่เซสชันอื่นกำลังแก้
+อยู่จริงบนทรีเดียวกัน ไม่แตะ ปล่อยให้เจ้าของแก้ต่อ
