@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 
@@ -18,6 +19,9 @@ function sortItems(items: ChecklistItem[]) {
 /** checklist ของที่ต้องเตรียม — trip-wide ไม่แยกตามแผน A/B เหมือน bookings */
 export function useChecklist() {
   const [items, setItems] = useState<ChecklistItem[]>([]);
+  const tripIdRef = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchRef = useRef<(() => Promise<void>) | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
@@ -28,28 +32,24 @@ export function useChecklist() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const { data } = await supabase.from("checklist_items").select("*");
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const res = await fetch(`/api/engine/trips/${trip.tripId}/checklist`);
       if (cancelled) return;
-      if (data) setItems(sortItems(data as ChecklistItem[]));
+      if (res.ok) setItems(sortItems((await res.json()) as ChecklistItem[]));
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "checklist_items" },
-          (payload) => {
-            setItems((prev) => {
-              if (payload.eventType === "DELETE") {
-                return prev.filter((i) => i.id !== (payload.old as ChecklistItem).id);
-              }
-              const row = payload.new as ChecklistItem;
-              const exists = prev.some((i) => i.id === row.id);
-              const next = exists ? prev.map((i) => (i.id === row.id ? row : i)) : [...prev, row];
-              return sortItems(next);
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "checklist_items" }, () => {
+          // 🔴 ไม่แตะ payload — แถวดิบใช้ `legacy_checked_by` ไม่ใช่ `checked_by` (P3 · `§15`)
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => void refetchRef.current?.(), 300);
+        })
         .subscribe();
     }
 
@@ -57,21 +57,38 @@ export function useChecklist() {
 
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
-    if (!supabaseConfigured) return;
-    const { data } = await supabase.from("checklist_items").select("*");
-    if (data) setItems(sortItems(data as ChecklistItem[]));
+    const id = tripIdRef.current;
+    if (!supabaseConfigured || !id) return;
+    const res = await fetch(`/api/engine/trips/${id}/checklist`);
+    if (!res.ok) return;
+    setItems(sortItems((await res.json()) as ChecklistItem[]));
   }, []);
 
-  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+
+  // 🔴 realtime เรียกผ่าน ref เพื่อไม่ผูก effect หลักเข้ากับ `reload`
+  //    เขียน ref ตอน render ตรง ๆ ไม่ได้ (`react-hooks/refs`) — ต้องอยู่ใน effect
+  useEffect(() => {
+    refetchRef.current = reload;
+  }, [reload]);
+
+  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
   const guard = useCallback(
-    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
-      if (!(await writeGuard(label, run))) await reload();
+    async (label: string, run: () => Promise<Response>) => {
+      const ok = await writeGuard(label, async () => {
+        const res = await run();
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await reload();
+      return ok;
     },
     [reload]
   );
@@ -89,12 +106,25 @@ export function useChecklist() {
         updated_at: now,
         category,
       };
-      setItems((prev) => sortItems([...prev, newItem]));
-      if (!supabaseConfigured) return newItem.id;
-      await guard("เพิ่มของที่ต้องเตรียม", () =>
-        supabase.from("checklist_items").insert(newItem)
-      );
-      return newItem.id;
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) {
+        setItems((prev) => sortItems([...prev, newItem]));
+        return newItem.id;
+      }
+      // 🔴 **เขียนก่อนแล้วค่อยใส่ state** — `id` มาจากฐาน ไคลเอนต์เดาไม่ได้ (grant ไม่เปิด `id`)
+      //    เดิม optimistic ด้วย id ที่คิดเอง แล้วแถวจริงจะมี id คนละตัว → ติ๊ก/ลบจะชี้ผิดแถว
+      const res = await fetch(`/api/engine/trips/${tripId}/checklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, category, addedBy: addedBy ?? null }),
+      });
+      if (!res.ok) {
+        await guard("เพิ่มของที่ต้องเตรียม", async () => res);
+        return newItem.id;
+      }
+      const created = (await res.json()) as ChecklistItem;
+      setItems((prev) => sortItems([...prev, created]));
+      return created.id;
     },
     [guard]
   );
@@ -106,9 +136,15 @@ export function useChecklist() {
       updated_at: new Date().toISOString(),
     };
     setItems((prev) => sortItems(prev.map((i) => (i.id === itemId ? { ...i, ...patch } : i))));
+    const tripId = tripIdRef.current;
+    if (!supabaseConfigured || !tripId) return;
     if (!supabaseConfigured) return;
     await guard("ติ๊กของที่ต้องเตรียม", () =>
-      supabase.from("checklist_items").update(patch).eq("id", itemId)
+      fetch(`/api/engine/trips/${tripId}/checklist`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: itemId, isChecked: checked }),
+      })
     );
   }, [guard]);
 
@@ -117,20 +153,42 @@ export function useChecklist() {
     async (itemId: string): Promise<ChecklistItem | undefined> => {
       const snapshot = items.find((i) => i.id === itemId);
       setItems((prev) => prev.filter((i) => i.id !== itemId));
-      if (!supabaseConfigured) return snapshot;
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return snapshot;
       await guard("ลบของที่ต้องเตรียม", () =>
-        supabase.from("checklist_items").delete().eq("id", itemId)
+        fetch(`/api/engine/trips/${tripId}/checklist?id=${encodeURIComponent(itemId)}`, { method: "DELETE" })
       );
       return snapshot;
     },
     [items, guard]
   );
 
+  /**
+   * กู้รายการที่เพิ่งลบ
+   *
+   * 🔴 **ได้ `id` ใหม่ ไม่ใช่ id เดิม** — สคีมาใหม่ไม่ให้ไคลเอนต์ตั้ง `id` และแถวเดิมเป็น tombstone (`D76`)
+   * ⚠️ เดิมเป็น `insert(item)` ทั้งก้อนซึ่งคืน id เดิมมาได้ · **ตอนนี้คืนไม่ได้แล้วโดยการออกแบบ**
+   * · ผู้ใช้เห็นเหมือนเดิมทุกอย่าง (ของกลับมา) · **สิ่งที่ต่างคือ id ซึ่งไม่มีใครในหน้าจอเห็น**
+   */
   const restoreItem = useCallback(
     async (item: ChecklistItem) => {
-      setItems((prev) => sortItems([...prev.filter((i) => i.id !== item.id), item]));
-      if (!supabaseConfigured) return;
-      await guard("กู้ของที่ต้องเตรียมคืน", () => supabase.from("checklist_items").insert(item));
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) {
+        setItems((prev) => sortItems([...prev.filter((i) => i.id !== item.id), item]));
+        return;
+      }
+      const res = await fetch(`/api/engine/trips/${tripId}/checklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: item.text, category: item.category, addedBy: item.added_by }),
+      });
+      if (!res.ok) {
+        await guard("กู้ของที่ต้องเตรียมคืน", async () => res);
+        return;
+      }
+      const created = (await res.json()) as ChecklistItem;
+      setItems((prev) => sortItems([...prev.filter((i) => i.id !== item.id), created]));
+      return;
     },
     [guard]
   );

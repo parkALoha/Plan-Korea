@@ -46,7 +46,8 @@ export type EngineTable =
   | "custom_places"
   | "hidden_places"
   | "place_notes"
-  | "trip_hotels";
+  | "trip_hotels"
+  | "checklist_items";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -489,4 +490,36 @@ export function tripHotelByRange(db: Db, tripId: string, checkIn: string, checkO
 
 export function softDeleteTripHotel(db: Db, id: string) {
   return db.rpc("soft_delete_trip_hotel", { p_id: id });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ของที่ต้องเตรียม — `E3`
+// ───────────────────────────────────────────────────────────────────────────
+
+export function checklistOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "checklist_items")
+    .select("id, text, category, is_checked, legacy_checked_by, legacy_added_by, created_at, updated_at")
+    .eq("trip_id", tripId)
+    .is("deleted_at", null)
+    .order("created_at");
+}
+
+/**
+ * เพิ่มรายการ — 🔴 **`id` ไม่อยู่ใน grant** ฐานเป็นคนออกให้
+ * · `legacy_checked_by` ก็ไม่ต้องส่ง — **trigger `stamp_checked_by` เป็นคนเขียน** (`P-56`)
+ */
+export function insertChecklistItem(db: Db, row: { tripId: string; text: string; category: string; legacyAddedBy: string | null }) {
+  return engineTable(db, "checklist_items")
+    .insert({ trip_id: row.tripId, text: row.text, category: row.category, legacy_added_by: row.legacyAddedBy })
+    .select("id, text, category, is_checked, legacy_checked_by, legacy_added_by, created_at, updated_at")
+    .single();
+}
+
+/** แก้รายการ — grant เปิดแค่ `text` · `category` · `is_checked` เท่านั้น */
+export function updateChecklistItem(db: Db, id: string, patch: Record<string, unknown>) {
+  return engineTable(db, "checklist_items").update(patch).eq("id", id).select("id");
+}
+
+export function softDeleteChecklistItem(db: Db, id: string) {
+  return db.rpc("soft_delete_checklist_item", { p_id: id });
 }
