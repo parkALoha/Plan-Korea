@@ -1380,3 +1380,29 @@ P1 ชี้ว่า `reportDayBridgeWarningIfAny` (แก้เช้านี
 เคยเลื่อนไว้ใน §21) หรือ `E5` ลง เคสนี้ควรกลับไปเป็น `false` อีกครั้ง — จดไว้ในคอมเมนต์ทั้งในโค้ดและเทสต์แล้ว
 
 ยืนยัน: eslint/tsc สะอาดทั้งคู่ + test suite 904/904 ผ่าน (68 ไฟล์)
+
+---
+
+## 27. 19 จุดที่สัญญาว่าไม่โยน แล้วโยน — `fetchReadJson` (`8f55b25`)
+
+P1 เจอระหว่างแก้ `lib/googlePlaces.ts` (`7966557`): `hooks/` มี `await fetch(` ฝั่งอ่าน 19 จุดที่ไม่มี
+`try` ครอบ — `fetch()` โยนเองเมื่อคำขอไปไม่ถึงปลายทาง (เน็ตขาด/DNS ล่ม/timeout) ไม่ใช่แค่คืน `res.ok: false`
+ทำให้ `init()`/`reload()` ที่ครอบอยู่ reject ก่อน `setLoaded(true)` จะรัน → ค้างที่หน้าโหลดตลอดไป และ
+`reportReadFailure()` (ที่มีไว้เพื่อเรื่องนี้โดยตรงจาก §19 เช้านี้) ไม่เคยถูกเรียกเพราะโค้ดไปไม่ถึงบรรทัดนั้น
+P1 ไม่แตะเพราะผมกำลังแก้ 4 ไฟล์ในโฟลเดอร์เดียวกันอยู่ (`git status` เห็น `M` ค้าง) — ส่งให้ผมทำต่อแทน
+
+**ทำ:** `lib/engine/fetchReadJson.ts` (ใหม่) — ห่อ `fetch` + `res.json()` ไม่โยนไม่ว่าเกิดอะไรขึ้น รูป
+เดียวกับ `callPlacesApi` ใน `lib/googlePlaces.ts` แยก 3 เหตุ (ติดต่อไม่ได้ / status / JSON พัง) คืน `null`
+เดียวกันทั้งสาม ผู้เรียกเช็คแค่ `if (!data) return void setLoaded(true);` — `lib/reportReadFailure.ts`
+เปลี่ยนจากรับ `status: number` เป็นรับ `ReadFailureReason` (discriminated union) ให้ตรงกับ 3 เหตุ
+
+แก้ครบทั้ง 19 จุดใน 10 ไฟล์: `useStops`/`useDaySettings`/`useOvernightOverrides`/`useBookings` (4 ไฟล์ที่
+เรียก `reportReadFailure(status)` อยู่แล้วจากเช้านี้ — ตัด `if (!res.ok) {...}` ทิ้งทั้งก้อน) และ
+`useChecklist`/`useHiddenPlaces`/`usePlans`/`usePlaceNotes`/`useCustomPlaces`/`useHotels` (6 ไฟล์ที่เงียบ
+สนิทมาก่อน ไม่เคยเรียก `reportReadFailure` เลย — ตอนนี้เรียกเหมือนกันหมดเพื่อความสม่ำเสมอ)
+
+**เทสต์:** `lib/__tests__/fetchReadJson.test.ts` — รูปเดียวกับ
+`lib/__tests__/googlePlacesUnreachable.test.ts` ที่ P1 เขียนไว้: `vi.stubGlobal("fetch", ...)` ให้ fetch
+โยน/`res.json()` โยน/`!res.ok` แล้วยืนยันว่าได้ toast คนละข้อความ 3 อัน ไม่ซ้ำกัน + ทางปกติยังทำงานถูกต้อง
+
+ยืนยัน: eslint/tsc สะอาดทั้งคู่ + test suite 924/924 ผ่าน (70 ไฟล์)
