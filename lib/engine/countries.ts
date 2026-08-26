@@ -24,8 +24,25 @@
  * · `mapProviders: ["google"]` = ตัวที่ใช้ได้ทุกที่ · ผู้ให้บริการท้องถิ่นต้องถูก*เพิ่ม* ไม่ใช่ถูก*สมมติ*
  */
 
-/** โหมดเดินทางที่ระบบรู้จัก — ตรงกับ `TRAVEL_MODES` ของ `lib/schedule.ts` */
-export type TravelMode = "TRANSIT" | "DRIVE" | "WALK";
+/**
+ * 🔴 **ใช้ `TravelMode` ของโดเมน ไม่ประกาศซ้ำ** — แก้ 27 ส.ค. 2026 (P2 เจอตอนต่อสาย)
+ *
+ * ฉบับแรกผมประกาศเป็นตัวพิมพ์ใหญ่ (`"WALK"|"TRANSIT"|"DRIVE"`) เพราะ **ตรงกับที่ Google Routes ใช้**
+ * → `tsc` ปฏิเสธตอน P2 ส่ง `mode` เข้ามาตรง ๆ ทั้งที่ความหมายเดียวกัน · เขาต้องเขียนตัวแปลงในไฟล์ตัวเอง
+ *
+ * 🎯 **แต่ตัวพิมพ์เล็กคือของจริง และฐานเป็นคนบอก:**
+ * ```sql
+ * travel_mode text not null check (travel_mode in ('walk', 'transit', 'drive'))
+ * ```
+ * `lib/schedule.ts` ก็ประกาศตัวพิมพ์เล็กมาตั้งแต่ต้น · **ตัวพิมพ์ใหญ่เป็นภาษาของ *ตัวแปลง* ไม่ใช่ของ *โดเมน***
+ * → ทะเบียนนี้อธิบาย**โดเมนของเรา** (ประเทศไหนมีโหมดจริงบ้าง) จึงต้องพูดภาษาโดเมน
+ * · ⚠️ **ถ้าปล่อยไว้ ตัวแปลงที่ P2 เขียนจะถูกก๊อปไปที่จุดเรียกถัดไป** แล้วเราจะมีคำศัพท์สองชุด
+ *   ที่ต้องคอยให้ตรงกันตลอดไป — รูปเดียวกับที่ทีมนี้ไล่ปิดกันทั้งวัน
+ * · 📌 **`import type` เท่านั้น** — ถูกลบตอน compile จึงไม่ทำลายคุณสมบัติ "ไฟล์นี้ไม่ลากอะไรมาด้วย"
+ */
+import type { TravelMode } from "@/lib/schedule";
+
+export type { TravelMode };
 
 /** ผู้ให้บริการแผนที่ที่มีตัวสร้างลิงก์อยู่แล้วใน `lib/mapLinks.ts` */
 export type MapProvider = "google" | "naver" | "kakao";
@@ -56,8 +73,8 @@ const UNKNOWN_COUNTRY: CountryCapabilities = {
  * และ `app/api/travel-time/route.ts:58` มีคอมเมนต์ที่บันทึกอาการเดียวกันไว้ตั้งแต่ก่อนมีไฟล์นี้
  */
 const CAPABILITIES: Readonly<Record<string, CountryCapabilities>> = {
-  kr: { realTravelModes: ["TRANSIT"], mapProviders: ["naver", "kakao", "google"] },
-  vn: { realTravelModes: ["TRANSIT", "DRIVE", "WALK"], mapProviders: ["google"] },
+  kr: { realTravelModes: ["transit"], mapProviders: ["naver", "kakao", "google"] },
+  vn: { realTravelModes: ["transit", "drive", "walk"], mapProviders: ["google"] },
 };
 
 /**

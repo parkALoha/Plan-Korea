@@ -26,7 +26,7 @@ describe("E4 — ทะเบียนความสามารถรายป
   it("🔴 ประเทศที่ไม่รู้จัก ต้องถือว่าเวลาเดินทาง **เป็นประมาณการทุกโหมด**", () => {
     // ทิศของการเดาผิดสำคัญกว่าความแม่น: เดาว่า "ตอบได้" แล้วผิด = ผู้ใช้เห็นเวลาผิดโดยไม่มีป้าย
     // เดาว่า "ตอบไม่ได้" แล้วผิด = เห็นป้าย "(ประมาณการ)" เกินจริง — **อย่างหลังกู้ได้ อย่างแรกไม่**
-    for (const mode of ["TRANSIT", "DRIVE", "WALK"] as const) {
+    for (const mode of ["transit", "drive", "walk"] as const) {
       expect(hasRealTravelTime("jp", mode), `jp/${mode} ไม่ควรถูกถือว่าเป็นเวลาจริง`).toBe(false);
     }
   });
@@ -40,9 +40,9 @@ describe("E4 — ทะเบียนความสามารถรายป
 
   it("🔴 ด้านบวก — เกาหลีต้องต่างจากค่าเริ่มต้นจริง ไม่งั้นทะเบียนไม่ได้ทำอะไรเลย", () => {
     // ถ้าข้อนี้ไม่มี เคสข้างบนจะเขียวได้แม้ทะเบียนว่างเปล่าทั้งใบ
-    expect(hasRealTravelTime("kr", "TRANSIT"), "PLAN.md §2: เกาหลีมี TRANSIT จริง").toBe(true);
-    expect(hasRealTravelTime("kr", "DRIVE"), "PLAN.md §2: เกาหลีไม่มี DRIVE (ข้อจำกัดกฎหมาย)").toBe(false);
-    expect(hasRealTravelTime("kr", "WALK"), "PLAN.md §2: เกาหลีไม่มี WALK").toBe(false);
+    expect(hasRealTravelTime("kr", "transit"), "PLAN.md §2: เกาหลีมี TRANSIT จริง").toBe(true);
+    expect(hasRealTravelTime("kr", "drive"), "PLAN.md §2: เกาหลีไม่มี DRIVE (ข้อจำกัดกฎหมาย)").toBe(false);
+    expect(hasRealTravelTime("kr", "walk"), "PLAN.md §2: เกาหลีไม่มี WALK").toBe(false);
     expect(mapProvidersFor("kr")[0], "เกาหลีควรเห็นเจ้าถิ่นก่อน").not.toBe("google");
   });
 
@@ -60,22 +60,22 @@ describe("E4 — ทะเบียนความสามารถรายป
     it("🔴 ประเทศที่ไม่รู้จัก ต้อง **ยิงตามปกติ** ไม่ใช่ข้าม", () => {
       // ถ้าข้ามด้วย จะไม่มีวันรู้ว่าญี่ปุ่นตอบ DRIVE ได้จริงไหม เพราะไม่เคยถาม
       // → ทะเบียนจะ "ถูก" ตลอดไปโดยไม่มีใครท้าทายได้ · คำทำนายที่ทำให้ตัวเองเป็นจริง
-      for (const mode of ["TRANSIT", "DRIVE", "WALK"] as const) {
+      for (const mode of ["transit", "drive", "walk"] as const) {
         expect(shouldSkipTravelApi("jp", mode), `jp/${mode} ต้องไม่ถูกข้าม`).toBe(false);
       }
-      expect(shouldSkipTravelApi(null, "DRIVE")).toBe(false);
+      expect(shouldSkipTravelApi(null, "drive")).toBe(false);
     });
 
     it("🔴 ข้ามเฉพาะที่ **รู้แน่ว่าไม่มี** — และต้องไม่ข้ามโหมดที่มี", () => {
-      expect(shouldSkipTravelApi("kr", "DRIVE"), "รู้แน่ว่าเกาหลีไม่มี → ข้าม").toBe(true);
-      expect(shouldSkipTravelApi("kr", "WALK")).toBe(true);
-      expect(shouldSkipTravelApi("kr", "TRANSIT"), "เกาหลีมี TRANSIT → ห้ามข้าม").toBe(false);
-      expect(shouldSkipTravelApi("vn", "DRIVE"), "เวียดนามมีครบ → ห้ามข้าม").toBe(false);
+      expect(shouldSkipTravelApi("kr", "drive"), "รู้แน่ว่าเกาหลีไม่มี → ข้าม").toBe(true);
+      expect(shouldSkipTravelApi("kr", "walk")).toBe(true);
+      expect(shouldSkipTravelApi("kr", "transit"), "เกาหลีมี TRANSIT → ห้ามข้าม").toBe(false);
+      expect(shouldSkipTravelApi("vn", "drive"), "เวียดนามมีครบ → ห้ามข้าม").toBe(false);
     });
 
     it("🎯 ความต่างจาก hasRealTravelTime อยู่ที่ประเทศที่ไม่รู้จัก — ถ้าเหมือนกันแปลว่าฟังก์ชันนี้ไม่จำเป็น", () => {
-      expect(hasRealTravelTime("jp", "DRIVE")).toBe(false); // ไม่รู้ → ถือเป็นประมาณการ
-      expect(shouldSkipTravelApi("jp", "DRIVE")).toBe(false); // แต่ยังต้องยิงเพื่อไปรู้
+      expect(hasRealTravelTime("jp", "drive")).toBe(false); // ไม่รู้ → ถือเป็นประมาณการ
+      expect(shouldSkipTravelApi("jp", "drive")).toBe(false); // แต่ยังต้องยิงเพื่อไปรู้
     });
   });
 });
