@@ -42,3 +42,33 @@ export function testClient(key: string): SupabaseClient {
     realtime: { transport: NO_SOCKET },
   });
 }
+
+/**
+ * 🔴 **S6 ↔ F1 ชนกัน · snippet มาตรฐานที่ต้อง *ก๊อป* (import ไม่ได้)** — 27 ส.ค. 2026 (P1 เจอ · P4 จด)
+ *
+ * `S6` (mockShape) บังคับ `vi.mock("@/lib/…")` ให้ spread `importOriginal()` · แต่
+ * `importOriginal("@/lib/supabase")` **รันโมดูลจริง** → F1: `RealtimeClient` เรียก
+ * `WebSocketFactory.getWebSocketConstructor()` → Node 20 ไม่มี `WebSocket` → **โยนตั้งแต่ mock**
+ * ทำตามข้อหนึ่ง = ชนอีกข้อ · เจอกับทุกคนที่ spread-mock `@/lib/supabase` ต่อจากนี้
+ *
+ * 🔴 **ทำไม *ไม่* ทำเป็น setup ไฟล์กลาง (global):** การมี `WebSocket` ทั้ง env จะกลบสัญญาณ
+ * *"import supabase-js ล้ม = ของขวัญ"* ที่ `lib/engine/storageKey.ts` พึ่งอยู่ (โมดูลที่ไม่ควร import มัน
+ * จะเลิกล้มเงียบ ๆ) · วันนี้ไม่มี setup ไฟล์ และสัญญาณนั้นไม่มีตัวสำรองครบ (`layoutImportGraph` เป็น canary แคบ)
+ * → **opt-in ต่อไฟล์ ไม่เปลี่ยน env ของทั้งชุดเพื่อไฟล์ไม่กี่ตัว** · (ถ้า dup โตจนคุ้ม: globalize *พร้อม* import-graph guard
+ * ที่ตรึงว่าโมดูล sw.js ห้าม import supabase-js — ตั้งสัญญาณนั้นใหม่ให้เป๊ะ แล้วค่อย global ได้)
+ *
+ * `vi.hoisted` ต้องอยู่ในไฟล์เทสต์เอง (hoist เหนือ import → import ฟังก์ชันมาใช้ไม่ได้) → **ก๊อป snippet นี้บนสุดของไฟล์**
+ * ที่ spread-mock `@/lib/supabase` · **สตับ *โยน* ถ้ามีคนใช้ realtime จริง — ห้ามเปลี่ยนเป็น socket จริง** (รูปเดียวกับ `NO_SOCKET` แต่ระดับ global):
+ *
+ * ```ts
+ * vi.hoisted(() => {
+ *   const g = globalThis as { WebSocket?: unknown };
+ *   g.WebSocket ??= class {
+ *     constructor() {
+ *       throw new Error("เทสต์นี้ต้องไม่เปิด WebSocket — เห็น = มีเคสใช้ realtime · แก้ที่เคส ไม่ใช่เปลี่ยนสตับเป็น socket จริง");
+ *     }
+ *   };
+ * });
+ * ```
+ * 📌 มีอยู่แล้วใน `guardedStorage.test.ts` · `signStoredFile.test.ts` — ก๊อปจากที่นี่ให้ตรง (พร้อมคำเตือน)
+ */
