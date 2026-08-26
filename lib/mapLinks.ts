@@ -82,3 +82,62 @@ export function openNaverMap(lat: number, lng: number, name: string) {
     }
   }, 1300);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// `E4-AC4` — ผู้ให้บริการแผนที่มาจาก *ทะเบียน* ไม่ใช่จากการสมมติที่จุดเรียก
+// เจ้าของ: P1-Lead · 27 ส.ค. 2026
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ## 🔴 สภาพก่อนหน้านี้ และทำไมมันแย่กว่า `if`
+// `app/today/page.tsx:126` เรียก `kakaoMapDirectionsUrl()` **ตรง ๆ ไม่มีเงื่อนไข**
+// → เปิดทริปญี่ปุ่น **ปุ่ม Kakao ก็ยังขึ้น** และไม่มีบรรทัดไหนผิดให้ใครเห็น
+// 🎯 **ไม่มีการตัดสินใจให้ผิด จึงไม่มีอะไรให้ grep เจอ** — `E4-AC2` ที่ค้นหา `if (country === …)`
+//    จึงรายงานว่าเหลือ 1 บรรทัด ทั้งที่ของจริงยังผูกกับเกาหลีทั้งหน้า
+//
+// ## ทำไมต้องเป็น "action" ไม่ใช่ "url"
+// Google กับ Kakao เป็น URL เปิดตรงได้ · **Naver ไม่มีลิงก์เว็บที่นำทางตรงได้**
+// มีแต่ `nmap://` ที่ต้องลองแล้วตกกลับเว็บถ้าไม่มีแอป (ดู `openNaverMap`)
+// 🔴 **ถ้าฝืนให้ทุกเจ้าคืน URL เหมือนกัน Naver จะต้องถูกทำให้เหมือน ซึ่งแปลว่าทำให้แย่ลง**
+//    → คืนรูปที่ต่างกันได้ **แล้วให้ผู้เรียก render ตามรูป** ไม่ใช่บังคับให้เหมือน
+
+import { mapProvidersFor, type MapProvider } from "@/lib/engine/countries";
+
+export type MapTarget = { lat: number; lng: number; name: string };
+
+export type MapAction =
+  /** ลิงก์ธรรมดา — ใส่ใน `<a href>` ได้เลย */
+  | { provider: MapProvider; label: string; kind: "href"; url: string }
+  /** ต้องเรียกฟังก์ชัน เพราะมี fallback ที่ทำด้วย `href` เฉย ๆ ไม่ได้ */
+  | { provider: MapProvider; label: string; kind: "open"; open: () => void };
+
+const LABEL: Record<MapProvider, string> = {
+  google: "Google",
+  naver: "Naver",
+  kakao: "Kakao",
+};
+
+function actionFor(provider: MapProvider, t: MapTarget): MapAction {
+  switch (provider) {
+    case "google":
+      return { provider, label: LABEL.google, kind: "href", url: googleMapsDirectionsUrl(t.lat, t.lng) };
+    case "kakao":
+      return { provider, label: LABEL.kakao, kind: "href", url: kakaoMapDirectionsUrl(t.lat, t.lng, t.name) };
+    case "naver":
+      return { provider, label: LABEL.naver, kind: "open", open: () => openNaverMap(t.lat, t.lng, t.name) };
+  }
+}
+
+/**
+ * ปุ่มนำทางที่ควรแสดงสำหรับประเทศนี้ **เรียงตามลำดับของทะเบียน**
+ *
+ * 🎯 **นี่คือที่เดียวที่แปลง "ประเทศ" เป็น "ปุ่มไหนบ้าง"** — ผู้เรียกไม่ต้องรู้จักชื่อผู้ให้บริการเลย
+ * · ประเทศที่ยังไม่มีในทะเบียน (เช่น ญี่ปุ่นวันนี้) ได้ `["google"]` — **ใช้งานได้ ไม่ใช่ปุ่มหาย**
+ * · 🔴 **`switch` ตัวเดียวในไฟล์นี้ ไม่ใช่ `switch` กระจายตามหน้า** — เพิ่มผู้ให้บริการรายใหม่
+ *   แก้ที่นี่ที่เดียว และ `switch` จะไม่ compile ถ้าลืมเคสใหม่ (`MapProvider` เป็น union)
+ */
+export function mapActionsFor(
+  countryCode: string | null | undefined,
+  target: MapTarget
+): MapAction[] {
+  return mapProvidersFor(countryCode).map((p) => actionFor(p, target));
+}
