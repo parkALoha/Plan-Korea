@@ -99,40 +99,59 @@ $$;
 revoke all on function public.create_trip(text, date, date, text) from public, anon, authenticated;
 grant execute on function public.create_trip(text, date, date, text) to authenticated;
 
--- ── เก็บกวาดทริปที่สร้างไปแล้วตอนฟังก์ชันยังไม่สร้างวัน ────────────────────────
+-- ── 🔴 **ถอด backfill ออก — วัดแล้วราคาไม่คุ้ม** (P1 · 27 ส.ค. 2026) ─────────────
 --
--- ⚠️ **แตะข้อมูลที่มีอยู่ — จงใจ และแคบที่สุดเท่าที่ทำได้**
--- เฉพาะทริปที่ **ไม่มีวันเลยสักวัน** · ทริปที่มีวันอยู่แล้วไม่ถูกแตะแม้แต่แถวเดียว
--- 🔴 ไม่ใช่ "ซ่อมให้สวย" — **ทริปพวกนั้นเพิ่มจุดแวะไม่ได้เลย** (`trip_stops` FK ไป `trip_days`)
---    ปล่อยไว้ = ผู้ใช้มีทริปที่เปิดได้แต่ทำอะไรไม่ได้ และไม่มีทางแก้จากฝั่งเขา
-insert into public.trip_days (trip_id, date)
-select t.id, d::date
-  from public.trips t
- cross join lateral generate_series(t.start_date, t.end_date, interval '1 day') as d
- where not exists (select 1 from public.trip_days td where td.trip_id = t.id)
-   and (t.end_date - t.start_date) + 1 <= 366;
+-- ฉบับแรกของไฟล์นี้ backfill ให้ **ทุกทริปที่ไม่มีวันเลย** ด้วยเหตุผลว่า
+-- *"ทริปพวกนั้นทำอะไรไม่ได้เลย และผู้ใช้ไม่มีทางแก้จากฝั่งเขา"* — **เหตุผลนั้นยังจริง แต่ผมไม่ได้วัดว่ามีกี่ใบ**
+--
+-- **วัดแล้ว (engine-dev · 27 ส.ค. 2026):**
+-- ```
+-- trips = 893  ·  ไม่มีวันเลย = 562  ·  backfill จะเพิ่ม 6,166 แถว
+-- ```
+-- 🔴 **562 ใบนั้นเกือบทั้งหมดเป็น fixture ที่ค้างจากการรันเทสต์** — ไม่ใช่ทริปของใคร
+-- ทริปจริงที่ได้ประโยชน์คือ **ทริปทดสอบของ P2 3 ใบ** ซึ่ง **สร้างใหม่ได้ในไม่กี่วินาทีหลัง migration ลง**
+--
+-- 🎯 **เพิ่มขยะ 6,166 แถวเพื่อกู้ทริป 3 ใบที่สร้างใหม่ได้ — ไม่คุ้ม**
+-- · และมันจะไปเพิ่มวันให้ fixture 559 ใบ **ซึ่งเทสต์บางตัวอาจสมมติว่าไม่มีวัน**
+--   (P4 ทำ `mkDay` เป็น read-or-insert ไว้แล้ว **แต่ผมไม่ได้ไล่ทุกไฟล์** — และการไล่ทุกไฟล์
+--    เพื่อรองรับ backfill ที่ไม่จำเป็น คือการจ่ายสองต่อ)
+--
+-- ⚠️ **สิ่งที่ยังจริงและต้องจดไว้: ทริปที่สร้าง *ก่อน* migration นี้จะใช้งานไม่ได้ตลอดไป**
+-- ผู้ใช้แก้เองไม่ได้ · ทางแก้คือ **สร้างทริปใหม่** · ยอมรับได้เพราะยังไม่มีผู้ใช้จริงบนแพลตฟอร์ม
+-- 🔴 **ถ้าวันหนึ่งมีทริปของผู้ใช้จริงติดสภาพนี้ ต้อง backfill *เฉพาะใบนั้น* ไม่ใช่ทั้งฐาน**
+--
+-- 📌 **และตัวเลข 893 เป็นสัญญาณของเรื่องอื่น: fixture ของชุดทดสอบไม่ถูกเก็บกวาด** — ส่ง P4 แล้ว
 
 -- ── ด่านยืนยัน — **สภาพปลายทาง ไม่ใช่ข้อความใน migration** ────────────────────
+-- 🔴 **ยืนยัน *พฤติกรรมของฟังก์ชัน* ไม่ใช่สภาพของข้อมูลเดิม** — เพราะไม่มี backfill แล้ว
+--    สร้างทริปจริง → ตรวจว่าได้วันครบ → **ลบทิ้ง** · ไม่ทิ้งอะไรไว้ในฐาน
+-- ⚠️ ต้องมี `auth.uid()` → รันในบล็อกนี้ไม่ได้ · จึงตรวจ *ตรรกะการสร้างวัน* ตรง ๆ แทน
 do $verify$
-declare
-  bad int;
+declare n int; bad int;
 begin
-  -- ทุกทริปต้องมีวันครบตามช่วงของมัน
-  select count(*) into bad
-    from public.trips t
-   where (t.end_date - t.start_date) + 1 <= 366
-     and (select count(*) from public.trip_days td where td.trip_id = t.id)
-         <> (t.end_date - t.start_date) + 1;
-  if bad > 0 then
-    raise exception 'ยังมี % ทริปที่จำนวนวันไม่ตรงกับช่วงวันที่', bad;
+  -- ① จำนวนวันที่ `generate_series` จะสร้าง ต้องตรงกับช่วงวันที่ (รวมหัวท้าย)
+  select count(*) into n
+    from generate_series(date '2026-10-11', date '2026-10-21', interval '1 day');
+  if n <> 11 then raise exception 'generate_series ให้ % วัน ไม่ใช่ 11', n; end if;
+
+  select count(*) into n
+    from generate_series(date '2026-11-01', date '2026-11-01', interval '1 day');
+  if n <> 1 then raise exception 'ทริปวันเดียวต้องได้ 1 วัน ไม่ใช่ %', n; end if;
+
+  -- ② ฟังก์ชันต้องมีอยู่ด้วยลายเซ็นเดิม (ผู้เรียกทั้งหมดพึ่งลายเซ็นนี้)
+  if not exists (
+    select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+     where ns.nspname = 'public' and p.proname = 'create_trip'
+       and pg_get_function_identity_arguments(p.oid) = 'text, date, date, text'
+  ) then
+    raise exception 'ลายเซ็นของ create_trip เปลี่ยนไป — ผู้เรียกจะพัง';
   end if;
 
-  -- 🔴 และต้องไม่มีวันซ้ำในทริปเดียวกัน — backfill ที่รันสองรอบจะสร้างของซ้ำ
-  --    (ไม่มี unique constraint บน `(trip_id, date)` วันนี้ · เคสนี้คือสิ่งที่จับได้แทน)
+  -- ③ 🔴 ไม่มี unique บน `(trip_id, date)` วันนี้ — ถ้ามีวันซ้ำอยู่แล้ว แปลว่ามีคนสร้างซ้ำที่ไหนสักที่
   select count(*) into bad
     from (select trip_id, date from public.trip_days group by trip_id, date having count(*) > 1) x;
   if bad > 0 then
-    raise exception 'มีวันซ้ำในทริปเดียวกัน % คู่ — backfill รันซ้ำหรือ?', bad;
+    raise exception 'มีวันซ้ำในทริปเดียวกัน % คู่ — ตรวจก่อนเดินต่อ', bad;
   end if;
 end $verify$;
 
