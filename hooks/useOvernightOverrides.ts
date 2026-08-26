@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ITINERARY, type City } from "@/data/itinerary";
 import { supabaseConfigured } from "@/lib/supabase";
-import { chooseSoleTrip } from "@/lib/engine/trip";
+import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";

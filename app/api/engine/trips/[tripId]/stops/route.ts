@@ -181,7 +181,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
     if (rankErr) return NextResponse.json({ error: rankErr.message }, { status: 502 });
     const ranks = ((existing ?? []) as { id: string; rank: string }[]).filter((r) => r.id !== id).map((r) => r.rank);
     patch.trip_day_id = b.tripDayId;
-    patch.rank = rankForInsert(ranks, typeof b.atIndex === "number" ? b.atIndex : ranks.length);
+    try {
+      patch.rank = rankForInsert(ranks, typeof b.atIndex === "number" ? b.atIndex : ranks.length);
+    } catch (e) {
+      // 🔴 `rankBetween` โยนเมื่อ *ไม่มีคีย์ไหนอยู่ระหว่างนั้นได้จริง ๆ* หรือคีย์ในฐานผิดรูป
+      //    ทั้งสองกรณีแปลว่ามีคนเขียน `rank` เข้าฐานโดยไม่ผ่านที่นี่ — **ดังดีกว่า 500 เปล่า ๆ**
+      return NextResponse.json({ error: e instanceof Error ? e.message : "คำนวณลำดับไม่ได้" }, { status: 409 });
+    }
   }
 
   if (Object.keys(patch).length === 0) {
@@ -236,7 +242,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
       prev = cur;
       continue;
     }
-    const next = rankBetween(prev, null);
+    let next: string;
+    try {
+      next = rankBetween(prev, null);
+    } catch (e) {
+      // ขอบบนเป็น `null` เสมอตรงนี้ → โยนได้ทางเดียวคือ `prev` ที่อ่านมาจากฐาน**ผิดรูป**
+      // 🔴 เขียนต่อไปจะได้ลำดับที่ไม่มีใครตั้งใจ · หยุดก่อนเขียนแถวแรก ดีกว่าหยุดกลางทาง
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "คำนวณลำดับไม่ได้", code: "rank_shape" },
+        { status: 409 }
+      );
+    }
     writes.push({ id, rank: next });
     prev = next;
   }

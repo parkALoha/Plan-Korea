@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { chooseSoleTrip } from "@/lib/engine/trip";
+import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 

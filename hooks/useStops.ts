@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
-import { chooseSoleTrip } from "@/lib/engine/trip";
+import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 

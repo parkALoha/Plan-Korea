@@ -59,6 +59,23 @@ const runIntegrityReporter = {
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
+
+  /**
+   * 🔴 `server-only` — **ตัวจริงมันโยนโดยตั้งใจ และ vitest ไม่ใช่ผู้รับสารของมัน**
+   *
+   * `lib/engine/db.ts` มี `import "server-only"` เป็นด่านโครงสร้าง (26 ส.ค. 2026 · P4 ไล่กราฟเจอ
+   * เส้นทาง client → `db.ts`) · แพ็กเกจนั้นเลือกไฟล์ด้วย export condition `react-server`
+   * ซึ่ง **มีเฉพาะตอน Next build** · vitest จึงได้ `index.js` ที่โยนทันทีที่ import
+   *
+   * 🎯 **การ alias ตรงนี้ไม่ได้ทำให้ด่านอ่อนลงเลยแม้แต่นิดเดียว — ด่านมันอยู่ที่ `next build`**
+   * พิสูจน์แล้วด้วยมือ: เติม `import { dayStops } from "@/lib/engine/db"` ลงใน hook ที่มี
+   * `"use client"` แล้ว build **ล้มทันที** (`Client Component Browser: ./lib/engine/db.ts`)
+   * · ⚠️ แต่แปลว่า **ชุดเทสต์พิสูจน์เรื่องนี้ให้ไม่ได้** ต้องเป็น `next build` ใน CI เท่านั้น
+   */
+  resolve: {
+    alias: [{ find: /^server-only$/, replacement: new URL("./lib/__tests__/_serverOnlyNoop.ts", import.meta.url).pathname }],
+  },
+
   test: {
     environment: "node",
 

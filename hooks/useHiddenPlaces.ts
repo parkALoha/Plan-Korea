@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
-import { chooseSoleTrip } from "@/lib/engine/trip";
+import { chooseSoleTrip } from "@/lib/engine/tripChoice";
 import { writeGuard } from "@/lib/writeGuard";
 
 type HiddenPlaceRow = {

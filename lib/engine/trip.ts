@@ -1,4 +1,9 @@
 import { tripsVisibleToMe, type Db } from "./db";
+import { chooseSoleTrip, type SoleTrip } from "./tripChoice";
+
+// 🔴 re-export ให้ผู้เรียก *ฝั่งเซิร์ฟเวอร์* เท่านั้น — ฝั่ง client ต้อง import จาก `./tripChoice` ตรง ๆ
+//    เพราะไฟล์นี้ลาก `db.ts` มาด้วยที่บรรทัดบน (P4 ไล่กราฟเจอ 26 ส.ค. 2026)
+export { chooseSoleTrip, soleTripMessage, type SoleTrip } from "./tripChoice";
 
 /**
  * *"ทริปไหน"* — คำถามที่แอปเดิมไม่เคยต้องถาม และตารางใหม่ทุกใบบังคับให้ตอบ
@@ -26,14 +31,6 @@ import { tripsVisibleToMe, type Db } from "./db";
  *    `null` เปล่าบังคับให้ผู้เรียกเดาว่า *"ไม่มีทริป"* หรือ *"มีหลายทริป"* ซึ่งต้องทำคนละอย่าง
  */
 
-export type SoleTrip =
-  | { ok: true; tripId: string }
-  /** ผู้ใช้ยังไม่มีทริปเลย — หน้าจอควรชวนสร้าง ไม่ใช่ขึ้น error */
-  | { ok: false; reason: "none" }
-  /** 🔴 มีหลายทริป — **ต้องให้ผู้ใช้เลือก ห้ามเดา** · `E5-AC1` คือทางออกถาวร */
-  | { ok: false; reason: "ambiguous"; tripIds: string[] }
-  | { ok: false; reason: "error"; message: string };
-
 /**
  * ทริปทั้งหมดที่ผู้ใช้คนนี้เห็นได้ — **RLS เป็นคนกรอง ไม่ใช่ `where` ในนี้**
  *
@@ -56,19 +53,6 @@ export async function tripsForUser(db: Db): Promise<{ id: string; name: string |
  * วินาทีที่ผู้ใช้มีทริปที่สอง มันคืน `ambiguous` **แทนที่จะเดา** → มีคนต้องมาต่อ `E5`
  * 🎯 **ข้อยกเว้นที่ประกาศวันหมดอายุของตัวเองไว้ ไม่ใช่ `D73`**
  */
-/**
- * กฎการเลือก — **แยกออกมาเป็น pure เพราะฝั่งเบราว์เซอร์ต้องใช้กฎเดียวกัน**
- *
- * 🔴 hook ฝั่ง client อ่านรายชื่อทริปผ่าน `GET /api/engine/trips` **แล้วต้องตัดสินแบบเดียวกันเป๊ะ**
- * ถ้าปล่อยให้แต่ละฝั่งเขียนกฎเอง วันหนึ่งฝั่งหนึ่งจะหยิบตัวแรกและอีกฝั่งจะไม่หยิบ
- * **แล้วผู้ใช้จะเห็นทริปคนละใบระหว่างเฟรมแรกกับเฟรมที่สอง** — `D46` ที่รอยต่อ client/server
- */
-export function chooseSoleTrip(trips: readonly { id: string }[]): SoleTrip {
-  if (trips.length === 0) return { ok: false, reason: "none" };
-  if (trips.length > 1) return { ok: false, reason: "ambiguous", tripIds: trips.map((t) => t.id) };
-  return { ok: true, tripId: trips[0].id };
-}
-
 export async function soleTrip(db: Db): Promise<SoleTrip> {
   try {
     return chooseSoleTrip(await tripsForUser(db));
@@ -79,14 +63,3 @@ export async function soleTrip(db: Db): Promise<SoleTrip> {
   }
 }
 
-/** ข้อความที่ผู้ใช้อ่านออก — เก็บไว้ที่เดียวเพื่อไม่ให้แต่ละหน้าคิดคำเอง */
-export function soleTripMessage(r: Exclude<SoleTrip, { ok: true }>): string {
-  switch (r.reason) {
-    case "none":
-      return "ยังไม่มีทริป — สร้างทริปแรกก่อนเริ่มวางแผน";
-    case "ambiguous":
-      return `มี ${r.tripIds.length} ทริป — เลือกทริปที่ต้องการก่อน`;
-    case "error":
-      return `เปิดทริปไม่ได้: ${r.message}`;
-  }
-}

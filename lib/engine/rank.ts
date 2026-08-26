@@ -18,7 +18,27 @@ const ALPHA = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const MIN = 0;
 const MAX = ALPHA.length - 1;
 
-const idx = (c: string) => ALPHA.indexOf(c);
+/**
+ * แปลงเป็นเลขตำแหน่ง — **อักขระนอกชุดคือ `throw` ไม่ใช่ `-1`**
+ *
+ * 🔴 ฉบับแรกใช้ `ALPHA.indexOf(c)` ตรง ๆ ซึ่งคืน `-1` เท่ากับ `MIN - 1` พอดี
+ * → คีย์อย่าง `"ก"` ถูกอ่านว่า *"ต่ำกว่าทุกตัวอักษร"* แล้ว `rankBetween("ก", null)`
+ *   คืน `"U"` ซึ่ง **น้อยกว่า `"ก"`** · ผิดข้อตกลงเงียบ ๆ โดยไม่มี error ที่ไหนเลย
+ * · P4 ยิงจริงบน engine-dev แล้วพบว่าไคลเอนต์เขียน `rank = "ก"` / `"!"` ลงฐานได้
+ *   เพราะ `check` ของคอลัมน์ตรวจแค่ `length between 1 and 64` **ไม่ตรวจชุดอักขระ**
+ * 🎯 **คีย์ที่ไม่ได้มาจากฟังก์ชันนี้ = สมมติฐานของฟังก์ชันนี้ไม่จริง → หยุด ไม่ใช่เดาต่อ**
+ */
+function digits(s: string, which: string): number[] {
+  const out: number[] = [];
+  for (const c of s) {
+    const k = ALPHA.indexOf(c);
+    if (k < 0) {
+      throw new Error(`rankBetween: ${which}="${s}" มีอักขระนอกชุด ("${c}") — คีย์นี้ไม่ได้มาจาก rankBetween`);
+    }
+    out.push(k);
+  }
+  return out;
+}
 
 /**
  * คีย์ที่อยู่ระหว่าง `a` กับ `b` — `null` = ไม่มีขอบด้านนั้น
@@ -26,24 +46,56 @@ const idx = (c: string) => ALPHA.indexOf(c);
  * 🔴 **ห้ามคืนคีย์ที่ลงท้ายด้วยตัวอักษรต่ำสุด (`"0"`)**
  * ถ้าคืน `"…0"` แล้ววันหนึ่งมีคนแทรก *ก่อน* มัน จะไม่มีสตริงไหนน้อยกว่าได้เลย
  * (ทุกสตริงที่ขึ้นต้นด้วย `"…0"` ยาวกว่า = มากกว่า) → **แทรกหัวไม่ได้ตลอดกาล**
- * · เจอตอนไล่เคสด้วยมือก่อนเขียนโค้ด ไม่ใช่ตอนรัน
+ *
+ * ## 🔴 แก้ 26 ส.ค. 2026 — ฟังก์ชันนี้เคย *ละเมิดข้อตกลงของตัวเอง* (P4 เจอ)
+ * ```
+ * rankBetween(null, "0")  → "0U"   🔴 "0U" > "0"
+ * rankBetween("A", "A0")  → "A0U"  🔴
+ * rankBetween("0", "00")  → "00U"  🔴
+ * ```
+ * **รากไม่ได้อยู่ที่กิ่ง `mid === MIN` อย่างที่เดาตอนแรก — อยู่ที่กิ่ง else**
+ * เมื่อ `a` หมดแล้ว กิ่ง else เติม `"0"` ลงไป **ซึ่งเท่ากับตัวอักษรของ `b` พอดี**
+ * ผลคือ `out` ยังเสมอกับ `b` อยู่ · พอ `b` จบลงในรอบถัดไป โค้ดอ่านว่า *"ไม่มีขอบบนแล้ว"*
+ * แล้วเติมตัวใหญ่ต่อท้าย → **ได้คีย์ที่ยาวกว่า `b` ทั้งที่ prefix เท่ากัน = มากกว่า `b`**
+ *
+ * 🎯 **ความจริงที่โผล่มาพร้อมกัน: บางคู่ไม่มีคำตอบเลยจริง ๆ** — ไม่มีสตริงไหน `< "0"` ได้
+ * เพราะ `"0"` เป็นอักขระต่ำสุด · คู่แบบนั้น **ต้อง `throw` ไม่ใช่คืนของที่ผิด**
+ * · คีย์ที่ลงท้ายด้วย `"0"` เกิดจากฟังก์ชันนี้ไม่ได้อยู่แล้ว → `throw` คือสัญญาณจริง
+ *   ว่ามีคนอื่นเขียน `rank` เข้าฐาน ไม่ใช่เสียงรบกวน
  */
 export function rankBetween(a: string | null, b: string | null): string {
   if (a !== null && b !== null && a >= b) {
     throw new Error(`rankBetween: a ต้องน้อยกว่า b (ได้ a=${a} b=${b})`);
   }
 
+  const A = a === null ? null : digits(a, "a");
+  const B = b === null ? null : digits(b, "b");
+
   let out = "";
+  // `out` ยังเสมอกับ prefix ของ `b` อยู่ไหม — ตัวแปรที่ฉบับก่อนไม่มี และเป็นเหตุผลที่มันพลาด
+  // 🔴 พอ `out` **น้อยกว่า** `b` ที่ตำแหน่งใดตำแหน่งหนึ่งแล้ว ทุกส่วนต่อท้ายย่อมน้อยกว่า `b`
+  //    ขอบบนจึงหมดหน้าที่ · แต่ถ้ายังเสมออยู่ ขอบบนยังบังคับอยู่ทุกตัวอักษร
+  let tightB = B !== null;
   let i = 0;
+
   for (;;) {
-    const ca = a !== null && i < a.length ? idx(a[i]) : MIN - 1;
-    const cb = b !== null && i < b.length ? idx(b[i]) : MAX + 1;
+    // 🔴 `b` หมดทั้งที่ `out` ยังเสมอกับมันเป๊ะ = ไม่มีคีย์ไหนอยู่ระหว่างนี้ได้เลย
+    if (tightB && i >= (B as number[]).length) {
+      throw new Error(
+        `rankBetween: ไม่มีคีย์ระหว่าง ${JSON.stringify(a)} กับ ${JSON.stringify(b)} — ` +
+          `"${b}" ลงท้ายด้วยตัวอักษรต่ำสุด ซึ่งเป็นคีย์ที่ rankBetween ไม่มีวันสร้าง`
+      );
+    }
+
+    const ca = A !== null && i < A.length ? A[i] : MIN - 1;
+    const cb = tightB && i < (B as number[]).length ? (B as number[])[i] : MAX + 1;
 
     if (cb - ca > 1) {
       const mid = Math.floor((ca + cb) / 2);
       // 🔴 ตัวท้ายห้ามเป็นตัวต่ำสุด — ดูเหตุผลข้างบน · ลงลึกอีกชั้นแทน
       if (mid === MIN) {
         out += ALPHA[MIN];
+        tightB = tightB && i < (B as number[]).length && (B as number[])[i] === MIN;
         i++;
         continue;
       }
@@ -51,7 +103,9 @@ export function rankBetween(a: string | null, b: string | null): string {
     }
 
     // ตัวอักษรตำแหน่งนี้เท่ากันหรือชิดกัน — ยกของ `a` มาแล้วลงลึกอีกชั้น
-    out += a !== null && i < a.length ? a[i] : ALPHA[MIN];
+    const d = A !== null && i < A.length ? A[i] : MIN;
+    out += ALPHA[d];
+    tightB = tightB && i < (B as number[]).length && (B as number[])[i] === d;
     i++;
   }
 }

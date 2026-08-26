@@ -3556,7 +3556,10 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     /** ยิง insert หนึ่งครั้ง แล้วเก็บกวาดถ้ามันผ่าน — **เคสข้างล่างเรียกตัวนี้ทุกตัว** (`E0` ข้อ 5) */
     async function attempt(row: Record<string, unknown>) {
       const r = await A.from("trip_stops")
-        .insert({ trip_id: tripE, plan_id: planE, trip_day_id: dayE, rank: `r${rank++}`, ...row })
+        // 🔴 ต่อท้ายด้วย `a` เพราะ `r${0}` = `"r0"` ซึ่ง `trip_stops_rank_shape` ปฏิเสธ (26 ส.ค. 2026)
+        //    คีย์ที่ลงท้ายด้วยตัวอักษรต่ำสุด = แทรกหัวไม่ได้ตลอดกาล → ฐานกันไว้แล้ว
+        //    เคสนี้ไม่ได้วัดเรื่องลำดับ ค่าจึงเป็นแค่ป้าย แต่ **ป้ายก็ต้องถูกรูปเหมือนของจริง**
+        .insert({ trip_id: tripE, plan_id: planE, trip_day_id: dayE, rank: `r${rank++}a`, ...row })
         .select("id");
       if (!r.error && r.data?.[0]) await admin.from("trip_stops").delete().eq("id", r.data[0].id as string);
       return r.error?.code ?? null;
