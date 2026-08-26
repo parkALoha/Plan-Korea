@@ -611,6 +611,17 @@ d="$(mkrepo)"; echo 'fetch("https://kapi.kakao.com/v2/user/me");' > "$d/lib/x.ts
 git -C "$d" add -A >/dev/null 2>&1
 pyc "api-hosts: Kakao REST (kapi) ต้องโดนจับ" fail check-api-hosts.py "$d"
 
+# 🔴 บริการ NCP ที่ไม่ผ่าน apigw — กฎเดิม (`apigw\.ntruss\.com`) ปล่อยทั้งกลุ่มนี้
+#    ขยายเป็นทั้งโดเมนเพราะ `AC5` เขียนว่า "Naver API ใหม่แม้แต่ตัวเดียว" (P4 เสนอ · P6 เคาะ)
+d="$(mkrepo)"; echo 'fetch("https://objectstorage.ntruss.com/bucket/x");' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: NCP ที่ไม่ผ่าน apigw ต้องโดนจับ" fail check-api-hosts.py "$d"
+
+# ✅ คุมด้าน lookbehind: คำที่ *ลงท้าย* ด้วยชื่อโดเมนแต่ไม่ใช่โดเมนนั้น ต้องไม่โดนจับ
+d="$(mkrepo)"; echo 'const s = "https://notntruss.com/x";' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "api-hosts: notntruss.com ต้อง *ไม่* โดนจับ (lookbehind ทำงาน)" pass check-api-hosts.py "$d"
+
 # 🔴 apex domain — `(?:^|\.)` ฉบับแรกพลาดเคสนี้ เพราะมี `/` นำหน้า ไม่ใช่ `.`
 d="$(mkrepo)"; echo 'fetch("https://kakaomobility.com/v1/directions");' > "$d/lib/x.ts"
 git -C "$d" add -A >/dev/null 2>&1

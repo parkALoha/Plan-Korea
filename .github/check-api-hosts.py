@@ -36,7 +36,16 @@ FORBIDDEN = [
     #    `https://kakaomobility.com/x` มี `/` นำหน้า ไม่ใช่ `.` และไม่ใช่ต้นบรรทัด → **หลุด**
     #    lookbehind กันเฉพาะ "ตัวอักษรของ hostname" → `/` `"` `.` ผ่านหมด แต่ `evilkakaomobility` ไม่ผ่าน
     #    🎯 เจอเพราะ P4 ถามเรื่องความหมายของการแมตช์ prefix — **คำถามที่ไม่ได้เล็งมาที่บั๊กนี้เลย**
-    ("Naver Cloud Maps",   "E4-AC5", re.compile(r"(?<![a-z0-9-])apigw\.ntruss\.com", re.I)),
+    # 🔴 ขยายจาก `apigw.ntruss.com` เป็น **ทั้งโดเมน** 27 ส.ค. 2026 (P4 เสนอ · P6 เคาะ)
+    #    🎯 **เหตุผลไม่ใช่ "กว้างไว้ก่อนปลอดภัยกว่า" — แต่เพราะ `AC5` เขียนว่า *Naver API ใหม่
+    #    แม้แต่ตัวเดียว*** · `ntruss.com` คือโดเมน API ของ Naver Cloud Platform ทั้งใบ
+    #    → **การจำกัดไว้แค่ `apigw.` ต่างหากที่เป็นการเบี่ยงจากตัวบท** · NCP มีบริการที่ไม่ผ่าน apigw
+    #    (SENS · Object Storage ฯลฯ) ซึ่งกฎเดิมปล่อยหมด
+    #    · วัดแล้ว 2 รอบ (P4 · P6 แยกกัน): ซอร์สเรามี `ntruss`/`ncloud` = **0 ไฟล์**
+    #    ⚠️ **ผมยืนยันไม่ได้ว่า NCP ไม่มี host ที่ผู้ใช้กด** (console อยู่คนละโดเมน แต่ผมไม่รู้ครบ)
+    #       → **ตัดสินโดยรับว่าไม่รู้:** เราใช้ NCP เป็นศูนย์ ถ้าวันหนึ่งมีคนใส่ลิงก์ ntruss ที่ถูกต้อง
+    #       ด่านจะแดงแล้ว**เริ่มบทสนทนา** ซึ่งเป็นผลลัพธ์ที่ถูกอยู่แล้วสำหรับการรับบริการใหม่เข้ามา
+    ("Naver Cloud (NCP)",  "E4-AC5", re.compile(r"(?<![a-z0-9-])ntruss\.com", re.I)),
     ("Kakao Mobility",     "E4-AC5", re.compile(r"(?<![a-z0-9-])kakaomobility\.com", re.I)),
     # 🔴 เพิ่ม 27 ส.ค. 2026 (P4 เสนอ · reasoned ไม่ใช่ measured — ยังไม่มีในโค้ดเรา)
     #    `openapi.map.naver.com` = **Naver Maps JS SDK v3 loader** โหลดด้วย `<script src=...>`
@@ -90,6 +99,9 @@ MUST_CATCH = [
     'https://kapi' + _D + 'kakao' + _D + 'com/v2/user/me',
     'https://kakaomobility' + _D + 'com/x',
     'https://apigw' + _D + 'ntruss' + _D + 'com/x',
+    # บริการ NCP ที่ **ไม่ผ่าน apigw** — กฎเดิมปล่อยทั้งกลุ่มนี้
+    'https://sens' + _D + 'apigw' + _D + 'ntruss' + _D + 'com/sms/v2',
+    'https://something' + _D + 'ntruss' + _D + 'com/v1',
 ]
 
 
