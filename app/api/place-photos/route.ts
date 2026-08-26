@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lookupPlace } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 // เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
@@ -18,10 +19,11 @@ function toPhotoUrls(names: string[]): string[] {
 async function resolveMany(queries: string[]): Promise<Record<string, string[]>> {
   const cachedNames = new Map<string, string[]>();
   if (supabaseConfigured) {
-    const { data } = await supabase
+    const { data, error: cacheReadErr } = await supabase
       .from("place_photo_cache")
       .select("maps_query, photo_names")
       .in("maps_query", queries);
+    noteCacheFailure("place_photo_cache/read", cacheReadErr);
     for (const row of (data ?? []) as { maps_query: string; photo_names: string[] }[]) {
       cachedNames.set(row.maps_query, row.photo_names);
     }
@@ -37,11 +39,12 @@ async function resolveMany(queries: string[]): Promise<Record<string, string[]>>
 
       const photoNames: string[] = place?.photos?.slice(0, 6).map((p) => p.name) ?? [];
       if (supabaseConfigured && photoNames.length > 0) {
-        await supabase.from("place_photo_cache").upsert({
+        const { error: cacheWriteErr } = await supabase.from("place_photo_cache").upsert({
           maps_query: query,
           photo_names: photoNames,
           fetched_at: new Date().toISOString(),
         });
+        noteCacheFailure("place_photo_cache/write", cacheWriteErr);
       }
       return [query, toPhotoUrls(photoNames)];
     })

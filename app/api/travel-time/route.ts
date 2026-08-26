@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchRealTravelTime } from "@/lib/travelProvider";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { TRAVEL_MODES, type TravelMode } from "@/lib/schedule";
 
@@ -30,13 +31,14 @@ export async function GET(req: NextRequest) {
   }
 
   if (supabaseConfigured) {
-    const { data: cached } = await supabase
+    const { data: cached, error: cacheReadErr } = await supabase
       .from("travel_time_cache")
       .select("duration_minutes, distance_meters")
       .eq("from_place_id", originPlaceId)
       .eq("to_place_id", destPlaceId)
       .eq("travel_mode", mode)
       .maybeSingle();
+    noteCacheFailure("travel_time_cache/read", cacheReadErr);
     if (cached) {
       return NextResponse.json({
         durationMinutes: cached.duration_minutes,
@@ -58,7 +60,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (supabaseConfigured) {
-    await supabase.from("travel_time_cache").upsert({
+    const { error: cacheWriteErr } = await supabase.from("travel_time_cache").upsert({
       from_place_id: originPlaceId,
       to_place_id: destPlaceId,
       travel_mode: mode,
@@ -66,6 +68,7 @@ export async function GET(req: NextRequest) {
       distance_meters: result.distanceMeters,
       fetched_at: new Date().toISOString(),
     });
+    noteCacheFailure("travel_time_cache/write", cacheWriteErr);
   }
 
   return NextResponse.json({

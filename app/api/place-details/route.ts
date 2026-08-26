@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lookupPlace, type GoogleOpeningHours, type GoogleReview } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 // เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
@@ -85,10 +86,11 @@ function rowToResponse(row: CacheRow, nameLocal: string | null, addressLocal: st
 async function backfillLocalName(row: CacheRow, locale: Locale) {
   const fresh = await fetchLocalName(row.maps_query, locale);
   if (fresh.nameLocal && supabaseConfigured) {
-    await supabase
+    const { error: backfillErr } = await supabase
       .from("place_details_cache")
       .update({ name_local: fresh.nameLocal, address_local: fresh.addressLocal, locale })
       .eq("maps_query", row.maps_query);
+    noteCacheFailure("place_details_cache/backfill", backfillErr);
   }
   return fresh;
 }
@@ -123,7 +125,7 @@ async function resolveFromGoogle(
   const local = locale ? await fetchLocalName(query, locale) : { nameLocal: null, addressLocal: null };
 
   if (supabaseConfigured && googlePlaceId) {
-    await supabase.from("place_details_cache").upsert({
+    const { error: cacheWriteErr } = await supabase.from("place_details_cache").upsert({
       maps_query: query,
       google_place_id: googlePlaceId,
       opening_hours: openingHours,
@@ -136,6 +138,7 @@ async function resolveFromGoogle(
       locale: local.nameLocal ? locale : null,
       fetched_at: new Date().toISOString(),
     });
+    noteCacheFailure("place_details_cache/write", cacheWriteErr);
   }
 
   return {
@@ -197,10 +200,11 @@ async function resolveMany(
 ): Promise<Record<string, PlaceDetailsResponse>> {
   const cachedRows = new Map<string, CacheRow>();
   if (supabaseConfigured) {
-    const { data } = await supabase
+    const { data, error: cacheReadErr } = await supabase
       .from("place_details_cache")
       .select(CACHE_COLUMNS)
       .in("maps_query", queries);
+    noteCacheFailure("place_details_cache/read", cacheReadErr);
     for (const row of (data ?? []) as CacheRow[]) cachedRows.set(row.maps_query, row);
   }
 
