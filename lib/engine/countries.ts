@@ -1,0 +1,93 @@
+/**
+ * ความสามารถรายประเทศ — `E4-AC3` · `E4-AC4` · **ไม่ import อะไรเลยทั้งไฟล์**
+ * เจ้าของ: P1-Lead · 27 ส.ค. 2026
+ *
+ * ## 🔴 สิ่งที่ผมเจอตอนไปวัด และมันเปลี่ยนรูปของ `E4`
+ * `E4-AC2` วัดว่า *"`countryOfCity(c) { return c === 'hanoi' ? 'vn' : 'kr' }` ไม่มีอยู่แล้ว"*
+ * → วัดได้ **1 บรรทัด** (`app/page.tsx:132`) · ดูเหมือนเกือบเสร็จ
+ *
+ * 🔴 **แต่การผูกกับประเทศตัวจริงไม่ได้อยู่ใน `if` — มันอยู่ในโค้ดที่ไม่ถามเลย**
+ * ```
+ * app/today/page.tsx:126   href={kakaoMapDirectionsUrl(...)}   ← ปุ่ม Kakao ขึ้นเสมอ
+ * ```
+ * ไม่มี `if (country === 'kr')` ให้ grep เจอ **เพราะไม่มีการตัดสินใจเลย** — มันสมมติว่าเกาหลี
+ * · เปิดทริปญี่ปุ่นวันนี้ → **ปุ่ม Kakao ยังขึ้น** และไม่มีบรรทัดไหนผิดให้ใครเห็น
+ * 🎯 **เกณฑ์ที่ grep หา *รูปของการตัดสินใจ* มองไม่เห็นกรณีที่ *ไม่มีการตัดสินใจ*** — ตระกูล `P-61`
+ *
+ * ## 🔴 ค่าเริ่มต้นของประเทศที่ไม่รู้จัก คือหัวใจของ `E4-AC1`
+ * `E4-AC1` วัดว่า *"สร้างทริปญี่ปุ่นได้โดยไม่แก้โค้ดสักบรรทัด"*
+ * → ถ้าไฟล์นี้บังคับให้ทุกประเทศต้องมีแถว **การเพิ่มญี่ปุ่นจะเป็นการแก้โค้ดทันที และ `AC1` ตกทุกครั้ง**
+ * ✅ **จึงออกแบบให้ประเทศที่ไม่มีแถว ได้ค่าที่ปลอดภัยและใช้งานได้ ไม่ใช่ error**
+ * · `realTravelModes: []` = **ทุกโหมดเป็นประมาณการ** จนกว่าจะมีคนยืนยันว่า provider ตอบจริง
+ *   🔴 **ทิศนี้สำคัญ:** เดาว่า *"น่าจะตอบได้"* แล้วผิด = ผู้ใช้เห็นเวลาเดินทางที่ผิดโดยไม่มีป้ายบอก
+ *   เดาว่า *"ตอบไม่ได้"* แล้วผิด = ผู้ใช้เห็นป้าย "(ประมาณการ)" เกินจริง · **อย่างหลังกู้ได้ อย่างแรกไม่**
+ * · `mapProviders: ["google"]` = ตัวที่ใช้ได้ทุกที่ · ผู้ให้บริการท้องถิ่นต้องถูก*เพิ่ม* ไม่ใช่ถูก*สมมติ*
+ */
+
+/** โหมดเดินทางที่ระบบรู้จัก — ตรงกับ `TRAVEL_MODES` ของ `lib/schedule.ts` */
+export type TravelMode = "TRANSIT" | "DRIVE" | "WALK";
+
+/** ผู้ให้บริการแผนที่ที่มีตัวสร้างลิงก์อยู่แล้วใน `lib/mapLinks.ts` */
+export type MapProvider = "google" | "naver" | "kakao";
+
+export type CountryCapabilities = {
+  /**
+   * โหมดที่ provider **ตอบเวลาจริงได้** · โหมดที่ไม่อยู่ในนี้ = ต้องติดป้าย "(ประมาณการ)"
+   * 🔴 ใส่ชื่อลงที่นี่ได้ก็ต่อเมื่อ **มีคนยิงจริงแล้วเห็นว่ามันตอบ** ไม่ใช่เพราะเอกสารบอกว่ารองรับ
+   */
+  realTravelModes: readonly TravelMode[];
+  /** เรียงตามลำดับที่อยากให้ผู้ใช้เห็น · ตัวแรกคือตัวหลัก */
+  mapProviders: readonly MapProvider[];
+};
+
+/**
+ * 🔴 **ค่าที่ประเทศซึ่งยังไม่มีแถวจะได้** — ปลอดภัยและใช้งานได้ ไม่ใช่ error
+ * ดูเหตุผลเรื่องทิศของการเดาผิดในหัวไฟล์
+ */
+const UNKNOWN_COUNTRY: CountryCapabilities = {
+  realTravelModes: [],
+  mapProviders: ["google"],
+};
+
+/**
+ * ⚠️ **นี่คือ *ข้อมูล* ไม่ใช่ *ตรรกะ*** — เพิ่มประเทศ = เพิ่มแถว · ห้ามมี `if` ไหนอ่านโค้ดประเทศตรง ๆ
+ * 🔴 **เกาหลี `realTravelModes: ["TRANSIT"]` ไม่ใช่การเดา** — `PLAN.md §2` บันทึกไว้ว่า
+ * ทดสอบจริงแล้ว Google ไม่คืนเส้นทาง `DRIVE`/`WALK` ในเกาหลีใต้ (ข้อจำกัดทางกฎหมาย)
+ * และ `app/api/travel-time/route.ts:58` มีคอมเมนต์ที่บันทึกอาการเดียวกันไว้ตั้งแต่ก่อนมีไฟล์นี้
+ */
+const CAPABILITIES: Readonly<Record<string, CountryCapabilities>> = {
+  kr: { realTravelModes: ["TRANSIT"], mapProviders: ["naver", "kakao", "google"] },
+  vn: { realTravelModes: ["TRANSIT", "DRIVE", "WALK"], mapProviders: ["google"] },
+};
+
+/**
+ * ความสามารถของประเทศหนึ่ง — **ไม่เคยโยน และไม่เคยคืน `null`**
+ *
+ * 🎯 ประเทศที่ไม่มีแถวได้ `UNKNOWN_COUNTRY` → **เพิ่มทริปญี่ปุ่นได้โดยไม่แตะโค้ดสักบรรทัด** (`E4-AC1`)
+ * แล้วค่อยเพิ่มแถวเมื่อมีคนยืนยันความสามารถจริง — **การเพิ่มแถวคือการอัปเกรด ไม่ใช่การซ่อมของพัง**
+ */
+export function capabilitiesOf(countryCode: string | null | undefined): CountryCapabilities {
+  if (!countryCode) return UNKNOWN_COUNTRY;
+  return CAPABILITIES[countryCode.toLowerCase()] ?? UNKNOWN_COUNTRY;
+}
+
+/**
+ * เวลาเดินทางโหมดนี้ในประเทศนี้ **เป็นค่าจริง** หรือ **ประมาณการ**
+ * `false` = UI ต้องติดป้าย "(ประมาณการ)" · **ตัดสินจาก registry ไม่ใช่จาก `if (country === "kr")`** (`E4-AC3`)
+ */
+export function hasRealTravelTime(countryCode: string | null | undefined, mode: TravelMode): boolean {
+  return capabilitiesOf(countryCode).realTravelModes.includes(mode);
+}
+
+/**
+ * ผู้ให้บริการแผนที่ที่ควรแสดงสำหรับประเทศนี้ เรียงตามลำดับ
+ * 🔴 มีไว้แทนการ **ไม่ถามเลย** ซึ่งเป็นสภาพวันนี้ (`app/today/page.tsx` โชว์ Kakao เสมอ)
+ */
+export function mapProvidersFor(countryCode: string | null | undefined): readonly MapProvider[] {
+  return capabilitiesOf(countryCode).mapProviders;
+}
+
+/** ประเทศที่มีแถวจริงในทะเบียน — สำหรับเทสต์และเครื่องมือ **ไม่ใช่สำหรับตรรกะของแอป** */
+export function countriesWithCapabilities(): readonly string[] {
+  return Object.keys(CAPABILITIES);
+}
