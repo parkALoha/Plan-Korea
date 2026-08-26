@@ -11,12 +11,11 @@ import { writeGuard } from "@/lib/writeGuard";
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
 export type HotelInput = {
   legId: string;
-  /** 🔴 `E3` — สคีมาใหม่ระบุที่พักด้วย *ช่วงวันที่* ไม่ใช่ `legId` (`D51`)
-   *  `HotelLegsPanel` มี `leg.startDate`/`leg.endDate` อยู่ในมือแล้ว จึงส่งต่อมาได้ตรง ๆ
-   *  ⚠️ **ยังเป็น optional ชั่วคราวเพื่อไม่ให้ `tsc` แดงคาระหว่างรอ P2 ต่อ**
-   *     → `hooks/__tests__` มีเคสที่จะแดงวันที่ผู้เรียกส่งครบ = สัญญาณให้เปลี่ยนเป็น required */
-  checkIn?: string;
-  checkOut?: string;
+  /** 🔴 `E3`/`D51` — สคีมาใหม่ระบุที่พักด้วย *ช่วงวันที่* ไม่ใช่ `legId`
+   *  ✅ **บังคับแล้ว 26 ส.ค. 2026** — เคยเป็น optional อยู่ *หนึ่งคอมมิต* เพื่อไม่ให้ `tsc` แดงคา
+   *     ระหว่างรอ `HotelLegsPanel` ต่อ (P2 · `5eb1b6f`) · **ปิดทันทีที่เขาลง ไม่ปล่อยข้ามวัน** */
+  checkIn: string;
+  checkOut: string;
   city: string;
   hotelName: string;
   lat: number;
@@ -28,8 +27,8 @@ export type HotelInput = {
 function toRow(input: HotelInput): TripHotel {
   return {
     // 🔴 ไม่มี `leg_id` แล้ว (`D51`) — ช่วงวันที่คือตัวระบุ
-    check_in: input.checkIn ?? "",
-    check_out: input.checkOut ?? "",
+    check_in: input.checkIn,
+    check_out: input.checkOut,
     city: input.city,
     hotel_name: input.hotelName,
     formatted_address: input.formattedAddress ?? null,
@@ -155,13 +154,6 @@ function useHotelsStore() {
   );
 
   const setHotel = useCallback(async (input: HotelInput) => {
-    // 🔴 **ยังไม่มีช่วงวันที่ = เขียนไม่ได้ และต้องดัง** (`E3`)
-    //    `checkIn`/`checkOut` ยัง optional ในชนิดเพื่อไม่ให้ `tsc` แดงคาระหว่างรอ P2 ต่อ
-    //    **แต่ปล่อยให้เขียนโดยไม่มีวันที่ = แถวที่ระบุตัวเองไม่ได้** → ปฏิเสธออกมาดัง ๆ แทน
-    if (!input.checkIn || !input.checkOut) {
-      console.error("[hotels] setHotel ต้องมี checkIn/checkOut — HotelLegsPanel ยังไม่ได้ส่งมา (E3)");
-      return;
-    }
     const key = hotelRangeKey({ startDate: input.checkIn, endDate: input.checkOut });
     const row = toRow(input);
     const tripId = tripIdRef.current;
@@ -192,12 +184,13 @@ function useHotelsStore() {
   /**
    * ลบที่พักของช่วงวันหนึ่ง
    *
-   * 🔴 รับ **ช่วงวันที่** ไม่ใช่ `legId` — ด้วยเหตุผลเดียวกับ `setHotel`
-   * ⚠️ ชนิดยังรับสตริงเดี่ยวเพื่อความเข้ากันได้ระหว่างรอ P2 ต่อ · **แต่ต้องเป็นคีย์ช่วงวันที่**
+   * 🔴 รับ **ช่วงวันที่** ด้วยเสมอ — `legId` ยังอยู่ในลายเซ็นเพราะผู้เรียกใช้มันเป็นป้าย
+   * แต่ **ตัวที่ระบุแถวจริงคือ `range`** · ✅ บังคับแล้วตั้งแต่ P2 ต่อ (`5eb1b6f`)
    */
   const clearHotel = useCallback(
-    async (rangeKeyOrLegId: string, range?: { startDate: string; endDate: string }) => {
-      const key = range ? hotelRangeKey(range) : rangeKeyOrLegId;
+    async (legId: string, range: { startDate: string; endDate: string }) => {
+      void legId;
+      const key = hotelRangeKey(range);
       const [checkIn, checkOut] = key.split("..");
       const tripId = tripIdRef.current;
 
@@ -209,11 +202,6 @@ function useHotelsStore() {
       });
 
       if (!supabaseConfigured || !tripId) return;
-      if (!checkIn || !checkOut) {
-        // 🔴 คีย์ที่ไม่ใช่ช่วงวันที่ = ผู้เรียกยังส่ง `legId` แบบเดิมมา → **ดังไว้ อย่าเงียบ**
-        console.error("[hotels] clearHotel ต้องรับคีย์ช่วงวันที่ — ได้", key);
-        return;
-      }
       await guard("ลบที่พัก", () =>
         fetch(
           `/api/engine/trips/${tripId}/hotels?checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}`,
