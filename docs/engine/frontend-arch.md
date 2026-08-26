@@ -997,3 +997,43 @@ route ฝั่งเซิร์ฟเวอร์ใช้ (`D38` เดิม
 (assertion หลักเรื่อง "ห้ามลาก `data/*`" ไม่ได้แตะ) · เจอ `hooks/useDaySchedule.ts` มี type error จริงระหว่าง
 ตรวจ (`TravelMode` สองโมดูลชนกัน) แต่ `git diff` ยืนยันว่าไม่ใช่ไฟล์ของงานนี้ — เป็นงานที่เซสชันอื่นกำลังแก้
 อยู่จริงบนทรีเดียวกัน ไม่แตะ ปล่อยให้เจ้าของแก้ต่อ
+
+### ตัดสิน 3 ข้อที่ P1 ขอปิดระหว่างทาง (`ca47be8`)
+
+**① `resolveTripId()` — ตัวตัดสินเดียวของทั้งแอป:** เดิม 3 แหล่งความจริง (route params · localStorage ·
+`chooseSoleTrip` fallback) ไม่มีจุดบังคับให้ตรงกัน — ตอนนี้ `useActiveTripId({ fromRoute })` (เรียกจากทั้ง
+หน้า bare และ `/trip/[tripId]/layout.tsx`) เรียก `resolveTripId()` ฟังก์ชันเดียวกันเสมอ ลำดับ: `fromRoute`
+ที่ยังใช้ได้ → `cachedId` ที่ยังใช้ได้ → `chooseSoleTrip()` — pure function ทดสอบตรงได้ไม่ต้อง mock
+`fetch`/`localStorage` (`lib/__tests__/resolveTripId.test.ts`, 8 เคส)
+
+**② tripId ที่ใช้ไม่ได้แล้ว (ถูกถอนสิทธิ์/ทริปถูกลบ/คนละบัญชี):** ไม่ว่าจะมาจาก route หรือ cache —
+`resolveTripId()` เช็คกับรายการทริปจริง (`/api/engine/trips`) เสมอ ถ้าใช้ไม่ได้แล้ว **ล้าง `lastTripId`
+ทิ้งแล้วตกไป `chooseSoleTrip()`** แทนที่จะ render ต่อด้วย id ที่ตายแล้ว (ของเดิมจะได้หน้าว่างเปล่า
+แยกไม่ออกจาก "ไม่มีข้อมูล" — ตรงกับที่ `E1-AC7` เตือนไว้พอดี)
+
+**③ PWA เปิดครั้งแรกตอนไม่มีเน็ต (ตัดสินเอง ตามที่ P1 ยกให้):** สถานะใหม่ `"offline-first-launch"` — แยก
+จาก error ทั่วไปและจากหน้า offline fallback ของ `sw.js` — ข้อความบอกตรง ๆ ว่าต้องเชื่อมเน็ตอย่างน้อยหนึ่ง
+ครั้งก่อน ผู้ใช้ที่มี `lastTripId` แคชไว้แล้วไม่เจอสถานะนี้ (ใช้ค่าเก่าต่อได้เลยแม้ offline) — เฉพาะเครื่องใหม่
+ที่ไม่เคยมีอะไรแคชไว้เลยเท่านั้น
+
+### `lib/engine/realtimeStatus.ts` — จุดเดียวที่พูดว่า Realtime ไม่ทำงานจริงวันนี้
+
+P7 ยืนยันว่า Realtime เป็นกลไก**ส่งข่าว** ไม่ใช่ส่วนของการตัดสิน conflict (เขียนพร้อมกัน 2 คน ฐานได้สถานะ
+สุดท้ายเหมือนกันไม่ว่าใครได้รับแจ้งหรือไม่ — สิ่งที่เปลี่ยนคือหน้าต่างความเก่า ไม่ใช่ความถูกต้อง) และ P1 พบว่า
+`D6` เขียนไว้ผิดว่า Realtime sync กันอยู่แล้ว เพราะเชื่อจากโค้ด subscribe ที่มีอยู่จริง 8 จุด — `subscribe()`
+สำเร็จจริงแต่ publication ว่างเปล่า ไม่มี event มาถึงเลย ไม่มีอะไรฟ้อง
+
+**ไม่ถอด subscription** (P7: เปิดทีหลังได้ ถอดแล้วต้องใส่กลับ = งานเปล่า) — เพิ่ม `noteRealtimeSubscribed(table)`
+เรียกทันทีหลัง `.subscribe()` ทั้ง 8 จุดแทน เป็น**จุดเดียว**ที่อธิบายความจริงนี้ (JSDoc เต็มอยู่ในไฟล์) ไม่ใช่
+คอมเมนต์ซ้ำ 8 ที่ — dev console เห็นตอน mount แต่ละ channel เปิดจริงเมื่อไหร่ต้องตอบคำถาม RLS-บน-WebSocket
+ก่อน (ยังไม่มีคำตอบ)
+
+### `country` ไปถึง `useHotels`/`useCustomPlaces` — ปิดช่องเดียวที่ยังขาด
+
+อ่านฝั่ง read ทั้งคู่ผ่านอยู่แล้วโดยไม่ต้องแก้ (ไม่มีการ reconstruct field-by-field ตอนอ่าน JSON เข้า state
+— `country` ที่ P1 เพิ่มใน DAL/adapter ไหลผ่านมาเอง) — ช่องที่ขาดจริงมีจุดเดียว: `useHotels`'s optimistic
+write (`setHotel`) สร้าง row เองจาก `HotelInput` ที่ไม่มี `country` เลย (ไคลเอนต์ไม่มี city→country mapping
+ในตัว และไม่ควรมี — จะเป็นการสร้างสิ่งที่ `E4-AC2` เพิ่งไล่ปิดไปขึ้นมาใหม่) แก้โดยให้ `cityIdBySlug()` เลือก
+`country_id` มาด้วย (additive, ผู้เรียกเดิม 2 จุดยังอ่านแค่ `.id`) แล้วให้ PUT `/hotels` คืน `country` กลับมา
+ใน response ให้ `onOk` callback backfill พร้อมกับ `updated_at` แบบเดียวกับที่ `D7` ทำอยู่แล้ว —
+`useCustomPlaces` ไม่มีช่องนี้ (write path `await` server response เต็มอยู่แล้ว ไม่มี optimistic row ที่ขาด field)
