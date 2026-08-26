@@ -54,7 +54,13 @@ export function categoryFromGoogleType(
   fallback: Category = "viewpoint"
 ): Category {
   if (!googleType) return fallback;
-  const exact = TYPE_TO_CATEGORY[googleType];
+  // 🔴 `Object.hasOwn` จำเป็น — ค่านี้มาจาก **การตอบกลับของ Google** ไม่ใช่จากโค้ดเรา
+  //    ฉบับก่อนหน้าเขียน `TYPE_TO_CATEGORY[googleType]` ตรง ๆ → `"constructor"` คืน
+  //    **ฟังก์ชัน `Object` ออกมาเป็น `Category`** (truthy → ผ่าน `if (exact)` ไปเลย)
+  //    แล้วมันจะไหลไปเป็นคีย์ของอีโมจิ/ตัวกรองหมวด ซึ่งไม่มีใครเช็คอีกชั้น
+  // ⚠️ **Google ไม่ส่งค่านี้มา — แต่นั่นคือคุณสมบัติของ *Google* ไม่ใช่ของโค้ดเรา**
+  //    (ตัวที่ 3 ของวัน · ตัวแรก `countryOfCitySlug` ตัวที่สอง `capabilitiesOf`)
+  const exact = Object.hasOwn(TYPE_TO_CATEGORY, googleType) ? TYPE_TO_CATEGORY[googleType] : undefined;
   if (exact) return exact;
   for (const [pattern, category] of PATTERN_RULES) {
     if (pattern.test(googleType)) return category;
