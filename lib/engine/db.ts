@@ -43,7 +43,8 @@ export type EngineTable =
   | "catalog_place_access"
   | "trip_days"
   | "trip_stops"
-  | "custom_places";
+  | "custom_places"
+  | "hidden_places";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -331,4 +332,42 @@ export function setOvernightIntent(
 /** หา `city_id` จาก slug เดิม — `null` = ไม่รู้จักเมืองนั้น */
 export function cityIdBySlug(db: Db, slug: string) {
   return engineTable(db, "catalog_cities").select("id").eq("legacy_slug", slug).maybeSingle();
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// สถานที่ที่ซ่อนไว้ — `E3`
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * สถานที่ที่ซ่อนของทริป **พร้อม slug เดิม** — UI อ้างสถานที่ด้วย slug ไม่ใช่ `uuid`
+ *
+ * 🔴 **การแปลง slug ⇄ uuid อยู่ *ฝั่งเซิร์ฟเวอร์* ไม่ใช่ฝั่งไคลเอนต์**
+ * ต่างจากสะพานวัน (`dayBridge`) ที่ต้องอยู่ฝั่ง client เพราะ `"d0"` มีอยู่แต่ในไฟล์ TS
+ * · **`legacy_slug` อยู่ในฐาน** → เซิร์ฟเวอร์แปลงได้เอง และไคลเอนต์ไม่ต้องรู้จัก `uuid` เลย
+ * 🎯 **เลือกฝั่งตาม *ข้อมูลอยู่ที่ไหน* ไม่ใช่ตามความเคยชิน** — ผิดฝั่งแล้วต้องส่ง uuid ไปกลับโดยไม่มีเหตุผล
+ */
+export function hiddenPlacesOfTrip(db: Db, tripId: string) {
+  return engineTable(db, "hidden_places")
+    .select("hidden_at, legacy_hidden_by, catalog_places(legacy_slug)")
+    .eq("trip_id", tripId);
+}
+
+/** ซ่อนสถานที่ — รับ slug แล้วให้ฐานหา `uuid` เอง ผ่านคิวรีซ้อน */
+export function hidePlaceBySlug(db: Db, tripId: string, placeId: string, legacyHiddenBy: string | null) {
+  return engineTable(db, "hidden_places")
+    .insert({ trip_id: tripId, catalog_place_id: placeId, legacy_hidden_by: legacyHiddenBy })
+    .select("catalog_place_id");
+}
+
+export function unhidePlace(db: Db, tripId: string, placeId: string) {
+  return engineTable(db, "hidden_places")
+    .delete()
+    .eq("trip_id", tripId)
+    .eq("catalog_place_id", placeId)
+    .select("catalog_place_id");
+}
+
+/** `legacy_slug` → `catalog_places.id` · `null` = คลังไม่รู้จัก slug นั้น */
+export function catalogPlaceIdBySlug(db: Db, slug: string) {
+  return engineTable(db, "catalog_places").select("id").eq("legacy_slug", slug).maybeSingle();
 }

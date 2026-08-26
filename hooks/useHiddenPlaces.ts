@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { writeGuard } from "@/lib/writeGuard";
 
 type HiddenPlaceRow = {
@@ -10,97 +11,139 @@ type HiddenPlaceRow = {
   hidden_at: string;
 };
 
+/** หน่วงก่อนดึงใหม่ — realtime ยิงถี่ตอนซ่อนหลายที่ติดกัน */
+const REFETCH_DEBOUNCE_MS = 300;
+
+/**
+ * สถานที่ที่ซ่อนจากคลัง — **`E3` ย้ายมาอ่าน/เขียนผ่าน route แล้ว**
+ *
+ * ## 🔴 ไคลเอนต์พูด *slug* เท่านั้น — การแปลงเป็น `uuid` อยู่ฝั่งเซิร์ฟเวอร์
+ * ต่างจาก `useOvernightOverrides` ที่สะพานอยู่ฝั่งนี้ **เพราะ `"d0"` มีอยู่แต่ในไฟล์ TS**
+ * · `catalog_places.legacy_slug` **อยู่ในฐาน** → เซิร์ฟเวอร์แปลงเองได้ และควรแปลงที่นั่น
+ * 🎯 **เลือกฝั่งตาม *ข้อมูลอยู่ที่ไหน* ไม่ใช่ตามความเคยชิน** — ผิดฝั่งแล้วต้องส่ง uuid ไปกลับโดยไม่มีเหตุผล
+ *
+ * ## realtime เป็น *สัญญาณ* ไม่ใช่แหล่งข้อมูล (P3 · `§15`)
+ * `payload.new` เป็นแถวดิบของสคีมาใหม่ (`catalog_place_id` เป็น `uuid` · ไม่มี slug)
+ * **merge ตรง ๆ = ใส่ uuid ลงใน map ที่คีย์ด้วย slug แล้วเงียบ** → ดึงใหม่แทน
+ */
 export function useHiddenPlaces() {
   const [hidden, setHidden] = useState<Record<string, HiddenPlaceRow>>({});
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+  const tripIdRef = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchInto = useCallback(async (tripId: string) => {
+    const res = await fetch(`/api/engine/trips/${tripId}/hidden-places`);
+    if (!res.ok) return null;
+    const rows = (await res.json()) as HiddenPlaceRow[];
+    const map: Record<string, HiddenPlaceRow> = {};
+    for (const r of rows) map[r.place_id] = r;
+    return map;
+  }, []);
 
   useEffect(() => {
     if (!supabaseConfigured) return;
-
     const channelName = `hidden_places_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const { data } = await supabase.from("hidden_places").select("*");
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const map = await fetchInto(trip.tripId);
       if (cancelled) return;
-      if (data) {
-        const map: Record<string, HiddenPlaceRow> = {};
-        for (const row of data as HiddenPlaceRow[]) map[row.place_id] = row;
-        setHidden(map);
-      }
+      if (map) setHidden(map);
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "hidden_places" },
-          (payload) => {
-            setHidden((prev) => {
-              const next = { ...prev };
-              if (payload.eventType === "DELETE") {
-                delete next[(payload.old as HiddenPlaceRow).place_id];
-              } else {
-                const row = payload.new as HiddenPlaceRow;
-                next[row.place_id] = row;
-              }
-              return next;
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "hidden_places" }, () => {
+          // 🔴 ไม่แตะ payload เลย — มันเป็นแถวดิบที่ไม่มี slug · ใช้เป็นสัญญาณอย่างเดียว
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(async () => {
+            const id = tripIdRef.current;
+            if (!id || cancelled) return;
+            const fresh = await fetchInto(id);
+            if (fresh && !cancelled) setHidden(fresh);
+          }, REFETCH_DEBOUNCE_MS);
+        })
         .subscribe();
     }
 
     init();
-
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchInto]);
 
-  /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
-    if (!supabaseConfigured) return;
-    const { data } = await supabase.from("hidden_places").select("*");
-    if (!data) return;
-    const map: Record<string, HiddenPlaceRow> = {};
-    for (const row of data as HiddenPlaceRow[]) map[row.place_id] = row;
-    setHidden(map);
-  }, []);
+    const id = tripIdRef.current;
+    if (!id) return;
+    const fresh = await fetchInto(id);
+    if (fresh) setHidden(fresh);
+  }, [fetchInto]);
 
-  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
+  /** เขียนไม่ผ่าน → ดึงของจริงมาทับ state ที่เดาไว้ (สัญญาที่ `writeGuard` เขียนไว้ในหัวไฟล์ตัวเอง) */
   const guard = useCallback(
-    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
-      if (!(await writeGuard(label, run))) await reload();
+    async (label: string, run: () => Promise<Response>) => {
+      const ok = await writeGuard(label, async () => {
+        const res = await run();
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await reload();
+      return ok;
     },
     [reload]
   );
 
-  const hidePlace = useCallback(async (placeId: string, hiddenBy?: string) => {
-    const row: HiddenPlaceRow = {
-      place_id: placeId,
-      hidden_by: hiddenBy ?? null,
-      hidden_at: new Date().toISOString(),
-    };
-    setHidden((prev) => ({ ...prev, [placeId]: row }));
-    if (!supabaseConfigured) return;
-    await guard("ซ่อนสถานที่", () => supabase.from("hidden_places").insert(row));
-  }, [guard]);
+  const hidePlace = useCallback(
+    async (placeId: string, hiddenBy?: string) => {
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return;
+      setHidden((prev) => ({
+        ...prev,
+        [placeId]: { place_id: placeId, hidden_by: hiddenBy ?? null, hidden_at: new Date().toISOString() },
+      }));
+      await guard("ซ่อนสถานที่", () =>
+        fetch(`/api/engine/trips/${tripId}/hidden-places`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ placeId, hiddenBy: hiddenBy ?? null }),
+        })
+      );
+    },
+    [guard]
+  );
 
-  const unhidePlace = useCallback(async (placeId: string) => {
-    setHidden((prev) => {
-      const next = { ...prev };
-      delete next[placeId];
-      return next;
-    });
-    if (!supabaseConfigured) return;
-    await guard("กู้สถานที่ที่ซ่อนไว้", () =>
-      supabase.from("hidden_places").delete().eq("place_id", placeId)
-    );
-  }, [guard]);
+  const unhidePlace = useCallback(
+    async (placeId: string) => {
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return;
+      setHidden((prev) => {
+        const next = { ...prev };
+        delete next[placeId];
+        return next;
+      });
+      await guard("เลิกซ่อนสถานที่", () =>
+        fetch(`/api/engine/trips/${tripId}/hidden-places?placeId=${encodeURIComponent(placeId)}`, {
+          method: "DELETE",
+        })
+      );
+    },
+    [guard]
+  );
 
+  // 🔴 คืนรูปเดิมครบทุกช่อง — `hiddenPlaceIds` กับ `supabaseConfigured` มีผู้เรียกอยู่จริง
+  //    ⚠️ ผมทำสองตัวนี้หายในฉบับแรก **และ `tsc` เป็นคนจับ ไม่ใช่ผม**
+  //    นี่คือชั้นที่ P4 เรียกว่า "ชั้นคอมไพล์ฟรี" — สัญญาของ hook ถูกบังคับโดยไม่ต้องมีเคย
   const hiddenPlaceIds = new Set(Object.keys(hidden));
 
   return { hidden, hiddenPlaceIds, loaded, hidePlace, unhidePlace, supabaseConfigured };
