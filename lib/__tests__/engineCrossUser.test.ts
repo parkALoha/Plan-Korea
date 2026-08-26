@@ -198,6 +198,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   const placeSlug = `exp-${stamp}`;
   const placeSlug2 = `exp2-${stamp}`;
   let place2Id = "";
+  const placeSlug3 = `exp3-${stamp}`;
+  let place3Id = "";
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -271,6 +273,10 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const pl2 = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug2, category: "food", lat: 37.6, lng: 127.1 }).select("id").single();
     if (pl2.error) throw new Error(`seed place2: ${pl2.error.message}`);
     place2Id = pl2.data.id as string;
+    // place ที่ 3 — สำหรับ positive control ของ deleted_at xfail (แยกไม่ให้ชน place2)
+    const pl3 = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug3, category: "food", lat: 37.7, lng: 127.2 }).select("id").single();
+    if (pl3.error) throw new Error(`seed place3: ${pl3.error.message}`);
+    place3Id = pl3.data.id as string;
   }
 
   beforeAll(async () => {
@@ -464,11 +470,24 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(await notes(), "[place-notes] เจอ 'n-b' = B เขียนทับโน้ตของ A สำเร็จ (leak)").toEqual(["n-a"]);
   });
 
+  // 🔴 positive control ของ xfail ข้างล่าง — **ไม่ห่อ it.fails** (P1 กำชับ)
+  //    ถ้าเคสนี้แดง = กลไก write/read/place3 พัง → xfail ข้างล่างเขียว *เพราะกลไก* ไม่ใช่เพราะ bug เปิด
+  //    it.fails ต้องการ positive control *มากกว่า* เทสต์ปกติ เพราะมันแปลงความล้มเหลวเป็นความสำเร็จ
+  it("positive control (ไม่ห่อ it.fails): A เขียนโน้ต place3 แล้วเห็นจริง — พิสูจน์กลไก place-notes write/read", async () => {
+    const r = await callAs(aCookies, tripA, placeNotesPUT, "PUT", { planId: aPlan, placeId: placeSlug3, note: "pc" });
+    expect(r.status, `เขียนโน้ต place3 ควร 200: ${await r.clone().text()}`).toBe(200);
+    const { data, error } = await admin.from("place_notes").select("note,deleted_at").eq("trip_id", tripA).eq("catalog_place_id", place3Id);
+    if (error) throw new Error(`read place3 note: ${error.message}`);
+    const active = (data ?? []).filter((x) => (x as { deleted_at: string | null }).deleted_at == null).map((x) => (x as { note: string | null }).note);
+    expect(active, "เขียนแล้วต้องเห็น — ถ้าแดง = กลไกพัง → xfail ข้างล่างเขียวเพราะกลไก ไม่ใช่เพราะ bug").toEqual(["pc"]);
+  });
+
   // 🔴 บั๊กติดกันที่ P1 *ยังไม่แก้* (จงใจ · ไม่ใช่ของใหม่จากการแก้ upsert): update-then-insert ไม่กรอง deleted_at
-  //    วันนี้ลบโน้ตแล้ว "เขียนใหม่" ได้ **403** (tombstone กันดัชนีไว้) → ผู้ใช้จดโน้ตซ้ำที่เดิมไม่ได้
+  //    **reproduce จริงเมื่อ 27 ส.ค. 2026:** ลบโน้ต → "เขียนใหม่" ได้ **403** (tombstone กันดัชนี partial ไว้ · insert ชน · ไม่มี active row ให้ update)
+  //    → ผู้ใช้จดโน้ตซ้ำที่เดิมไม่ได้เลย · **แย่กว่า "เขียนทับเงียบ" ที่คุยกันไว้ตอนแรก**
   // 🎯 **`it.fails` = xfail:** วันนี้ body ล้ม (403) → เคสนี้ *เขียว* (document ว่า bug เปิด · หัว branch ไม่แดง ตาม D72)
   //    วินาทีที่ P1 แก้ deleted_at → body ผ่าน → `it.fails` *แดง* = "แก้แล้ว ถอด .fails ออกเป็นเทสต์จริง"
-  //    ⚠️ ถ้าวันหนึ่งมันแดง เช็คก่อนว่าแดงเพราะ fix ลง ไม่ใช่ setup (put d1/delete) พัง
+  //    ⚠️ ถ้าแดง เช็ค positive control ข้างบนก่อน: มันเขียว = แดงเพราะ fix ลงจริง · มันแดงด้วย = setup/กลไกพัง
   it.fails("place-notes deleted_at — ลบโน้ต → เขียนใหม่ → ต้องเห็นโน้ตใหม่ (xfail · bug เปิดอยู่ · พลิกแดงเมื่อ P1 แก้)", async () => {
     const put = (note: string) => callAs(aCookies, tripA, placeNotesPUT, "PUT", { planId: aPlan, placeId: placeSlug2, note });
     expect((await put("d1")).status, "setup: เขียนโน้ตแรกควร 200").toBe(200);
