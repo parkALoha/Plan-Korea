@@ -56,6 +56,7 @@ import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useSignedFiles } from "@/hooks/useSignedFiles";
 import { useTripDaysGate } from "@/hooks/useTripDaysGate";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
+import { HotelsFlatList } from "@/components/HotelsFlatList";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
@@ -773,7 +774,14 @@ export function SummaryContent({ tripId }: { tripId: string }) {
             </div>
           )}
 
-          {dayPlanEmpty && <DayPlanUnavailableNotice />}
+          {dayPlanEmpty && (
+            <>
+              <DayPlanUnavailableNotice />
+              {/* 🔴 leg มาจาก ITINERARY ตรงกับที่พักจริงของทริปแพลตฟอร์มไม่ได้เลย (P1/P3, 27 ส.ค. 2026
+                  — ดู §22/§23) แสดงที่พักจริงตรง ๆ ด้วยวันที่ของตัวเองแทนการจัดกลุ่มเป็น leg */}
+              <HotelsFlatList hotels={hotels} />
+            </>
+          )}
 
           {dayPlanReady && (
           <section className="mb-5">

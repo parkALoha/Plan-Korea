@@ -46,6 +46,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
 import { useTripDaysGate } from "@/hooks/useTripDaysGate";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
+import { HotelsFlatList } from "@/components/HotelsFlatList";
 
 // ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
 // (ทริปนี้ไม่มีรถส่วนตัว แท็กซี่ต้องเลือกเองเสมอ ไม่ใช่ค่าเริ่มต้น) ใช้ตอนเพิ่ม/แทรกจุดแวะใหม่
@@ -449,13 +450,23 @@ export function HomeContent({ tripId }: { tripId: string }) {
 
             {overallLoaded && (
               <TripPrepPanel
-                hotelsSetCount={hotelLegs.filter((leg) => hotels[leg.id]).length}
-                hotelsTotal={hotelLegs.length}
+                // 🔴 hotelsSetCount/hotelsTotal มาจาก hotelLegs (คำนวณจาก ITINERARY) — ตอนสะพานว่าง
+                // (dayPlanEmpty) leg ไม่มีทางตรงกับที่พักจริงของทริปแพลตฟอร์มเลย จะได้ "0/11 ⚠️" เสมอ
+                // ไม่ว่าจะบันทึกที่พักไปกี่ที่แล้ว — ใช้จำนวนที่พักจริงแทนตอนนั้น ไม่มี "ครบ/ไม่ครบ" ให้เทียบ
+                // (P1/P3, 27 ส.ค. 2026 — ดู §22/§23)
+                hotelsSetCount={
+                  dayPlanReady ? hotelLegs.filter((leg) => hotels[leg.id]).length : Object.keys(hotels).length
+                }
+                hotelsTotal={dayPlanReady ? hotelLegs.length : Object.keys(hotels).length}
                 bookingCount={bookings.length}
                 checklistCheckedCount={checklistItems.filter((i) => i.is_checked).length}
                 checklistTotal={checklistItems.length}
               >
-                <HotelLegsPanel legs={hotelLegs} hotels={hotels} onSave={setHotel} onClear={clearHotel} />
+                {dayPlanReady ? (
+                  <HotelLegsPanel legs={hotelLegs} hotels={hotels} onSave={setHotel} onClear={clearHotel} />
+                ) : (
+                  <HotelsFlatList hotels={hotels} />
+                )}
 
                 <BookingsPanel
                   bookings={bookings}
