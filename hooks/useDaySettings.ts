@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ITINERARY } from "@/data/itinerary";
+import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
+import { chooseSoleTrip } from "@/lib/engine/trip";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 
 export function useDaySettings(planId: string | null) {
   const [settings, setSettings] = useState<Record<string, TripDaySettings>>({});
+  const refetchRef = useRef<(() => Promise<void>) | null>(null);
+  const tripIdRef = useRef<string | null>(null);
+  const dayIdRef = useRef<Map<string, string>>(new Map());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
@@ -15,57 +22,65 @@ export function useDaySettings(planId: string | null) {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      if (!supabaseConfigured || !planId) {
-        setSettings({});
-        return;
-      }
-
-      const toMap = (rows: TripDaySettings[]) => {
+      const toMap = (rows: { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[], bridge: ReturnType<typeof buildDayBridge>) => {
         const map: Record<string, TripDaySettings> = {};
-        for (const row of rows) map[row.day_id] = row;
+        for (const row of rows) {
+          // 🔴 คีย์ด้วย id ของไฟล์เดิม — วันที่ไม่มีในไฟล์ **ข้าม ไม่ใช่ใส่ uuid**
+          const legacyId = bridge.toLegacyId(row.trip_day_id);
+          if (!legacyId) continue;
+          map[legacyId] = {
+            plan_id: planId ?? "",
+            day_id: legacyId,
+            start_time: row.start_time,
+            return_travel_mode: row.return_travel_mode,
+            is_locked: row.is_locked,
+          };
+        }
         return map;
       };
 
+      if (!supabaseConfigured || !planId) return void setLoaded(true);
+
       const cached = readCache<TripDaySettings[]>(`daySettings:${planId}`);
       if (cached) {
-        setSettings(toMap(cached));
+        const m: Record<string, TripDaySettings> = {};
+        for (const row of cached) m[row.day_id] = row;
+        setSettings(m);
         setLoaded(true);
       }
 
-      const { data } = await supabase
-        .from("trip_day_settings")
-        .select("*")
-        .eq("plan_id", planId);
+      const tripsRes = await fetch("/api/engine/trips");
+      if (cancelled || !tripsRes.ok) return void setLoaded(true);
+      const trip = chooseSoleTrip((await tripsRes.json()) as { id: string }[]);
+      if (cancelled || !trip.ok) return void setLoaded(true);
+      tripIdRef.current = trip.tripId;
+
+      const daysRes = await fetch(`/api/engine/trips/${trip.tripId}/days`);
+      if (cancelled || !daysRes.ok) return void setLoaded(true);
+      const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
+      const warn = dayBridgeWarning(bridge, ITINERARY.length);
+      if (warn) console.warn(`[daySettings] ${warn}`);
+      dayIdRef.current = new Map(
+        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
+      );
+
+      const res = await fetch(`/api/engine/trips/${trip.tripId}/day-settings?planId=${encodeURIComponent(planId)}`);
       if (cancelled) return;
-      if (data) {
-        setSettings(toMap(data as TripDaySettings[]));
-        writeCache(`daySettings:${planId}`, data);
+      if (res.ok) {
+        const rows = (await res.json()) as { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[];
+        const map = toMap(rows, bridge);
+        setSettings(map);
+        writeCache(`daySettings:${planId}`, Object.values(map));
       }
       setLoaded(true);
 
       channel = supabase
         .channel(channelName)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "trip_day_settings",
-            filter: `plan_id=eq.${planId}`,
-          },
-          (payload) => {
-            setSettings((prev) => {
-              const next = { ...prev };
-              if (payload.eventType === "DELETE") {
-                delete next[(payload.old as TripDaySettings).day_id];
-              } else {
-                const row = payload.new as TripDaySettings;
-                next[row.day_id] = row;
-              }
-              return next;
-            });
-          }
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "trip_day_plan_settings" }, () => {
+          // 🔴 payload มี `trip_day_id` เป็น uuid ไม่มี `"d0"` — ใช้เป็นสัญญาณอย่างเดียว
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => void refetchRef.current?.(), 300);
+        })
         .subscribe();
     }
 
@@ -73,30 +88,70 @@ export function useDaySettings(planId: string | null) {
 
     return () => {
       cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
   }, [planId]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
-    if (!supabaseConfigured || !planId) return;
-    const { data } = await supabase
-      .from("trip_day_settings")
-      .select("*")
-      .eq("plan_id", planId);
-    if (!data) return;
+    const tripId = tripIdRef.current;
+    if (!supabaseConfigured || !planId || !tripId) return;
+    const res = await fetch(`/api/engine/trips/${tripId}/day-settings?planId=${encodeURIComponent(planId)}`);
+    if (!res.ok) return;
+    const rows = (await res.json()) as { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[];
     const map: Record<string, TripDaySettings> = {};
-    for (const row of data as TripDaySettings[]) map[row.day_id] = row;
+    for (const row of rows) {
+      const legacyId = [...dayIdRef.current.entries()].find(([, uuid]) => uuid === row.trip_day_id)?.[0];
+      if (!legacyId) continue;
+      map[legacyId] = {
+        plan_id: planId, day_id: legacyId, start_time: row.start_time,
+        return_travel_mode: row.return_travel_mode, is_locked: row.is_locked,
+      };
+    }
     setSettings(map);
-    writeCache(`daySettings:${planId}`, data);
+    writeCache(`daySettings:${planId}`, Object.values(map));
   }, [planId]);
 
-  /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้ว sync state กลับให้ตรงความจริง */
-  const guard = useCallback(
-    async (label: string, run: () => PromiseLike<{ error: unknown } | { error: unknown }[]>) => {
-      if (!(await writeGuard(label, run))) await reload();
+  useEffect(() => {
+    refetchRef.current = reload;
+  }, [reload]);
+
+  /**
+   * เขียนตั้งค่าของวัน × แผน — **รับเป็นชุดเสมอ** แม้จะเขียนวันเดียว
+   *
+   * 🔴 "ล็อกทุกวัน" เขียนทีเดียวหลายแถว · เขียนทีละคำขอ = ล็อกได้ครึ่งเดียวถ้าเน็ตหลุดกลางทาง
+   * **แล้วผู้ใช้จะไม่รู้ว่าครึ่งไหน**
+   */
+  const writeRows = useCallback(
+    async (label: string, rows: { dayId: string; startTime?: string; returnTravelMode?: string | null; isLocked?: boolean }[]) => {
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !planId || !tripId) return;
+      const mapped = rows.map((r) => ({
+        tripDayId: dayIdRef.current.get(r.dayId),
+        startTime: r.startTime,
+        returnTravelMode: r.returnTravelMode,
+        isLocked: r.isLocked,
+      }));
+      // 🔴 วันที่ยังไม่มีในฐาน → **หยุดและบอก** ไม่ใช่ส่งไปให้ FK ฟ้องด้วยข้อความที่อ่านไม่ออก
+      if (mapped.some((m) => !m.tripDayId)) {
+        console.error("[daySettings] มีวันที่ยังไม่มีในฐาน — E7 อาจยังไม่ได้ย้ายข้อมูล");
+        await reload();
+        return;
+      }
+      const ok = await writeGuard(label, async () => {
+        const res = await fetch(`/api/engine/trips/${tripId}/day-settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planId, rows: mapped }),
+        });
+        if (res.ok) return { error: null };
+        const b = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: b.code ?? String(res.status), message: b.error } };
+      });
+      if (!ok) await reload();
     },
-    [reload]
+    [planId, reload]
   );
 
   const setStartTime = useCallback(
@@ -110,13 +165,9 @@ export function useDaySettings(planId: string | null) {
         [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime },
       }));
       if (!supabaseConfigured) return;
-      await guard("เวลาออกเดินทาง", () =>
-        supabase
-          .from("trip_day_settings")
-          .upsert({ plan_id: planId, day_id: dayId, start_time: startTime })
-      );
+      await writeRows("เวลาออกเดินทาง", [{ dayId, startTime }]);
     },
-    [planId, guard]
+    [planId, writeRows]
   );
 
   // โหมดเดินทางขากลับที่พักของวันนั้น — คอลัมน์ return_travel_mode มาจาก migration 0015
@@ -131,16 +182,9 @@ export function useDaySettings(planId: string | null) {
         [dayId]: { ...prev[dayId], plan_id: planId, day_id: dayId, start_time: startTime, return_travel_mode: mode },
       }));
       if (!supabaseConfigured) return;
-      await guard("โหมดเดินทางขากลับที่พัก", () =>
-        supabase.from("trip_day_settings").upsert({
-          plan_id: planId,
-          day_id: dayId,
-          start_time: startTime,
-          return_travel_mode: mode,
-        })
-      );
+      await writeRows("โหมดเดินทางขากลับที่พัก", [{ dayId, startTime, returnTravelMode: mode }]);
     },
-    [planId, settings, guard]
+    [planId, settings, writeRows]
   );
 
   // ล็อก/ปลดล็อกวัน — คอลัมน์ is_locked มาจาก migration 0021
@@ -161,11 +205,10 @@ export function useDaySettings(planId: string | null) {
         return next;
       });
       if (!supabaseConfigured) return;
-      await guard(locked ? "ล็อกวัน" : "ปลดล็อกวัน", () =>
-        supabase.from("trip_day_settings").upsert(rows)
-      );
+      await writeRows(locked ? "ล็อกวัน" : "ปลดล็อกวัน",
+        dayIds.map((dayId) => ({ dayId, startTime: settings[dayId]?.start_time ?? "07:00", isLocked: locked })));
     },
-    [planId, settings, guard]
+    [planId, settings, writeRows]
   );
 
   return { settings, loaded, setStartTime, setReturnTravelMode, setDaysLocked, supabaseConfigured };

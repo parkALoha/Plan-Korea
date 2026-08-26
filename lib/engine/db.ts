@@ -47,7 +47,8 @@ export type EngineTable =
   | "hidden_places"
   | "place_notes"
   | "trip_hotels"
-  | "checklist_items";
+  | "checklist_items"
+  | "trip_day_plan_settings";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -522,4 +523,27 @@ export function updateChecklistItem(db: Db, id: string, patch: Record<string, un
 
 export function softDeleteChecklistItem(db: Db, id: string) {
   return db.rpc("soft_delete_checklist_item", { p_id: id });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ตั้งค่ารายวันของแผน — `E3` · `D69` (เป็นของ *วัน × แผน* ไม่ใช่ของวัน)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function daySettingsOfPlan(db: Db, tripId: string, planId: string) {
+  return engineTable(db, "trip_day_plan_settings")
+    .select("trip_day_id, start_time, return_travel_mode, is_locked, note")
+    .eq("trip_id", tripId)
+    .eq("plan_id", planId);
+}
+
+/**
+ * เขียนตั้งค่าของวัน × แผน
+ *
+ * 🔴 PK คือ `(plan_id, trip_day_id)` → `upsert` ใช้ได้จริง **ต่างจาก `trip_hotels`**
+ * ที่กันด้วย exclusion constraint ซึ่ง `on conflict` ใช้ไม่ได้
+ */
+export function upsertDaySettings(db: Db, rows: Record<string, unknown>[]) {
+  return engineTable(db, "trip_day_plan_settings")
+    .upsert(rows, { onConflict: "plan_id,trip_day_id" })
+    .select("trip_day_id");
 }
