@@ -4595,6 +4595,40 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           "  → ถอนที่ชั้น `alter default privileges` ด้วย ไม่ใช่ไล่ถอนทีละใบ ไม่งั้นมันกลับมาเรื่อย ๆ",
       ).toEqual([]);
     });
+
+    it("🔴 E3-AC3 — ไม่มีตารางไหนอยู่ใน publication ของ Realtime (คำถาม RLS-บน-WS ยังไม่เปิด)", async () => {
+      /**
+       * 🔴 **เมทริกซ์ `E2-AC1` ทั้งหมดวัด REST · ไม่มีเคสไหนวัด WebSocket** — เราปิดประตูหน้าแล้ววัดประตูหน้า
+       * `postgres_changes` ส่ง event ก็ต่อเมื่อตารางอยู่ใน publication `supabase_realtime`
+       *
+       * **วัดแล้ว (ไม่ใช่เชื่อ):** subscribe สำเร็จ (`SUBSCRIBED`) แต่ **เจ้าของแก้แถวตัวเองก็ไม่ได้ event**
+       * → ตารางไม่อยู่ใน publication → **Realtime ส่งอะไรไม่ได้เลยตอนนี้**
+       *
+       * 🎯 **ด่านนี้ไม่ได้ตอบว่า RLS-บน-Realtime ถูกไหม — มันบังคับให้มีคนตอบ *ก่อน* เปิด**
+       * · ตอนนี้ปลอดภัย = **"ปลอดภัยเพราะปิดอยู่" ไม่ใช่ "ปลอดภัยเพราะกันได้"**
+       * · วันที่มีคนเพิ่มตารางเข้า publication เพื่อให้ฟีเจอร์ทำงาน → **ด่านนี้แดงพร้อมชื่อตาราง**
+       *   → บังคับให้ยิง RLS-บน-Realtime matrix ก่อน merge ไม่ใช่หลังรั่ว (กับดักข้อ 3 ของ `P-33` ในรูป WS)
+       * · ⚠️ **และมันแปลว่า hook 9 ตัวที่ subscribe `postgres_changes` ไม่ได้ event เลย** = Realtime ในแอปเงียบ
+       *   `D6` เขียนว่า *"2 คนแก้พร้อมกันผ่าน Realtime อยู่แล้ว"* — จริงบนเว็บทริปเดิม เท็จบนแพลตฟอร์ม (P1 รับ · `D82`)
+       *
+       * 🔴 **fail closed:** เรียก probe ไม่ได้ = แดง ไม่ใช่ผ่าน · อ่านจาก *ฐาน* (`table_exposure`) ไม่ใช่ไฟล์
+       *   เพราะ publication เพิ่มจาก dashboard ได้โดยไม่ผ่าน migration (P7 บาน ④)
+       */
+      const rows = await exposure(tablesFromMigrations());
+      const inPublication = rows
+        .filter((r) => r.door === "publication")
+        .map((r) => `${r.table_name} → ${r.detail}`);
+      expect(
+        inPublication.sort(),
+        "มีตารางอยู่ใน publication ของ Realtime แล้ว\n" +
+          "  🔴 **คำถามที่ยังไม่เคยถูกตอบเพิ่งกลายเป็น live:** `postgres_changes` เคารพ RLS ต่อคอลัมน์จริงไหม\n" +
+          "     · เมทริกซ์ `E2-AC1` วัด REST เท่านั้น — WebSocket เป็นเส้นทางที่ยังไม่มีเคสไหนแตะ\n" +
+          "  → ก่อน merge: ต้องมีเคสที่ C (คนนอก) subscribe ตารางนี้แล้ว **ไม่ได้ payload** ตอน A แก้แถว\n" +
+          "     (พร้อมเคสควบคุม A ได้ payload เอง — ไม่งั้น 'C ไม่ได้อะไร' แปลว่า channel ไม่ทำงาน)\n" +
+          "     · และตรวจ payload ไม่ส่งคอลัมน์ที่ column-grant ปิด · `delete` event ไม่ส่งเกิน PK\n" +
+          "  📌 เครื่องมือ: Node ต้องมี WebSocket (`--experimental-websocket` · Node 20 ไม่มี native)",
+      ).toEqual([]);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
