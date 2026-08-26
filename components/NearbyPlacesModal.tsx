@@ -7,6 +7,8 @@ import type { Category, Place } from "@/data/places";
 import { categoryFromGoogleType } from "@/lib/placeCategory";
 import { PLACE_ID_PREFIX } from "@/lib/placeQuery";
 import { PlaceDetailModal } from "./PlaceDetailModal";
+import { countryOfCitySlug } from "@/data/emergency";
+import { placeLocaleOf } from "@/lib/engine/countries";
 
 type NearbyResult = {
   id: string | null;
@@ -180,10 +182,10 @@ export function NearbyPlacesModal({
   }
 
   /** ชื่อของผลลัพธ์นี้ในภาษาที่ขอ — ลิสต์ที่โชว์อยู่เป็นชื่อภาษาไทยที่ Google คืนมา (languageCode: "th")
-   *  ซึ่งใช้ในเอกสาร ตม./K-ETA ไม่ได้ (อังกฤษ) หรือหน้าคนขับแท็กซี่/Naver-Kakao ไม่ได้ (เกาหลี)
+   *  ซึ่งใช้ในเอกสาร ตม./K-ETA ไม่ได้ (อังกฤษ) หรือหน้าคนขับแท็กซี่/Naver-Kakao ไม่ได้ (ภาษาท้องถิ่น)
    *  ขอชื่อพวกนี้เก็บใส่ name_en/name_ko ตั้งแต่ตอนบันทึกเลย จะได้ไม่ต้องไปตามขอทีหลัง (เฟส 22, 0029)
    *  ขอไม่ได้ = null เหมือนเดิม ไม่ขวางการบันทึก */
-  async function fetchNameIn(result: NearbyResult, lang: "en" | "ko"): Promise<string | null> {
+  async function fetchNameIn(result: NearbyResult, lang: string): Promise<string | null> {
     const query = result.id ? PLACE_ID_PREFIX + result.id : result.name;
     try {
       const res = await fetch(
@@ -199,16 +201,25 @@ export function NearbyPlacesModal({
   // บันทึกเข้าคลังก่อนเสมอ (ทั้ง 2 ปุ่มต้องมีสถานที่นี้ในคลัง) แล้วคืน id + พิกัดให้ผู้เรียกตัดสินใจต่อ
   async function saveToLibrary(result: NearbyResult) {
     if (result.lat == null || result.lng == null) return null;
-    const [nameEn, nameKo] = await Promise.all([
+    // 🔴 เดิม fetchNameIn(result, "ko") ฝังตายตัว — ขอชื่อเกาหลีของร้านในฮานอยด้วย (P1 ปลดล็อกข้อ ③
+    // 27 ส.ค. 2026 · placeLocaleOf() ใน lib/engine/countries.ts) เปลี่ยนมาถามทะเบียนแทนว่าประเทศของ
+    // เมืองนี้ใช้ภาษาอะไร — เกาหลี → "ko" (ตรงกับคอลัมน์ name_ko เป๊ะ) เวียดนาม → "vi" ไม่มีคอลัมน์รองรับ
+    // ⚠️ name_ko เป็นคอลัมน์เฉพาะเกาหลี (migration 0029) ยังไม่มี name_local ทั่วไป — ถ้า locale ที่ได้
+    // ไม่ใช่ "ko" (เช่น "vi") จะยังไม่เก็บชื่อท้องถิ่นนั้น (เก็บ null เหมือนพฤติกรรมเดิมของเมืองที่ไม่ใช่
+    // เกาหลี) ดีกว่าเอาชื่อเวียดนามไปยัดใส่คอลัมน์ที่ชื่อบอกว่าเป็นเกาหลี — ต้องคุย P1 ก่อนถ้าจะขยาย schema
+    const country = countryOfCitySlug(city);
+    const locale = placeLocaleOf(country);
+    const [nameEn, nameLocal] = await Promise.all([
       fetchNameIn(result, "en"),
-      fetchNameIn(result, "ko"),
+      locale ? fetchNameIn(result, locale) : Promise.resolve(null),
     ]);
     const saved = await addCustomPlace({
       added_by: addedBy ?? null,
       city,
+      country,
       name_th: result.name,
       name_en: nameEn,
-      name_ko: nameKo,
+      name_ko: locale === "ko" ? nameLocal : null,
       category: categoryFor(kind, result),
       lat: result.lat,
       lng: result.lng,
