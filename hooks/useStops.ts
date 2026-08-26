@@ -8,7 +8,7 @@ import { writeGuard } from "@/lib/writeGuard";
 import { showToast } from "@/lib/toast";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
-import { reportReadFailure } from "@/lib/reportReadFailure";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -66,12 +66,10 @@ export function useStops(tripId: string | null, planId: string | null) {
   const reload = useCallback(async () => {
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !tripId || !planId) return;
-    const res = await fetch(`/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`);
-    if (!res.ok) {
-      reportReadFailure(res.status);
-      return;
-    }
-    const rawRows = (await res.json()) as StopDto[];
+    const rawRows = await fetchReadJson<StopDto[]>(
+      `/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`
+    );
+    if (!rawRows) return;
     const mapped = sortStops(mapRows(rawRows));
     setStops(mapped);
     // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — state ในเครื่องอัปเดตได้ปกติ (จะถูกต้องเองเมื่อ
@@ -98,16 +96,14 @@ export function useStops(tripId: string | null, planId: string | null) {
         setLoaded(true);
       }
 
-      const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
+      const dbDays = await fetchReadJson<{ id: string; date: string }[]>(
+        `/api/engine/trips/${tripId}/days`
+      );
       if (cancelled) return;
-      if (!daysRes.ok) {
-        reportReadFailure(daysRes.status);
-        return void setLoaded(true);
-      }
+      if (!dbDays) return void setLoaded(true);
       // 🔴 `import()` ไม่ใช่ static — `useStops` ถูกเรียกจากหลายหน้า และเราไม่อยาก
       //    ให้ `data/itinerary.ts` ติดไปกับบันเดิลที่ไม่ต้องใช้ (บทเรียนจาก `useBookings`)
       const { ITINERARY } = await import("@/data/itinerary");
-      const dbDays = (await daysRes.json()) as { id: string; date: string }[];
       const bridge = buildDayBridge(ITINERARY, dbDays);
       reportDayBridgeWarningIfAny(bridge);
       dayToUuid.current = new Map(

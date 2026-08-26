@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 type HiddenPlaceRow = {
   place_id: string;
@@ -39,9 +40,8 @@ export function useHiddenPlaces(tripId: string | null) {
   }, [tripId]);
 
   const fetchInto = useCallback(async (tripId: string) => {
-    const res = await fetch(`/api/engine/trips/${tripId}/hidden-places`);
-    if (!res.ok) return null;
-    const rows = (await res.json()) as HiddenPlaceRow[];
+    const rows = await fetchReadJson<HiddenPlaceRow[]>(`/api/engine/trips/${tripId}/hidden-places`);
+    if (!rows) return null;
     const map: Record<string, HiddenPlaceRow> = {};
     for (const r of rows) map[r.place_id] = r;
     return map;

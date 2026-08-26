@@ -9,7 +9,7 @@ import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
 import { showToast } from "@/lib/toast";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
-import { reportReadFailure } from "@/lib/reportReadFailure";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 type Overrides = Record<string, City>;
 
@@ -55,14 +55,9 @@ export function useOvernightOverrides(tripId: string | null) {
         setLoaded(true);
       }
 
-      const res = await fetch(`/api/engine/trips/${tripId}/days`);
+      const rows = await fetchReadJson<DayOvernightRow[]>(`/api/engine/trips/${tripId}/days`);
       if (cancelled) return;
-      if (!res.ok) {
-        reportReadFailure(res.status);
-        return void setLoaded(true);
-      }
-      const rows = (await res.json()) as DayOvernightRow[];
-      if (cancelled) return;
+      if (!rows) return void setLoaded(true);
 
       const bridge = buildDayBridge(ITINERARY, rows);
       // 🔴 **สะพานว่าง ≠ ไม่มีใครตั้งค่าที่นอน** — ถ้าไม่บอก หน้าจอจะเงียบเหมือนไม่มีข้อมูล

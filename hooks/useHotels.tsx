@@ -6,6 +6,7 @@ import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } fro
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 /** ทุกอย่างที่ต้องรู้ตอนบันทึกที่พักหนึ่งที่ — รวมเป็นอ็อบเจกต์เดียวตั้งแต่เฟส 16
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
@@ -91,10 +92,9 @@ function useHotelsStore(tripId: string | null) {
         setLoaded(true);
       }
 
-      const res = await fetch(`/api/engine/trips/${tripId}/hotels`);
+      const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${tripId}/hotels`);
       if (cancelled) return;
-      if (res.ok) {
-        const rows = (await res.json()) as TripHotel[];
+      if (rows) {
         setHotels(toMap(rows));
         writeCache("hotels", rows);
       }
@@ -108,9 +108,8 @@ function useHotelsStore(tripId: string | null) {
           timer.current = setTimeout(async () => {
             const id = tripIdRef.current;
             if (!id || cancelled) return;
-            const r = await fetch(`/api/engine/trips/${id}/hotels`);
-            if (!r.ok || cancelled) return;
-            const rows = (await r.json()) as TripHotel[];
+            const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${id}/hotels`);
+            if (!rows || cancelled) return;
             setHotels(toMap(rows));
             writeCache("hotels", rows);
           }, 300);
@@ -131,9 +130,8 @@ function useHotelsStore(tripId: string | null) {
   const refetch = useCallback(async () => {
     const id = tripIdRef.current;
     if (!supabaseConfigured || !id) return;
-    const res = await fetch(`/api/engine/trips/${id}/hotels`);
-    if (!res.ok) return;
-    const rows = (await res.json()) as TripHotel[];
+    const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${id}/hotels`);
+    if (!rows) return;
     const map: Record<string, TripHotel> = {};
     for (const row of rows) {
       map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;

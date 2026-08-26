@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 function makeChecklistId() {
   return `cl-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -42,9 +43,9 @@ export function useChecklist(tripId: string | null) {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const res = await fetch(`/api/engine/trips/${tripId}/checklist`);
+      const rows = await fetchReadJson<ChecklistItem[]>(`/api/engine/trips/${tripId}/checklist`);
       if (cancelled) return;
-      if (res.ok) setItems(sortItems((await res.json()) as ChecklistItem[]));
+      if (rows) setItems(sortItems(rows));
       setLoaded(true);
 
       channel = supabase
@@ -71,9 +72,9 @@ export function useChecklist(tripId: string | null) {
   const reload = useCallback(async () => {
     const id = tripIdRef.current;
     if (!supabaseConfigured || !id) return;
-    const res = await fetch(`/api/engine/trips/${id}/checklist`);
-    if (!res.ok) return;
-    setItems(sortItems((await res.json()) as ChecklistItem[]));
+    const rows = await fetchReadJson<ChecklistItem[]>(`/api/engine/trips/${id}/checklist`);
+    if (!rows) return;
+    setItems(sortItems(rows));
   }, []);
 
 

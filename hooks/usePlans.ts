@@ -5,6 +5,7 @@ import { supabase, supabaseConfigured, type TripPlan } from "@/lib/supabase";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 type PlanRow = TripPlan & { is_active: boolean };
 
@@ -38,9 +39,8 @@ export function usePlans() {
 
   const reload = useCallback(async () => {
     if (!supabaseConfigured) return;
-    const res = await fetch("/api/engine/plans");
-    if (!res.ok) return;
-    const rows = (await res.json()) as PlanRow[];
+    const rows = await fetchReadJson<PlanRow[]>("/api/engine/plans");
+    if (!rows) return;
     applyRows(rows);
     writeCache("plans", { plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })), activePlanId: rows.find((r) => r.is_active)?.id ?? null });
   }, [applyRows]);
@@ -63,10 +63,9 @@ export function usePlans() {
         setLoaded(true);
       }
 
-      const res = await fetch("/api/engine/plans");
+      const rows = await fetchReadJson<PlanRow[]>("/api/engine/plans");
       if (cancelled) return;
-      if (res.ok) {
-        const rows = (await res.json()) as PlanRow[];
+      if (rows) {
         applyRows(rows);
         writeCache("plans", {
           plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })),

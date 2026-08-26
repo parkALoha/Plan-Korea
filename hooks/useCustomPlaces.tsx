@@ -5,6 +5,7 @@ import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 function makeCustomPlaceId() {
   return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -43,9 +44,7 @@ function useCustomPlacesStore(tripId: string | null) {
      *    RLS ยังเป็นคนกรองเหมือนเดิม แค่ย้ายที่รันไปฝั่งเซิร์ฟเวอร์ (`D38`)
      */
     async function fetchPlaces(tripId: string): Promise<CustomPlace[] | null> {
-      const res = await fetch(`/api/engine/trips/${tripId}/custom-places`);
-      if (!res.ok) return null;
-      return (await res.json()) as CustomPlace[];
+      return fetchReadJson<CustomPlace[]>(`/api/engine/trips/${tripId}/custom-places`);
     }
 
     async function init() {

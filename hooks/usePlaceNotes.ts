@@ -5,6 +5,7 @@ import { supabase, supabaseConfigured, type PlaceNote } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 const REFETCH_DEBOUNCE_MS = 300;
 
@@ -32,11 +33,10 @@ export function usePlaceNotes(tripId: string | null, planId: string | null) {
   }, [tripId]);
 
   const fetchNotes = useCallback(async (tripId: string, plan: string) => {
-    const res = await fetch(
+    const rows = await fetchReadJson<PlaceNote[]>(
       `/api/engine/trips/${tripId}/place-notes?planId=${encodeURIComponent(plan)}`
     );
-    if (!res.ok) return null;
-    const rows = (await res.json()) as PlaceNote[];
+    if (!rows) return null;
     return Object.fromEntries(rows.map((n) => [n.place_id, n]));
   }, []);
 

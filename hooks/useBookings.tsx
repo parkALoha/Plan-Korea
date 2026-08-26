@@ -7,7 +7,7 @@ import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
-import { reportReadFailure } from "@/lib/reportReadFailure";
+import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -69,12 +69,11 @@ function useBookingsStore(tripId: string | null) {
         setLoaded(true);
       }
 
-      const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
+      const dbDays = await fetchReadJson<{ id: string; date: string }[]>(
+        `/api/engine/trips/${tripId}/days`
+      );
       if (cancelled) return;
-      if (!daysRes.ok) {
-        reportReadFailure(daysRes.status);
-        return void setLoaded(true);
-      }
+      if (!dbDays) return void setLoaded(true);
       // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — เดิม `TripDataProvider` (ที่ห่อ hook นี้) อยู่ใน
       //    root layout จริง ทำให้ static import ลาก `data/itinerary.ts` (2,290 บรรทัด) เข้าบันเดิลทุกหน้า
       //    รวม `/login`/404 ที่ไม่ต้องล็อกอิน (`layoutImportGraph` เป็นคนจับ) ⚠️ **แก้ตาม `E5-AC1`
@@ -82,7 +81,6 @@ function useBookingsStore(tripId: string | null) {
       //    แต่ dynamic import ยังไม่มีเหตุผลให้เปลี่ยนกลับเป็น static (ไม่มีประโยชน์เพิ่ม แค่ไม่มีโทษ) จึง
       //    ปล่อยไว้แบบเดิม — ไม่ใช่ว่าเหตุผลนี้ยังใช้ได้ ไม่ใช่ว่ายังจำเป็นเหมือนก่อน
       const { ITINERARY } = await import("@/data/itinerary");
-      const dbDays = (await daysRes.json()) as { id: string; date: string }[];
       const bridge = buildDayBridge(ITINERARY, dbDays);
       reportDayBridgeWarningIfAny(bridge);
       dayToUuid.current = new Map(
@@ -90,10 +88,11 @@ function useBookingsStore(tripId: string | null) {
       );
       uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
 
-      const res = await fetch(`/api/engine/trips/${tripId}/bookings`);
+      const rows = await fetchReadJson<(TripBooking & { trip_day_id: string | null })[]>(
+        `/api/engine/trips/${tripId}/bookings`
+      );
       if (cancelled) return;
-      if (res.ok) {
-        const rows = (await res.json()) as (TripBooking & { trip_day_id: string | null })[];
+      if (rows) {
         // 🔴 `day_id` ที่ route คืนมาเป็น uuid — แปลงเป็น `"d0"` ที่นี่
         //    วันที่ไม่มีในไฟล์เดิม → `day_id` เป็น `null` **ไม่ใช่ uuid ดิบ** ที่ UI หาไม่เจอ
         const mapped = rows.map((r) => ({
@@ -107,8 +106,6 @@ function useBookingsStore(tripId: string | null) {
           mapped.filter((r) => r.day_id !== null).length
         );
         writeCache("bookings", mapped);
-      } else {
-        reportReadFailure(res.status);
       }
       setLoaded(true);
 
@@ -135,12 +132,10 @@ function useBookingsStore(tripId: string | null) {
   const reload = useCallback(async () => {
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !tripId) return;
-    const res = await fetch(`/api/engine/trips/${tripId}/bookings`);
-    if (!res.ok) {
-      reportReadFailure(res.status);
-      return;
-    }
-    const rows = (await res.json()) as (TripBooking & { trip_day_id: string | null })[];
+    const rows = await fetchReadJson<(TripBooking & { trip_day_id: string | null })[]>(
+      `/api/engine/trips/${tripId}/bookings`
+    );
+    if (!rows) return;
     const mapped = rows.map((r) => ({
       ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
     }));
