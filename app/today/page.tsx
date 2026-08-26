@@ -14,14 +14,8 @@ import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openin
 import { placeQueryKey } from "@/lib/placeQuery";
 import type { GoogleOpeningHours } from "@/lib/googlePlaces";
 import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
-import {
-  googleMapsDirectionsUrl,
-  kakaoMapDirectionsUrl,
-  hotelNavigationName,
-  navigationName,
-  openNaverMap,
-} from "@/lib/mapLinks";
-import { mapProvidersFor, type MapProvider } from "@/lib/engine/countries";
+import { hotelNavigationName, navigationName, mapActionsFor, type MapAction } from "@/lib/mapLinks";
+import type { MapProvider } from "@/lib/engine/countries";
 import { countryOfCity } from "@/data/emergency";
 import { LocalNameCard } from "@/components/LocalNameCard";
 import { PlaceDetailModal } from "@/components/PlaceDetailModal";
@@ -112,55 +106,46 @@ function TodaySkeleton() {
   );
 }
 
-// เมทาของแต่ละผู้ให้บริการ — สีปุ่มเป็นสีแบรนด์ของแอปนั้นๆ ไม่ใช่โทเคนของเว็บเรา (Kakao/Naver มีสีทางการ
-// ที่คนไทยจำได้จากแอปจริง) ปุ่มที่แสดงจริงมาจาก mapProvidersFor(countryCode) ไม่ใช่ลิสต์ตายตัวสามปุ่ม
-const MAP_PROVIDER_META: Record<
-  MapProvider,
-  { emoji: string; label: string; className: string }
-> = {
-  google: { emoji: "🧭", label: "Google", className: "bg-pine text-cream hover:bg-pine-dark" },
-  kakao: { emoji: "💬", label: "Kakao", className: "bg-[#FEE500] text-ink hover:brightness-95" },
-  naver: { emoji: "🟢", label: "Naver", className: "bg-[#03C75A] text-white hover:brightness-95" },
+// เมทาสีของแต่ละผู้ให้บริการ — สีปุ่มเป็นสีแบรนด์ของแอปนั้นๆ ไม่ใช่โทเคนของเว็บเรา (Kakao/Naver มีสีทางการ
+// ที่คนไทยจำได้จากแอปจริง) ปุ่มที่แสดงจริงมาจาก mapActionsFor(countryCode, target) ไม่ใช่ลิสต์ตายตัว
+const MAP_PROVIDER_STYLE: Record<MapProvider, { emoji: string; className: string }> = {
+  google: { emoji: "🧭", className: "bg-pine text-cream hover:bg-pine-dark" },
+  kakao: { emoji: "💬", className: "bg-[#FEE500] text-ink hover:brightness-95" },
+  naver: { emoji: "🟢", className: "bg-[#03C75A] text-white hover:brightness-95" },
 };
 
-function NavButtons({
-  lat,
-  lng,
-  name,
-  providers,
-}: {
-  lat: number;
-  lng: number;
-  name: string;
-  /** ลำดับที่ควรแสดง — ตัวแรกคือตัวหลัก (จาก mapProvidersFor(countryCode), E4-AC2/AC4) */
-  providers: readonly MapProvider[];
-}) {
+function NavButtons({ actions }: { actions: readonly MapAction[] }) {
   return (
     <div
       className="grid gap-2"
-      style={{ gridTemplateColumns: `repeat(${providers.length}, minmax(0, 1fr))` }}
+      style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}
     >
-      {providers.map((provider) => {
-        const meta = MAP_PROVIDER_META[provider];
+      {actions.map((action) => {
+        const style = MAP_PROVIDER_STYLE[action.provider];
         const content = (
           <>
-            <span className="text-xl">{meta.emoji}</span>
-            <span className="text-xs font-medium">{meta.label}</span>
+            <span className="text-xl">{style.emoji}</span>
+            <span className="text-xs font-medium">{action.label}</span>
           </>
         );
-        const className = `flex flex-col items-center justify-center gap-1 rounded-xl py-3 ${meta.className}`;
-        if (provider === "naver") {
-          // Naver ต้องลองเปิดแอปก่อนแล้วค่อย fallback เป็นเว็บ (ดู lib/mapLinks.ts) — ทำเป็นปุ่ม ไม่ใช่ลิงก์
+        const className = `flex flex-col items-center justify-center gap-1 rounded-xl py-3 ${style.className}`;
+        // kind ต่างกันตั้งใจ (ดู lib/mapLinks.ts) — Naver ไม่มีลิงก์เว็บนำทางตรงได้ ต้องเรียกฟังก์ชัน
+        // ที่ลองเปิดแอปก่อนแล้วค่อย fallback เอง ทำเป็น <a href> เหมือนเจ้าอื่นไม่ได้
+        if (action.kind === "open") {
           return (
-            <button key={provider} onClick={() => openNaverMap(lat, lng, name)} className={className}>
+            <button key={action.provider} onClick={action.open} className={className}>
               {content}
             </button>
           );
         }
-        const href =
-          provider === "google" ? googleMapsDirectionsUrl(lat, lng) : kakaoMapDirectionsUrl(lat, lng, name);
         return (
-          <a key={provider} href={href} target="_blank" rel="noopener noreferrer" className={className}>
+          <a
+            key={action.provider}
+            href={action.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={className}
+          >
             {content}
           </a>
         );
@@ -219,10 +204,14 @@ export default function TodayPage() {
   // เทียบวันที่ตรงๆ ไม่ใช่ index — เดิม dayIndex === todayIndex เป็น true เสมอตอนยังไม่ถึงทริป
   // (findTodayIndex clamp เป็น index 0) ทำให้ /today ขึ้นแถบ "ช้ากว่าแผน" ผิดๆ ทั้งที่ยังอีกหลายเดือน — บั๊ก 7.2
   const isRealToday = day.date === todayIso;
-  // ปุ่มแผนที่ที่ควรแสดงของวันนี้ — มาจากทะเบียนความสามารถรายประเทศ (E4-AC2/AC4) ไม่ใช่ลิสต์ตายตัว
-  // countryOfCity มาจาก data/emergency.ts (ตัวเดียวกับที่ EmergencyCard ใช้อยู่แล้ว) — ไม่สร้างแหล่งที่มา
-  // ของ "ประเทศจาก city" ใหม่อีกจุด แม้ตัวมันเองยังเป็น 2 ประเทศตายตัวก็ตาม (ข้อจำกัดที่รู้อยู่แล้ว แยกเรื่อง)
-  const mapProviders = mapProvidersFor(countryOfCity(day.city));
+  // ประเทศของวันนี้ — ผูกกับ *เมืองของวันนั้น* ไม่ใช่ทริป (P1: ทริปเดียวข้ามประเทศได้ เช่นทริปนี้เอง
+  // ฮานอย→โซล) ต่างจาก countryCode ระดับทริปตัวเดียวที่จะผิดครึ่งทริปทันทีที่ข้ามประเทศ
+  // 🔴 ชั่วคราว — ที่ถูกต้องคือ country ของ "สถานที่นั้น" (place.country/hotel.country ที่ P1 เพิ่มไว้ใน
+  // DTO แล้ว) แต่ hook ที่ส่งค่านั้นเข้า state ยังไม่เสร็จ (P3 กำลังเขียน useHotels/useCustomPlaces ใหม่
+  // อยู่พอดี ห้ามแตะสองไฟล์นั้นตอนนี้) — ระดับวันยังถูกกว่าระดับทริปเดิมมาก เพราะเปลี่ยนค่าได้ทุกวันที่
+  // day.city เปลี่ยน ไม่ใช่ค่าคงที่ตลอดทริปแบบเดิม สลับไปใช้ place-level ทันทีที่ hook พร้อม
+  // countryOfCity มาจาก data/emergency.ts (ตัวเดียวกับที่ EmergencyCard ใช้อยู่แล้ว) ไม่สร้างแหล่งใหม่ซ้อน
+  const mapCountryCode = countryOfCity(day.city);
 
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === day.id).sort((a, b) => a.order_index - b.order_index),
@@ -765,10 +754,11 @@ export default function TodayPage() {
                     <div className="mt-4">
                       {/* ส่งชื่อภาษาท้องถิ่นเข้าแอปแผนที่ ไม่ใช่ nameTh — Naver/Kakao ค้นชื่อไทยไม่เจอ (เฟส 14) */}
                       <NavButtons
-                        lat={nextSched.place.lat}
-                        lng={nextSched.place.lng}
-                        name={navigationName(nextSched.place, nextLocal?.nameLocal)}
-                        providers={mapProviders}
+                        actions={mapActionsFor(mapCountryCode, {
+                          lat: nextSched.place.lat,
+                          lng: nextSched.place.lng,
+                          name: navigationName(nextSched.place, nextLocal?.nameLocal),
+                        })}
                       />
                       <LocalNameCard
                         place={nextSched.place}
@@ -817,10 +807,11 @@ export default function TodayPage() {
                   {/* ชื่อที่ส่งเข้า Naver/Kakao ต้องเป็นภาษาเกาหลี ไม่งั้นค้นไม่เจอ (บั๊กเดียวกับที่เฟส 14
                       แก้ให้จุดแวะไปแล้ว แต่ที่พักเพิ่งมี name_local ตอนเฟส 16 / migration 0026) */}
                   <NavButtons
-                    lat={endAnchor.lat}
-                    lng={endAnchor.lng}
-                    name={endHotel ? hotelNavigationName(endHotel) : endAnchor.label}
-                    providers={mapProviders}
+                    actions={mapActionsFor(mapCountryCode, {
+                      lat: endAnchor.lat,
+                      lng: endAnchor.lng,
+                      name: endHotel ? hotelNavigationName(endHotel) : endAnchor.label,
+                    })}
                   />
                   {endHotel && (
                     <button
