@@ -243,7 +243,9 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
         "  rejected = ด่านทำงาน · leak = B เขียนเข้าทริป A สำเร็จ · server-bug(502) = บั๊ก helper/คอลัมน์ของเรา แยกไปแก้ ไม่นับเป็นผ่าน",
     ).toBe("rejected");
 
-    const { data, error } = await admin.from(opts.table).select(`id,${opts.col}`).eq("trip_id", tripA);
+    // 🔴 select("*") ไม่ใช่ `id,${opts.col}` — คอลัมน์ dynamic ทำให้ PostgREST type helper คืน ParserError → tsc TS2352
+    //    (P1 · P3 เจอ · vitest ไม่ตรวจชนิด จึงเขียวขณะ tsc แดง) · ไม่ใช่ typo · แก้ที่ต้นเหตุ ไม่ใช่ as unknown ปิดตา
+    const { data, error } = await admin.from(opts.table).select("*").eq("trip_id", tripA);
     if (error) throw new Error(`[${opts.label}] admin read ${opts.table}: ${error.message}`);
     const vals = (data ?? []).map((r) => (r as Record<string, string>)[opts.col]).sort();
     expect(
