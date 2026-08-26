@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser } from "@/lib/auth/server";
-import { customPlacesOfTrip } from "@/lib/engine/customPlaces";
+import { customPlacesOfTrip, oneCustomPlace } from "@/lib/engine/customPlaces";
+import { createCustomPlace } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import type { CustomPlace } from "@/lib/supabase";
 
@@ -70,6 +71,86 @@ export async function GET(
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "อ่านคลังสถานที่ไม่ได้" },
       { status: 502 }
+    );
+  }
+}
+
+/**
+ * เพิ่มสถานที่ลงคลังของทริป
+ *
+ * 🔴 **คืนแถวที่สร้างแล้วในรูปเดิม ไม่ใช่แค่ `id`** — ฝั่ง hook ต้องเอาไปใส่ state ทันที
+ * และถ้าคืนแค่ `id` มันจะต้องประกอบรูปเองที่ฝั่ง client **ซึ่งคือ join ตัวที่สอง** ที่ P3 ห้ามไว้
+ */
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ tripId: string }> }
+) {
+  const limited = rateLimitGuard(req, "engine-custom-places", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+
+  const user = await getUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { tripId } = await params;
+  if (!UUID.test(tripId)) {
+    return NextResponse.json({ error: "tripId ไม่ถูกต้อง" }, { status: 400 });
+  }
+
+  let body: Partial<CustomPlace>;
+  try {
+    body = (await req.json()) as Partial<CustomPlace>;
+  } catch {
+    return NextResponse.json({ error: "อ่าน body ไม่ได้" }, { status: 400 });
+  }
+
+  // ⚠️ ตรวจช่องที่ **ฐานบังคับ** เท่านั้น — ไม่ใช่ตรวจซ้ำสิ่งที่ `check` ตรวจอยู่แล้ว
+  //    ตรวจซ้ำ = กฎสองที่ที่ต้องคอยให้ตรงกัน (`P-15`) · ที่นี่ตรวจเพื่อให้ **ข้อความอ่านออก**
+  if (!body.city || !body.category || !body.maps_query || !body.name_th) {
+    return NextResponse.json(
+      { error: "ต้องมี city · category · maps_query · name_th" },
+      { status: 400 }
+    );
+  }
+  if (typeof body.lat !== "number" || typeof body.lng !== "number") {
+    return NextResponse.json({ error: "lat/lng ต้องเป็นตัวเลข" }, { status: 400 });
+  }
+
+  const db = await createServerSupabase();
+  const { data: newId, error } = await createCustomPlace(db, {
+    tripId,
+    citySlug: body.city,
+    category: body.category,
+    lat: body.lat,
+    lng: body.lng,
+    mapsQuery: body.maps_query,
+    nameTh: body.name_th,
+    nameEn: body.name_en,
+    nameKo: body.name_ko,
+    description: body.description,
+    googlePlaceId: body.google_place_id,
+    legacyAddedBy: body.added_by,
+  });
+
+  if (error || !newId) {
+    // 🔴 `42501` ต้องเดินทางถึงไคลเอนต์เป็น `403` — `writeGuard` แยกชนิดจาก `code` ไม่ได้ถ้าเราแปลงทิ้ง
+    const status = error?.code === "42501" ? 403 : error?.code === "23503" ? 400 : 502;
+    return NextResponse.json(
+      { error: error?.message ?? "สร้างสถานที่ไม่สำเร็จ", code: error?.code },
+      { status }
+    );
+  }
+
+  try {
+    const created = await oneCustomPlace(db, tripId, newId as unknown as string);
+    return NextResponse.json(created, {
+      status: 201,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (e) {
+    // แถวถูกสร้างแล้วจริง แต่เราอ่านกลับไม่ได้ — **ห้ามบอกว่าล้มเหลว** ผู้ใช้จะกดซ้ำแล้วได้สองแถว
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "สร้างแล้วแต่อ่านกลับไม่ได้", id: newId },
+      { status: 207 }
     );
   }
 }

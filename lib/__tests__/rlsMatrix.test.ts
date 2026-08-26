@@ -3353,7 +3353,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       dayU = dy.data.id as string;
 
       const mp = await A.from("custom_places")
-        .insert({ trip_id: tripU2, city_id: cityU, category: "cafe", lat: 35.1, lng: 129.1, description: "เดิม" })
+        .insert({ trip_id: tripU2, city_id: cityU, category: "cafe", lat: 35.1, lng: 129.1 })
         .select("id").single();
       if (mp.error) throw new Error(`custom place: ${mp.error.message}`);
       myU = mp.data.id as string;
@@ -3421,11 +3421,14 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     }
 
     it("🔴 custom_places.update — เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้", async () => {
+      // 🔴 เดิมเคสนี้ใช้ `description` ซึ่ง `Q6` ย้ายออกไปแล้ว (26 ส.ค. 2026)
+      // ⚠️ **เคสนี้วัด "เจ้าของแก้ได้ · viewer กับคนนอกแก้ไม่ได้" ไม่ได้วัดคอลัมน์ไหนเป็นพิเศษ**
+      //    จึงย้ายมาใช้ `maps_query` ที่ยังอยู่ในทะเบียน — เจตนาของเคสไม่เปลี่ยนแม้แต่นิดเดียว
       await branchCase(
-        "custom_places.description",
+        "custom_places.maps_query",
         "เดิม",
-        (c, v) => c.from("custom_places").update({ description: v }).eq("id", myU),
-        (c) => c.from("custom_places").select("description").eq("id", myU).maybeSingle(),
+        (c, v) => c.from("custom_places").update({ maps_query: v }).eq("id", myU),
+        (c) => c.from("custom_places").select("maps_query").eq("id", myU).maybeSingle(),
       );
     });
 
@@ -4135,8 +4138,10 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "custom_place_descriptions.update": ["description","locale","source"],
       "custom_place_names.insert": ["locale","name","place_id","priority","source","trip_id"],
       "custom_place_names.update": ["locale","name","priority","source"],
-      "custom_places.insert": ["category","city_id","description","google_place_id","lat","legacy_added_by","lng","maps_query","trip_id"],
-      "custom_places.update": ["category","city_id","description","google_place_id","lat","lng","maps_query"],
+      // 🔴 `Q6` 26 ส.ค. 2026 — `description` ย้ายไป `custom_place_descriptions` (แยกภาษา) แล้ว drop คอลัมน์
+      //    แก้พร้อม migration `20260826121226` ในคอมมิตเดียวกันตามที่ข้อความของด่านสั่ง
+      "custom_places.insert": ["category","city_id","google_place_id","lat","legacy_added_by","lng","maps_query","trip_id"],
+      "custom_places.update": ["category","city_id","google_place_id","lat","lng","maps_query"],
       "place_notes.insert": ["catalog_place_id","custom_place_id","legacy_added_by","note","photo_path","plan_id","trip_id"],
       "place_notes.update": ["note","photo_path"],
       "profiles.insert": ["display_name","home_country","id","locale"],

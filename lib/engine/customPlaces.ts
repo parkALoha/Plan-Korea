@@ -15,3 +15,12 @@ export async function customPlacesOfTrip(db: Db, tripId: string): Promise<Custom
   if (error) throw new Error(`อ่านคลังสถานที่ไม่ได้: ${error.message}`);
   return (data as unknown as CustomPlaceRow[] | null ?? []).map(toCustomPlace);
 }
+
+/** อ่านแถวเดียวหลังสร้าง — ใช้คิวรีตัวเดียวกับตอนอ่านทั้งลิสต์ **จึงได้ join ชุดเดียวกันแน่นอน** */
+export async function oneCustomPlace(db: Db, tripId: string, id: string): Promise<CustomPlace> {
+  const { data, error } = await customPlaceRowsOfTrip(db, tripId).eq("id", id).limit(1);
+  if (error) throw new Error(`อ่านสถานที่ที่เพิ่งสร้างไม่ได้: ${error.message}`);
+  const rows = (data as unknown as CustomPlaceRow[] | null) ?? [];
+  if (rows.length === 0) throw new Error("สร้างแล้วแต่อ่านกลับไม่เจอ");
+  return toCustomPlace(rows[0]);
+}

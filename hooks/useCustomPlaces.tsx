@@ -114,23 +114,45 @@ function useCustomPlacesStore() {
 
   const addCustomPlace = useCallback(
     async (place: Omit<CustomPlace, "id" | "created_at">) => {
-      const newPlace: CustomPlace = {
-        ...place,
-        id: makeCustomPlaceId(),
-        created_at: new Date().toISOString(),
-      };
-      // อัปเดต state local ก่อนเลย (optimistic) — ตัวที่เรียกฟังก์ชันนี้มักจะเอา id ที่ได้ไปใช้ resolvePlace
-      // ต่อทันที (เช่น เดาโหมดเดินทางจากพิกัด) ถ้ารอ realtime echo อย่างเดียวจะไม่ทันเห็นสถานที่นี้เลย
-      // เช็ค exists กันตอน echo ย้อนกลับมาซ้ำทีหลัง
-      setCustomPlaces((prev) => (prev.some((p) => p.id === newPlace.id) ? prev : [...prev, newPlace]));
-      if (!supabaseConfigured) return newPlace;
-      // เขียนไม่ผ่าน → ถอนการ์ดที่เพิ่งโผล่ในคลังออก ไม่งั้นมันค้างอยู่จนรีโหลดแล้วหายไปเฉยๆ
-      if (!(await writeGuard("เพิ่มสถานที่ใหม่", () =>
-        supabase.from("custom_places").insert(newPlace)
-      ))) {
-        setCustomPlaces((prev) => prev.filter((p) => p.id !== newPlace.id));
+      // 🔴 **เขียนก่อน แล้วค่อยใส่ state — กลับด้านจากของเดิมที่เป็น optimistic** (`E3`)
+      //
+      // เหตุผลไม่ใช่ความชอบ: `id` **ไม่อยู่ใน grant ของไคลเอนต์** (`20260825140057:137`)
+      // → ฐานเป็นคนออก id · ฝั่งนี้เดาไม่ได้ · จะ optimistic ต้องใช้ id ชั่วคราวแล้วสลับทีหลัง
+      // ซึ่งเปิดคลาสบั๊กทั้งชุด (echo ซ้ำ · อ้าง id เก่าค้าง · สลับไม่ทัน)
+      //
+      // 🎯 **และมันดีกว่าเดิมในทางที่ผู้ใช้เห็น:** ของเดิมการ์ดโผล่แล้วหายถ้าเขียนไม่ผ่าน
+      //    ตอนนี้ **ถ้าเขียนไม่ผ่าน การ์ดไม่เคยโผล่เลย** — ไม่มีผี
+      // ⚠️ ราคา: การ์ดขึ้นช้ากว่าเดิมหนึ่ง round trip · ผู้เรียกทุกตัว `await` อยู่แล้ว จึงไม่มีใครต้องแก้
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) {
+        // ยังไม่มีทริป/ยังไม่ตั้งค่า — คืนรูปเดิมให้ผู้เรียกเดินต่อได้ (โหมดไม่มีฐาน)
+        return { ...place, id: makeCustomPlaceId(), created_at: new Date().toISOString() };
       }
-      return newPlace;
+
+      let created: CustomPlace | null = null;
+      const ok = await writeGuard("เพิ่มสถานที่ใหม่", async () => {
+        const res = await fetch(`/api/engine/trips/${tripId}/custom-places`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(place),
+        });
+        if (res.ok) {
+          created = (await res.json()) as CustomPlace;
+          return { error: null };
+        }
+        // 🔴 ส่ง `code` ต่อให้ `writeGuard` — มันแยก "ไม่มีสิทธิ์" ออกจาก "ลองใหม่ได้" จากตรงนี้
+        //    แปลงทิ้งเมื่อไหร่ ผู้ใช้จะได้ข้อความ "ลองใหม่อีกครั้ง" กับของที่ลองใหม่ไม่ได้ตลอดกาล
+        const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+        return { error: { code: body.code ?? String(res.status), message: body.error } };
+      });
+
+      if (ok && created) {
+        const row = created as CustomPlace;
+        setCustomPlaces((prev) => (prev.some((p) => p.id === row.id) ? prev : [...prev, row]));
+        return row;
+      }
+      // ล้มแล้ว — `writeGuard` บอกผู้ใช้ไปแล้ว · คืนรูปที่ผู้เรียกใช้ต่อได้โดยไม่ทำให้ทั้งหน้าพัง
+      return { ...place, id: makeCustomPlaceId(), created_at: new Date().toISOString() };
     },
     []
   );

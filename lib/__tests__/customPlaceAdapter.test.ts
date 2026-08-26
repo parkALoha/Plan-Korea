@@ -11,10 +11,11 @@ import { toCustomPlace } from "../engine/customPlaceShape";
 const row = (o: Partial<Parameters<typeof toCustomPlace>[0]> = {}) =>
   ({
     id: "p1", city_id: "city-uuid", category: "food", lat: 1, lng: 2,
-    maps_query: "q", description: null, google_place_id: null,
+    maps_query: "q", google_place_id: null,
     legacy_added_by: "ปาร์ค", created_at: "2026-08-01T00:00:00Z",
     catalog_cities: { legacy_slug: "busan" },
     custom_place_names: [{ locale: "th", name: "ร้านเจ๊", priority: 1 }],
+    custom_place_descriptions: [],
     ...o,
   }) as Parameters<typeof toCustomPlace>[0];
 
@@ -91,7 +92,7 @@ describe("แถวที่ไม่ได้ผ่าน join ต้องล�
   it("🔴 `payload.new` จาก realtime (ไม่มีคีย์ join) → โยน พร้อมบอกว่าต้องทำอะไรแทน", () => {
     const raw = {
       id: "p1", city_id: "city-uuid", category: "food", lat: 1, lng: 2,
-      maps_query: "q", description: null, google_place_id: null,
+      maps_query: "q", google_place_id: null,
       legacy_added_by: null, created_at: "2026-08-01T00:00:00Z",
     } as unknown as Parameters<typeof toCustomPlace>[0];
     expect(() => toCustomPlace(raw)).toThrow(/postgres_changes/);

@@ -8,7 +8,6 @@ export type CustomPlaceRow = {
   lat: number;
   lng: number;
   maps_query: string;
-  description: string | null;
   google_place_id: string | null;
   legacy_added_by: string | null;
   created_at: string;
@@ -17,6 +16,8 @@ export type CustomPlaceRow = {
   //    `null` = join แล้วไม่เจอ (เมืองถูกลบ) · `undefined` = **ไม่ได้ join มาเลย** ← คนละเรื่อง
   catalog_cities: { legacy_slug: string | null } | null;
   custom_place_names: { locale: string; name: string; priority: number }[] | null;
+  // `Q6` — คำบรรยายย้ายออกจาก `custom_places` มาเป็นตารางลูกแยกภาษา (26 ส.ค. 2026)
+  custom_place_descriptions: { locale: string; description: string }[] | null;
 };
 
 /**
@@ -37,7 +38,11 @@ export type CustomPlaceRow = {
  * · **ตระกูลเดียวกับ `data: null` vs `data: []` ที่ทีมนี้เดินเข้าไปมาแล้วสามรอบ**
  */
 function assertJoined(row: CustomPlaceRow): void {
-  if (!("custom_place_names" in row) || !("catalog_cities" in row)) {
+  if (
+    !("custom_place_names" in row) ||
+    !("catalog_cities" in row) ||
+    !("custom_place_descriptions" in row)
+  ) {
     throw new Error(
       "toCustomPlace: แถวนี้ไม่ได้ผ่าน join มา — ถ้ามาจาก `postgres_changes` ห้ามแปลง\n" +
         "  Realtime ส่งแถวดิบตารางเดียว ไม่มี `catalog_cities`/`custom_place_names`\n" +
@@ -79,7 +84,9 @@ export function toCustomPlace(row: CustomPlaceRow): CustomPlace {
     lng: row.lng,
     maps_query: row.maps_query,
     google_place_id: row.google_place_id,
-    description: row.description,
+    // `Q6` — ภาษาไทยคือช่องเดียวที่รูปเดิมมี · ไม่มีก็คือไม่มี ไม่ใช่ค่าว่าง
+    description:
+      (row.custom_place_descriptions ?? []).find((d) => d.locale === "th")?.description ?? null,
     created_at: row.created_at,
   };
 }

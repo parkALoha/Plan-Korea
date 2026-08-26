@@ -239,11 +239,52 @@ export function tripsVisibleToMe(db: Db) {
 export function customPlaceRowsOfTrip(db: Db, tripId: string) {
   return engineTable(db, "custom_places")
     .select(
-      "id, city_id, category, lat, lng, maps_query, description, google_place_id," +
+      "id, city_id, category, lat, lng, maps_query, google_place_id," +
         " legacy_added_by, created_at," +
         " catalog_cities(legacy_slug)," +
-        " custom_place_names(locale, name, priority)"
+        " custom_place_names(locale, name, priority)," +
+        " custom_place_descriptions(locale, description)"
     )
     .eq("trip_id", tripId)
     .order("created_at");
+}
+
+/**
+ * สร้างสถานที่ในคลังของทริป — **หนึ่งคำขอ หนึ่งทรานแซกชัน**
+ *
+ * 🔴 หนึ่งสถานที่ = 1 แถวใน `custom_places` + N แถวใน `custom_place_names`
+ * เขียนทีละคำสั่งแล้วล้มกลางคัน = **สถานที่ที่ไม่มีชื่อ ซึ่งไม่พังอะไรเลย มันแค่เป็นการ์ดเปล่า**
+ * · RPC เป็น `security invoker` → **ไม่ได้ให้สิทธิ์ใครเพิ่ม ให้แค่ทรานแซกชัน** (`D38`)
+ */
+export function createCustomPlace(
+  db: Db,
+  input: {
+    tripId: string;
+    citySlug: string;
+    category: string;
+    lat: number;
+    lng: number;
+    mapsQuery: string;
+    nameTh: string;
+    nameEn?: string | null;
+    nameKo?: string | null;
+    description?: string | null;
+    googlePlaceId?: string | null;
+    legacyAddedBy?: string | null;
+  }
+) {
+  return db.rpc("create_custom_place", {
+    p_trip_id: input.tripId,
+    p_city_slug: input.citySlug,
+    p_category: input.category,
+    p_lat: input.lat,
+    p_lng: input.lng,
+    p_maps_query: input.mapsQuery,
+    p_name_th: input.nameTh,
+    p_name_en: input.nameEn ?? null,
+    p_name_ko: input.nameKo ?? null,
+    p_description: input.description ?? null,
+    p_google_place_id: input.googlePlaceId ?? null,
+    p_legacy_added_by: input.legacyAddedBy ?? null,
+  });
 }
