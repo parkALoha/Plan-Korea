@@ -6,7 +6,7 @@ import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStat
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
-import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -70,13 +70,15 @@ function useBookingsStore(tripId: string | null) {
 
       const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
       if (cancelled || !daysRes.ok) return void setLoaded(true);
-      // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — `layoutImportGraph` จับได้ว่า
-      //    hook นี้อยู่ใน `TripDataProvider` ซึ่งอยู่ใน root layout
-      //    → static import จะลาก `data/itinerary.ts` (2,290 บรรทัด) **เข้าบันเดิลของทุกหน้า
-      //    รวม `/login` และ 404 ซึ่งไม่ต้องล็อกอินด้วยซ้ำ**
-      //    ⚠️ ด่านจับให้ ไม่ใช่ผมเห็นเอง · hook อื่นที่ import ตรง ๆ ได้เพราะไม่ได้อยู่ใน layout
+      // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — เดิม `TripDataProvider` (ที่ห่อ hook นี้) อยู่ใน
+      //    root layout จริง ทำให้ static import ลาก `data/itinerary.ts` (2,290 บรรทัด) เข้าบันเดิลทุกหน้า
+      //    รวม `/login`/404 ที่ไม่ต้องล็อกอิน (`layoutImportGraph` เป็นคนจับ) ⚠️ **แก้ตาม `E5-AC1`
+      //    (27 ส.ค. 2026): `TripDataProvider` ย้ายออกจาก root layout แล้ว** เหตุผลเดิมจึงหมดอายุแล้ว
+      //    แต่ dynamic import ยังไม่มีเหตุผลให้เปลี่ยนกลับเป็น static (ไม่มีประโยชน์เพิ่ม แค่ไม่มีโทษ) จึง
+      //    ปล่อยไว้แบบเดิม — ไม่ใช่ว่าเหตุผลนี้ยังใช้ได้ ไม่ใช่ว่ายังจำเป็นเหมือนก่อน
       const { ITINERARY } = await import("@/data/itinerary");
       const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
+      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
       dayToUuid.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );

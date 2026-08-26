@@ -1,6 +1,7 @@
 "use client";
 
 import { showToast } from "@/lib/toast";
+import type { DayBridge } from "@/lib/engine/dayBridge";
 
 /**
  * "สะพานวันไม่ครบทำให้แถวหาย" ต้องไม่เงียบ และห้ามทับแคชด้วยผลที่หดแล้ว — `E4-AC1` (P1/P7, 27 ส.ค. 2026)
@@ -21,13 +22,36 @@ import { showToast } from "@/lib/toast";
  * ของฐานตรง ๆ แทนสะพาน `"d0"` ที่มีความหมายเฉพาะทริปเกาหลีใบนี้) เป็นการตัดสินใจที่ใหญ่กว่าที่ P1 ยังไม่ได้
  * ชี้ทาง — ตัวนี้แค่ทำให้ปัญหา **มองเห็นได้และไม่ทำลายแคชเพิ่ม** ระหว่างรอ ไม่ได้แก้ที่ต้นตอ
  */
+const WARNING_MESSAGE = "บางวันของทริปนี้ยังไม่มีในฐานข้อมูล — ข้อมูลที่เห็นตอนนี้อาจไม่ครบ";
+
+/** ข้อความเดียวกันทุกจุดเรียก — `showToast` dedupe ด้วย (kind, message) เดียวกันให้เอง จึงไม่ซ้อนกัน
+ *  เป็นตั้งแม้หลาย hook จะเจอปัญหาเดียวกันพร้อมกันในหน้าเดียว */
+function warn() {
+  showToast("error", WARNING_MESSAGE);
+}
+
 export function reportDayBridgeDropIfAny(rawCount: number, mappedCount: number): boolean {
   if (rawCount === 0 || mappedCount >= rawCount) return false;
-  // ข้อความเดียวกันทุกจุดเรียก — `showToast` dedupe ด้วย (kind, message) เดียวกันให้เอง จึงไม่ซ้อนกัน
-  // เป็นตั้งแม้ 4 hook จะเจอปัญหาเดียวกันพร้อมกันในหน้าเดียว
-  showToast(
-    "error",
-    "บางวันของทริปนี้ยังไม่มีในฐานข้อมูล — ข้อมูลที่เห็นตอนนี้อาจไม่ครบ"
-  );
+  warn();
   return true; // ผู้เรียกควรข้าม writeCache รอบนี้ — อย่าทับแคชที่อาจถูกต้องอยู่แล้วด้วยผลที่หด
+}
+
+/**
+ * 🔴 **แก้ 27 ส.ค. 2026 — P1/P7 ชี้ว่า `dayBridge.ts` มีสัญญาณนี้ให้อยู่แล้วและไม่มีใครอ่านเลย**
+ * (`grep -rn "matched|unmatchedDb|unmatchedLegacy" hooks/ app/ components/` = 0 ผลลัพธ์ก่อนคอมมิตนี้)
+ *
+ * ตรวจที่ตัวสะพานเองตอนสร้าง (ก่อนจะไปถึงขั้น mapRows/toMap) — ดักได้**เร็วกว่า**
+ * `reportDayBridgeDropIfAny` (ซึ่งต้องรอให้มีแถวจริงหดไปก่อนถึงจะรู้): เตือนได้ตั้งแต่เปิดทริปใหม่ครั้งแรก
+ * ก่อนมีใครเพิ่มจุดแวะเลยด้วยซ้ำ — **verified จริงกับทริปที่สองของ P2 ("P2 live-verify test trip",
+ * `fe767e84-…`): `trip_days` ในฐาน = 0 แถว → `bridge.matched === 0` และ `unmatchedLegacy.length === 11`
+ * (เท่ากับจำนวนวันทั้งหมดในไฟล์) ตรงกับเงื่อนไขที่ `dayBridgeWarning()` เขียนไว้เองว่า "ยังไม่มีวันของทริปนี้
+ * ในฐานเลยสักวัน" เป๊ะ**
+ *
+ * ⚠️ **ไม่ได้แทนที่ `reportDayBridgeDropIfAny`** — ยังต้องมีทั้งคู่: ตัวนี้เตือน**ก่อน**มีข้อมูลให้หาย
+ * (proactive) ส่วนตัวนั้นกันแคช**ตอน**ข้อมูลหายจริง (reactive, จำเป็นแม้สะพานจะ*บางส่วน*ใช้ได้ — เช่น
+ * `matched > 0` แต่ยังมีบางแถวหลุด `unmatchedDb` ซึ่งเงื่อนไขนี้จะไม่ทริกเกอร์)
+ */
+export function reportDayBridgeWarningIfAny(bridge: DayBridge, totalLegacyDays: number): void {
+  const looksBroken = (totalLegacyDays > 0 && bridge.matched === 0) || bridge.unmatchedLegacy.length > 0;
+  if (looksBroken) warn();
 }

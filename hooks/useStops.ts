@@ -6,7 +6,7 @@ import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
-import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -99,6 +99,7 @@ export function useStops(tripId: string | null, planId: string | null) {
       //    ให้ `data/itinerary.ts` ติดไปกับบันเดิลที่ไม่ต้องใช้ (บทเรียนจาก `useBookings`)
       const { ITINERARY } = await import("@/data/itinerary");
       const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
+      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
       dayToUuid.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );

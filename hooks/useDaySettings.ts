@@ -7,7 +7,7 @@ import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
-import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 /** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
 export function useDaySettings(tripId: string | null, planId: string | null) {
@@ -60,6 +60,7 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[daySettings] ${warn}`);
+      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
       dayIdRef.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
       );

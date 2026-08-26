@@ -7,7 +7,7 @@ import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
-import { reportDayBridgeDropIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
 type Overrides = Record<string, City>;
 
@@ -63,6 +63,7 @@ export function useOvernightOverrides(tripId: string | null) {
       //    ทั้งที่จริงคือ `E7` ยังไม่ได้ย้ายวันมาสักวัน (`P-21` ในรูปที่จะกัดตอน cutover)
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[overnight] ${warn}`);
+      reportDayBridgeWarningIfAny(bridge, ITINERARY.length);
 
       dayIdRef.current = new Map(
         ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter(
