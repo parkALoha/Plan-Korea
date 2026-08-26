@@ -856,12 +856,17 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       ))
         fns.add(m[1].toLowerCase());
     }
+    // 🔴 write_is_blocked — *ตัวตัดสิน* ที่ deny_write_when_read_only เรียกต่อ · เป็น non-trigger helper
+    //    (ถูกเรียกจาก *ใน body* ไม่ใช่ผูกกับ trigger) → scan ทั้ง static/dynamic มองไม่เห็นตามนิยาม · ต้องระบุชื่อ (P1)
+    //    สองตัวนี้ = ทั้งหมดของโหมดอ่านอย่างเดียว · write_is_blocked ถูก create or replace ไปแล้ว 2 ครั้ง
+    fns.add("app.write_is_blocked");
     const names = [...fns].sort();
     expect(names, "trigger function เพิ่ม/หาย — ตัวใหม่ต้องประกาศว่า stamp หรือไม่").toEqual([
       "app.assert_day_has_no_stops", "app.assert_place_not_in_use", "app.assert_trip_has_owner",
       "app.assert_trip_has_plan", "app.bootstrap_trip_owner", "app.deny_write_when_read_only",
       "app.freeze_created_by", "app.handle_new_user", "app.preserve_authorship", "app.stamp_added_by",
       "app.stamp_checked_by", "app.stamp_hidden_by", "app.touch_updated_at", "app.touch_updated_at_only",
+      "app.write_is_blocked",
     ]);
     const eff = effectiveFunctions();
     const bodies = names.map((n) => [n, eff.get(n) ?? "MISSING"] as const);
@@ -869,7 +874,7 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     expect(
       sha(JSON.stringify(bodies)),
       "body ของ trigger function สักตัวเปลี่ยน — `create or replace` เปลี่ยน body ได้โดย def ของ trigger ไม่ขยับ (②③ ซ่อนตรงนี้)",
-    ).toBe("7d786c427ef3d209440a8d882b9890a72d777b669e8c400c817c27fff52c78a8");
+    ).toBe("02165c6e4fc6ec1301542d6e5578afc9c3f9cecb68f74cf614cae37fbd5cb81c");
   });
 
   it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
