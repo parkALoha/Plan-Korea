@@ -200,6 +200,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let place2Id = "";
   const placeSlug3 = `exp3-${stamp}`;
   let place3Id = "";
+  const placeSlug4 = `exp4-${stamp}`;
+  let place4Id = "";
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -277,6 +279,10 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const pl3 = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug3, category: "food", lat: 37.7, lng: 127.2 }).select("id").single();
     if (pl3.error) throw new Error(`seed place3: ${pl3.error.message}`);
     place3Id = pl3.data.id as string;
+    // place ที่ 4 — สำหรับยืนยันว่า fix 0027896 ไม่แตะ tombstone (แยกไม่ให้ชน place2/xfail)
+    const pl4 = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug4, category: "food", lat: 37.8, lng: 127.3 }).select("id").single();
+    if (pl4.error) throw new Error(`seed place4: ${pl4.error.message}`);
+    place4Id = pl4.data.id as string;
   }
 
   beforeAll(async () => {
@@ -506,6 +512,24 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       return (data ?? []).filter((r) => (r as { deleted_at: string | null }).deleted_at == null).map((r) => (r as { note: string | null }).note);
     };
     expect(await active(), "ลบแล้วเขียนใหม่ ต้องเห็นโน้ตใหม่").toEqual(["d2"]);
+  });
+
+  // ✅ ยืนยัน fix 0027896 (P1): 403 เดิม *ซ่อน* ว่ามีการเขียนทับ tombstone จริง 2 รอบ · fix ใส่ .is(deleted_at,null) ทั้งสองจุด
+  //    อาการผู้ใช้ (403) เหมือนเดิม · สิ่งที่เปลี่ยนคือ **ฐานไม่ถูกแตะในเส้นทาง tombstone** — ครึ่งที่ fake db พิสูจน์ไม่ได้
+  //    ไม่ห่อ it.fails: นี่คือพฤติกรรมที่แก้แล้ว (ต้องเขียว) · ถอย fix = tombstone ได้ "d2" = แดง
+  it("place-notes tombstone ไม่ถูกเขียนในเส้นทาง delete→rewrite (regression guard ของ 0027896)", async () => {
+    const put = (note: string) => callAs(aCookies, tripA, placeNotesPUT, "PUT", { planId: aPlan, placeId: placeSlug4, note });
+    expect((await put("t1")).status, "setup: เขียนโน้ตแรกควร 200").toBe(200);
+    jar.cookies = aCookies;
+    await placeNotesDELETE(
+      new NextRequest(`http://localhost:3300/api/engine/trips/${tripA}/x?planId=${aPlan}&placeId=${placeSlug4}`, { method: "DELETE" }),
+      { params: Promise.resolve({ tripId: tripA }) },
+    );
+    await put("t2"); // เขียนใหม่หลังลบ — วันนี้ได้ 403 · แต่ **ต้องไม่แตะ tombstone**
+    const { data, error } = await admin.from("place_notes").select("note,deleted_at").eq("trip_id", tripA).eq("catalog_place_id", place4Id);
+    if (error) throw new Error(`read tombstone: ${error.message}`);
+    const tomb = (data ?? []).filter((r) => (r as { deleted_at: string | null }).deleted_at != null).map((r) => (r as { note: string | null }).note);
+    expect(tomb, "🔴 tombstone ถูกเขียนเป็น 't2' = fix 0027896 ถอย (403 ซ่อนการเขียนไว้ข้างหลัง)").toEqual(["t1"]);
   });
 
 });
