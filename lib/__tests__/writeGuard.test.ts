@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * ⚠️ **เคสในไฟล์นี้ต้องมีทั้ง 2 ทิศเสมอ** — ถ้ามีแต่ทิศ "ต้องล้ม" ตัวที่ล้มทุกกรณีจะเขียวครบทั้งแผง
  * แล้วเว็บจะบอกว่าเซฟไม่สำเร็จทุกครั้งที่กด ซึ่งผู้ใช้เจอหนักกว่าเงียบ
  */
-vi.mock("../toast", () => ({ showToast: vi.fn() }));
+vi.mock("../toast", async (importOriginal) => ({ ...(await importOriginal<typeof import("../toast")>()), showToast: vi.fn() }));
 
 const { writeGuard } = await import("../writeGuard");
 const { showToast } = await import("../toast");

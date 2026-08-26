@@ -57,7 +57,7 @@ function balancedCall(src: string, openParen: number): string {
 export function offendingMocks(rawSrc: string): string[] {
   const src = stripTsComments(rawSrc);
   const bad: string[] = [];
-  const re = /vi\.(?:mock|doMock)\(\s*(["'`])(@\/[^"'`]+)\1\s*,/g;
+  const re = /vi\.(?:mock|doMock)\(\s*(["'`])((?:@\/|\.\.?\/)[^"'`]+)\1\s*,/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     const openParen = src.indexOf("(", m.index);
@@ -107,6 +107,9 @@ describe("S6 — vi.mock ของโมดูลเราเอง ต้อง
       "@/lib/do-mock",
       "@/lib/fn-form",
       "@/lib/backtick",
+      // 🎯 พาธสัมพัทธ์ที่เพิ่งขยายให้ครอบ (P1 · P4 · 27 ส.ค.) — ในไฟล์นี้เป็นสตริงตัวอย่าง ตัวจับเห็นถูกแล้ว
+      "../rel",
+      "./same-dir",
       // 🎯 อีก 2 ตัวนี้มาจากเคสที่ทดสอบว่า *"ที่อยู่ในคอมเมนต์ต้องไม่ถูกจับ"*
       //    ในไฟล์นี้มันเป็น **สตริงในโค้ด** (อาร์กิวเมนต์ที่ส่งให้ `offendingMocks`) ไม่ใช่คอมเมนต์จริง
       //    → ตัวจับเห็นมันถูกต้องแล้ว · `stripTsComments` ตัดคอมเมนต์ **ไม่ตัดเนื้อในสตริง** โดยตั้งใจ
@@ -151,6 +154,18 @@ describe("S6 — vi.mock ของโมดูลเราเอง ต้อง
 
     it("ด้านลบ: โมดูลภายนอกอยู่นอกขอบเขตโดยตั้งใจ", () => {
       expect(offendingMocks(`vi.mock("next/headers", () => ({ cookies }));`)).toEqual([]);
+    });
+
+    it("🔴 ด้านบวก: พาธสัมพัทธ์ที่ชี้เข้าโมดูลเรา ต้องถูกจับ (S6 ครอบ `../` `./` ไม่ใช่แค่ `@/`)", () => {
+      // `../toast` = โมดูลของเราเอง ตามเจตนา S6 ทุกตัวอักษร · regex เดิมจับแค่ `@/` → พาธสัมพัทธ์หลุด (P1 เจอ · P4 แก้)
+      expect(offendingMocks(`vi.mock("../rel", () => ({ a }));`)).toEqual(["../rel"]);
+      expect(offendingMocks(`vi.mock("./same-dir", () => ({ a }));`)).toEqual(["./same-dir"]);
+    });
+
+    it("ด้านลบ: พาธสัมพัทธ์ที่ spread ของเดิม ต้องไม่ถูกจับ (กันขยายจนรัดกินของถูก)", () => {
+      expect(
+        offendingMocks(`vi.mock("../rel-ok", async (importOriginal) => ({ ...(await importOriginal()), a }));`),
+      ).toEqual([]);
     });
 
     it("🔴 ด้านลบ: ที่พูดถึงในคอมเมนต์ต้องไม่ถูกจับ — ไม่งั้นเรากดดันให้ลบคำอธิบายทิ้ง", () => {

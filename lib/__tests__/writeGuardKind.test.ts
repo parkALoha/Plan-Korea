@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * **ถ้าไม่จัดเป็น `denied` ด้วยตัวมันเอง มันจะได้ข้อความ "ลองใหม่" เหมือนเดิม**
  */
 const toasts: { kind: string; msg: string }[] = [];
-vi.mock("../toast", () => ({
+vi.mock("../toast", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../toast")>()),
   showToast: (kind: string, msg: string) => void toasts.push({ kind, msg }),
 }));
 
