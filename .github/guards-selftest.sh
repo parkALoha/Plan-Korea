@@ -16,11 +16,40 @@ p=base64.urlsafe_b64encode(json.dumps({'ref':sys.argv[1],'role':'service_role'})
 print('eyJhbGciOiJIUzI1NiJ9.'+p+'.sig')" "$1"; }
 rc=0
 
+# 🔴 **ห้าม `git -C ""` เด็ดขาด — พาธว่างแปลว่า git ไปทำงานที่ cwd จริง**
+#    เกิดจริง 27 ส.ค. 2026: เคสหนึ่งเรียก `$(mkrepo)` **ก่อน** ที่ `mkrepo` จะถูกนิยาม
+#    (bash อ่านบนลงล่าง) → `$d` ว่าง → `git -C "" add -f -- supabase/.temp/cli-latest`
+#    **ไป stage ไฟล์นั้นเข้าทรีจริงของทีม** · และเคสนั้น "ผ่าน" เพราะ guards.sh ล้มกับพาธว่าง
+#    ไม่ใช่เพราะจับของผิดได้ → **ผลเคสถูก เหตุผลผิด และไม่มีอะไรในผลลัพธ์บอกเลย**
+# 🎯 ตัวที่เปิดโปงคือ stderr `No such file or directory` ที่โผล่ข้างเคสสีเขียว
+#    → ห่อ `git` ให้ปฏิเสธพาธว่าง จะได้ไม่ต้องพึ่งสายตาใครอีก
+git() {
+  if [ "${1-}" = "-C" ] && [ -z "${2-}" ]; then
+    echo "🔴 self-test: git -C ด้วยพาธว่าง — fixture ไม่ถูกสร้าง เคสนี้ไม่ได้ทดสอบอะไรเลย" >&2
+    rc=1
+    return 1
+  fi
+  command git "$@"
+}
+
 mk() {  # สร้างทรีจำลองที่ "สะอาด" แล้วคืน path
   d="$(mktemp -d)"
   mkdir -p "$d/docs/engine/schema" "$d/.github"
   echo "-- ร่าง DDL" > "$d/docs/engine/schema/ok.sql"
   echo "name: ci" > "$d/.github/ci.yml"
+  echo "$d"
+}
+
+# 🔴 ต้องนิยาม *ก่อน* เคสแรกที่ใช้มัน — bash อ่านบนลงล่าง
+#    เคย: `mkrepo` อยู่บรรทัด 584 แต่เคส ⑯b ใช้ที่ 159 → `$(mkrepo)` คืนค่าว่าง
+#    → `check` รันบนพาธว่าง แล้ว **ผ่านเพราะ guards.sh ล้มกับพาธว่าง ไม่ใช่เพราะจับของผิดได้**
+#    🎯 จับได้เพราะ stderr พ่น `No such file or directory` ไม่ใช่เพราะผลเคสผิด (ผลมัน 'ถูก')
+
+mkrepo() {  # git repo จริงที่มี lib/ และไฟล์ .ts มากพอให้ด่านยอมทำงาน
+  d="$(mktemp -d)"; mkdir -p "$d/lib" "$d/docs/engine/schema" "$d/.github"
+  echo "-- ร่าง" > "$d/docs/engine/schema/ok.sql"
+  i=0; while [ $i -lt 110 ]; do echo "export const v$i = 1;" > "$d/lib/f$i.ts"; i=$((i+1)); done
+  git -C "$d" init -q . && git -C "$d" add -A >/dev/null 2>&1
   echo "$d"
 }
 
@@ -148,6 +177,15 @@ d="$(mk)"; mkdir -p "$d/supabase/.temp"; echo "pmvxwcimjebogjfimzqy" > "$d/supab
 #    ⚠️ แดงตัวนี้ **บล็อก push ของทั้ง 8 คน** (`D72` ข้อ 2) และ **แดงที่ผิดบ่อย ๆ สอนให้คนเลิกอ่าน**
 d="$(mk)"; mkdir -p "$d/supabase/.temp"; echo "v2.115.0" > "$d/supabase/.temp/cli-latest"
 check ".temp ที่มีแค่ cli-latest ต้อง *ไม่* แดง (แค่มีคนรัน supabase จากตรงนั้น)" pass "$d"
+
+# ⑯b 🔴 **`.temp` ที่ถูก git *ติดตาม* แล้ว = credential กำลังจะเข้าประวัติถาวร**
+#    ใช้ `cli-latest` ล้วน ๆ โดยตั้งใจ — ไฟล์นี้ **ไม่ทำให้ด่าน link แดง** (เคส ⑯)
+#    ถ้าเคสนี้แดง แปลว่าแดงเพราะ *ถูก track* จริง ๆ ไม่ใช่แดงตกทอดจากด่านอื่น
+#    ⚠️ เจอ 27 ส.ค. 2026: `.gitignore` ที่รากไม่ครอบ `supabase/.temp` เลย
+#       ครอบแค่ `supabase-platform/supabase/.temp` (ไฟล์ที่ `supabase init` สร้างใน subtree)
+d="$(mkrepo)"; mkdir -p "$d/supabase/.temp"; echo "v2.115.0" > "$d/supabase/.temp/cli-latest"
+git -C "$d" add -f -- supabase/.temp/cli-latest >/dev/null 2>&1
+check ".temp ที่ถูก git ติดตามต้องแดง (ทางที่ credential เข้าประวัติ)" fail "$d"
 
 # ⑯a แต่ `pooler-url` อย่างเดียวก็ต้องแดง — มันมี connection string และแปลว่า link เกิดจริง
 d="$(mk)"; mkdir -p "$d/supabase/.temp"
@@ -572,13 +610,6 @@ check "anchor ไม่นับบรรทัดเยื้อง 4+ ช่�
 #    🎯 บทเรียน: **เคสที่ทดสอบ *ด่าน* ไม่ได้ทดสอบ *สายที่ต่อด่านเข้ากับ guards.sh*
 #       "ด่านไม่ได้รัน" กับ "ด่านรันแล้วสะอาด" ต่างกันแค่บรรทัด ✅ ที่หายไป — และไม่มีใครนับบรรทัด**
 
-mkrepo() {  # git repo จริงที่มี lib/ และไฟล์ .ts มากพอให้ด่านยอมทำงาน
-  d="$(mktemp -d)"; mkdir -p "$d/lib" "$d/docs/engine/schema" "$d/.github"
-  echo "-- ร่าง" > "$d/docs/engine/schema/ok.sql"
-  i=0; while [ $i -lt 110 ]; do echo "export const v$i = 1;" > "$d/lib/f$i.ts"; i=$((i+1)); done
-  git -C "$d" init -q . && git -C "$d" add -A >/dev/null 2>&1
-  echo "$d"
-}
 
 pyc() {  # pyc <ชื่อ> <pass|fail> <สคริปต์> <dir>
   name="$1"; want="$2"; scr="$3"; dir="$4"
