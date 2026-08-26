@@ -27,21 +27,57 @@ import type { DayBridge } from "@/lib/engine/dayBridge";
  * module state + `"use client"` จึงอยู่คนละไฟล์ ไม่ทำให้ `dayBridge.ts` เสียคุณสมบัตินั้น
  */
 
-let incomplete = false;
+/**
+ * 🔴 **สองธง ไม่ใช่ธงเดียว — และเหตุผลคือบั๊กที่ธงเดียวสร้างขึ้นเอง** (P1 · 27 ส.ค. 2026)
+ *
+ * ของเดิมเป็น `boolean` ใบเดียวที่ **มีคนเขียนสองคน**:
+ * · `reportDayBridgeWarningIfAny()` — **ตั้งและล้าง** (มันเห็นทั้งสะพาน จึงล้างได้)
+ * · `reportDayBridgeDropIfAny()`    — **ตั้งอย่างเดียว** (เห็นมุมเดียว จึงล้างไม่ได้ · เขียนไว้เองข้างล่าง)
+ *
+ * ⚠️ **แต่ "ตั้งอย่างเดียว" กันตัวเองไม่ให้ล้างได้ · มันกัน *คนอื่น* ไม่ให้ล้างไม่ได้**
+ * มี **4 hook** ที่เรียกทั้งสองฟังก์ชันบนธงใบเดียวกัน:
+ *   1. `useStops` แถวหล่น 2 จาก 10 → `reportDayBridgeDropIfAny(10, 8)` → ธง = `true` ✅ ถูก
+ *   2. `useBookings` สร้างสะพานใบเดียวกันแล้วพบว่าปกติ → `reportDayBridgeWarningIfAny(…)` → **ธง = `false`**
+ *   3. **แถบหาย ทั้งที่จุดแวะ 2 จุดยังหายอยู่**
+ *
+ * 🎯 **ผลคือแถบขึ้นอยู่กับ *ลำดับที่ hook ทำงานเสร็จ* ไม่ใช่ขึ้นกับสถานะ** — และ 4 hook นั้นเป็น
+ * effect คนละตัวที่มี `await` คนละชุด **ลำดับจึงไม่คงที่ และไม่มีใครควบคุมมันได้**
+ * · นี่คือเหตุผลว่าทำไมมันไม่ใช่เรื่องของการ "เรียกให้ถูกลำดับ" — **ไม่มีลำดับที่ถูก**
+ *
+ * ✅ แยกเป็นสองธง แล้วให้แถบ = `bridgeBroken || rowsDropped` → **ไม่มีใครล้างของใคร**
+ * · `bridgeBroken` ตั้ง/ล้างได้ เพราะคนตั้งเห็นทั้งสะพานทุกครั้งที่เรียก
+ * · `rowsDropped` **ล้างเองไม่ได้ตลอดอายุหน้า** — เป็นพฤติกรรมเดิม และตั้งใจ: คนตั้งเห็นแค่มุมเดียว
+ *   จึงไม่มีใครในระบบที่รู้ว่า "หายไปแล้วกลับมาครบ" · โหลดหน้าใหม่คือสิ่งที่ล้างมัน
+ */
+let bridgeBroken = false;
+let rowsDropped = false;
 const listeners = new Set<() => void>();
 
-function setDayBridgeIncomplete(next: boolean): void {
-  if (next === incomplete) return;
-  incomplete = next;
+const isIncomplete = () => bridgeBroken || rowsDropped;
+
+function publish(before: boolean): void {
+  if (isIncomplete() === before) return;
   for (const listener of listeners) listener();
 }
 
-function subscribe(onChange: () => void) {
+/**
+ * รูปมาตรฐานของ external store — **เปิดออกมาเพราะมันคือหน้าตาของสโตร์ ไม่ใช่เพราะเทสต์ต้องใช้**
+ * ที่นี่ไม่มี `@testing-library/react` (ตรวจแล้ว) → ถ้าอ่านสถานะได้เฉพาะผ่าน hook
+ * **จะไม่มีทางทดสอบได้เลยว่าสโตร์แจ้งผู้ฟังตอนไหน** ซึ่งเป็นครึ่งหนึ่งของความถูกต้องของมัน
+ * (สโตร์ที่เปลี่ยนค่าแล้วไม่แจ้ง = หน้าจอค้างที่ค่าเก่า และไม่มีอะไรฟ้อง)
+ */
+export function subscribeDayBridgeIncomplete(onChange: () => void): () => void {
   listeners.add(onChange);
-  return () => listeners.delete(onChange);
+  return () => void listeners.delete(onChange);
 }
 
-const getSnapshot = () => incomplete;
+/** อ่านค่ารวมของสองธง — `bridgeBroken || rowsDropped` */
+export function readDayBridgeIncomplete(): boolean {
+  return isIncomplete();
+}
+
+const subscribe = subscribeDayBridgeIncomplete;
+const getSnapshot = readDayBridgeIncomplete;
 /** SSR ถือว่าสะพานปกติเสมอ — ค่าจริงมาหลัง hydrate เหมือน `useOnlineStatus` */
 const getServerSnapshot = () => false;
 
@@ -71,7 +107,10 @@ export function useDayBridgeIncomplete(): boolean {
  */
 export function reportDayBridgeWarningIfAny(bridge: DayBridge, dbDaysCount: number): void {
   const looksBroken = dbDaysCount === 0 || (bridge.matched > 0 && bridge.unmatchedLegacy.length > 0);
-  setDayBridgeIncomplete(looksBroken);
+  const before = isIncomplete();
+  bridgeBroken = looksBroken;
+  // 🔴 ล้างได้เฉพาะธงของตัวเอง — `rowsDropped` ไม่ใช่ของฟังก์ชันนี้ และการล้างมันคือบั๊กที่เพิ่งแก้
+  publish(before);
 }
 
 /**
@@ -84,6 +123,23 @@ export function reportDayBridgeWarningIfAny(bridge: DayBridge, dbDaysCount: numb
  */
 export function reportDayBridgeDropIfAny(rawCount: number, mappedCount: number): boolean {
   const dropped = rawCount > 0 && mappedCount < rawCount;
-  if (dropped) setDayBridgeIncomplete(true);
+  if (dropped) {
+    const before = isIncomplete();
+    rowsDropped = true;
+    publish(before);
+  }
   return dropped;
+}
+
+/**
+ * ล้างทั้งสองธง — **สำหรับชุดทดสอบเท่านั้น**
+ *
+ * 🔴 `rowsDropped` ตั้งใจให้ล้างไม่ได้ตอนใช้งานจริง → ถ้าเคสหนึ่งตั้งมันไว้ **เคสถัดไปจะเริ่มด้วยธงที่ตั้งแล้ว**
+ * และจะเขียวด้วยเหตุผลที่ไม่เกี่ยวกับสิ่งที่มันตรวจ (บทเรียนเดียวกับ `forgetAllSignedFiles()`)
+ */
+export function resetDayBridgeIncompleteForTest(): void {
+  const before = isIncomplete();
+  bridgeBroken = false;
+  rowsDropped = false;
+  publish(before);
 }
