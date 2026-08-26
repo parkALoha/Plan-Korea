@@ -37,7 +37,7 @@ export { chooseSoleTrip, soleTripMessage, type SoleTrip } from "./tripChoice";
  * 🔴 ถ้าเขียน `.eq("owner", userId)` เอง เราจะได้แหล่งความจริงที่สองเรื่องสิทธิ์
  * ซึ่งต้องคอยให้ตรงกับ policy ตลอดไป (`P-15`) · **`trips_select` ตอบคำถามนี้อยู่แล้ว**
  */
-export async function tripsForUser(db: Db): Promise<{ id: string; name: string | null }[]> {
+export async function tripsForUser(db: Db): Promise<{ id: string; title: string }[]> {
   // 🔴 ชื่อตารางอยู่ใน `db.ts` ไฟล์เดียวตามกติกาของ `D81` ⑦.๕ — ที่นี่มีแต่ *ตรรกะการเลือก*
   //    ด่าน `dynamic-from` ของ P6 ยอมให้พิมพ์ `.from("trips")` ตรงนี้ได้ (เป็นสตริง)
   //    **แต่ยอมไม่ได้แปลว่าถูก** — แยกไว้เพราะวันที่ `trips` ต้องพก predicate มันจะมีที่ให้ใส่ที่เดียว

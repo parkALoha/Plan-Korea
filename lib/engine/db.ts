@@ -258,7 +258,15 @@ export function systemMode(db: Db) {
  * ⚠️ **`order` มีไว้ให้ผลคงที่ ไม่ได้มีไว้ให้ใครหยิบตัวแรก** — ดู `trip.ts` ว่าทำไมการหยิบตัวแรกถึงผิด
  */
 export function tripsVisibleToMe(db: Db) {
-  return engineTable(db, "trips").select("id, name").order("created_at");
+  // 🔴 **`title` ไม่ใช่ `name`** — แก้ 27 ส.ค. 2026 (P4 เจอตอนสร้าง harness ยิง route จริง)
+  //    คอลัมน์ชื่อ `title` มาตั้งแต่ `…043822_identity.sql:122` และ `create_trip` ก็ insert `title`
+  //    ผมเขียน `name` ไว้ตั้งแต่แรก → **`GET /api/engine/trips` คืน `502` ให้ทุกผู้ใช้ ทุกครั้ง**
+  //
+  // 🎯 **ไม่มีเทสต์ไหนจับได้เลย และเหตุผลคือรูปของชุดทดสอบ ไม่ใช่ความประมาท**
+  //    `rlsMatrix` ทดสอบสิทธิ์ที่ **ชั้นตาราง** — มันยิง `.from("trips")` เองด้วยชื่อคอลัมน์ของมันเอง
+  //    **ไม่เคยเรียก `tripsForUser()`** · helper กับเทสต์จึงเห็นสคีมาคนละใบโดยไม่มีอะไรเทียบให้
+  //    → นี่คือเหตุผลที่ `E3-AC9` ② ต้องยิง *route จริง* ไม่ใช่ทดสอบ db helper แยก
+  return engineTable(db, "trips").select("id, title").order("created_at");
 }
 
 /**
