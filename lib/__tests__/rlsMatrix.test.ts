@@ -469,6 +469,15 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
    *
    * 📌 ไม่ throw โดยตั้งใจ — คืนข้อความให้ผู้เรียกตัดสินใจ · `afterAll` ที่ล้มจะกลบผลของเคสที่เพิ่งรัน
    */
+  /** 1 แถว = 1 ประตูที่เปิดอยู่ — **ตัวเดียวของทั้งไฟล์** (`E0` ข้อ 5 · สองบล็อกใช้ร่วมกัน) */
+  type Door = { table_name: string; door: string; grantee: string; detail: string };
+
+  const exposure = async (tables: string[]): Promise<Door[]> => {
+    const { data, error } = await admin.rpc("table_exposure", { p_tables: tables });
+    if (error) throw new Error(`เรียก table_exposure ไม่ได้: ${error.message}`);
+    return data as Door[];
+  };
+
   async function purgeCountry(code: string): Promise<string | null> {
     const cities = (await admin.from("catalog_cities").select("id").eq("country_id", code)).data ?? [];
     const cityIds = cities.map((c) => c.id as string);
@@ -4087,6 +4096,119 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 P-63 — column grant ต้องไม่เปลี่ยนเงียบ ๆ (`revoke` แล้ว re-grant ตกหล่น)", () => {
+    /**
+     * 🔴 **คลาสบั๊กที่กัด P1 สองครั้งใน 12 ชั่วโมง และครั้งที่สองอยู่ในไฟล์ที่อ้างถึงครั้งแรก**
+     *
+     * `grant` **สะสม** ข้ามไฟล์ · `revoke` **ล้างทั้งหมด** → ใครที่ `revoke` แล้ว re-grant
+     * ต้องประกอบลิสต์คอลัมน์เดิมขึ้นมาใหม่จาก **ทุกไฟล์ที่เคย grant ตารางนั้น**
+     * · ครั้งล่าสุด: ประวัติสิทธิ์ของ `trip_days` กระจายอยู่ **4 ไฟล์ · P1 อ่านใบเดียว**
+     *   → re-grant เหลือ 2 คอลัมน์ → **`authenticated` เพิ่มวันไม่ได้เลย · แดง 12 เคส**
+     * · 🔴 **และ `do $verify$` ในไฟล์เดียวกันตรวจว่า "เหลือ 2 คอลัมน์" แล้ว *ผ่าน*** เพราะเลข 2
+     *   มาจากลิสต์ผิดใบเดียวกัน — **ตัวตรวจที่ได้ค่าคาดหวังจากแหล่งเดียวกับของที่ถูกตรวจ**
+     *
+     * ## ทำไม pin ตรงนี้ ทั้งที่เราปฏิเสธ pin ของ *คอลัมน์ตาราง* ไปเมื่อคืน
+     * เกณฑ์คือ **"การเปลี่ยนค่านี้ เป็นงานปกติ หรือเป็นการตัดสินใจ"**
+     * · คอลัมน์ของตาราง = โตทุกครั้งที่มีฟีเจอร์ → pin จะแดงจนกลายเป็นพิธีกรรม
+     * · **column grant = การตัดสินใจว่าใครเขียนอะไรได้ ทุกครั้ง ไม่มีข้อยกเว้น**
+     *
+     * 🎯 **และ P1 ให้เส้นแบ่งที่คมกว่าที่ผมเสนอ พร้อมตัวเลข:**
+     * `migration แตะ grant อะไรก็ได้ 43/53 ไฟล์ (81%)` · **แตะ column-level แค่ 11/53 (21%)**
+     * > **`grant` ระดับ*ตาราง* เกิดบั๊กนี้ไม่ได้เลย เพราะไม่มีลิสต์ให้ประกอบใหม่**
+     * > **บั๊กนี้เป็นไปได้เฉพาะตอนมีลิสต์คอลัมน์**
+     * → จำกัดที่ column-level **ไม่ใช่แค่ถูกกว่า 4 เท่า มันครอบ 100% ของคลาสพอดี**
+     *
+     * 🔴 **อ่านจาก *ฐาน* ไม่ใช่จากไฟล์ และข้อนี้จำเป็น** — replay จากไฟล์จะให้ผลตรงกับของจริง
+     * **เสมอ รวมทั้งตอนที่ลิสต์ผิด** เพราะสองฝั่งมาจากไฟล์เดียวกัน = บั๊กเดิมอีกรอบ
+     * · ผลพลอยได้: คอลัมน์ที่ถูก grant จากแดชบอร์ดโดยไม่ผ่าน migration ก็โผล่ที่นี่
+     *
+     * ⚠️ **สิ่งที่มันทำไม่ได้ และตั้งใจให้ทำไม่ได้:** มันบอกไม่ได้ว่าคอลัมน์ที่หายไป *ควร* หายไหม
+     * **มันบอกได้แค่ว่ามีคนต้องมองมัน** — ซึ่งพอสำหรับเคสที่เกิดจริง
+     * · P1: *"ด่านที่พยายามตัดสินแทนคน คือด่านที่จะตัดสินผิดสักวัน"*
+     */
+    const COLUMN_GRANTS: Record<string, readonly string[]> = {
+      "bookings.insert": ["book_by_days_before","category","confirmation_number","date","file_name","file_path","legacy_added_by","link","note","status","time","title","trip_day_id","trip_id"],
+      "bookings.update": ["book_by_days_before","category","confirmation_number","date","file_name","file_path","link","note","status","time","title","trip_day_id"],
+      "checklist_items.insert": ["category","legacy_added_by","legacy_checked_by","text","trip_id"],
+      "checklist_items.update": ["category","is_checked","text"],
+      "custom_place_descriptions.insert": ["description","locale","place_id","source","trip_id"],
+      "custom_place_descriptions.update": ["description","locale","source"],
+      "custom_place_names.insert": ["locale","name","place_id","priority","source","trip_id"],
+      "custom_place_names.update": ["locale","name","priority","source"],
+      "custom_places.insert": ["category","city_id","description","google_place_id","lat","legacy_added_by","lng","maps_query","trip_id"],
+      "custom_places.update": ["category","city_id","description","google_place_id","lat","lng","maps_query"],
+      "place_notes.insert": ["catalog_place_id","custom_place_id","legacy_added_by","note","photo_path","plan_id","trip_id"],
+      "place_notes.update": ["note","photo_path"],
+      "profiles.insert": ["display_name","home_country","id","locale"],
+      "profiles.update": ["display_name","home_country","locale"],
+      "trip_day_plan_settings.insert": ["is_locked","note","plan_id","return_travel_mode","start_time","trip_day_id","trip_id"],
+      "trip_day_plan_settings.update": ["is_locked","note","return_travel_mode","start_time"],
+      "trip_days.insert": ["city_id","date","id","overnight_city_id","overnight_kind","timezone","trip_id"],
+      "trip_days.update": ["city_id","date","overnight_city_id","overnight_kind","timezone","trip_id"],
+      "trip_hotels.insert": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","legacy_added_by","lng","name_en","name_local","phone","trip_id"],
+      "trip_hotels.update": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","lng","name_en","name_local","phone"],
+      "trip_members.insert": ["invited_by","role","trip_id","user_id"],
+      "trip_members.update": ["role"],
+      "trip_plans.insert": ["id","is_active","name","trip_id"],
+      "trip_plans.update": ["is_active","name","trip_id"],
+      "trip_stops.insert": ["catalog_place_id","custom_place_id","day_offset","dwell_minutes","event_kind","fixed_end_time","fixed_start_time","flight_from_code","flight_from_en","flight_no","flight_to_code","flight_to_en","icon","intercity_from","intercity_mode","intercity_to","is_alert","kind","layover_baggage","layover_immigration","layover_leaves_airport","layover_terminal_change","legacy_added_by","note","photo_path","place_ref","plan_id","rank","schedule_bound","time_is_flexible","title","title_en","transfer_target_label","transfer_target_time","travel_mode","trip_day_id","trip_id","visited_at"],
+      "trip_stops.update": ["catalog_place_id","custom_place_id","day_offset","dwell_minutes","event_kind","fixed_end_time","fixed_start_time","flight_from_code","flight_from_en","flight_no","flight_to_code","flight_to_en","icon","intercity_from","intercity_mode","intercity_to","is_alert","kind","layover_baggage","layover_immigration","layover_leaves_airport","layover_terminal_change","note","photo_path","place_ref","plan_id","rank","schedule_bound","time_is_flexible","title","title_en","transfer_target_label","transfer_target_time","travel_mode","trip_day_id","visited_at"],
+      "trips.insert": ["base_timezone","created_by","end_date","id","start_date","status","title"],
+      "trips.update": ["base_timezone","end_date","start_date","status","title"],
+    };
+
+    /** ดึง column grant ของ `authenticated` จากฐาน — `table_exposure` รายงาน ACL จริง */
+    async function liveColumnGrants(): Promise<Record<string, string[]>> {
+      const rows = await exposure(tablesFromMigrations());
+      const out: Record<string, Set<string>> = {};
+      for (const r of rows) {
+        if (r.door !== "column-grant" || r.grantee !== "authenticated") continue;
+        const m = /^([A-Z]+)\s+\(([^)]+)\)/.exec(r.detail);
+        if (!m) continue;
+        const key = `${r.table_name}.${m[1].toLowerCase()}`;
+        (out[key] ??= new Set()).add(m[2].trim());
+      }
+      return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, [...v].sort()]));
+    }
+
+    it("ด้านบวกของตัวอ่านเอง — ต้องอ่าน ACL ได้จริง ไม่ใช่คืนว่างแล้วเทียบว่างกับว่าง", async () => {
+      const live = await liveColumnGrants();
+      // `P-21` อีกครั้ง: ถ้า regex พังหรือ `table_exposure` เปลี่ยนรูป `detail`
+      // ทุกอย่างจะกลายเป็นเซตว่าง แล้วเคสข้างล่างจะเทียบความว่างเปล่ากับความว่างเปล่า
+      expect(Object.keys(live).length, "อ่าน column grant จากฐานไม่ได้เลย").toBeGreaterThan(20);
+      expect(live["trip_stops.update"], "อ่าน `trip_stops.update` ไม่เจอ — รูปของ `detail` เปลี่ยนหรือเปล่า").toBeDefined();
+      expect(
+        live["trip_stops.update"],
+        "🔴 `trip_id` โผล่ใน update grant ของ `trip_stops` — ย้ายจุดแวะข้ามทริปได้",
+      ).not.toContain("trip_id");
+    });
+
+    it("🔴 column grant ต้องตรงกับที่ขึ้นทะเบียนไว้ทุกตัว", async () => {
+      const live = await liveColumnGrants();
+      const keys = [...new Set([...Object.keys(COLUMN_GRANTS), ...Object.keys(live)])].sort();
+      const drift: string[] = [];
+      for (const k of keys) {
+        const want = COLUMN_GRANTS[k] ?? [];
+        const got = live[k] ?? [];
+        const lost = want.filter((c) => !got.includes(c));
+        const gained = got.filter((c) => !want.includes(c));
+        if (lost.length) drift.push(`${k} — หายไป: ${lost.join(", ")}`);
+        if (gained.length) drift.push(`${k} — เพิ่มมา: ${gained.join(", ")}`);
+      }
+      expect(
+        drift,
+        "column grant ไม่ตรงกับทะเบียน\n" +
+          "  🔴 **หายไป** → คุณ `revoke` แล้ว re-grant หรือเปล่า · ประวัติสิทธิ์ของตารางหนึ่ง\n" +
+          "     กระจายอยู่หลายไฟล์ และ `grant` สะสม ส่วน `revoke` ล้างหมด **ไม่มีอะไรบอกว่ามีกี่ไฟล์ที่ต้องอ่าน**\n" +
+          "     · อาการที่ผู้ใช้เจอคือ *เขียนไม่ได้เลย* ไม่ใช่ *เขียนได้บางส่วน*\n" +
+          "  🔴 **เพิ่มมา** → ใครได้สิทธิ์เขียนคอลัมน์นี้ และทำไม · ถ้าเป็นคอลัมน์ที่เซิร์ฟเวอร์ควรเขียนเอง\n" +
+          "     (`*_at` · `*_by_user` · `deleted_at` · `trip_id`) **นั่นคือช่องที่ trigger มีไว้ปิดพอดี**\n" +
+          "  📌 ถ้าตั้งใจ ให้แก้ทะเบียนในไฟล์นี้ **พร้อมกับ migration ในคอมมิตเดียวกัน**",
+      ).toEqual([]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2-AC1 — คนนอกอ่านอะไรของทริป A ไม่ได้เลย **ทุกตารางที่ผูกกับทริป**", () => {
     /**
      * **`US-E2` เขียนไว้ตรงตัว:** *"ในฐานะผู้ใช้ C ฉันต้องไม่สามารถอ่านหรือแก้อะไรของทริป A ได้เลย
@@ -4286,14 +4408,6 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "travel_time_cache",
     ];
     const CLIENT_ROLES = ["anon", "authenticated", "PUBLIC"];
-    type Door = { table_name: string; door: string; grantee: string; detail: string };
-
-    const exposure = async (tables: string[]): Promise<Door[]> => {
-      const { data, error } = await admin.rpc("table_exposure", { p_tables: tables });
-      if (error) throw new Error(`เรียก table_exposure ไม่ได้: ${error.message}`);
-      return data as Door[];
-    };
-
     it("🔴 แคช 4 ใบ — ไม่มีประตูสำหรับไคลเอนต์เลยสักบาน ทั้ง 5 ทาง", async () => {
       const rows = await exposure(CACHES);
       const open = rows.filter((r) => CLIENT_ROLES.includes(r.grantee));
