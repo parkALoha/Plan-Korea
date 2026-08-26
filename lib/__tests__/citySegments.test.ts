@@ -127,7 +127,14 @@ describe("buildDayCitySegments", () => {
     expect(segments.map((s) => s.city)).toEqual(["sokcho", "gangneung"]);
     expect(stopCountIn(segments[0])).toBe(3);
     expect(stopCountIn(segments[1])).toBe(0);
-    expect(segments[1].items[0]).toMatchObject({ kind: "hotel", role: "end" });
+    // toEqual ไม่ใช่ toMatchObject — ชั้นแปลง: ช่องใหม่ที่ไม่รู้จักต้องแดง ไม่ใช่เงียบ (P1 · 27 ส.ค.)
+    expect(segments[1].items[0]).toEqual({
+      kind: "hotel",
+      role: "end",
+      lat: AT.gangneungBus.lat,
+      lng: AT.gangneungBus.lng,
+      city: "gangneung",
+    });
   });
 
   it("แถว 'แวะที่พัก' ที่ resolvePlace ตั้ง city เป็น seoul ไว้ ต้องไม่เปิดช่วงโซลผีกลางวัน", () => {
