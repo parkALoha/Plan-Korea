@@ -7,6 +7,7 @@ import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportReadFailure } from "@/lib/reportReadFailure";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -65,7 +66,10 @@ export function useStops(tripId: string | null, planId: string | null) {
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !tripId || !planId) return;
     const res = await fetch(`/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      reportReadFailure(res.status);
+      return;
+    }
     const rawRows = (await res.json()) as StopDto[];
     const mapped = sortStops(mapRows(rawRows));
     setStops(mapped);
@@ -94,7 +98,11 @@ export function useStops(tripId: string | null, planId: string | null) {
       }
 
       const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
-      if (cancelled || !daysRes.ok) return void setLoaded(true);
+      if (cancelled) return;
+      if (!daysRes.ok) {
+        reportReadFailure(daysRes.status);
+        return void setLoaded(true);
+      }
       // 🔴 `import()` ไม่ใช่ static — `useStops` ถูกเรียกจากหลายหน้า และเราไม่อยาก
       //    ให้ `data/itinerary.ts` ติดไปกับบันเดิลที่ไม่ต้องใช้ (บทเรียนจาก `useBookings`)
       const { ITINERARY } = await import("@/data/itinerary");

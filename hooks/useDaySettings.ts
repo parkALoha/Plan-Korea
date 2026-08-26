@@ -8,6 +8,7 @@ import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportReadFailure } from "@/lib/reportReadFailure";
 
 /** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
 export function useDaySettings(tripId: string | null, planId: string | null) {
@@ -56,7 +57,11 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       }
 
       const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
-      if (cancelled || !daysRes.ok) return void setLoaded(true);
+      if (cancelled) return;
+      if (!daysRes.ok) {
+        reportReadFailure(daysRes.status);
+        return void setLoaded(true);
+      }
       const bridge = buildDayBridge(ITINERARY, (await daysRes.json()) as { id: string; date: string }[]);
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[daySettings] ${warn}`);
@@ -75,6 +80,8 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
         if (!reportDayBridgeDropIfAny(rows.length, Object.keys(map).length)) {
           writeCache(`daySettings:${planId}`, Object.values(map));
         }
+      } else {
+        reportReadFailure(res.status);
       }
       setLoaded(true);
 
@@ -103,7 +110,10 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !planId || !tripId) return;
     const res = await fetch(`/api/engine/trips/${tripId}/day-settings?planId=${encodeURIComponent(planId)}`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      reportReadFailure(res.status);
+      return;
+    }
     const rows = (await res.json()) as { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[];
     const map: Record<string, TripDaySettings> = {};
     for (const row of rows) {

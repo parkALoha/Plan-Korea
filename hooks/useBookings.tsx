@@ -7,6 +7,7 @@ import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportReadFailure } from "@/lib/reportReadFailure";
 
 function makeBookingId() {
   return `bk-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -69,7 +70,11 @@ function useBookingsStore(tripId: string | null) {
       }
 
       const daysRes = await fetch(`/api/engine/trips/${tripId}/days`);
-      if (cancelled || !daysRes.ok) return void setLoaded(true);
+      if (cancelled) return;
+      if (!daysRes.ok) {
+        reportReadFailure(daysRes.status);
+        return void setLoaded(true);
+      }
       // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — เดิม `TripDataProvider` (ที่ห่อ hook นี้) อยู่ใน
       //    root layout จริง ทำให้ static import ลาก `data/itinerary.ts` (2,290 บรรทัด) เข้าบันเดิลทุกหน้า
       //    รวม `/login`/404 ที่ไม่ต้องล็อกอิน (`layoutImportGraph` เป็นคนจับ) ⚠️ **แก้ตาม `E5-AC1`
@@ -101,6 +106,8 @@ function useBookingsStore(tripId: string | null) {
           mapped.filter((r) => r.day_id !== null).length
         );
         writeCache("bookings", mapped);
+      } else {
+        reportReadFailure(res.status);
       }
       setLoaded(true);
 
@@ -128,7 +135,10 @@ function useBookingsStore(tripId: string | null) {
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !tripId) return;
     const res = await fetch(`/api/engine/trips/${tripId}/bookings`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      reportReadFailure(res.status);
+      return;
+    }
     const rows = (await res.json()) as (TripBooking & { trip_day_id: string | null })[];
     const mapped = rows.map((r) => ({
       ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,

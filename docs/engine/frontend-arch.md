@@ -1084,3 +1084,42 @@ trip", `fe767e84-…`) → `trip_days` ในฐาน = **0 แถว** รั�
 เดียวกับ ITINERARY จริงพอดี คือ `2026-10-11..21`) สะพานจะจับคู่ข้ามทริปโดยไม่มีอะไรกัน — ลองพิสูจน์สดแต่
 fixture ที่เจอถูก `afterAll` ของชุดทดสอบลบไปแล้วก่อนตรวจทัน จึงรายงานเป็นความเสี่ยงเชิงโครงสร้างที่อ่านจาก
 โค้ด ไม่ใช่ข้อพิสูจน์ที่ยืนยันแล้ว — คนละเรื่องกับที่ถามวันนี้ ไม่รีบแก้ แต่ควรรู้ไว้
+
+---
+
+## 19. ①③ ของ P1 (27 ส.ค. 2026) — toast → แถบหน้า + `if (!res.ok) return;` ไม่เงียบอีกต่อไป
+
+**① ตัดสิน (ผมเป็นคนตัดสินตามที่ P1 มอบให้):** toast เดิมใน `dayBridgeIncomplete.ts` (จาก `bd2d64e`) จะดัง
+**ทุกครั้ง**ที่เปิดทริปที่สร้างบนแพลตฟอร์มเต็มรูปแบบ ตราบใดที่ `E5` ยังไม่ลงมือ — ไม่ใช่เหตุการณ์ชั่วคราวที่
+ลองใหม่แล้วหาย แต่เป็น**สถานะติดตัวทริปนั้นไปตลอด** จนกว่าคนละรอบงานจะแก้ ตรงกับที่ P1 เตือนไว้ตรง ๆ ว่า
+toast ที่ดังตลอดจะถูกปิดตาไปในสัปดาห์เดียว → **เปลี่ยนเป็นแถบสถานะติดหน้าแทน**
+
+- `lib/engine/dayBridgeIncomplete.ts` เขียนใหม่ทั้งไฟล์ — ตัด `showToast` ออกหมด เปลี่ยนเป็น module-singleton
+  state ผ่าน `useSyncExternalStore` (คัดลอกรูปแบบจาก `hooks/useOnlineStatus.ts`/`useSystemMode.tsx` เป๊ะ)
+  - `reportDayBridgeWarningIfAny(bridge, totalLegacyDays)` — ประเมินทั้งสถานะทุกครั้งที่เรียก จึง **ทั้งเปิด
+    และปิดแถบได้** (สะพานกลับมาสมบูรณ์ตอนไหนก็หายเอง ไม่ใช่ตั้งค้างทางเดียว)
+  - `reportDayBridgeDropIfAny(rawCount, mappedCount)` — ยังคง**เปิดได้ทางเดียวเท่านั้น** (ไม่ปิด) เพราะเห็น
+    แค่แถบมุมเดียวของข้อมูล (hook เดียว) ปิดเองไม่ได้โดยไม่เสี่ยงปิดทับสัญญาณของ hook อื่นที่ยังพัง — asymmetry
+    นี้ตั้งใจ ไม่ใช่พลาด
+- `components/DayBridgeIncompleteBanner.tsx` (ใหม่) — `role="status"`, `sticky top-0 z-50`, ธีมสี
+  `bg-panel-gold`/`text-panel-gold-ink` คัดลอกจาก `SystemModeBanner.tsx` เป๊ะ, `print:hidden`
+- `components/TripDataProvider.tsx` mount แถบนี้ไว้ในตัว provider เอง (ต่อจาก `HotelsProvider`/
+  `BookingsProvider`/`CustomPlacesProvider`) — เห็นได้ทุกหน้าที่ห่อด้วย `TripDataProvider` โดยไม่ต้องแก้ทีละหน้า
+
+**พิสูจน์ก่อนตัดสิน ไม่ใช่แค่คาดเดา:** สืบตาม P1 เชิญ — เขียน service-role script คิวรี `engine-dev` หา
+`buildDayBridge` จริงกับทริปที่สองของ P2 (`fe767e84-…`, `trip_days` = 0 แถวในฐาน จาก §18) → `matched === 0`
+`unmatchedLegacy.length === 11` ยืนยันแล้วใน §18 ก่อนหน้านี้แล้วว่ามันเข้าเงื่อนไข "สะพานพังทั้งเส้น" จริง
+ไม่ใช่กรณีขอบ — **ไม่ได้ลองเพิ่ม trip_day/trip_stop จริงในทริปของ P2 รอบนี้** (ของที่ P1 เชิญไว้แบบ optional)
+เพราะสิ่งที่ต้องพิสูจน์คือ "สะพานว่างจริงไหม" ซึ่งพิสูจน์ไปแล้วจากคิวรีตรง — ส่วน "มันหายจาก UI จริงไหม"
+ตามมาจากโค้ด `useStops.ts` อ่านตรง ๆ ได้อยู่แล้ว (ถ้า `bridge.toDbId(d.id)` เป็น `null` ทุกวัน แถวไม่มีทาง map)
+ไม่ใช่ของที่ต้องสร้าง test trip จริงเพิ่มเพื่อยืนยันซ้ำ
+
+**③ ทำแล้ว — `if (!res.ok) return;` ไม่เงียบอีกต่อไป:** `lib/reportReadFailure.ts` (ใหม่) — คู่กับ
+`writeGuard` ฝั่งเขียน แต่ตั้งใจแยกกลไกกัน: fetch ที่อ่านล้มเป็น**เหตุการณ์ชั่วคราว** (ลองใหม่มักหาย) จึงยังใช้
+`showToast` ตรงนี้ ต่างจาก `dayBridgeIncomplete` ที่เป็นสถานะติดทริป — wiring เข้าครบทุกจุดอ่านที่เคยเงียบใน
+4 hook เดียวกับ §18: `useStops.ts` (2 จุด: stops + days), `useDaySettings.ts` (3 จุด: init days, init
+day-settings + else-branch ที่เพิ่งเปิด, reload), `useOvernightOverrides.ts` (1 จุด), `useBookings.tsx`
+(3 จุด: init days, init bookings + else-branch ที่เพิ่งเปิด, reload) — รวม 9 จุดที่ก่อนหน้านี้ล้มแล้วเงียบสนิท
+
+ยืนยัน: `eslint`/`tsc --noEmit` สะอาด (เหลือแค่ `engineCrossUser.test.ts` error เดิมที่ไม่ใช่ของรอบนี้ —
+ยืนยันด้วย `git diff --stat` ว่าไฟล์นั้นไม่มีการแก้ในรอบนี้เลย) + ชุดทดสอบเต็ม 843 ผ่านทั้งหมด (59 ไฟล์)

@@ -1,6 +1,6 @@
 "use client";
 
-import { showToast } from "@/lib/toast";
+import { useSyncExternalStore } from "react";
 import type { DayBridge } from "@/lib/engine/dayBridge";
 
 /**
@@ -9,49 +9,67 @@ import type { DayBridge } from "@/lib/engine/dayBridge";
  * ## ปัญหาที่พบ (P7 ชี้ · P1 ไล่ถึงราก)
  * `useStops`/`useDaySettings`/`useOvernightOverrides`/`useBookings` แปลง `trip_day_id` (uuid จากฐาน)
  * เป็น `"d0"`-style id ผ่าน `buildDayBridge(ITINERARY, dbDays)` — `ITINERARY` เป็นข้อมูลนิ่งของ**ทริป
- * เกาหลีใบนี้ใบเดียว** ทริปที่สร้างใหม่ (`POST /api/engine/trips`, `6a7d9a7`) มี `trip_days` ที่ไม่มีคู่ใน
- * `ITINERARY` เลย → สะพานว่าง → แถวทุกแถวถูกทิ้งใน `mapRows`/`toMap` **โดย `res.ok` เป็น `true`** ไม่มี
- * error ที่ไหน แล้วผลที่หดแล้ว (มักเป็น `[]`) ถูกเขียนทับ `writeCache` — ครั้งต่อไปแม้ออฟไลน์ก็ยังเห็นแต่ของ
- * ที่หายไปแล้ว **นี่คือกับดัก `P-21`/`D22`: "สะพานว่าง" กับ "ทริปนี้ไม่มีข้อมูลจริง" หน้าตาเหมือนกันเป๊ะ**
+ * เกาหลีใบนี้ใบเดียว** ทริปที่สร้างใหม่มี `trip_days` ที่ไม่มีคู่ใน `ITINERARY` เลย → สะพานว่าง → แถวทุกแถว
+ * ถูกทิ้งใน `mapRows`/`toMap` **โดย `res.ok` เป็น `true`** ไม่มี error ที่ไหน
+ *
+ * ## 🔴 แก้ 27 ส.ค. 2026 (P1) — เปลี่ยนจาก toast เป็นสถานะของหน้า
+ * ตัดสินแล้วว่า `trip_days.id` (uuid) คือตัวตนของวันจริง สะพานนี้จะยังจำเป็นต่อไปสำหรับทริปที่ย้ายมาจาก
+ * `ITINERARY` เท่านั้น (`E5` เป็นคนตัดสินเรื่องแหล่งข้อมูลของทริปที่เหลือ) **หมายความว่าทริปที่เกิดบน
+ * แพลตฟอร์มทุกใบจะมีสะพานว่างเปล่า *ตลอดไป* จนกว่า `E5` จะลง — ทุกครั้งที่โหลดหน้า ทุกวัน**
+ *
+ * 🎯 **P1 ชี้ตรง: ของที่ดังทุกครั้งคือของที่ถูกปิดตาไปในสัปดาห์เดียว** — toast (`lib/toast.ts`) ถูกออกแบบ
+ * มาสำหรับ*เหตุการณ์* (เขียนไม่ผ่านหนึ่งครั้ง) ไม่ใช่*สถานะที่คงอยู่ตลอดไป* — ใช้ `useSyncExternalStore`
+ * แบบเดียวกับ `useOnlineStatus`/`useSystemMode` แทน: เป็นแถบเงียบ ๆ ที่อยู่ตราบใดที่ทริปนี้ยังไม่มีสะพาน
+ * ไม่ใช่ป๊อปอัปที่เด้งซ้ำทุก mount แล้วถูกเบรนเผาจนมองไม่เห็น
  *
  * ## ทำไมแยกไฟล์จาก `lib/engine/dayBridge.ts`
- * `dayBridge.ts` **ไม่ import อะไรเลยโดยตั้งใจ** (ทดสอบได้โดยไม่ต้องมี `ITINERARY`/DOM) — ฟังก์ชันนี้
- * ต้องเรียก `showToast` (`"use client"`) จึงอยู่คนละไฟล์ ไม่ทำให้ `dayBridge.ts` เสียคุณสมบัตินั้น
- *
- * ⚠️ **นี่คือทางบรรเทาระหว่างรอตัดสินทางแก้จริง ไม่ใช่ทางแก้** — ทางแก้จริง (ทริปใหม่ควรใช้ `trip_days.id`
- * ของฐานตรง ๆ แทนสะพาน `"d0"` ที่มีความหมายเฉพาะทริปเกาหลีใบนี้) เป็นการตัดสินใจที่ใหญ่กว่าที่ P1 ยังไม่ได้
- * ชี้ทาง — ตัวนี้แค่ทำให้ปัญหา **มองเห็นได้และไม่ทำลายแคชเพิ่ม** ระหว่างรอ ไม่ได้แก้ที่ต้นตอ
+ * `dayBridge.ts` **ไม่ import อะไรเลยโดยตั้งใจ** (ทดสอบได้โดยไม่ต้องมี `ITINERARY`/DOM) — ไฟล์นี้ต้องมี
+ * module state + `"use client"` จึงอยู่คนละไฟล์ ไม่ทำให้ `dayBridge.ts` เสียคุณสมบัตินั้น
  */
-const WARNING_MESSAGE = "บางวันของทริปนี้ยังไม่มีในฐานข้อมูล — ข้อมูลที่เห็นตอนนี้อาจไม่ครบ";
 
-/** ข้อความเดียวกันทุกจุดเรียก — `showToast` dedupe ด้วย (kind, message) เดียวกันให้เอง จึงไม่ซ้อนกัน
- *  เป็นตั้งแม้หลาย hook จะเจอปัญหาเดียวกันพร้อมกันในหน้าเดียว */
-function warn() {
-  showToast("error", WARNING_MESSAGE);
+let incomplete = false;
+const listeners = new Set<() => void>();
+
+function setDayBridgeIncomplete(next: boolean): void {
+  if (next === incomplete) return;
+  incomplete = next;
+  for (const listener of listeners) listener();
 }
 
-export function reportDayBridgeDropIfAny(rawCount: number, mappedCount: number): boolean {
-  if (rawCount === 0 || mappedCount >= rawCount) return false;
-  warn();
-  return true; // ผู้เรียกควรข้าม writeCache รอบนี้ — อย่าทับแคชที่อาจถูกต้องอยู่แล้วด้วยผลที่หด
+function subscribe(onChange: () => void) {
+  listeners.add(onChange);
+  return () => listeners.delete(onChange);
+}
+
+const getSnapshot = () => incomplete;
+/** SSR ถือว่าสะพานปกติเสมอ — ค่าจริงมาหลัง hydrate เหมือน `useOnlineStatus` */
+const getServerSnapshot = () => false;
+
+/** แถบ "ทริปนี้ยังแสดงข้อมูลบางส่วนไม่ได้" — ดู `components/DayBridgeIncompleteBanner.tsx` */
+export function useDayBridgeIncomplete(): boolean {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
 /**
- * 🔴 **แก้ 27 ส.ค. 2026 — P1/P7 ชี้ว่า `dayBridge.ts` มีสัญญาณนี้ให้อยู่แล้วและไม่มีใครอ่านเลย**
- * (`grep -rn "matched|unmatchedDb|unmatchedLegacy" hooks/ app/ components/` = 0 ผลลัพธ์ก่อนคอมมิตนี้)
- *
- * ตรวจที่ตัวสะพานเองตอนสร้าง (ก่อนจะไปถึงขั้น mapRows/toMap) — ดักได้**เร็วกว่า**
- * `reportDayBridgeDropIfAny` (ซึ่งต้องรอให้มีแถวจริงหดไปก่อนถึงจะรู้): เตือนได้ตั้งแต่เปิดทริปใหม่ครั้งแรก
- * ก่อนมีใครเพิ่มจุดแวะเลยด้วยซ้ำ — **verified จริงกับทริปที่สองของ P2 ("P2 live-verify test trip",
- * `fe767e84-…`): `trip_days` ในฐาน = 0 แถว → `bridge.matched === 0` และ `unmatchedLegacy.length === 11`
- * (เท่ากับจำนวนวันทั้งหมดในไฟล์) ตรงกับเงื่อนไขที่ `dayBridgeWarning()` เขียนไว้เองว่า "ยังไม่มีวันของทริปนี้
- * ในฐานเลยสักวัน" เป๊ะ**
- *
- * ⚠️ **ไม่ได้แทนที่ `reportDayBridgeDropIfAny`** — ยังต้องมีทั้งคู่: ตัวนี้เตือน**ก่อน**มีข้อมูลให้หาย
- * (proactive) ส่วนตัวนั้นกันแคช**ตอน**ข้อมูลหายจริง (reactive, จำเป็นแม้สะพานจะ*บางส่วน*ใช้ได้ — เช่น
- * `matched > 0` แต่ยังมีบางแถวหลุด `unmatchedDb` ซึ่งเงื่อนไขนี้จะไม่ทริกเกอร์)
+ * เรียกทันทีหลัง `buildDayBridge()` ทุกครั้งที่ 4 hook สร้างสะพาน — ตั้ง/ล้างสถานะแถบตามผลจริงของ
+ * สะพานปัจจุบัน (ไม่สะสม ไม่ latch ค้าง) `matched === 0` (มีวันในไฟล์แต่ไม่มีคู่ในฐานเลยสักวัน) หรือ
+ * `unmatchedLegacy` ไม่ว่าง (มีบางวันหลุด) ทั้งสองแบบคือ "สะพานนี้ใช้ไม่ได้เต็มที่"
  */
 export function reportDayBridgeWarningIfAny(bridge: DayBridge, totalLegacyDays: number): void {
   const looksBroken = (totalLegacyDays > 0 && bridge.matched === 0) || bridge.unmatchedLegacy.length > 0;
-  if (looksBroken) warn();
+  setDayBridgeIncomplete(looksBroken);
+}
+
+/**
+ * ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — เรียกตอนจะ `writeCache` ทุกจุดที่ผ่านสะพาน
+ * คืน `true` = ผู้เรียกควรข้าม `writeCache` รอบนี้ (แถวหายเพราะบั๊ก ไม่ใช่เพราะทริปไม่มีข้อมูลจริง)
+ *
+ * แยกจาก `reportDayBridgeWarningIfAny` โดยตั้งใจ: ฟังก์ชันนี้อาจ `true` ได้แม้สะพาน*บางส่วน*ใช้ได้
+ * (`matched > 0` แต่บางแถวยังหลุดทาง `unmatchedDb`) ซึ่ง `reportDayBridgeWarningIfAny` จะไม่ทริกเกอร์
+ * — ตั้งแถบเตือนด้วยถ้าเจอ (แต่ไม่ล้างมันเอง: ตัวนี้เห็นแค่มุมเดียว เฉพาะตัวที่ตรวจทั้งสะพานถึงจะรู้ว่าล้างได้)
+ */
+export function reportDayBridgeDropIfAny(rawCount: number, mappedCount: number): boolean {
+  const dropped = rawCount > 0 && mappedCount < rawCount;
+  if (dropped) setDayBridgeIncomplete(true);
+  return dropped;
 }

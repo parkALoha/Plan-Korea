@@ -8,6 +8,7 @@ import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnig
 import { writeGuard } from "@/lib/writeGuard";
 import { readCache, writeCache } from "@/lib/localCache";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
+import { reportReadFailure } from "@/lib/reportReadFailure";
 
 type Overrides = Record<string, City>;
 
@@ -54,7 +55,11 @@ export function useOvernightOverrides(tripId: string | null) {
       }
 
       const res = await fetch(`/api/engine/trips/${tripId}/days`);
-      if (cancelled || !res.ok) return void setLoaded(true);
+      if (cancelled) return;
+      if (!res.ok) {
+        reportReadFailure(res.status);
+        return void setLoaded(true);
+      }
       const rows = (await res.json()) as DayOvernightRow[];
       if (cancelled) return;
 
