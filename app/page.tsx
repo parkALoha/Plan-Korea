@@ -17,6 +17,7 @@ import { TripPrepPanel } from "@/components/TripPrepPanel";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { ITINERARY } from "@/data/itinerary";
+import { countryOfCity } from "@/data/emergency";
 import type { City, Day } from "@/data/itinerary";
 import { applyOvernightOverrides, hotelAnchorId } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
@@ -148,10 +149,15 @@ export function HomeContent({ tripId }: { tripId: string }) {
 
   // เมือง/วันที่โฟกัสอยู่ใน sidebar เลือกสถานที่ — คุมจากที่นี่แทนที่จะให้ sidebar เก็บ state เอง
   // เพื่อให้ปุ่ม "+ เพิ่มสถานที่" ในแต่ละวันสั่งโฟกัส sidebar มาที่วันนั้นได้เลย
-  // เปิดมาให้อยู่ที่วันแรกในเกาหลี ไม่ใช่วันบิน/พักเครื่องที่ฮานอย (ซึ่งเป็นวันแรกตามลำดับเวลา)
-  const firstKoreaDay = ITINERARY.find((d) => d.city !== "hanoi") ?? ITINERARY[0];
-  const [activeCity, setActiveCity] = useState<Day["city"]>(firstKoreaDay.city);
-  const [focusedDayId, setFocusedDayId] = useState<string>(firstKoreaDay.id);
+  // เปิดมาให้อยู่ที่วันแรกใน**ประเทศหลัก**ของทริป ไม่ใช่วันบิน/พักเครื่องที่จุดแวะขาไป (ซึ่งเป็นวันแรก
+  // ตามลำดับเวลา) — 🔴 แก้ 27 ส.ค. 2026 (`E4-AC2`, P1 พบ): เดิมเทียบ `d.city !== "hanoi"` ตรง ๆ ซึ่งฝัง
+  // สมมติฐาน "ไม่ใช่ฮานอย = เกาหลี" ไว้ในโค้ด ใช้ได้เฉพาะทริปนี้ทริปเดียว เปลี่ยนเป็นเทียบประเทศของวันนั้น
+  // กับประเทศของวันแรกผ่าน registry (`countryOfCity`) แทน — ผลลัพธ์เดิมทุกประการสำหรับทริปนี้
+  // (วันแรก = ฮานอย = "vn" ทุกวันอื่น = "kr") แต่ไม่ต้องแก้จุดนี้อีกถ้าวันหนึ่งจุดแวะขาไปเปลี่ยนประเทศ
+  const startCountry = countryOfCity(ITINERARY[0].city);
+  const firstDestinationDay = ITINERARY.find((d) => countryOfCity(d.city) !== startCountry) ?? ITINERARY[0];
+  const [activeCity, setActiveCity] = useState<Day["city"]>(firstDestinationDay.city);
+  const [focusedDayId, setFocusedDayId] = useState<string>(firstDestinationDay.id);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
   function openPickerForDay(dayId: string) {
