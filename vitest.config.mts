@@ -11,21 +11,24 @@ import { runIntegrityFailure } from "./lib/__tests__/_runIntegrity";
  *
  * 📌 ตั้งใจให้อยู่ที่ reporter ไม่ใช่ในเทสต์: เทสต์ที่ถูกข้ามไปแล้ว **ไม่มีทางตรวจตัวเองได้**
  */
-function countTasks(tasks: readonly unknown[]): { skipped: number; total: number } {
+function countTasks(tasks: readonly unknown[]): { skipped: number; total: number; failed: number } {
   let skipped = 0;
   let total = 0;
+  let failed = 0;
   for (const raw of tasks) {
     const t = raw as { type?: string; mode?: string; tasks?: unknown[]; result?: { state?: string } };
     if (t.tasks) {
       const inner = countTasks(t.tasks);
       skipped += inner.skipped;
       total += inner.total;
+      failed += inner.failed;
     } else if (t.type === "test" || t.type === "custom") {
       total += 1;
       if (t.mode === "skip" || t.mode === "todo" || t.result?.state === "skip") skipped += 1;
+      else if (t.result?.state === "fail") failed += 1;
     }
   }
-  return { skipped, total };
+  return { skipped, total, failed };
 }
 
 const runIntegrityReporter = {
@@ -53,6 +56,22 @@ const runIntegrityReporter = {
     if (why) {
       console.error(`\n🔴 รอบนี้อ่านเป็น "ผ่าน" ไม่ได้:\n${why}\n`);
       process.exitCode = 1;
+    }
+    // 🔴 R11 / P-68 — แดงข้ามเซสชัน · **บอกวิธี *แยกแยะ* ไม่ใช่วิธี *ปัดทิ้ง*** (P1 เจอจริง · P4 · 27 ส.ค. 2026)
+    //    8 เซสชันรันชุดสดกับ engine-dev ใบเดียวได้ · `D72` บังคับให้รันชุดเต็มก่อน push ทุกครั้ง
+    //    → **ยิ่งทำตาม `D72` โอกาสชนยิ่งสูง** · fixture ของเซสชันอื่นถูก `afterAll`/`purge` ลบกลางคัน
+    //    = แดงที่ *ผ่านตอนรันไฟล์นั้นเดี่ยว ๆ* · P1 เกือบรายงาน `search_place_names` ว่าพัง ทั้งที่ไม่พัง
+    //
+    // 🎯 ข้อความนี้ **ไม่ได้บอกว่า "น่าจะเป็นการชน จึงข้ามได้"** — มันบอก *วิธีตรวจ* ที่ปลอดภัยทั้งสองทาง:
+    //    ผ่านตอนรันเดี่ยว = ชน (ไม่ใช่ regression) · ล้มตอนรันเดี่ยว = ของจริง (ยืนยันแล้ว)
+    //    การกระทำที่สั่ง (รันไฟล์เดี่ยว) แยกแยะ ไม่ได้ปัดทิ้ง — ต่างจาก "assume แดง=ชน=ignore" ที่อันตราย
+    if (counted.failed > 0) {
+      console.error(
+        `\n🟠 มีเคสล้ม ${counted.failed} เคส · ก่อนสรุปว่าเป็น regression:\n` +
+          "   รันไฟล์ที่ล้ม *เดี่ยว ๆ* ก่อน — `npx vitest run <ไฟล์นั้น>`\n" +
+          "   · ผ่านตอนรันเดี่ยว = fixture ชนข้ามเซสชัน (`R11`/`P-68`) ไม่ใช่ของพัง · อย่า push ทับ อย่าไล่หาบั๊กที่ไม่มี\n" +
+          "   · ล้มตอนรันเดี่ยวด้วย = ของจริง ยืนยันแล้ว\n",
+      );
     }
   },
 };
