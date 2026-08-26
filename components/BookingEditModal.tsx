@@ -1,21 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  BOOKING_FILES_BUCKET,
-  supabase,
-  type BookingCategory,
-  type BookingStatus,
-  type TripBooking,
-} from "@/lib/supabase";
+import { type BookingCategory, type BookingStatus, type TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
+import { useBookingFile } from "@/hooks/useBookingFile";
 import { Modal } from "./Modal";
 import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { bookByDate } from "@/lib/bookingDeadline";
 import { PhotoLightbox } from "./PhotoLightbox";
-import { signStoredFile, storageKeyOf, forgetSignedFile } from "@/lib/engine/files";
+import { signStoredFile, storageKeyOf } from "@/lib/engine/files";
 
 const CATEGORIES: BookingCategory[] = ["flight", "hotel", "ktx", "bus", "ticket", "other"];
 
@@ -27,15 +22,12 @@ const STATUSES: { value: BookingStatus; label: string }[] = [
   { value: "walk_up", label: "🎟️ ซื้อหน้างาน" },
 ];
 
-function randomSuffix() {
-  return Math.random().toString(36).slice(2);
-}
-
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-
 // เดิมมี storagePathFromPublicUrl เขียนเอง — แทนที่ด้วย storageKeyOf จาก lib/engine/files (E2-AC13 ②)
 // เพราะรู้จักทั้งรูปแบบ URL เก่าและ path ใหม่ และปฏิเสธ URL โดเมนอื่น (เช่นรูป Google Places ที่เคย
 // ลงคอลัมน์เดียวกัน) แทนที่จะเดาว่าเป็น path ของ bucket นี้แล้วไปเซ็น/ลบผิดไฟล์
+//
+// การเขียน Storage จริง (upload/remove) ย้ายไป hooks/useBookingFile.ts ทั้งหมดแล้ว (E3-AC4) —
+// component นี้ไม่เรียก supabase.storage ตรงอีกต่อไป เหมือนกับตารางอีก 10 hook ที่ผ่าน writeGuard
 
 export function BookingEditModal({
   existing,
@@ -50,6 +42,7 @@ export function BookingEditModal({
   onSave: (input: NewBooking) => void;
   onDelete?: () => void;
 }) {
+  const { uploadBookingFile, removePendingBookingFile, removeSavedBookingFile } = useBookingFile();
   const [zoomed, setZoomed] = useState(false);
   const [category, setCategory] = useState<BookingCategory>(existing?.category ?? "flight");
   const [status, setStatus] = useState<BookingStatus>(existing?.status ?? "booked");
@@ -107,37 +100,35 @@ export function BookingEditModal({
 
   async function handleFileChange(file: File | null) {
     if (!file) return;
-    if (file.size > MAX_FILE_BYTES) {
-      setUploadError("ไฟล์ใหญ่เกิน 10MB กรุณาเลือกไฟล์อื่น");
-      return;
-    }
     setUploading(true);
     setUploadError(null);
-    const path = `${existing?.id ?? "new"}-${Date.now()}-${randomSuffix()}-${file.name}`;
-    const { error } = await supabase.storage.from(BOOKING_FILES_BUCKET).upload(path, file);
-    if (error) {
-      setUploadError("อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง");
+    const result = await uploadBookingFile(file, existing?.id ?? null);
+    if ("error" in result) {
+      setUploadError(result.error);
       setUploading(false);
       return;
     }
     // แทนที่ไฟล์เดิมที่เพิ่งอัปโหลดในเซสชันนี้ (ยังไม่บันทึก) ก็ลบตัวเก่าทิ้งไปเลย ไม่งั้นค้างซ้ำ
     if (pendingUploadPathRef.current) {
-      await supabase.storage.from(BOOKING_FILES_BUCKET).remove([pendingUploadPathRef.current]);
+      await removePendingBookingFile(pendingUploadPathRef.current);
     }
-    pendingUploadPathRef.current = path;
+    pendingUploadPathRef.current = result.path;
     // เก็บ path ตรงๆ ไม่ใช่ getPublicUrl() — bucket เป็น private แล้ว (E2-AC13 ①) URL นั้นเปิดไม่ได้จริง
     // มัน "ทำงาน" อยู่ได้ก่อนหน้านี้เพราะ storageKeyOf() แกะ path ออกจาก URL ให้ทุกจุดอ่าน แต่แปลว่า
     // ทุกอัปโหลดใหม่เขียนรูปแบบเก่า (ที่ E7 มีหน้าที่ย้ายทิ้ง) ลงคอลัมน์ซ้ำไปเรื่อยๆ — P1 พบระหว่าง E3-AC4
-    setFileUrl(path);
+    setFileUrl(result.path);
     setFileName(file.name);
     setUploading(false);
   }
 
   async function handleRemoveFile() {
-    const path = pendingUploadPathRef.current ?? storageKeyOf(fileUrl);
-    if (path) {
-      await supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
-      forgetSignedFile(fileUrl);
+    // ไฟล์ที่ยังไม่บันทึก (เพิ่งอัปโหลดในเซสชันนี้) กับไฟล์ที่บันทึกไว้แล้ว ใช้ allowNoRows คนละค่า
+    // (เหตุผลอยู่ที่ hooks/useBookingFile.ts) จึงต้องแยกสองทาง ไม่ใช้ path เดียวกันเรียกฟังก์ชันเดียว
+    if (pendingUploadPathRef.current) {
+      await removePendingBookingFile(pendingUploadPathRef.current);
+    } else {
+      const path = storageKeyOf(fileUrl);
+      if (path) await removeSavedBookingFile(path);
     }
     pendingUploadPathRef.current = null;
     setFileUrl("");
@@ -164,7 +155,7 @@ export function BookingEditModal({
     if (pendingUploadPathRef.current) {
       const path = pendingUploadPathRef.current;
       pendingUploadPathRef.current = null;
-      void supabase.storage.from(BOOKING_FILES_BUCKET).remove([path]);
+      void removePendingBookingFile(path);
     }
     onClose();
   }
