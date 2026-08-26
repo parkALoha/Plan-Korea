@@ -730,3 +730,66 @@ P1 ตรวจ `sw.js` จริงแล้วยืนยันว่า `net
 ความคาดหวังนี้อยู่แล้ว (2) จุดประสงค์ทั้งหมดของการเลือก `networkFirst` เหนือ `cacheFirst` คือให้ทุกครั้งที่
 ออนไลน์เช็คสิทธิ์ใหม่จริง — เติม microcache สั้น ๆ กลับเข้าไปคือเปิดหน้าต่างเดิมที่เพิ่งปิดไปคืนนี้ซ้ำอีก
 รอบ แค่แคบลง ไม่ใช่ปิดจริง ไม่คุ้มกับการประหยัด request ที่ไม่บ่อยอยู่แล้ว
+
+---
+
+## 14. รูปของ route ที่ `E3-AC1` ต้องใช้ (ตอบก่อน P1 ลงมือ `useCustomPlaces` ตัวแรก)
+
+**บริบท:** `E3-AC1` ไม่ใช่แค่ย้ายที่รัน — สคีมาใหม่ (`custom_places.city_id`/`custom_place_names` ฯลฯ)
+คนละรูปกับ type ที่แอปทั้ง 15+ ไฟล์ใช้อยู่ (`city`/`name_th`/`name_en` ฝังในแถวเดียว) P1 เสนอ route
+handler เป็นตัวแปลงรูป (`เก่า ⇄ ใหม่`) ที่จุดเดียว ไม่แก้ 15 ไฟล์ — เห็นด้วยกับแนวทางนี้เต็มที่ ตรงกับ
+"แอปใช้ได้ตลอด" ที่ผู้ใช้สั่ง ตอบ 3 ข้อที่เป็นของโซนนี้ตามที่ P1 ขอ
+
+### ① Path convention — แยกตาม scope ไม่ใช่ path เดียวสำหรับทุก resource
+
+**Trip-scoped resources (ส่วนใหญ่ — `custom_places`/`stops`/`hotels`/`bookings`/`checklist_items`/…):**
+```
+app/api/engine/trips/[tripId]/<resource>/route.ts
+```
+ไม่ใช่ `app/api/engine/<resource>/route.ts` เฉย ๆ ตามที่ร่างไว้ — เหตุผล: `E3-AC6` บังคับว่า **การเช็ค
+สมาชิกภาพต้องเกิดนอกและก่อน**ฟังก์ชันที่ถูกแคช/DAL — route จึงต้องรู้ `tripId` จาก **path** เพื่อเช็คก่อน
+เรียก `lib/engine/db.ts` เสมอ (แบบเดียวกับที่ `/api/booking-file/{tripId}/…` ทำอยู่แล้ว — ใช้ pattern
+เดียวกันทั้งระบบ ไม่ใช่คิดใหม่) ไม่ใช่ query param ซึ่งเผลอลืม validate ง่ายกว่า path segment ที่บังคับ
+โดยโครง Next routing เอง — และ path นี้จะสะท้อนโครง `/trip/[tripId]/...` ของหน้าเว็บเองพอดี (หัวข้อ 3)
+
+**Account-scoped resources (ไม่มี tripId เดียวให้ยึด — มีแค่ `usePlans.ts`):**
+```
+app/api/engine/plans/route.ts
+```
+ไม่ซ้อน `trips/[tripId]` เพราะ resource นี้ **คือรายการทริปที่ผู้ใช้เห็น** — ยังไม่รู้ tripId ก่อนเรียก
+
+**Method ต่อ resource เดียวกัน ไม่ใช่ route แยกตาม operation:** `E3-AC1` นับรวม**ทั้งอ่านและเขียน** (67
+บรรทัดรวม `.insert()`/`.update()` เช่น `addCustomPlace` ด้วย ไม่ใช่แค่ `.select()`) — 1 ไฟล์ route ต่อ
+resource จัดการทุก method (`GET` อ่าน, `POST` insert, `PATCH`/`DELETE` ตามที่ hook เดิมมี) แทนที่จะแยก
+`route.ts` ต่อ operation — ตรงกับ REST convention ปกติของ Next App Router อยู่แล้ว ไม่ต้องคิดโครงใหม่
+
+### ② Realtime — ปัญหาจริงไม่ใช่ "สองเส้นทาง" แต่คือ "สองเส้นทางแปลงรูปคนละที่"
+
+`E3-AC3` อนุญาต anon key ฝั่ง realtime ไว้แล้ว (พร้อมเหตุผลกำกับ) — **ไม่ต้องย้าย subscribe เข้า route**
+เพราะ Supabase Realtime บังคับ RLS ผ่าน JWT ของผู้ใช้เองอยู่แล้วที่ชั้น DB ปัญหาจริงที่ P1 ชี้ไม่ใช่เรื่อง
+สิทธิ์ (RLS คุมอยู่แล้วทั้งสองเส้นทาง) แต่คือ **รูปข้อมูล**: initial fetch ผ่าน route ได้รูป**เก่า**ที่ route
+แปลงให้แล้ว แต่ `postgres_changes` payload (`payload.new`/`payload.old`) เป็นแถวดิบจากสคีมา**ใหม่**ตรง ๆ
+ไม่ผ่านการแปลงเลย — โค้ด merge เดิม (`hooks/useCustomPlaces.tsx` บรรทัด "const row = payload.new as
+CustomPlace") จะพังทันทีเพราะ cast ผิดรูป ไม่ใช่แค่ type error แต่เป็นรูปข้อมูลจริงที่ต่างกัน
+
+**ทางแก้: แยกฟังก์ชันแปลงรูป (`เก่า ⇄ ใหม่`) ออกมาเป็นโมดูลกลาง ไม่ผูกกับ server-only import เดียวกับ
+`lib/engine/storageKey.ts`** — เพราะต้องถูกเรียกจาก**สองที่**: ฝั่งเซิร์ฟเวอร์ (`lib/engine/db.ts` ตอน
+ประกอบ response ของ route) และฝั่ง**client** (ใน handler ของ `postgres_changes` เดิมในแต่ละ hook ตอน
+รับ `payload.new`/`payload.old` ดิบ) — ถ้าฝั่งไหนพึ่ง `supabase-js`/`next/headers`/อะไรที่รันฝั่งเดียว
+ได้จะใช้ร่วมกันไม่ได้ทันที (บทเรียนเดียวกับที่ `storageKeyOf` เจอตอนแรกทุกประการ — `Node.js detected but
+native WebSocket not found`) เขียน adapter (เช่น `lib/engine/adapters/customPlace.ts`) เป็น pure
+function ไม่ import อะไรที่ผูก environment แล้วให้ทั้ง route และ realtime handler ของ hook import ตัว
+เดียวกัน — รับประกันว่าไม่ว่าข้อมูลจะมาทางไหน (initial fetch ผ่าน route หรือ delta ผ่าน realtime ตรง)
+ก็ผ่านการแปลงรูปเดียวกันเป๊ะ ไม่มีจุดที่สองเส้นทางเห็นข้อมูลคนละรูป
+
+### ③ แคช — `no-store` ทั้งหมด ไม่มีข้อยกเว้น
+
+ตรงกับที่ตัดสินไว้แล้วสำหรับ `/api/booking-file/…` (§13) แต่เหตุผลหนักกว่า: ข้อมูลกลุ่มนี้ (`trip_stops`
+`trip_hotels` `bookings` ฯลฯ) **sync สดระหว่างคน 2 คนพร้อมกัน** (`PLAN.md:57`) เปลี่ยนบ่อยกว่าไฟล์ตั๋วมาก
+— HTTP cache แม้สั้นแค่ไหนก็เสี่ยงเห็นข้อมูลเก่าระหว่างที่อีกคนกำลังแก้ ตรงข้ามกับสิ่งที่ realtime ทั้งระบบ
+พยายามป้องกันอยู่แล้ว **ไม่ต้องชั่งน้ำหนักเรื่องต้นทุน request แบบ booking-file** เพราะข้อมูลกลุ่มนี้ไม่ได้
+"เปิดไม่บ่อย" เหมือนตั๋ว — เปิดทุกครั้งที่ใช้แอป แต่ route handler เอง**ใช้ `'use cache'`/`'use cache: private'`
+ไม่ได้อยู่แล้วตามข้อจำกัดที่เขียนไว้ในหัวข้อ 2** (`use cache` ใช้ได้เฉพาะ Server Component/Action ไม่ใช่
+Route Handler) จึงไม่มีทางเลือกอื่นนอกจาก `Cache-Control: private, no-store` ทุก route ในกลุ่มนี้ตั้งแต่
+ตัวแรก — `'use cache: private'` ตาม `D11`/`E3-AC6` เป็นคนละชั้น (Server Component ที่**อ่าน DAL ตรง**
+ไม่ผ่าน Route Handler) ซึ่งเป็นทางเลือกสถาปัตยกรรมของ `E5`/หลังจากนี้ ไม่ใช่สิ่งที่ต้องตัดสินตอนนี้
