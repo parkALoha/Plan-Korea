@@ -840,41 +840,37 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     ).toBe("08c13364639b11f4622b7dcb2b3c2ef4382c31ada93578847a2085e5ab9ccc35");
   });
 
-  it("🔴 pin:trigger-fn-body — body ของ trigger function ต้องไม่เปลี่ยนเงียบ (จับ ②③)", () => {
-    const fns = new Set<string>();
-    for (const stmt of staticTriggerDefs().values()) {
-      const m = stmt.match(/execute\s+(?:function|procedure)\s+([\w.]+)/i);
-      if (m) fns.add(m[1].toLowerCase());
-    }
-    // 🔴 trigger พลวัต (zz_read_only_guard ผูกด้วยลูป) ถูกตัดจาก registry — แต่ *body ฟังก์ชัน* เป็น static `create or replace`
-    //    เหตุผลที่ตัด *trigger* (พลวัต) ใช้กับ *body* ไม่ได้ (P1) · deny_write_when_read_only คือฟังก์ชันเดียวที่ตัดสินว่า
-    //    เขียนทั้งระบบถูกบล็อกไหม — แก้ body = read-only เปลี่ยนเงียบ (ถูก create or replace ไปแล้ว 2 ไฟล์)
-    for (const f of migrationFiles) {
-      const sql = stripComments(readFileSync(f, "utf8"));
-      for (const m of sql.matchAll(
-        /execute\s+format\([^;]*create\s+trigger[^;]*?execute\s+(?:function|procedure)\s+([\w.]+)/gi,
-      ))
-        fns.add(m[1].toLowerCase());
-    }
-    // 🔴 write_is_blocked — *ตัวตัดสิน* ที่ deny_write_when_read_only เรียกต่อ · เป็น non-trigger helper
-    //    (ถูกเรียกจาก *ใน body* ไม่ใช่ผูกกับ trigger) → scan ทั้ง static/dynamic มองไม่เห็นตามนิยาม · ต้องระบุชื่อ (P1)
-    //    สองตัวนี้ = ทั้งหมดของโหมดอ่านอย่างเดียว · write_is_blocked ถูก create or replace ไปแล้ว 2 ครั้ง
-    fns.add("app.write_is_blocked");
-    const names = [...fns].sort();
-    expect(names, "trigger function เพิ่ม/หาย — ตัวใหม่ต้องประกาศว่า stamp หรือไม่").toEqual([
+  it("🔴 pin:app-fn-body — body ของทุกฟังก์ชัน app.* ต้องไม่เปลี่ยนเงียบ", () => {
+    // 🎯 สมาชิก = ทุกฟังก์ชันใน schema `app` — **schema เป็นคนตอบว่าใครเป็นสมาชิก ไม่ใช่คนคัด** (P1)
+    //    ทุกรูของหมุดกลุ่มนี้เกิดจาก "รายการที่คนคัดสมาชิก": derive จาก trigger → พลาด deny_write (trigger พลวัต) +
+    //    write_is_blocked (non-trigger helper) + can_write_trip (policy-called) · **ไม่มีรูไหนเกิดจากรายการที่กวาดทั้งหมด**
+    //    ชื่อ `app-fn-body` บอกเกณฑ์ตรงตัว ไม่เชิญให้ derive จาก trigger อีก · public.* RPC ที่ churn ไม่เข้า (อยู่ public · คุมด้วย pin:rpc-reachable)
+    //
+    // 🔴 `app.can_write_trip` ถูกอ้างใน policy **88 จุด** (+ `can_read_trip` อีกชุด) — ใครแก้ body มัน **กำลังเปลี่ยนสิทธิ์เขียนทั้งสคีมา**
+    //    ไม่ใช่ฟังก์ชันเดียว · `write_is_blocked`/`deny_write_when_read_only` = โหมดอ่านอย่างเดียวทั้งหมด
+    // churn วัดแล้ว (P1): 12 ตัวที่เพิ่งกวาดเข้ามานิ่งสุด ~1×/ตัว · ตัวที่ churn สูงปักอยู่ก่อนแล้ว → เพิ่มเข้ามา *ลด* อัตราแดง/ฟังก์ชัน
+    //    (`probe_definer_write` ×3 เป็นตัว churn จริงตัวเดียว · เป็น probe · ถ้าดังบ่อยค่อยตัดออก *โดยตั้งใจ* ไม่ใช่เดา)
+    const eff = effectiveFunctions();
+    const names = [...eff.keys()].filter((n) => n.startsWith("app.")).sort();
+    // positive control — effectiveFunctions พัง "ไม่เจอฟังก์ชัน" ต้องไม่กลายเป็น "ผ่านหมด" (subscribers > 0)
+    expect(names.length, "ไม่เจอฟังก์ชัน app.* เลย — ตัวช่วยพัง ไม่ใช่ 'ไม่มีฟังก์ชัน'").toBeGreaterThan(15);
+    expect(names, "ฟังก์ชัน app.* เพิ่ม/หาย — ตัวใหม่ต้องถูกไล่กิ่งก่อนขึ้นทะเบียน").toEqual([
       "app.assert_day_has_no_stops", "app.assert_place_not_in_use", "app.assert_trip_has_owner",
-      "app.assert_trip_has_plan", "app.bootstrap_trip_owner", "app.deny_write_when_read_only",
-      "app.freeze_created_by", "app.handle_new_user", "app.preserve_authorship", "app.stamp_added_by",
-      "app.stamp_checked_by", "app.stamp_hidden_by", "app.touch_updated_at", "app.touch_updated_at_only",
+      "app.assert_trip_has_plan", "app.booking_file_trip", "app.bootstrap_trip_owner", "app.can_read_trip",
+      "app.can_write_trip", "app.default_expiry_minutes", "app.deny_write_when_read_only",
+      "app.freeze_created_by", "app.handle_new_user", "app.like_literal", "app.mode_is_active",
+      "app.preserve_authorship", "app.probe_definer_write", "app.probe_log", "app.search_norm",
+      "app.shares_trip_with", "app.stamp_added_by", "app.stamp_checked_by", "app.stamp_hidden_by",
+      "app.touch_updated_at", "app.touch_updated_at_only", "app.trip_owner_count", "app.trip_role",
       "app.write_is_blocked",
     ]);
-    const eff = effectiveFunctions();
     const bodies = names.map((n) => [n, eff.get(n) ?? "MISSING"] as const);
-    expect(bodies.every(([, b]) => b !== "MISSING"), "หา body ของ trigger function บางตัวไม่เจอ").toBe(true);
+    expect(bodies.every(([, b]) => b !== "MISSING"), "หา body ของ app.* บางตัวไม่เจอ").toBe(true);
     expect(
       sha(JSON.stringify(bodies)),
-      "body ของ trigger function สักตัวเปลี่ยน — `create or replace` เปลี่ยน body ได้โดย def ของ trigger ไม่ขยับ (②③ ซ่อนตรงนี้)",
-    ).toBe("02165c6e4fc6ec1301542d6e5578afc9c3f9cecb68f74cf614cae37fbd5cb81c");
+      "body ของฟังก์ชัน app.* สักตัวเปลี่ยน — `create or replace` เปลี่ยนได้เงียบ ๆ · " +
+        "ถ้าเป็น can_write_trip = สิทธิ์เขียน 88 policy เปลี่ยนพร้อมกัน · ไล่กิ่งก่อนแก้ค่านี้",
+    ).toBe("4e1d2702d388ca67d00366651ef85b1e73f9f8279082b2819b39195a28d6876a");
   });
 
   it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
