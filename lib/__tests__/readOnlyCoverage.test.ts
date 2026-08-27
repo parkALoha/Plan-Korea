@@ -19,11 +19,12 @@ import { testClient } from "./_testClient";
  *    ① "ทุกตารางติด guard ครบ" ← ที่ต้องการ · ② "ตัวไล่ตารางพัง เลยไม่เจออะไร" ← เขียวฟรี
  *    → เคส positive control ข้างล่างยืนยันว่า **ฐานมี public table จริงจำนวนมาก** (จักรวาลไม่ว่าง)
  *      ด้วยฟังก์ชัน *คนละตัว* (`table_exposure`) · รูปเดียวกับ `routeFiles().length > 0` ใน `engineAttackSurface`
- *    ⚠️ **สิ่งที่ control นี้ยัง *ไม่* จับ (จดตรง ๆ ไม่ให้อ่านเกิน):** `read_only_uncovered_tables` กรอง `relkind='r'`
- *       เท่านั้น · ตาราง **partitioned (`'p'`)** จะถูก *ข้ามเงียบ* → คืน `[]` ทั้งที่ไม่ได้ตรวจ · `table_exposure`
- *       เห็น `'p'`/`'f'` ด้วย จึงจับ "จักรวาลว่าง" ได้ แต่ **ไม่จับ "ข้าม partitioned"** · 🎯 `E7` ถ้าพา
- *       partitioned table เข้ามา ต้องแก้ WHERE ของฟังก์ชัน + เพิ่มเคสตรงนี้ · control ปัจจุบันไม่ดักให้
- *    · ตัวที่จับได้แน่นอนคือ "ตารางทดสอบที่จงใจไม่ติด guard แล้วฟังก์ชันต้องเจอ" — ต้อง migration แยก (เสนอ P1 ถ้าต้องการ airtight)
+ *    ⚠️ **สิ่งที่ control นี้ยัง *ไม่* จับ (จดตรง ๆ ไม่ให้อ่านเกิน):** control ยืนยันแค่ **"จักรวาลไม่ว่าง"**
+ *       **ไม่ได้ยืนยันว่า enumerator ของฟังก์ชันเองไม่พัง** — ฟังก์ชันคืน `[]` เท่ากันทั้งตอน "ครอบครบ" และตอน
+ *       "base scan พังเลยไม่เจออะไร" · แยกจากข้างนอกไม่ได้ · **airtight จริงต้องมี "ตารางทดสอบที่จงใจไม่ติด guard
+ *       แล้วฟังก์ชันต้องเจอ"** — migration แยก (โซน P1 · เสนอไว้ถ้าต้องการ)
+ *    · relkind: ฟังก์ชันครอบ **`relkind in ('r','p')`** แล้ว (P1 `f3ee6d5` — ปิดรู partitioned *ก่อน* `E7` มาถึง ไม่ใช่รอ)
+ *       · partition **ลูก** ไม่ต้องกังวล — trigger `for each row` บนตาราง partitioned ถูก clone ลงทุก partition โดย Postgres เอง
  */
 
 const SERVICE = readEnvKey("SUPABASE_SERVICE_ROLE_KEY");
@@ -49,7 +50,7 @@ describe.runIf(hasCreds)("read-only coverage (live · read_only_uncovered_tables
     ).toBeGreaterThan(20);
   });
 
-  it("🔴 read_only_uncovered_tables() ต้องคืน [] — ทุกตาราง public (relkind 'r') ติด zz_read_only_guard", async () => {
+  it("🔴 read_only_uncovered_tables() ต้องคืน [] — ทุกตาราง public (relkind 'r'/'p') ติด zz_read_only_guard", async () => {
     const admin = testClient(SERVICE);
     const { data, error } = await admin.rpc("read_only_uncovered_tables");
     if (error) {
