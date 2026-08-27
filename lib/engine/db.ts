@@ -369,6 +369,39 @@ export function insertTripDestinations(db: Db, tripId: string, cityIds: readonly
   );
 }
 
+/** บัคเก็ตรูปปกทริป — **private** · URL ต้องเซ็นตอนอ่านเสมอ (`20260827220000`) */
+export const TRIP_COVERS_BUCKET = "trip-covers";
+
+/**
+ * เซ็น URL รูปปกทีเดียวทั้งชุด — ใช้ตอนสร้างรายการทริปให้หน้า Home
+ *
+ * 🔴 **`createSignedUrls` (พหูพจน์) เรียกครั้งเดียวสำหรับทุก path** — ไม่ใช่วนเซ็นทีละใบ
+ *    หน้า Home แสดงหลายทริปพร้อมกัน · วนเซ็น = N คำขอต่อการโหลดหนึ่งครั้ง
+ *
+ * ⚠️ **URL ที่ได้หมดอายุ** — เก็บลงฐานไม่ได้ (นั่นคือเหตุผลที่คอลัมน์เก็บ *path* ไม่ใช่ *url*)
+ *    ผู้เรียกต้องเซ็นใหม่ทุกคำขอ · **ห้ามแคชค่าที่ได้ข้ามคำขอ**
+ * 📌 สิทธิ์ยังเป็นของ RLS เหมือนเดิม — `trip_covers_select` ผูก `can_read_trip`
+ *    การเซ็นไม่ได้ให้สิทธิ์เพิ่ม มันแค่ทำให้สิทธิ์ที่มีอยู่ใช้งานได้ผ่าน `<img src>`
+ */
+export async function signTripCovers(
+  db: Db,
+  paths: readonly string[],
+  expiresInSeconds = 3600,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (paths.length === 0) return out;
+  const { data, error } = await db.storage
+    .from(TRIP_COVERS_BUCKET)
+    .createSignedUrls([...paths], expiresInSeconds);
+  // 🔴 เซ็นไม่ได้ **ไม่ใช่เหตุให้ทั้งรายการทริปล้ม** — การ์ดยังแสดงได้ด้วยพื้นไล่สี
+  //    คืนแมปว่างแล้วให้ผู้เรียกตัดสิน · แต่ **ห้ามเงียบ** — ผู้เรียกต้องรู้ว่าเซ็นไม่ผ่าน
+  if (error) throw new Error(`เซ็น URL รูปปกไม่ได้: ${error.message}`);
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl) out.set(row.path, row.signedUrl);
+  }
+  return out;
+}
+
 export function tripsVisibleToMe(db: Db) {
   // 🔴 **`title` ไม่ใช่ `name`** — แก้ 27 ส.ค. 2026 (P4 เจอตอนสร้าง harness ยิง route จริง)
   //    คอลัมน์ชื่อ `title` มาตั้งแต่ `…043822_identity.sql:122` และ `create_trip` ก็ insert `title`
@@ -390,7 +423,7 @@ export function tripsVisibleToMe(db: Db) {
   //       การเรียงในฝั่ง PostgREST ต้องพึ่ง `referencedTable` ซึ่งพังเงียบถ้าชื่อความสัมพันธ์เปลี่ยน
   return engineTable(db, "trips")
     .select(
-      "id, title, start_date, end_date, cover_image_url," +
+      "id, title, start_date, end_date, cover_image_path," +
         "trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en)))," +
         "trip_members(count)",
     )

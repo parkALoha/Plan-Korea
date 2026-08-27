@@ -897,7 +897,12 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       "app.preserve_authorship", "app.probe_definer_write", "app.probe_log", "app.promote_plan_if_none_active",
       "app.read_only_uncovered_tables", "app.search_norm",
       "app.shares_trip_with", "app.stamp_added_by", "app.stamp_checked_by", "app.stamp_hidden_by",
-      "app.touch_updated_at", "app.touch_updated_at_only", "app.trip_owner_count", "app.trip_role",
+      // 🔴 เพิ่ม 27 ส.ค. (P1) — `app.trip_cover_trip()` (`20260827220000`) อ่าน `trip_id` จาก path
+      //    ของ object ในบัคเก็ต `trip-covers` · **คู่แฝดของ `app.booking_file_trip()` คนละบัคเก็ต**
+      //    ไม่รวมเป็นตัวเดียวโดยตั้งใจ: การรวมต้องแก้ body ของตัวที่ policy ไฟล์ตั๋ว*ทริปจริง*พึ่งอยู่
+      //    เพื่อความสวยงามล้วน ๆ (`P-48`) · ⚠️ **แก้ข้อตกลงเรื่อง path เมื่อไหร่ ต้องแก้ทั้งคู่**
+      "app.touch_updated_at", "app.touch_updated_at_only", "app.trip_cover_trip",
+      "app.trip_owner_count", "app.trip_role",
       "app.write_is_blocked",
     ]);
     const bodies = names.map((n) => [n, eff.get(n) ?? "MISSING"] as const);
@@ -911,7 +916,11 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     //    (`create or replace function app.read_only_uncovered_tables()`) · ไม่มี `create or replace`
     //    ทับฟังก์ชันเดิมสักตัว · รายชื่อ 28 → 29 ตัว ต่างกันแค่ตัวใหม่นี้
     //    ⚠️ นี่คือขั้นตอนที่หมุดนี้มีไว้บังคับ — **ขึ้นค่าโดยไม่ไล่ = ฆ่าหมุด** (`P-48`)
-    ).toBe("273dcd1109f14da6ec46f5b401f798be4d9ef315dbad642718199a85c0e48118");
+    ).toBe("f998beab86f83087c2f9734f3b6ee8ece54d535832895b70f135a58f1aea916e");
+    // 🔴 ขึ้นค่ารอบ 3 · 27 ส.ค. (P1) — **เปลี่ยนเพราะ *เพิ่ม* ฟังก์ชัน ไม่ใช่ *แก้* body ตัวเดิม**
+    //    (ต่างจากรอบ 2 ที่แก้ `read_only_uncovered_tables` · เหมือนรอบ 1 ที่เพิ่มตัวใหม่)
+    //    ตัวใหม่คือ `app.trip_cover_trip()` — `20260827220000` มี `create or replace function app.*`
+    //    **บรรทัดเดียว** ไม่ทับ body ของตัวเดิมสักตัว · รายชื่อ 29 → 30 ต่างกันแค่ตัวนี้
     // 🔴 ขึ้นค่ารอบ 2 · 27 ส.ค. (P1) — **คราวนี้เปลี่ยนเพราะ *แก้ body ของตัวเดิม* ซึ่งเป็นเคส
     //    ที่หมุดนี้มีไว้จับโดยตรง ไม่ใช่การเพิ่มฟังก์ชันแบบรอบก่อน**
     //    ตัวที่แก้: `app.read_only_uncovered_tables()` · `20260827210000` · **เปลี่ยนเงื่อนไขเดียว**

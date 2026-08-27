@@ -1,4 +1,4 @@
-import { tripsVisibleToMe, type Db } from "./db";
+import { signTripCovers, tripsVisibleToMe, type Db } from "./db";
 import { chooseSoleTrip, type SoleTrip } from "./tripChoice";
 
 // 🔴 re-export ให้ผู้เรียก *ฝั่งเซิร์ฟเวอร์* เท่านั้น — ฝั่ง client ต้อง import จาก `./tripChoice` ตรง ๆ
@@ -67,6 +67,11 @@ export type TripListItem = {
   title: string;
   start_date: string;
   end_date: string;
+  /**
+   * 🔴 **URL ที่เซ็นแล้วและหมดอายุ ไม่ใช่ค่าที่เก็บในฐาน** — ฐานเก็บ `cover_image_path`
+   * ชื่อฟิลด์ต่างจากชื่อคอลัมน์เพราะ **ของต่างกัน** ไม่ใช่เพราะไม่สม่ำเสมอ
+   * · `null` = ไม่มีรูปปก **หรือ** เซ็นไม่ผ่าน — UI แสดงพื้นไล่สีทั้งสองกรณี
+   */
   coverImageUrl: string | null;
   destinations: TripDestination[];
   memberCount: number;
@@ -78,7 +83,7 @@ type RawTripRow = {
   title: string;
   start_date: string;
   end_date: string;
-  cover_image_url: string | null;
+  cover_image_path: string | null;
   trip_destinations: {
     rank: number;
     catalog_cities: {
@@ -99,12 +104,17 @@ export async function tripsForUser(db: Db): Promise<TripListItem[]> {
   const { data, error } = await tripsVisibleToMe(db);
   if (error) throw new Error(`อ่านรายการทริปไม่ได้: ${error.message}`);
   const rows = (data ?? []) as unknown as RawTripRow[];
+  // เซ็น URL รูปปกทีเดียวทั้งชุด ก่อนแบนแถว — ดู `signTripCovers()`
+  const covers = await signTripCovers(
+    db,
+    rows.map((r) => r.cover_image_path).filter((p): p is string => !!p),
+  );
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
     start_date: r.start_date,
     end_date: r.end_date,
-    coverImageUrl: r.cover_image_url,
+    coverImageUrl: r.cover_image_path ? covers.get(r.cover_image_path) ?? null : null,
     // เรียงด้วย `(rank, cityId)` — `rank` ไม่ unique โดยตั้งใจ (เหตุผลเดียวกับ `trip_stops.rank`)
     // `cityId` คือ tie-break ที่ทำให้ทุกเครื่องได้ลำดับเดียวกัน
     destinations: (r.trip_destinations ?? [])
