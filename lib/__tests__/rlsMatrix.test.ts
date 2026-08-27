@@ -1201,6 +1201,10 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     let tripD = "";
     const day1 = "2026-10-12";
     const day2 = "2026-10-13";
+    // 🔴 create_trip สร้างวัน 10-11..10-21 ให้เองแล้ว (E5) → insert วันในช่วงชน trip_days_unique_date
+    //    เคส "เพิ่มวันได้" จึงเพิ่มวัน *นอกช่วง* เพื่อทดสอบสิทธิ์เขียน INSERT (ไม่มี date-range constraint) · day1/day2 ยังมี (auto) ให้เคสอื่น
+    const extraDay1 = "2026-10-22";
+    const extraDay2 = "2026-10-23";
 
     beforeAll(async () => {
       const { data, error } = await A.rpc("create_trip", {
@@ -1229,12 +1233,12 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     // ── ด้านบวก — precondition ของทั้งบล็อก ────────────────────────────────
     describe("ด้านบวก — ถ้าตรงนี้แดง เคสด้านลบข้างล่างไม่ได้พิสูจน์อะไรเลย", () => {
       it("owner เพิ่มวันได้", async () => {
-        const { error } = await A.from("trip_days").insert({ trip_id: tripD, date: day1 });
+        const { error } = await A.from("trip_days").insert({ trip_id: tripD, date: extraDay1 });
         expect(error, `owner เพิ่มวันไม่ได้: ${error?.message}`).toBeNull();
       });
 
       it("🔴 editor เพิ่มวันได้ — กิ่งที่ทำให้ `editor` มีความหมายต่างจาก `viewer` เป็นครั้งแรก", async () => {
-        const { error } = await B.from("trip_days").insert({ trip_id: tripD, date: day2 });
+        const { error } = await B.from("trip_days").insert({ trip_id: tripD, date: extraDay2 });
         expect(
           error,
           `editor เพิ่มวันไม่ได้: ${error?.message}\n` +
@@ -1245,10 +1249,13 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       it("🔴 viewer อ่านวันได้ — คนที่ถูกเชิญมาดูแผน ต้องเห็นแผน (P-44)", async () => {
         const { data, error } = await C.from("trip_days").select("date").eq("trip_id", tripD);
         expect(error).toBeNull();
+        // create_trip สร้างวันให้ → จำนวนไม่ fix ที่ 2 อีก · viewer ต้องเห็น *เท่ากับ* owner (แผนเต็ม ไม่ใช่ subset)
+        const ownerView = await A.from("trip_days").select("date").eq("trip_id", tripD);
         expect(
-          data,
-          "viewer เปิดมาเจอหน้าเปล่า = ฟีเจอร์หลักตายโดยที่ข้ออ้างความปลอดภัยยังจริงทุกข้อ",
-        ).toHaveLength(2);
+          (data ?? []).length,
+          "viewer เปิดมาเจอหน้าเปล่า/ไม่ครบ = ฟีเจอร์หลักตายโดยที่ข้ออ้างความปลอดภัยยังจริงทุกข้อ",
+        ).toBe((ownerView.data ?? []).length);
+        expect((data ?? []).length, "viewer เห็นหน้าเปล่า").toBeGreaterThan(0);
       });
     });
 
@@ -1289,8 +1296,9 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
 
     it("🔴 คนนอกอ่านวันของทริปที่ตัวเองไม่ได้อยู่ ไม่ได้ (cross-tenant read)", async () => {
-      const { error: mkErr } = await B.from("trip_days").insert({ trip_id: tripB, date: day1 });
-      expect(mkErr, "B เพิ่มวันในทริปตัวเองไม่ได้").toBeNull();
+      // tripB มีวันจาก create_trip อยู่แล้ว (E5) — ไม่ต้อง insert (จะชน) · แค่ยืนยันว่ามีวันเป็น precondition
+      const { data: bDays } = await B.from("trip_days").select("id").eq("trip_id", tripB);
+      expect((bDays ?? []).length, "tripB ควรมีวัน (create_trip สร้างให้) precondition ของ cross-tenant").toBeGreaterThan(0);
 
       const { data } = await A.from("trip_days").select("id").eq("trip_id", tripB);
       expect(data, "A ไม่ได้เป็นสมาชิก tripB แต่เห็นวันของมัน").toEqual([]);
@@ -1396,10 +1404,11 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     };
 
     const mkDay = async (trip: string, date: string) => {
-      const { data, error } = await A.from("trip_days")
-        .insert({ trip_id: trip, date })
-        .select("id")
-        .single();
+      // create_trip สร้างวันให้แล้ว (E5) — read-or-insert: มีวันนี้แล้วใช้เลย ไม่งั้น insert (ไม่ชน unique)
+      const existing = await A.from("trip_days").select("id").eq("trip_id", trip).eq("date", date).maybeSingle();
+      if (existing.error) throw new Error(`อ่านวัน ${date} ไม่ได้: ${existing.error.message}`);
+      if (existing.data) return existing.data.id as string;
+      const { data, error } = await A.from("trip_days").insert({ trip_id: trip, date }).select("id").single();
       if (error) throw new Error(`สร้างวัน ${date} ไม่ได้: ${error.message}`);
       return data.id as string;
     };
@@ -1566,10 +1575,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       tripT = data.id as string;
 
       const day = await A.from("trip_days")
-        .insert({ trip_id: tripT, date: "2026-10-15" })
-        .select("id")
-        .single();
-      if (day.error) throw new Error(`สร้างวันไม่ได้: ${day.error.message}`);
+        .select("id").eq("trip_id", tripT).order("date").limit(1).single(); // create_trip มีวันให้แล้ว (E5) — อ่านแทน insert
+      if (day.error) throw new Error(`อ่านวันไม่ได้: ${day.error.message}`);
       dayT = day.data.id as string;
 
       const plan = await A.from("trip_plans")
@@ -1584,7 +1591,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
     describe("ด้านบวก — แถวปกติต้องยังเขียนได้ (กันเคสลืมเติมคอลัมน์ลง grant)", () => {
       it("insert ที่ไม่ส่งคอลัมน์เวลามา ต้องผ่านทุกตาราง", async () => {
-        const day = await A.from("trip_days").insert({ trip_id: tripT, date: "2026-10-16" });
+        const day = await A.from("trip_days").insert({ trip_id: tripT, date: "2026-10-24" }); // นอกช่วง (create_trip fill 11-21) — insert ใหม่ทดสอบ grant ไม่ชน
         expect(day.error, `trip_days: ${day.error?.message}`).toBeNull();
 
         const plan = await A.from("trip_plans").insert({ trip_id: tripT, name: "แผนเวลา 2" });
@@ -2512,8 +2519,9 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       if (pl.error) throw new Error(`สร้างแผน: ${pl.error.message}`);
       planS = pl.data.id as string;
 
-      const d1 = await A.from("trip_days").insert({ trip_id: tripS, date: "2026-10-12" }).select("id").single();
-      const d2 = await A.from("trip_days").insert({ trip_id: tripS, date: "2026-10-13" }).select("id").single();
+      // create_trip สร้างวันให้แล้ว (E5) — อ่านวันที่มี ไม่ insert (จะชน unique) · tripS ต้องการ 2 วันต่างกัน → แรก+ที่สอง
+      const d1 = await A.from("trip_days").select("id").eq("trip_id", tripS).order("date").limit(1).single();
+      const d2 = await A.from("trip_days").select("id").eq("trip_id", tripS).order("date").range(1, 1).single();
       if (d1.error || d2.error) throw new Error(`สร้างวัน: ${d1.error?.message ?? d2.error?.message}`);
       dayS1 = d1.data!.id as string;
       dayS2 = d2.data!.id as string;
@@ -2655,7 +2663,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         p_title: `cascade-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
       });
       const p = await A.from("trip_plans").insert({ trip_id: t.data.id, name: "P" }).select("id").single();
-      const d = await A.from("trip_days").insert({ trip_id: t.data.id, date: "2026-10-12" }).select("id").single();
+      const d = await A.from("trip_days").select("id").eq("trip_id", t.data.id).order("date").limit(1).single();
       await A.from("trip_stops").insert({
         trip_id: t.data.id, plan_id: p.data!.id, trip_day_id: d.data!.id,
         kind: "place", catalog_place_id: catPlace, rank: "m",
@@ -2700,7 +2708,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
 
       const pl = await A.from("trip_plans").insert({ trip_id: tripD2, name: "P" }).select("id").single();
       planD = pl.data!.id as string;
-      const dd = await A.from("trip_days").insert({ trip_id: tripD2, date: "2026-10-12" }).select("id").single();
+      const dd = await A.from("trip_days").select("id").eq("trip_id", tripD2).order("date").limit(1).single();
       dayD = dd.data!.id as string;
       const pc = await A.from("custom_places")
         .insert({ trip_id: tripD2, city_id: ci.data.id, category: "cafe", lat: 1, lng: 1 })
@@ -2785,7 +2793,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
 
     it("🔴 ลบสถานที่ที่ยังมีจุดแวะ *ที่ยังไม่ถูกลบ* ชี้อยู่ ไม่ได้", async () => {
-      const d2 = await A.from("trip_days").insert({ trip_id: tripD2, date: "2026-10-14" }).select("id").single();
+      const d2 = await A.from("trip_days").select("id").eq("trip_id", tripD2).order("date").limit(1).single();
       const st2 = await A.from("trip_stops").insert({
         trip_id: tripD2, plan_id: planD, trip_day_id: d2.data!.id,
         kind: "place", custom_place_id: placeD, rank: "n",
@@ -2912,7 +2920,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       await A.from("trip_members").insert({ trip_id: tripB2, user_id: ids.b, role: "editor" });
       await A.from("trip_members").insert({ trip_id: tripB2, user_id: ids.c, role: "viewer" });
 
-      const d = await A.from("trip_days").insert({ trip_id: tripB2, date: "2026-10-14" }).select("id").single();
+      const d = await A.from("trip_days").select("id").eq("trip_id", tripB2).order("date").limit(1).single();
       if (d.error) throw new Error(`สร้างวัน: ${d.error.message}`);
       dayB = d.data.id as string;
     });
@@ -2944,7 +2952,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       const t2 = await A.rpc("create_trip", {
         p_title: `book-other-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-21",
       });
-      const d2 = await A.from("trip_days").insert({ trip_id: t2.data.id, date: "2026-10-14" }).select("id").single();
+      const d2 = await A.from("trip_days").select("id").eq("trip_id", t2.data.id).order("date").limit(1).single();
       const { error } = await A.from("bookings")
         .insert({ trip_id: tripB2, trip_day_id: d2.data!.id, category: "x", title: "ข้ามทริป" });
       expect(error?.code, `ผูกใบจองข้ามทริปได้: ${error?.message ?? "ไม่มี error"}`).toBe("23503");
@@ -3319,7 +3327,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       const pl = await A.from("trip_plans").select("id").eq("trip_id", tripU2).eq("is_active", true).single();
       if (pl.error) throw new Error(`หาแผน: ${pl.error.message}`);
       planU = pl.data.id as string;
-      const dy = await A.from("trip_days").insert({ trip_id: tripU2, date: "2026-10-12" }).select("id").single();
+      const dy = await A.from("trip_days").select("id").eq("trip_id", tripU2).order("date").limit(1).single();
       if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
       dayU = dy.data.id as string;
 
@@ -3510,7 +3518,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       tripE = t.data.id as string;
       const pl = await A.from("trip_plans").select("id").eq("trip_id", tripE).eq("is_active", true).single();
       planE = pl.data!.id as string;
-      const dy = await A.from("trip_days").insert({ trip_id: tripE, date: "2026-10-12" }).select("id").single();
+      const dy = await A.from("trip_days").select("id").eq("trip_id", tripE).order("date").limit(1).single();
       if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
       dayE = dy.data.id as string;
     });
@@ -3757,7 +3765,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       if (t.error) throw new Error(`สร้างทริป: ${t.error.message}`);
       tripR = t.data.id as string;
       const pl = await A.from("trip_plans").select("id").eq("trip_id", tripR).eq("is_active", true).single();
-      const dy = await A.from("trip_days").insert({ trip_id: tripR, date: "2026-10-12" }).select("id").single();
+      const dy = await A.from("trip_days").select("id").eq("trip_id", tripR).order("date").limit(1).single();
       if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
       const base = { trip_id: tripR, plan_id: pl.data!.id, trip_day_id: dy.data.id };
 
@@ -4317,7 +4325,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       const pl = await A.from("trip_plans").select("id").eq("trip_id", tripS).eq("is_active", true).single();
       if (pl.error) throw new Error(`หาแผน: ${pl.error.message}`);
       const planS = pl.data.id as string;
-      const dy = await A.from("trip_days").insert({ trip_id: tripS, date: "2026-10-12" }).select("id").single();
+      const dy = await A.from("trip_days").select("id").eq("trip_id", tripS).order("date").limit(1).single();
       if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
       const dayS = dy.data.id as string;
       const mp = await A.from("custom_places")
@@ -4851,7 +4859,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       if (pl.error) throw new Error(`หาแผน: ${pl.error.message}`);
       planQ = pl.data.id as string;
 
-      const dy = await A.from("trip_days").insert({ trip_id: tripQ, date: "2026-10-12" }).select("id").single();
+      const dy = await A.from("trip_days").select("id").eq("trip_id", tripQ).order("date").limit(1).single();
       if (dy.error) throw new Error(`สร้างวัน: ${dy.error.message}`);
       dayQ = dy.data.id as string;
 
