@@ -666,6 +666,16 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(data?.title).toBe(`renamed-${stamp}`);
     });
 
+    it("🔴 A ตั้งรูปปก (cover_image_url) ได้ — พิสูจน์ column grant มีจริง ไม่ใช่แค่ไม่มี error (E5)", async () => {
+      // per-column grant (`20260827180000`) ลืมได้ · อาการคือ "บันทึกแล้วไม่เปลี่ยน" ไม่ใช่ error
+      // → เคสฝั่งลบ (คนอื่นเขียนไม่ได้) มองไม่เห็น grant ที่หาย · ต้อง assert *เนื้อ* ที่อ่านกลับมา
+      const url = `https://example.test/cover-${stamp}.jpg`;
+      const { error } = await A.from("trips").update({ cover_image_url: url }).eq("id", tripA);
+      expect(error, `owner ตั้ง cover_image_url ไม่ได้: ${error?.message}`).toBeNull();
+      const { data } = await A.from("trips").select("cover_image_url").eq("id", tripA).single();
+      expect(data?.cover_image_url, "บันทึกแล้วค่าไม่เปลี่ยน = column grant หาย · owner เขียนคอลัมน์นี้ไม่ได้").toBe(url);
+    });
+
     it("A อ่านโปรไฟล์ตัวเองได้", async () => {
       const { data } = await A.from("profiles").select("id").eq("id", ids.a);
       expect(data).toHaveLength(1);
