@@ -100,7 +100,28 @@ function engineTable(db: Db, name: EngineTable) {
  * พอทั้งคู่เป็นแถวใน `catalog_places` ตารางเดียวกัน เหลือแค่คอลัมน์ธง
  */
 export function browseCatalogPlaces(db: Db, opts: { cityId?: string; countryId?: string; limit?: number }) {
-  let q = engineTable(db, "catalog_places").select("*").eq("picker_hidden", false);
+  // 🔴 **สองเงื่อนไข ไม่ใช่หนึ่ง — และเหตุผลคือสองคอลัมน์นี้ตอบคนละคำถาม** (P4 ชี้ · P1 แก้ · 27 ส.ค. 2026)
+  //
+  //   `source = 'transfer'`  → *"แถวนี้เป็นสนามบิน/สถานีใช่ไหม"*  → **ไม่ใช่ที่เที่ยว ไม่ควรอยู่ในคลัง**
+  //   `picker_hidden`        → *"ซ่อนจากลิสต์ 'ไปสนามบิน/สถานี' ไหม"* → ตอบเฉพาะ modal นั้น
+  //
+  // 🎯 **ก่อนหน้านี้ที่นี่กรองแค่ `picker_hidden` และมันตอบผิดคำถาม** — วัดจริงแล้ว
+  //    25 จาก 28 จุดเปลี่ยนเส้นทางมี `picker_hidden = false` **ซึ่งถูกต้องตามความหมายของมัน**:
+  //    คุณ *ต้องการ* เลือก "ไปสนามบินกิมแฮ" ในโมดัลนั้น · ที่ซ่อนมีแค่ 3 คือสนามบินต้นทาง/ต่อเครื่อง
+  //    (`airport-bkk` · `airport-dmk` · `airport-sgn`) ที่ไม่มีวันไหนต้องแทรกแถว "ไปสนามบิน" ไปหา
+  //
+  // 🔴 **ทางที่ปฏิเสธ: กลับ `picker_hidden` เป็น `true` ให้ทุกแถว transfer**
+  //    มันจะทำให้ browse ถูก **โดยแลกกับการทำให้โมดัล "✈️ ไปสนามบิน/สถานี" ว่างเปล่า**
+  //    = ยัดความหมายที่สองลงคอลัมน์เดิม แล้วความหมายแรกตายเงียบ ๆ
+  //    · ตระกูลเดียวกับที่ปฏิเสธไปแล้ววันนี้ตอน `read_only_selftest()` (คอลัมน์ `blocked`
+  //      ที่จะแปลว่าคนละอย่างตามแถว) · **คอลัมน์หนึ่งตอบคำถามเดียว**
+  //
+  // ⚠️ วันนี้ยังไม่มีใครเรียกฟังก์ชันนี้จากโค้ดแอป (ไซด์บาร์ยังอ่าน `data/places.ts` สถิตย์ — งาน `B6`)
+  //    → **ผู้ใช้ยังไม่เห็นบั๊กนี้** · แก้ตอนนี้เพราะ `B6` จะเปิดมันทันทีที่ย้าย ไม่ใช่เพราะกำลังไหม้
+  let q = engineTable(db, "catalog_places")
+    .select("*")
+    .eq("picker_hidden", false)
+    .neq("source", "transfer");
   if (opts.cityId) q = q.eq("city_id", opts.cityId);
   if (opts.countryId) q = q.eq("country_id", opts.countryId);
   return q.limit(opts.limit ?? 50);
