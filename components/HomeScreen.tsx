@@ -87,29 +87,52 @@ function TripCard({ trip }: { trip: TripListItem }) {
   );
 }
 
+/**
+ * แยก "อ่านไม่ได้" ออกจาก "ไม่มีข้อมูล" — เดิม `.catch()` เดียวจับทั้ง 502 และออฟไลน์แล้ว fallback เป็น
+ * `trips=[]` เงียบๆ ทำให้เน็ตสะดุดหน้างานจริงดูเหมือน "ทริปหายไปหมด" (P1 ชี้ 27 ส.ค. 2026 หลังเจอ
+ * 502 จริงจาก cover_image_path ระหว่าง live-verify — เห็น "ยังไม่มีทริป" ทั้งที่มีทริปอยู่)
+ * รูปแบบเดียวกับ `useActiveTripId`'s `"error"` state (`hooks/useActiveTripId.ts`) แต่ไม่แยกออฟไลน์/502
+ * เป็นข้อความคนละแบบ (ตามที่ P1 บอกว่า "ถ้าแยกยากเกินไป รวมเป็นอันเดียวก็ยังดีกว่าปัจจุบันมาก")
+ */
+type TripsState =
+  | { status: "loading" }
+  | { status: "ready"; trips: TripListItem[] }
+  | { status: "error" };
+
 export function HomeScreen() {
   const user = useCurrentUser();
   const { mode: systemMode } = useSystemMode();
   const readOnly = systemMode.state === "ok" && systemMode.readOnly;
 
-  const [trips, setTrips] = useState<TripListItem[] | null>(null);
+  const [state, setState] = useState<TripsState>({ status: "loading" });
+  const [retryKey, setRetryKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    // ไม่ setState({status:"loading"}) ตรงนี้ (จะชน react-hooks/set-state-in-effect) — ตอนกดลองใหม่
+    // จอจะค้างข้อความ "อ่านไม่ได้" ต่อจนกว่า fetch จะตอบ แทนที่จะกะพริบกลับไป skeleton สั้นๆ ยอมรับได้
     fetch("/api/engine/trips")
-      .then((r) => r.json())
-      .then((rows: TripListItem[]) => {
+      .then((r) => {
+        if (!r.ok) throw new Error(`เปิดรายการทริปไม่ได้ (${r.status})`);
+        return r.json() as Promise<TripListItem[]>;
+      })
+      .then((rows) => {
         if (cancelled) return;
-        setTrips([...rows].sort((a, b) => a.start_date.localeCompare(b.start_date)));
+        setState({
+          status: "ready",
+          trips: [...rows].sort((a, b) => a.start_date.localeCompare(b.start_date)),
+        });
       })
       .catch(() => {
-        if (!cancelled) setTrips([]);
+        if (!cancelled) setState({ status: "error" });
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryKey]);
+
+  const trips = state.status === "ready" ? state.trips : null;
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content">
@@ -146,12 +169,25 @@ export function HomeScreen() {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 pt-5">
-        {trips === null ? (
+        {state.status === "loading" ? (
           <div className="space-y-3">
             <div className="h-24 animate-pulse rounded-2xl bg-surface-soft" />
             <div className="h-24 animate-pulse rounded-2xl bg-surface-soft" />
           </div>
-        ) : trips.length === 0 ? (
+        ) : state.status === "error" ? (
+          // 🔴 ห้ามเหมารวมกับ "ยังไม่มีทริป" (trips.length===0) — ผู้ใช้ต้องแยกออกว่านี่คืออ่านไม่ได้
+          // ไม่ใช่ทริปหาย และห้ามมี CreateTripForm ตรงนี้ (จะเสี่ยงให้สร้างทริปซ้ำทั้งที่ของเดิมยังอยู่
+          // แค่โหลดไม่ได้) มีแต่ทางลองใหม่ (P1 ขอ E5, 27 ส.ค. 2026)
+          <div className="flex flex-col items-center gap-4 py-10 text-center">
+            <p className="text-content-soft">{COPY.tripsUnreadable}</p>
+            <button
+              onClick={() => setRetryKey((k) => k + 1)}
+              className="rounded-lg bg-maple px-4 py-2 text-sm font-semibold text-white hover:bg-maple-dark"
+            >
+              {COPY.retry}
+            </button>
+          </div>
+        ) : state.trips.length === 0 ? (
           // สถานะว่าง — พฤติกรรมเดิมของ TripStatusFallback ห้ามหาย (E5 ข้อ 3) แค่ย้ายมาอยู่ที่ Home
           // โดยตรงแทนที่จะรอ useActiveTripId() ตัดสินว่า "none" เพราะ Home ไม่ได้ resolve ทริปเดียวอีกแล้ว
           <div className="flex flex-col items-center gap-4 py-10 text-center">
@@ -164,7 +200,7 @@ export function HomeScreen() {
               {COPY.upcomingTrips}
             </h2>
             <div className="space-y-3">
-              {trips.map((trip) => (
+              {state.trips.map((trip) => (
                 <TripCard key={trip.id} trip={trip} />
               ))}
             </div>
