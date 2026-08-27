@@ -262,6 +262,26 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
         run: .github/check-readonly-mode.py
 
+      # 🔴 **นิยามชุดไฟล์จาก `grep -l READ_ONLY_MODE_TEST` ไม่ใช่ชื่อไฟล์ ไม่ใช่ list ตายตัว**
+      #    (P4 ขอ · P6 ตัดสิน · 27 ส.ค. 2026 — P4 เพิ่ม `readOnlyPaths.test.ts` แล้วมันไม่เคยรันเลย
+      #    เพราะ step เดิม hardcode ชื่อไฟล์เดียว)
+      #
+      #    ทำไมไม่ใช้ P4 เสนอ (ข) `readOnly*.test.ts` ตรง ๆ: **วัดแล้วมันกวาด
+      #    `readOnlyCoverage.test.ts` เข้ามาด้วย** — ไฟล์นั้นเป็นเทสต์ปกติที่รันใน job `verify`
+      #    อยู่แล้ว มี `skipped` 2 เคสที่ต้องพึ่ง `EXPECT_SKIPPED_TESTS=1` ซึ่ง job นี้ไม่ได้ตั้ง
+      #    → เอาชื่อไฟล์มาเดา จะดึงของที่ไม่เกี่ยวเข้ามาพร้อมเงื่อนไขที่ไม่ตรง
+      #    🎯 **นิยามที่ตรงกว่าชื่อไฟล์คือ "อ้างถึงธงนี้จริงไหม"** — `grep -l` ตอบตรงนั้น
+      #       และไม่มีทางดึง `readOnlyCoverage.test.ts` เข้ามา เพราะมันไม่อ้างถึงธงนี้เลย
+      #
+      #    🔴 **เซตว่าง = ตัวไล่พัง ไม่ใช่ "ไม่มีอะไรให้รัน"** (รอบที่ 5 ของทีมในวันนี้)
+      #       ถ้าวันหนึ่งมีคนเปลี่ยนชื่อ env var หรือลบทั้งสองไฟล์ ต้อง **exit 1 ทันที**
+      #       ไม่ใช่ปล่อยให้ step ผ่านเงียบ ๆ เพราะไม่มีไฟล์ให้รัน
+      #
+      #    ⚠️ **ทดสอบใน bash โดยตรง ไม่ใช่ zsh** — ตอนแรกทดสอบใน zsh interactive shell
+      #       แล้ว `$FILES` (หลายบรรทัด) ไม่ถูก word-split เพราะ zsh ไม่ split unquoted var
+      #       โดยปริยาย ผลคือ vitest เห็นเป็น 1 อาร์กิวเมนต์ที่มี newline ข้างใน → "No test
+      #       files found" · **`run:` ของ GitHub Actions ใช้ bash เสมอ ไม่ใช่ shell ของเครื่อง
+      #       ที่พิมพ์คำสั่งทดสอบ** — ต้องทดสอบด้วย `bash -c '...'` ไม่ใช่รันตรง ๆ ในเทอร์มินัล
       - name: รันเทสต์ (เข้าโหมดจริง)
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
@@ -269,7 +289,15 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
           READ_ONLY_MODE_TEST: '1'
           READ_ONLY_MODE_PHASE: ${{ inputs.phase }}
-        run: npx vitest run lib/__tests__/readOnlyStorage.test.ts
+        run: |
+          FILES="$(grep -l 'READ_ONLY_MODE_TEST' lib/__tests__/*.test.ts || true)"
+          if [ -z "$FILES" ]; then
+            echo "🔴 ไม่พบไฟล์ที่อ้างถึง READ_ONLY_MODE_TEST เลยสักไฟล์"
+            echo "   ตัวไล่พังหรือไม่มีเคสสดเหลืออยู่ — ไม่ถือว่า 'ไม่มีอะไรให้รัน' = ผ่าน"
+            exit 1
+          fi
+          echo "ไฟล์ที่รัน: $FILES"
+          npx vitest run $FILES
 
       # ③ 🔴 **ตรวจ *เสมอ* ว่าโหมดปิดแล้ว — รวมถึงตอนเทสต์ล้มหรือถูกยกเลิก**
       #    `afterAll` ของ vitest ไม่รันเมื่อ job ถูก kill · ตาข่ายจริงคือ expiry ฝั่ง DB (P4 ตั้งสั้น)
