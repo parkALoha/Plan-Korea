@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readEnvKey, requireLiveCreds, TEST_COUNTRY_CODES } from "./_helpers";
 import { testClient } from "./_testClient";
-import { browseCatalogPlaces } from "@/lib/engine/db";
+import { browseCatalogPlaces, searchCatalogCities } from "@/lib/engine/db";
 
 /**
  * `E4` — ประเทศที่ **ประกาศรองรับ** ต้องมีสถานที่ให้เที่ยวจริง · เจ้าของ: P4 (27 ส.ค. 2026)
@@ -43,10 +43,14 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
 
   async function survey() {
     const admin = testClient(SERVICE);
-    const co = await admin.from("catalog_countries").select("id,name_th");
+    // 🔴 **แหล่งความจริงเดียวคือคอลัมน์ `supported`** (`20260828001500` · P1) — ไม่ใช่ "ไม่ใช่รหัสสงวน" อีกแล้ว
+    //    เดิมกรองด้วย denylist ของรหัสทดสอบ ซึ่งแปลว่า **โค้ดต้องรู้จัก artifact ของชุดทดสอบ**
+    //    · `supported` เป็น allowlist ที่ระบบประกาศเอง (`default false`) → ของใหม่ไม่หลุดออกไปเอง
+    //      = **fail-safe โดยโครงสร้าง ไม่ใช่โดยความขยันจด**
+    //    ⚠️ ทะเบียนรหัสสงวนยังมีที่ของมัน — สำหรับกัน**บล็อกเทสต์ชนกัน** ไม่ใช่ตัดสินว่าผู้ใช้เห็นอะไร
+    const co = await admin.from("catalog_countries").select("id,name_th").eq("supported", true);
     if (co.error) throw new Error(`อ่าน catalog_countries: ${co.error.message}`);
     const supported = ((co.data ?? []) as { id: string; name_th: string }[])
-      .filter((c) => !reserved.has(c.id))
       .sort((a, b) => (a.id < b.id ? -1 : 1));
 
     const out: {
@@ -90,7 +94,16 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
   it("positive control — ตัวสำรวจเห็นประเทศจริง และเห็นสถานที่จริงอย่างน้อยหนึ่งประเทศ", async () => {
     const rows = await survey();
     // 🔴 ถ้าตัวกรองพัง/creds ผิด รายการจะว่าง แล้วเคสข้างล่างจะเขียวเพราะไม่มีอะไรให้ตรวจ (P-21)
-    expect(rows.length, "ไม่เห็นประเทศที่ไม่ใช่รหัสทดสอบเลย — ตัวกรองหรือ creds พัง").toBeGreaterThan(0);
+    expect(rows.length, "ไม่เห็นประเทศ supported เลย — ตัวกรองหรือ creds พัง").toBeGreaterThan(0);
+    // 🔴 กันเขียวด้วย "ศูนย์ประเทศ" ตอนสลับแหล่งความจริง — เคยเขียวด้วย 4 ประเทศ
+    //    ต้องไม่กลายเป็นเขียวด้วย 0 เงียบ ๆ · เป็น **พื้น ไม่ใช่เพดาน**: ประเทศที่ 5 เพิ่มได้ ผ่านเหมือนเดิม
+    //    แต่ถอด 4 ตัวนี้ออกเมื่อไหร่ = ของที่ผู้ใช้ใช้อยู่หายไป ต้องแดง
+    for (const must of ["jp", "kr", "th", "vn"]) {
+      expect(
+        rows.map((r) => r.id),
+        `ประเทศ '${must}' ไม่ได้ supported=true — ผู้ใช้เลือกจุดหมายประเทศนี้ไม่ได้แล้ว`,
+      ).toContain(must);
+    }
     expect(
       rows.some((r) => r.visitable > 0),
       "ไม่มีประเทศไหนมีสถานที่เที่ยวเลยสักแห่ง — น่าจะเป็นตัวนับพัง ไม่ใช่คลังว่างทั้งใบ",
@@ -190,6 +203,97 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
         "  🔴 ผู้ใช้จะเห็นสนามบินปนในลิสต์เพิ่มสถานที่ทันทีที่ `B6` ย้ายไซด์บาร์มาใช้ฟังก์ชันนี้\n" +
         "  ⚠️ **ทางแก้ไม่ใช่กลับค่า `picker_hidden`** — ธงนั้นคุมโมดัล 'ไปสนามบิน/สถานี' คนละเรื่องกัน\n" +
         "  → กรองที่ `browseCatalogPlaces()` ด้วย `source` (ดู `lib/engine/db.ts`)",
+    ).toEqual([]);
+  });
+});
+
+/**
+ * `E4` — ช่องค้นเมืองปลายทางต้องไม่คืน fixture ของชุดทดสอบ · เจ้าของ: P4 (28 ส.ค. 2026)
+ *
+ * ก่อนแก้ (`968ced0`): เมืองในฐาน 1,736 · **ที่ผู้ใช้ค้นเจอได้ 1,694 เป็น fixture (98%)**
+ * `q="อ"` คืน *"เมืองC"* จากประเทศ *"ทดสอบสาม"* · แก้ด้วย `catalog_countries!inner` + `supported`
+ *
+ * ## 🔴 ทำไมต้องมี 4 assert ไม่ใช่ 1
+ * ท่าที่ตรงที่สุด (P2) คือค้น**คำที่เจาะจง fixture ล้วน** แล้วคาดหวัง **0 แถว** — เจาะจงดีมาก
+ * **แต่ `0 แถว` คือสิ่งที่จะได้เหมือนกันเป๊ะถ้า `searchCatalogCities()` พังทั้งฟังก์ชัน**
+ * 🎯 **กับดักเซตว่างในฝั่งที่ *ศูนย์คือคำตอบที่ถูกต้อง*** — ไม่มีอะไรสะดุดตาเลย เพราะผลที่ได้คือผลที่หวัง
+ * · P2 รู้ว่าฟังก์ชันยังทำงานเพราะเขาค้นคำอื่นในรอบเดียวกัน — **แต่ความรู้นั้นอยู่ในหัว ไม่ได้อยู่ในหลักฐาน**
+ *   พอกลายเป็นเคสอัตโนมัติ มันหายไปถ้าไม่เขียนลงไป → `control` ข้างล่างคือการเขียนมันลงไป
+ */
+describe.runIf(hasCreds)("E4 — ค้นเมืองปลายทาง: fixture ต้องไม่โผล่ให้ผู้ใช้เห็น", () => {
+  type CityRow = {
+    id: string;
+    country_id: string;
+    name_th: string;
+    catalog_countries: { id: string; name_th: string } | null;
+  };
+  const search = async (q: string) => {
+    const admin = testClient(SERVICE);
+    const { data, error } = await searchCatalogCities(admin as never, { q, limit: 200 });
+    if (error) throw new Error(`searchCatalogCities("${q}"): ${error.message}`);
+    return (data ?? []) as unknown as CityRow[];
+  };
+
+  it("🔴 ① คำที่เจาะจง fixture ล้วน ต้องคืน 0 แถว — ข้อพิสูจน์ว่าตัวกรองติด", async () => {
+    const admin = testClient(SERVICE);
+    // 🔴 **คำที่ใช้ต้องตรงกับ *ชื่อเมือง* เท่านั้น** — `searchCatalogCities` `.or()` แมตช์แค่
+    //    `name_th`/`name_en`/`name_local` ของ **เมือง** · ไม่แมตช์ชื่อประเทศเลย
+    //    ⚠️ ดังนั้นคำว่า `"ทดสอบ"` (ชื่อ*ประเทศ* fixture) คืน 0 แถว **ไม่ว่าตัวกรองจะมีหรือไม่มี**
+    //       = คำที่พิสูจน์อะไรไม่ได้เลย · control ข้างล่างจับข้อนี้ได้ตอนผมเผลอใช้มันเอง
+    for (const q of ["เมืองC", "เมืองS"]) {
+      // 🔴 control ของเคสนี้เอง: **ต้องมีเมืองที่ชื่อตรงคำนี้อยู่จริงในตาราง**
+      //    ไม่งั้น "ค้นแล้วได้ 0" แปลว่า *ไม่มีอะไรให้เจอตั้งแต่แรก* ไม่ใช่ *กรองได้*
+      //    (ถ้าวันหนึ่ง fixture ถูกกวาดหมด เคสนี้จะเตือนว่ามันไม่ได้ตรวจอะไรแล้ว แทนที่จะเขียวเงียบ)
+      const raw = await admin.from("catalog_cities").select("id", { count: "exact", head: true }).ilike("name_th", `%${q}%`);
+      if (raw.error) throw new Error(`นับเมืองที่ชื่อตรง "${q}": ${raw.error.message}`);
+      expect(
+        raw.count ?? 0,
+        `ไม่มีเมืองชื่อตรง "${q}" ในตารางเลย — เคสนี้จะเขียวเพราะไม่มีอะไรให้กรอง ไม่ใช่เพราะกรองได้`,
+      ).toBeGreaterThan(0);
+
+      const rows = await search(q);
+      expect(
+        rows.map((r) => `${r.name_th}/${r.country_id}`),
+        `ค้น "${q}" แล้วยังเจอ fixture — ตัวกรอง supported ไม่ติด (ผู้ใช้เห็นเมืองของชุดทดสอบ)`,
+      ).toEqual([]);
+    }
+  });
+
+  it("🔴 ② control ในรอบเดียวกัน: คำที่ต้องเจอของจริง ต้องคืน > 0 — พิสูจน์ว่า '0 แถว' ข้างบนมาจากการกรอง ไม่ใช่ฟังก์ชันพัง", async () => {
+    // ⚠️ **ข้อนี้คือสิ่งที่ทำให้เคส ① มีความหมาย** — ถ้า searchCatalogCities พังทั้งตัว ① จะเขียวเหมือนกันเป๊ะ
+    const rows = await search("โอซากะ");
+    expect(
+      rows.length,
+      "ค้นเมืองจริงแล้วไม่เจอเลย — ฟังก์ชันค้นพัง · แปลว่าเคส '0 แถว' ข้างบนไม่ได้พิสูจน์อะไร",
+    ).toBeGreaterThan(0);
+  });
+
+  it("🔴 ③ ทุกแถวที่คืนมาต้องมี catalog_countries ไม่เป็น null — กัน `!inner` หลุดแล้วเงียบ", async () => {
+    // 🎯 ถ้ามีคนถอด `!inner` ออก PostgREST จะคืนแถวโดยให้ embed เป็น `null`
+    //    → แถวพวกนั้น **ไม่มี `supported` ให้เช็ค จึงผ่านเคส ④ ได้ทั้งดุ้น** · รูที่ต้องปิดแยก (P1 ชี้)
+    const rows = await search("อ");
+    expect(rows.length, "ไม่มีแถวให้ตรวจ — ดูเคส ② ก่อน").toBeGreaterThan(0);
+    const nullEmbed = rows.filter((r) => r.catalog_countries === null).map((r) => r.name_th);
+    expect(
+      nullEmbed,
+      "มีแถวที่ embed ประเทศเป็น null = `!inner` หายไปแล้ว · ตัวกรอง supported ไม่มีผลกับแถวพวกนี้",
+    ).toEqual([]);
+  });
+
+  it("🔴 ④ เส้นทางจริงของผู้ใช้: ค้นคำปนกัน ต้องมีผล และต้องไม่มีประเทศที่ปิดสักแถว", async () => {
+    const admin = testClient(SERVICE);
+    const off = await admin.from("catalog_countries").select("id").eq("supported", false);
+    if (off.error) throw new Error(`อ่านประเทศที่ปิด: ${off.error.message}`);
+    const offIds = new Set(((off.data ?? []) as { id: string }[]).map((c) => c.id));
+    // control: ต้องมีประเทศที่ปิดอยู่จริง ไม่งั้นเคสนี้ไม่ได้กรองอะไรเลย
+    expect(offIds.size, "ไม่มีประเทศ supported=false เลย — เคสนี้จะเขียวเพราะไม่มีอะไรให้กัน").toBeGreaterThan(0);
+
+    const rows = await search("อ");
+    expect(rows.length, "ค้น 'อ' ไม่เจออะไรเลย — เคยเจอ 1,736 แถว").toBeGreaterThan(0);
+    const leaked = rows.filter((r) => offIds.has(r.country_id)).map((r) => `${r.name_th}/${r.country_id}`);
+    expect(
+      leaked,
+      "ค้นแบบปกติแล้วเจอเมืองของประเทศที่ปิดอยู่ — เส้นทางที่ผู้ใช้เดินจริงยังรั่ว",
     ).toEqual([]);
   });
 });
