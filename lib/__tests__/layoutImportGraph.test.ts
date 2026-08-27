@@ -123,8 +123,14 @@ describe("import graph ของ app/layout.tsx", () => {
   // 🔴 กฎข้อ 2 ของ README: "ต้องเห็นมันแดงก่อน" — พิสูจน์ว่าตัวตรวจ *ตรวจเจอ* ได้จริง
   //    โดยเอาไปใช้กับหน้าที่ import data/ อยู่แล้ว · ถ้าเคสนี้ไม่เจออะไร แปลว่าตัวตรวจเสีย
   //    ไม่ใช่ว่าโค้ดสะอาด — และเคสข้างบนก็เชื่อไม่ได้ตามไปด้วย
-  it("ตัวตรวจจับได้จริง — หน้าแผน (app/page.tsx) ต้องไปถึง data/*", () => {
-    const found = dataFiles(walk(resolve(ROOT, "app/page.tsx")));
+  //
+  // 🔴 เป้าเดิมคือ app/page.tsx — เปลี่ยนเป็น components/TripPlanScreen.tsx แทน (P2 27 ส.ค. 2026,
+  // อนุมัติจาก P1) ตอนที่ "/" เปลี่ยนความหมายเป็นหน้า Home (ลิสต์ทริป) เนื้อหาทริปเดิมที่ import
+  // data/itinerary.ts ย้ายออกจาก app/page.tsx ไปอยู่ที่ TripPlanScreen.tsx ทั้งก้อน — app/page.tsx
+  // ตอนนี้เหลือแค่ import HomeScreen เดียว ไม่แตะ data/* เลย ถ้าไม่ย้ายเป้า positive control นี้จะแดง
+  // ตลอดไปโดยไม่ได้บอกอะไรผิด (เจตนาของเคสไม่เปลี่ยน แค่ตามไฟล์ที่เนื้อหาย้ายไป)
+  it("ตัวตรวจจับได้จริง — หน้าแผน (components/TripPlanScreen.tsx) ต้องไปถึง data/*", () => {
+    const found = dataFiles(walk(resolve(ROOT, "components/TripPlanScreen.tsx")));
     expect(found.length).toBeGreaterThan(0);
     expect(found).toContain("data/itinerary.ts");
   });
