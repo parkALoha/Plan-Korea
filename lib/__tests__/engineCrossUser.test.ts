@@ -63,9 +63,9 @@ import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist
 import { GET as tripsGET, POST as tripsPOST } from "@/app/api/engine/trips/route";
 import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
-import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
+import { POST as stopsPOST, GET as stopsGET } from "@/app/api/engine/trips/[tripId]/stops/route";
 import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[tripId]/hotels/route";
-import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom-places/route";
+import { POST as customPlacesPOST, GET as customPlacesGET } from "@/app/api/engine/trips/[tripId]/custom-places/route";
 import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
 import { PUT as placeNotesPUT, DELETE as placeNotesDELETE } from "@/app/api/engine/trips/[tripId]/place-notes/route";
 import { GET as membersGET } from "@/app/api/engine/trips/[tripId]/members/route";
@@ -600,6 +600,71 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       return data.length;
     };
     expect(await cnt(), "[hotels] B บันทึกที่พักในทริป A สำเร็จ (leak)").toBe(1);
+  });
+
+
+  /**
+   * `E5-AC10` — **เส้นทาง custom place ครบวง**: สร้าง → เพิ่มเป็นจุดแวะ → อ่านกลับได้ชื่อจริง
+   *
+   * ## ทำไมเส้นนี้ต้องมีเคสของตัวเอง (P1 ชี้ว่ายังไม่มีใครวัด)
+   * จุดแวะที่ชี้ **คลังกลาง** กับชี้ **สถานที่ของทริป** เดินคนละคอลัมน์
+   * (`catalog_place_id` / `custom_place_id`) และ `stops POST` แยกทางที่ `route.ts:42-47`:
+   * `placeId` ที่เป็น *slug* → คลังกลาง · ที่เป็น *uuid* → custom place · **กิ่ง uuid ไม่เคยถูกยิงเลย**
+   * → เส้นคลังกลางพังไม่ได้เงียบ ๆ (P2 เปิดดูในเบราว์เซอร์แล้ว) **แต่เส้น custom ตกหล่นได้โดยไม่มีใครเห็น**
+   *
+   * ## 🔴 อาการที่เคสนี้จับ: **"แถวเปล่า"**
+   * `toDto()` (`stops/route.ts:49`) คืน `place_id = catalog slug ?? custom_place_id ?? ""`
+   * → ถ้าเส้น custom หลุด จะได้ **`""` = "สถานที่ที่ UI ไม่รู้จัก"** · จุดแวะยังอยู่ในแผนแต่ชี้ไปที่ว่าง
+   * **ผู้ใช้เห็นแถวที่ไม่มีชื่อ ไม่ใช่ error** — อาการเดียวกับ "บันทึกแล้วไม่เปลี่ยน" ที่เราไล่กันทั้งวัน
+   * · จึง assert **ค่าที่อ่านกลับมา** ไม่ใช่แค่ status 201
+   */
+  it("🔴 E5-AC10 — สร้าง custom place → เพิ่มเป็นจุดแวะ → อ่านกลับต้องได้ชื่อจริง ไม่ใช่แถวเปล่า", async () => {
+    const nameTh = `เจ้าของร้าน-${stamp}`;
+    const mk = await postAs(aCookies, tripA, customPlacesPOST, {
+      city: citySlug, category: "food", maps_query: "q-ac10", name_th: nameTh, lat: 37.55, lng: 127.05,
+    });
+    expect(mk.status, `สร้าง custom place ควร 201: ${await mk.clone().text()}`).toBe(201);
+    const created = (await mk.json()) as { id?: string };
+    expect(created.id, "custom place ที่สร้างแล้วไม่มี id กลับมา").toBeTruthy();
+    const customId = created.id!;
+
+    // 🔴 กิ่ง uuid ของ stops POST — `placeId` ที่ไม่ใช่ slug ต้องถูกอ่านเป็น custom_place_id
+    const addStop = await postAs(aCookies, tripA, stopsPOST, {
+      planId: aPlan, tripDayId: aDay, placeId: customId,
+    });
+    expect(
+      addStop.status,
+      `เพิ่มจุดแวะที่ชี้ custom place ควร 201 · 400 = route ไม่รู้จัก uuid นี้ (กิ่ง custom หลุด): ${await addStop.clone().text()}`,
+    ).toBe(201);
+
+    // อ่านกลับผ่าน route จริง — ค่าที่ UI จะได้
+    jar.cookies = aCookies;
+    const list = await stopsGET(
+      new NextRequest(`http://localhost:3300/api/engine/trips/${tripA}/stops?planId=${aPlan}`),
+      { params: Promise.resolve({ tripId: tripA }) },
+    );
+    expect(list.status, `อ่านจุดแวะควร 200: ${await list.clone().text()}`).toBe(200);
+    const stops = (await list.json()) as { place_id: string }[];
+    const mine = stops.filter((r) => r.place_id === customId);
+    expect(
+      mine.length,
+      `ไม่เจอจุดแวะที่ชี้ custom place · place_id ที่เห็น: ${JSON.stringify(stops.map((r) => r.place_id))}\n` +
+        '  🔴 ถ้าเห็น "" = แถวเปล่า: จุดแวะอยู่ในแผนแต่ UI ไม่รู้ว่ามันคือที่ไหน (toDto ตกทั้งสองทาง)',
+    ).toBe(1);
+
+    // ...และ id นั้นต้อง *แปลงกลับเป็นชื่อได้จริง* — ไม่งั้นผู้ใช้เห็น uuid เปล่า ๆ
+    const cps = await customPlacesGET(
+      new NextRequest(`http://localhost:3300/api/engine/trips/${tripA}/custom-places`),
+      { params: Promise.resolve({ tripId: tripA }) },
+    );
+    expect(cps.status, `อ่าน custom-places ควร 200: ${await cps.clone().text()}`).toBe(200);
+    const places = (await cps.json()) as { id: string; name_th?: string; nameTh?: string }[];
+    const found = places.find((x) => x.id === customId);
+    expect(found, "custom place ที่จุดแวะชี้อยู่ ไม่อยู่ในลิสต์ที่ไคลเอนต์ดึงไป resolve → ผู้ใช้เห็น uuid เปล่า").toBeTruthy();
+    expect(
+      found?.name_th ?? found?.nameTh,
+      "resolve แล้วไม่ได้ชื่อที่เพิ่งตั้ง — เก็บได้แต่อ่านกลับไม่ครบ",
+    ).toBe(nameTh);
   });
 
   it("custom-places POST — B สร้างสถานที่ของทริป A ไม่ได้", async () => {
