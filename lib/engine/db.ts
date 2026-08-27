@@ -483,9 +483,7 @@ export function tripsVisibleToMe(db: Db) {
   //       การเรียงในฝั่ง PostgREST ต้องพึ่ง `referencedTable` ซึ่งพังเงียบถ้าชื่อความสัมพันธ์เปลี่ยน
   return engineTable(db, "trips")
     .select(
-      "id, title, start_date, end_date," +
-        "trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en)))," +
-        "trip_members(count)",
+      "id, title, start_date, end_date,trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en))),trip_members(count)",
     )
     .order("created_at");
 }
@@ -499,16 +497,16 @@ export function tripsVisibleToMe(db: Db) {
  */
 export function customPlaceRowsOfTrip(db: Db, tripId: string) {
   return engineTable(db, "custom_places")
+    // 🔴 `country_id` (ใน `catalog_cities` ที่ฝังมา) เพิ่ม 27 ส.ค. 2026 (`E4-AC3`/`AC4`)
+    //    **ประเทศผูกกับ *เมือง* ไม่ใช่ *ทริป*** — `trips` ไม่มีคอลัมน์ประเทศเลย (มี `base_timezone`)
+    //    และนั่นถูก: ทริปปัจจุบันข้ามเวียดนาม→เกาหลีอยู่แล้ว · **ทริปเดียวมีได้หลายประเทศ**
+    //    → UI ต้องเลือกปุ่มแผนที่จากเมืองของสถานที่นั้น ไม่ใช่จากทริป
+    //
+    // ⚠️ **คอมเมนต์ต้องอยู่เหนือสตริง ห้ามคั่นกลางด้วย `+`** (28 ส.ค. 2026)
+    //    ต่อสตริงด้วย `+` ทำให้ TypeScript ไม่ยุบเป็น literal → supabase-js คืน `GenericStringError`
+    //    → **อ่านฟิลด์อะไรก็ได้จากผลลัพธ์โดยไม่มีใครจับ** · สตริงเดียวได้ `{ id: any; … }` ที่จำกัดฟิลด์จริง
     .select(
-      "id, city_id, category, lat, lng, maps_query, google_place_id," +
-        " legacy_added_by, created_at," +
-        // 🔴 `country_id` เพิ่ม 27 ส.ค. 2026 (`E4-AC3`/`AC4`) — **ประเทศผูกกับ *เมือง* ไม่ใช่ *ทริป***
-        //    `trips` ไม่มีคอลัมน์ประเทศเลย (มี `base_timezone`) และนั่นถูก:
-        //    ทริปปัจจุบันข้ามเวียดนาม→เกาหลีอยู่แล้ว · **ทริปเดียวมีได้หลายประเทศ**
-        //    → UI ต้องเลือกปุ่มแผนที่จากเมืองของสถานที่นั้น ไม่ใช่จากทริป
-                " catalog_cities(legacy_slug, country_id)," +
-        " custom_place_names(locale, name, priority)," +
-        " custom_place_descriptions(locale, description)"
+      "id, city_id, category, lat, lng, maps_query, google_place_id, legacy_added_by, created_at, catalog_cities(legacy_slug, country_id), custom_place_names(locale, name, priority), custom_place_descriptions(locale, description)",
     )
     .eq("trip_id", tripId)
     .order("created_at");
@@ -797,9 +795,11 @@ export function softDeletePlaceNote(db: Db, id: string) {
  */
 export function tripHotelsOfTrip(db: Db, tripId: string) {
   return engineTable(db, "trip_hotels")
-    .select("id, city_id, hotel_name, formatted_address, name_local, address_local, name_en, address_en," +
-            // `country_id` — ดูเหตุผลที่ `customPlaceRowsOfTrip` · ประเทศมาจากเมือง ไม่ใช่ทริป
-            " phone, lat, lng, check_in, check_out, updated_at, catalog_cities(legacy_slug, country_id)")
+    // `country_id` (ใน `catalog_cities` ที่ฝังมา) — ดูเหตุผลที่ `customPlaceRowsOfTrip`
+    // ประเทศมาจากเมือง ไม่ใช่ทริป · ⚠️ สตริงเดียว ห้ามคั่นด้วย `+` (ดูเหตุผลที่ฟังก์ชันเดียวกันนั้น)
+    .select(
+      "id, city_id, hotel_name, formatted_address, name_local, address_local, name_en, address_en, phone, lat, lng, check_in, check_out, updated_at, catalog_cities(legacy_slug, country_id)",
+    )
     .eq("trip_id", tripId)
     .is("deleted_at", null)
     .order("check_in");
@@ -950,8 +950,7 @@ export async function upsertDaySettings(db: Db, rows: Record<string, unknown>[])
 // ───────────────────────────────────────────────────────────────────────────
 
 const BOOKING_COLS =
-  "id, trip_day_id, category, title, date, time, confirmation_number, link, note," +
-  " file_path, file_name, status, book_by_days_before, legacy_added_by, created_at, updated_at";
+  "id, trip_day_id, category, title, date, time, confirmation_number, link, note, file_path, file_name, status, book_by_days_before, legacy_added_by, created_at, updated_at";
 
 export function bookingsOfTrip(db: Db, tripId: string) {
   return engineTable(db, "bookings")
@@ -1022,10 +1021,7 @@ export function duplicatePlan(db: Db, tripId: string, sourcePlanId: string, name
 // ───────────────────────────────────────────────────────────────────────────
 
 const STOP_COLS =
-  "id, trip_day_id, kind, rank, dwell_minutes, travel_mode, note, photo_path," +
-  " intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label," +
-  " visited_at, legacy_added_by, updated_at, custom_place_id," +
-  " catalog_places(legacy_slug)";
+  "id, trip_day_id, kind, rank, dwell_minutes, travel_mode, note, photo_path, intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label, visited_at, legacy_added_by, updated_at, custom_place_id, catalog_places(legacy_slug)";
 
 /** จุดแวะของแผน **ที่ยังไม่ถูกลบ** เรียง `(rank, id)` — `D81` ③ */
 export function stopsOfPlan(db: Db, tripId: string, planId: string) {
