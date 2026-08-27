@@ -666,14 +666,15 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(data?.title).toBe(`renamed-${stamp}`);
     });
 
-    it("🔴 A ตั้งรูปปก (cover_image_url) ได้ — พิสูจน์ column grant มีจริง ไม่ใช่แค่ไม่มี error (E5)", async () => {
-      // per-column grant (`20260827180000`) ลืมได้ · อาการคือ "บันทึกแล้วไม่เปลี่ยน" ไม่ใช่ error
-      // → เคสฝั่งลบ (คนอื่นเขียนไม่ได้) มองไม่เห็น grant ที่หาย · ต้อง assert *เนื้อ* ที่อ่านกลับมา
-      const url = `https://example.test/cover-${stamp}.jpg`;
-      const { error } = await A.from("trips").update({ cover_image_url: url }).eq("id", tripA);
-      expect(error, `owner ตั้ง cover_image_url ไม่ได้: ${error?.message}`).toBeNull();
-      const { data } = await A.from("trips").select("cover_image_url").eq("id", tripA).single();
-      expect(data?.cover_image_url, "บันทึกแล้วค่าไม่เปลี่ยน = column grant หาย · owner เขียนคอลัมน์นี้ไม่ได้").toBe(url);
+    it("🔴 A ตั้งรูปปก (cover_image_path) ได้ — พิสูจน์ column grant มีจริง ไม่ใช่แค่ไม่มี error (E5)", async () => {
+      // per-column grant ลืมได้ · อาการคือ "บันทึกแล้วไม่เปลี่ยน" ไม่ใช่ error → ต้อง assert *เนื้อ* ที่อ่านกลับมา
+      // 🔴 คอลัมน์เป็น `cover_image_path` แล้ว (rename `20260827220000` · `E2-AC13` — bucket ส่วนตัวเก็บ *path* ไม่ใช่ URL
+      //    ที่หมดอายุได้ · API ยังคืนชื่อ `coverImageUrl` เพราะเซ็น URL ตอนอ่าน) · เคสนี้ยังพิสูจน์สิ่งเดิมทุกตัวอักษร
+      const path = `${tripA}/cover-${stamp}.jpg`;
+      const { error } = await A.from("trips").update({ cover_image_path: path }).eq("id", tripA);
+      expect(error, `owner ตั้ง cover_image_path ไม่ได้: ${error?.message}`).toBeNull();
+      const { data } = await A.from("trips").select("cover_image_path").eq("id", tripA).single();
+      expect(data?.cover_image_path, "บันทึกแล้วค่าไม่เปลี่ยน = column grant หาย · owner เขียนคอลัมน์นี้ไม่ได้").toBe(path);
     });
 
     it("A อ่านโปรไฟล์ตัวเองได้", async () => {
@@ -4282,9 +4283,10 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "trip_plans.update": ["is_active","name","trip_id"],
       "trip_stops.insert": ["catalog_place_id","custom_place_id","day_offset","dwell_minutes","event_kind","fixed_end_time","fixed_start_time","flight_from_code","flight_from_en","flight_no","flight_to_code","flight_to_en","icon","intercity_from","intercity_mode","intercity_to","is_alert","kind","layover_baggage","layover_immigration","layover_leaves_airport","layover_terminal_change","legacy_added_by","note","photo_path","place_ref","plan_id","rank","schedule_bound","time_is_flexible","title","title_en","transfer_target_label","transfer_target_time","travel_mode","trip_day_id","trip_id","visited_at"],
       "trip_stops.update": ["catalog_place_id","custom_place_id","day_offset","dwell_minutes","event_kind","fixed_end_time","fixed_start_time","flight_from_code","flight_from_en","flight_no","flight_to_code","flight_to_en","icon","intercity_from","intercity_mode","intercity_to","is_alert","kind","layover_baggage","layover_immigration","layover_leaves_airport","layover_terminal_change","note","photo_path","place_ref","plan_id","rank","schedule_bound","time_is_flexible","title","title_en","transfer_target_label","transfer_target_time","travel_mode","trip_day_id","visited_at"],
-      // 🔴 `E5` 27 ส.ค. — `cover_image_url` เพิ่มเข้า trips (`20260827180000` · รูปปกหน้า Home) · grant ทีละคอลัมน์
-      "trips.insert": ["base_timezone","cover_image_url","created_by","end_date","id","start_date","status","title"],
-      "trips.update": ["base_timezone","cover_image_url","end_date","start_date","status","title"],
+      // 🔴 `E5` 27 ส.ค. — `cover_image_path` (rename จาก `cover_image_url` · `20260827220000` · `E2-AC13`: bucket ส่วนตัวเก็บ path)
+      //    grant ตาม rename อัตโนมัติ (สิทธิ์ผูก attnum ไม่ใช่ชื่อ) → live query เห็น `cover_image_path`
+      "trips.insert": ["base_timezone","cover_image_path","created_by","end_date","id","start_date","status","title"],
+      "trips.update": ["base_timezone","cover_image_path","end_date","start_date","status","title"],
     };
 
     /** ดึง column grant ของ `authenticated` จากฐาน — `table_exposure` รายงาน ACL จริง */
