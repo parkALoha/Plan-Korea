@@ -7,28 +7,15 @@ import { Modal } from "@/components/Modal";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
+import { E5_COPY } from "@/lib/i18n";
 
 type TripListItem = { id: string; title: string; start_date: string; end_date: string };
 
-/**
- * ข้อความของหน้านี้ — ตั้งใจไม่ผ่าน `lib/i18n.ts` (P2 27 ส.ค. 2026)
- *
- * `E5-AC7` สั่งว่าโค้ดใหม่ห้ามฝังข้อความไทยกระจัดกระจาย ต้องมีที่รวมเดียว — แต่ `lib/i18n.ts` เขียนขอบเขต
- * ตัวเองไว้ชัดว่า *"พจนานุกรมของหน้า /summary เท่านั้น"* (คอมเมนต์หัวไฟล์, ตัดสินใจเฟส 16/`D20`)
- * เพราะอังกฤษมีประโยชน์จริงแค่ตอนยื่นเอกสาร ไม่ใช่หน้า Home ที่ไม่มีสเปกขอ EN toggle เลย
- * ยัดคีย์ Home เข้าไปในนั้นจะฝ่าขอบเขตที่มีเหตุผลของไฟล์เดิม (และต้องเขียนคำแปล EN ที่ไม่มีใครใช้)
- * → รวมไว้ที่นี่แทน (ที่เดียว ไม่กระจาย) — ถ้า P1 อยากให้ทุกอย่างไหลผ่าน `lib/i18n.ts` จริงๆ (เช่น
- * จะขยาย EN ทั้งเว็บ) ค่อยย้ายตอนนั้น
- */
-const COPY = {
-  greeting: (name: string) => `สวัสดี คุณ${name}`,
-  login: "เข้าสู่ระบบ",
-  account: "บัญชี",
-  upcomingTrips: "แพลนทริปที่จะมาถึง",
-  newTrip: "+ สร้างทริปใหม่",
-  noTripsYet: "ยังไม่มีทริป — สร้างทริปแรกก่อนเริ่มวางแผน",
-  readOnlyFab: "ระบบปิดรับการแก้ไขชั่วคราว — สร้างทริปตอนนี้ไม่ได้",
-};
+// 🔴 เดิมมีก้อน COPY ท้องถิ่นแยกไว้ในไฟล์นี้เอง (เหตุผลตอนนั้น: lib/i18n.ts เขียนขอบเขตตัวเองไว้ว่า
+// "ของหน้า /summary เท่านั้น") — ย้ายเข้า E5_COPY.home ใน lib/i18n.ts แล้ว (P1 27 ส.ค. 2026 ตัดสิน:
+// ผ่าน lib/i18n.ts จริงตามที่ E5-AC7 สั่ง แต่เป็น namespace ที่สอง ไม่ปนกับ DICT ของ /summary — ดูหัวไฟล์
+// นั้น) ยังไม่มี EN เหมือนเดิม เพิ่มตอน M2
+const COPY = E5_COPY.home;
 
 /** ตัวย่อชื่อในวงกลม — ไม่มีคอลัมน์รูปให้ avatar จริง (`profiles` มีแค่ `display_name`) */
 function InitialAvatar({ name, className = "" }: { name: string; className?: string }) {
