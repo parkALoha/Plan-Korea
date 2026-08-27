@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
-import { browseCatalogPlaces } from "@/lib/engine/db";
+import { browseCatalogPlaces, catalogCityExists } from "@/lib/engine/db";
 import { catalogPlaceCards } from "@/lib/engine/trip";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
@@ -53,7 +53,27 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
     }
-    return NextResponse.json(catalogPlaceCards(data ?? []), {
+    const cards = catalogPlaceCards(data ?? []);
+
+    // 🔴 **แยก "เมืองนี้ไม่มีสถานที่" ออกจาก "ไม่มีเมืองนี้"** (P2 ชี้ · 28 ส.ค. 2026)
+    //    ก่อนหน้านี้ทั้งสองกรณีคืน `200 []` เหมือนกันเป๊ะ — **แยกไม่ออกจาก response**
+    //    · วันนี้ยังไม่กัดเพราะ `cityId` มาจาก `/api/engine/cities` ของเราเองเสมอ
+    //    · 🎯 **แต่ `B6` จะส่ง `cityId` มาจากวันในทริป** — วันที่ชี้เมืองที่ถูกลบออกจากคลัง
+    //      จะได้ไซด์บาร์ว่างเงียบ ๆ แล้วผู้ใช้อ่านว่า *"เมืองนี้ไม่มีที่เที่ยว"* ซึ่งไม่จริง
+    //
+    // ⚠️ **จ่ายคิวรีที่สองเฉพาะตอนผลว่าง** — เส้นทางปกติยังยิงครั้งเดียวเหมือนเดิม
+    //    (ความกำกวมเกิดเฉพาะตอนเซตว่าง จึงจ่ายค่าแยกแยะตอนนั้นเท่านั้น)
+    if (cards.length === 0) {
+      const { data: city, error: cityErr } = await catalogCityExists(db, cityId);
+      if (cityErr) {
+        return NextResponse.json({ error: cityErr.message, code: cityErr.code }, { status: 502 });
+      }
+      if (!city) {
+        return NextResponse.json({ error: "ไม่พบเมืองนี้ในคลัง" }, { status: 404 });
+      }
+    }
+
+    return NextResponse.json(cards, {
       headers: { "Cache-Control": "private, max-age=60" },
     });
   } catch (e) {
