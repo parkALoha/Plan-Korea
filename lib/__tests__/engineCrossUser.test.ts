@@ -61,6 +61,7 @@ vi.mock("next/headers", () => ({
 import { POST as bookingsPOST } from "@/app/api/engine/trips/[tripId]/bookings/route";
 import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist/route";
 import { GET as tripsGET, POST as tripsPOST } from "@/app/api/engine/trips/route";
+import { GET as placesGET } from "@/app/api/engine/places/route";
 import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
 import { POST as stopsPOST, GET as stopsGET } from "@/app/api/engine/trips/[tripId]/stops/route";
@@ -404,6 +405,49 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       mine!.memberCount,
       "memberCount 0 เป็นไปไม่ได้จริง (ทุกทริปมีเจ้าของ ≥1) → 0 = อ่าน trip_members ไม่ได้ ไม่ใช่ทริปไม่มีคน",
     ).toBeGreaterThanOrEqual(1);
+  });
+
+
+  /**
+   * `GET /api/engine/places` — **แยก "เมืองว่าง" ออกจาก "ไม่มีเมืองนี้"** (P1 ขอ · `3d5e88d`)
+   *
+   * ## ทำไมเคสนี้ต้องมี และทำไมมันต้องอยู่ที่นี่
+   * P2 ไล่ยิงครบทั้ง **42 เมืองที่ `supported`** เพื่อหาคู่ควบคุม แล้วพบว่า **ทั้ง 42 มีสถานที่หมด**
+   * → **เส้น "เมืองมีจริงแต่ยังไม่มีสถานที่" เข้าไม่ถึงเลยจากฝั่ง API** เพราะเมืองที่ว่างจริง
+   *   อยู่ใต้รหัสประเทศสงวนซึ่ง `supported` กรองออกจาก `/cities` ไปแล้ว
+   * 🎯 **หลักฐานของพฤติกรรมนี้จึงมีชั้นเดียว คือโค้ด** — เคสนี้คือชั้นที่สอง และเป็นทางเดียวที่เหลือ
+   *
+   * ## 🔴 ความเสี่ยงที่เป็นรูปธรรม (P1 ตั้งไว้ · ผมเห็นด้วย)
+   * ถ้ามีคนแก้ `catalogCityExists()` ให้ join `catalog_places` ด้วยเหตุผลว่า *"รวมเป็นคิวรีเดียวประหยัดกว่า"*
+   * → **เมืองจริงที่ยังไม่ได้ seed จะได้ `404` ทั้งที่ควรได้ `200 []`**
+   * · และอาการจะโผล่ตอน **เพิ่มเมืองใหม่ก่อน seed สถานที่** — ซึ่งเป็นลำดับที่เกิดตามธรรมชาติ
+   *   (P1 ทำแบบนั้นเองกับญี่ปุ่นวันนี้: ลงเมือง 22 ใบก่อน ลงสถานที่ทีหลัง)
+   *
+   * ## ⚠️ คู่ควบคุมในรอบเดียวกัน **จำเป็น ไม่ใช่ของแถม**
+   * *"ได้ `200 []`"* แยกไม่ออกจาก *"เช็คไม่ทำงานเลย แล้วคืน `[]` ทุกกรณี"*
+   * → ต้องมี `uuid` ที่ไม่มีจริงคู่กัน **ที่ได้ `404`** ถึงจะพิสูจน์ว่ากลไกแยกสองกรณีออกจริง
+   * (กฎเดียวกับ `q="ทดสอบ"` — **ผลลัพธ์ที่คาดหวังเป็นศูนย์ ต้องมีคู่ที่พิสูจน์ว่ากลไกยังทำงาน**)
+   *
+   * 📌 เคสนี้ **ไม่ใช่เคสยิงข้ามผู้ใช้** — อยู่ไฟล์นี้เพราะ harness ยิง route จริง in-process
+   *    และ fixture มีเมืองที่ไม่มีสถานที่อยู่แล้ว (`cityId2` จากบล็อก `cityIds`)
+   */
+  it("🔴 places: เมืองมีจริงแต่ไม่มีสถานที่ → 200 [] · uuid ที่ไม่มีจริง → 404 (คู่ควบคุมรอบเดียวกัน)", async () => {
+    jar.cookies = aCookies;
+    const call = (id: string) =>
+      placesGET(new NextRequest(`http://localhost:3300/api/engine/places?cityId=${id}`));
+
+    // ① เมืองที่ seed ไว้จริงแต่ไม่เคยใส่สถานที่ (cityId2 — บล็อก cityIds สร้างไว้ ไม่มี catalog_places)
+    const empty = await call(cityId2);
+    expect(empty.status, `เมืองว่างควร 200 · 404 = เช็คไปแตะ catalog_places แล้ว: ${await empty.clone().text()}`).toBe(200);
+    expect(await empty.json(), "เมืองที่ไม่มีสถานที่ต้องได้ลิสต์ว่าง").toEqual([]);
+
+    // ② คู่ควบคุม — ถ้าข้อนี้ได้ 200 [] ด้วย แปลว่าเช็ค "เมืองมีจริงไหม" ไม่ทำงานเลย
+    //    และข้อ ① ข้างบนก็ไม่ได้พิสูจน์อะไร (เขียวเพราะคืน [] ทุกกรณี)
+    const ghost = await call("00000000-0000-4000-8000-000000000000");
+    expect(
+      ghost.status,
+      `uuid ที่ไม่มีจริงควร 404 · ถ้าได้ 200 [] = แยก "เมืองว่าง" กับ "ไม่มีเมือง" ไม่ออก: ${await ghost.clone().text()}`,
+    ).toBe(404);
   });
 
   function postTrip(cookies: Cookie[], body: unknown): Promise<Response> {
