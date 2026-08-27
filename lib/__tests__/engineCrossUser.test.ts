@@ -36,9 +36,9 @@ import { join, resolve } from "node:path";
  * → File 2 จับบั๊กคอลัมน์ของ **ทุกเส้น**ที่มัน probe ได้ฟรี โดยไม่ต้องเขียน pin ทีละเส้น
  *
  * ## 🔴 สถานะความครอบคลุม (เขียนตรง ๆ ไม่ให้เข้าใจว่าครบ)
- * ครอบแล้ว: **bookings · checklist** (POST) + pin `GET /trips`=200 · เหลืออีก 7 ใน 9 trip-scoped route
- *   custom-places · hidden-places · stops (POST) · day-settings · days · hotels · place-notes (PUT/PATCH)
- * · `engineAttackSurface.test.ts` ค้ำว่าทั้ง 9 ถูกจำแนกไว้ · **ด่านบังคับ "ครบทั้ง 9"** จะเปิดเมื่อ probe ครบ
+ * ครอบแล้ว: **bookings · checklist** (POST) · **members** (GET · viewer เห็น/คนนอกไม่เห็น) + pin `GET /trips`=200
+ *   · เหลืออีก 7 ใน 10 trip-scoped route: custom-places · hidden-places · stops (POST) · day-settings · days · hotels · place-notes (PUT/PATCH)
+ * · `engineAttackSurface.test.ts` ค้ำว่าทั้ง 10 ถูกจำแนกไว้ · **ด่านบังคับ "ครบทั้ง 10"** จะเปิดเมื่อ probe ครบ
  */
 
 const URL_ = readEnvKey("NEXT_PUBLIC_SUPABASE_URL");
@@ -66,6 +66,7 @@ import { PUT as hotelsPUT, GET as hotelsGET } from "@/app/api/engine/trips/[trip
 import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom-places/route";
 import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
 import { PUT as placeNotesPUT, DELETE as placeNotesDELETE } from "@/app/api/engine/trips/[tripId]/place-notes/route";
+import { GET as membersGET } from "@/app/api/engine/trips/[tripId]/members/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -135,9 +136,9 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members"]);
 
-/** 9 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
+/** 10 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
   const base = resolve(process.cwd(), "app/api/engine/trips/[tripId]");
   try {
@@ -153,9 +154,9 @@ function tripScopedRouteNames(): string[] {
 // 🔴 แบนเนอร์ความครอบคลุม — **รันเสมอ ไม่ต้องมี creds** เพื่อให้ตัวเลขโผล่ทุกครั้งที่รัน
 //    ไม่ใช่แค่คอมเมนต์ (P1): กันคนเห็นไฟล์เขียวแล้วสรุปว่า cross-user ถูกทดสอบครบ
 describe("E3-AC9 ② — ความครอบคลุม (ต้องเห็นตอนรัน)", () => {
-  it("📊 coverage — เขียวไม่ได้แปลว่าครบ 9 · ตัวเลขต้องโผล่ตอนรัน", () => {
+  it("📊 coverage — เขียวไม่ได้แปลว่าครบ 10 · ตัวเลขต้องโผล่ตอนรัน", () => {
     const all = tripScopedRouteNames();
-    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(9);
+    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(10);
     const covered = [...COVERED].sort();
     const stale = covered.filter((c) => !all.includes(c));
     expect(stale, `COVERED ชี้ route ที่ไม่มีบนดิสก์: ${stale.join(", ")}`).toEqual([]);
@@ -166,7 +167,7 @@ describe("E3-AC9 ② — ความครอบคลุม (ต้องเ�
         : `\n⚠️  AC9② cross-user: ครอบ ${covered.length}/${all.length} trip-route — เขียวไม่ได้แปลว่า cross-user ถูกทดสอบครบ\n` +
           `    เหลือ: ${remaining.join(" · ")}\n`;
     console.warn(banner);
-    // 🔴 ด่านบังคับ "ครบ 9" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ตัวที่ 10 ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
+    // 🔴 ด่านบังคับ "ครบ 10" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ตัวที่ 11 ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
     expect(remaining, "มี trip-scoped route ที่ยังไม่มี probe ข้ามผู้ใช้ — เพิ่ม probe ใน describe นี้ก่อน").toEqual([]);
   });
 });
@@ -190,6 +191,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let tripA = "";
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
+  let cCookies: Cookie[] = []; // C = viewer *สมาชิก* ของทริป A (ต่างจาก B คนนอก) — สำหรับ probe members
   let aDay = "";
   let aPlan = "";
   let aClient: SupabaseClient;
@@ -319,6 +321,12 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     aPlan = planRow.data.id as string;
     aCookies = await captureCookies(a.session);
     bCookies = await captureCookies(b.session);
+    // C = viewer สมาชิกของทริป A — owner (A) เชิญผ่าน RLS (trip_members_insert: trip_role='owner')
+    // ต่างจาก B ที่ไม่เป็นสมาชิก → probe members ต้องพิสูจน์ทั้งสองกิ่ง: สมาชิกเห็น · คนนอกไม่เห็น
+    const cUser = await makeUser("c");
+    const cInv = await aClient.from("trip_members").insert({ trip_id: tripA, user_id: ids.c, role: "viewer" });
+    if (cInv.error) throw new Error(`invite C viewer: ${cInv.error.message}`);
+    cCookies = await captureCookies(cUser.session);
   });
 
   afterAll(async () => {
@@ -349,6 +357,49 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     ).toBe(200);
     const body = await res.json();
     expect(JSON.stringify(body).includes(tripA), "A ควรเห็นทริปตัวเองในรายการ").toBe(true);
+  });
+
+  /**
+   * members GET (route ตัวที่ 10) — **บวกสำคัญกว่าลบ** (P1/P4 · 27 ส.ค. 2026)
+   * · ลบ: B (คนนอก) ยิง → ได้ `[]` ไม่ใช่รายชื่อ · leak = รู้ว่าใครอยู่ในทริปใคร (social graph)
+   * · บวก: C (viewer สมาชิก) ยิง → **ต้องเห็น owner+ตัวเอง** · ถ้าเห็น [] ด้วย = RLS แคบเกินจนแถว avatar ตาย
+   *   → กิ่งบวกคือกันไม่ให้ "ปลอดภัยเพราะบล็อกทุกคน" ผ่านเป็นสีเขียว (กับดักข้อ 3 ของ rlsMatrix รูปเดียวกัน)
+   * · คนนอกได้ 200+[] ไม่ใช่ 403 โดยตั้งใจ (route: 403 = เครื่องมือถามว่าทริปมีอยู่ไหม) — ยืนยันรหัสด้วย
+   */
+  it("members GET — viewer(สมาชิก) เห็น owner+ตัวเอง · คนนอกได้ [] (ไม่ใช่ 403 · ไม่รั่ว social graph)", async () => {
+    // กิ่งบวก: C = viewer สมาชิก → เห็นรายชื่อ
+    const cRes = await callAs(cCookies, tripA, membersGET, "GET");
+    expect(
+      cRes.status,
+      `viewer ควร 200 · 502 = helper บั๊ก (แบบ trips.name เดิม): ${await cRes.clone().text()}`,
+    ).toBe(200);
+    const cBody = (await cRes.json()) as { userId: string; role: string; displayName: string | null }[];
+    const byId = new Map(cBody.map((m) => [m.userId, m]));
+    expect(
+      [...byId.keys()].sort(),
+      "viewer ต้องเห็น owner+ตัวเอง (2 คน) — เห็นน้อยกว่านี้ = policy แคบเกินจนแถวสมาชิกตาย",
+    ).toEqual([ids.a, ids.c].sort());
+    expect(byId.get(ids.a)?.role, "A ต้องเป็น owner").toBe("owner");
+    expect(byId.get(ids.c)?.role, "C ต้องเป็น viewer").toBe("viewer");
+    // 🔴 displayName ต้องเป็น *ชื่อจริงของ A* ไม่ใช่ null — พิสูจน์ RLS **ชั้นที่สอง** (P1 · 27 ส.ค.)
+    //    route พึ่งสองชั้นแยกกัน: trip_members_select (can_read_trip) คุมว่าเห็น *แถว* ไหน ·
+    //    profiles_select (shares_trip_with) คุมว่าเห็น *ชื่อ* ไหน · ชั้นแรกผ่านชั้นสองไม่ผ่าน =
+    //    ได้แถวแต่ displayName=null ซึ่งอ่านเหมือน "A ยังไม่ตั้งชื่อ" ไม่ใช่ "C อ่านชื่อ A ไม่ได้" (bug เงียบ)
+    //    ชื่อ default = local-part ของ email (handle_new_user: split_part(email,'@',1)) → เดาได้แน่นอน
+    expect(
+      byId.get(ids.a)?.displayName,
+      "C (viewer) ต้องเห็นชื่อจริงของ A ผ่าน shares_trip_with — null = ชั้นที่สองกันชื่อไว้ (ฟีเจอร์ตายเงียบ)",
+    ).toBe(`xu-a-${stamp}`);
+    expect(byId.get(ids.c)?.displayName, "C เห็นชื่อตัวเองผ่าน id=uid").toBe(`xu-c-${stamp}`);
+
+    // กิ่งลบ: B = คนนอกทริป A → RLS สองชั้น (trip_members_select + profiles_select) กรอง → 200 + []
+    const bRes = await callAs(bCookies, tripA, membersGET, "GET");
+    expect(bRes.status, "คนนอกได้ 200+[] ไม่ใช่ 403 — 403 กลายเป็นเครื่องมือถามว่าทริปมีอยู่ไหม").toBe(200);
+    const bBody = (await bRes.json()) as { userId: string }[];
+    expect(
+      bBody.map((m) => m.userId),
+      "คนนอกเห็นสมาชิกแม้แต่คนเดียว = รั่ว social graph (ใครอยู่ในทริปใคร)",
+    ).toEqual([]);
   });
 
   it("bookings POST — B สร้างในทริป A ไม่ได้", async () => {

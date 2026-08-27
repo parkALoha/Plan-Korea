@@ -45,6 +45,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** ตารางของแพลตฟอร์มที่ชั้นนี้ดูแล — เพิ่มตารางใหม่ = เพิ่มฟังก์ชันในไฟล์นี้ ไม่ใช่เรียก `.from` ที่อื่น */
 export type EngineTable =
   | "trips"
+  | "trip_members"
   | "catalog_countries"
   | "catalog_cities"
   | "catalog_places"
@@ -314,6 +315,36 @@ export function createTrip(
  *
  * ⚠️ **`order` มีไว้ให้ผลคงที่ ไม่ได้มีไว้ให้ใครหยิบตัวแรก** — ดู `trip.ts` ว่าทำไมการหยิบตัวแรกถึงผิด
  */
+/**
+ * สมาชิกของทริป พร้อมชื่อที่แสดง — ตัวป้อนแถว avatar ใน `TripHeader` (`E5`)
+ *
+ * 🔴 **ไม่มีบรรทัดไหนกรองสิทธิ์ที่นี่ และนั่นคือทั้งหมดของข้อนี้** (`D38`)
+ * · แถวไหนเห็นได้ → `trip_members_select` (`app.can_read_trip`) ตัดสิน
+ * · ชื่อไหนเห็นได้ → `profiles_select` (`app.shares_trip_with`) ตัดสิน **อีกชั้นแยกกัน**
+ * → คนนอกทริปได้ **0 แถว** ไม่ใช่ `403` · ไม่ต้องเพิ่ม guard และ **ไม่ควรเพิ่ม**:
+ *   guard ที่นี่จะเป็นแหล่งความจริงที่สองเรื่อง "ใครอ่านได้" ที่ต้องคอยให้ตรงกับ policy ตลอดไป (`P-15`)
+ *
+ * 🎯 **`[]` ไม่ได้แปลว่า "ทริปไม่มีสมาชิก" — ทุกทริปมีเจ้าของอย่างน้อยหนึ่งคนเสมอ**
+ * (bootstrap trigger) → **`[]` = คุณไม่ใช่สมาชิก** · และมันตอบเท่ากับกรณี `tripId` ที่ไม่มีอยู่จริง
+ * ซึ่งเป็นสิ่งที่ต้องการ: **ไม่มีทางถามว่าทริปนี้มีอยู่ไหมด้วยการดูรหัสตอบกลับ**
+ *
+ * ⚠️ `displayName` เป็น `null` ได้ — บัญชีที่สร้างจาก `createUser` ตรง ๆ (fixture ของชุดทดสอบ)
+ *    ไม่มีแถวใน `profiles` · ผู้เรียกต้องเผื่อ ไม่ใช่สมมติว่ามีเสมอ
+ */
+export function tripMembers(db: Db, tripId: string) {
+  return engineTable(db, "trip_members")
+    // 🔴 **`!user_id` ไม่ใช่ของประดับ — ไม่มีมันแล้ว route คืน 502 ให้สมาชิกทุกคน**
+    //    `trip_members` มี FK ไป `profiles` **สองเส้น**: `user_id` (คนที่เป็นสมาชิก) และ
+    //    `invited_by` (คนที่เชิญเขามา · `identity.sql:142,144`) → PostgREST เลือกไม่ถูกว่าจะ join
+    //    เส้นไหน แล้วตอบ `PGRST201` **ไม่ใช่เดาเส้นใดเส้นหนึ่งเงียบ ๆ** (ซึ่งดีกว่ามาก)
+    //    · ใช้ชื่อ **คอลัมน์** ไม่ใช่ชื่อ constraint (`!trip_members_user_id_fkey`) — ทนต่อการเปลี่ยนชื่อ
+    //      constraint ที่ไม่มีใครตั้งใจให้กระทบโค้ด
+    //    📌 P4 จับได้ด้วย probe ข้ามผู้ใช้ **ตอนที่ผมยังไม่ได้รันมันเลย** — `viewer` ควรได้ 200 แต่ได้ 502
+    .select("user_id, role, profiles!user_id(display_name)")
+    .eq("trip_id", tripId)
+    .order("created_at");
+}
+
 export function tripsVisibleToMe(db: Db) {
   // 🔴 **`title` ไม่ใช่ `name`** — แก้ 27 ส.ค. 2026 (P4 เจอตอนสร้าง harness ยิง route จริง)
   //    คอลัมน์ชื่อ `title` มาตั้งแต่ `…043822_identity.sql:122` และ `create_trip` ก็ insert `title`
