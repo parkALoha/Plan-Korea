@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useSystemMode } from "@/hooks/useSystemMode";
+import { TripDestinationPicker, type CityOption } from "@/components/TripDestinationPicker";
+import { showToast } from "@/lib/toast";
 
 /**
  * ฟอร์มสร้างทริปแรก — `E5` (P1 พบ 27 ส.ค. 2026: `create_trip` อยู่ในฐานมาตั้งแต่ 25 ส.ค. แต่ไม่มี UI
@@ -18,6 +20,8 @@ export function CreateTripForm() {
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // เมืองปลายทาง (E5 ข้อ 3, 7230241) — ไม่บังคับ ลำดับที่เลือกคือลำดับที่ส่ง (ดู TripDestinationPicker)
+  const [destinations, setDestinations] = useState<CityOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // เซสชันหมดอายุแยกจาก error ทั่วไป — ต้องมีปุ่มเข้าสู่ระบบใหม่ ไม่ใช่แค่ข้อความ (P1 27 ส.ค. 2026)
@@ -39,12 +43,18 @@ export function CreateTripForm() {
       const res = await fetch("/api/engine/trips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), startDate, endDate }),
+        body: JSON.stringify({
+          title: title.trim(),
+          startDate,
+          endDate,
+          ...(destinations.length > 0 ? { cityIds: destinations.map((c) => c.id) } : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         id?: string;
         error?: string;
         code?: string;
+        destinationsError?: string;
       };
       if (!res.ok || !data.id) {
         // 🔴 เช็คจาก `code` ไม่ใช่ข้อความ — ข้อความเปลี่ยนได้ (P1 27 ส.ค. 2026)
@@ -60,6 +70,13 @@ export function CreateTripForm() {
         // ⚠️ อย่าเพิ่ม redirect ตรงนี้ทีหลังเพราะ "ดูเป็นของที่ควรมี" — เหตุผลด้านบนคือคำตอบแล้ว
         setSubmitting(false);
         return;
+      }
+      // 🔴 ทริปเกิดจริงแล้ว (201) แต่การเขียนจุดหมายอาจล้มแยกต่างหาก — P1 ยังคืน 201 พร้อม
+      // destinationsError แนบมา (27 ส.ค. 2026) เพราะทริปไม่ได้หาย แค่เมืองที่เลือกไว้ไม่ถูกบันทึก
+      // ถ้าเงียบไป ผู้ใช้จะไม่รู้จนกว่าจะเปิดการ์ดมาดูแล้วสงสัยเองว่าทำไมจุดหมายหาย — บอกตรงๆ แล้วพาเข้า
+      // ทริปตามปกติ (ทริปเองสร้างสำเร็จ ไม่ใช่เรื่องที่ต้องกันผู้ใช้ไว้)
+      if (data.destinationsError) {
+        showToast("info", "สร้างทริปแล้ว แต่บันทึกเมืองปลายทางไม่สำเร็จ — เพิ่มได้ภายหลัง");
       }
       // ทริปแรกของบัญชีนี้เพิ่งเกิด — พาไปเปิดทันที `/trip/[tripId]` เป็นหน้าใหม่ (mount ใหม่ทั้งก้อน)
       // ไม่ใช่หน้าเดิมที่ useActiveTripId() ค้างสถานะ "none" อยู่ จึงดึงรายการทริปสดใหม่เองแน่นอน
@@ -117,6 +134,7 @@ export function CreateTripForm() {
           />
         </div>
       </div>
+      <TripDestinationPicker selected={destinations} onChange={setDestinations} disabled={readOnly} />
       {sessionExpired && (
         <div className="rounded-lg bg-panel-maple/70 px-3 py-2 text-xs text-panel-maple-ink">
           <p className="mb-1.5">เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่ — ชื่อทริปกับวันที่ที่กรอกไว้ยังอยู่ตรงนี้</p>
