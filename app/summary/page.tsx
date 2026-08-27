@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
@@ -531,6 +531,33 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   const { lang, setLang, t } = useLang();
   const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const searchParams = useSearchParams();
+  // 🔴 เดิม t("summaryTitle")/t("tripDates") ฝังชื่อ+ช่วงวันของทริปเกาหลีตายตัว — หน้านี้มีปุ่ม "หน้าสำหรับ
+  // ตม." อยู่บนตัวมันเอง ยื่นให้คนนอกดูจริง เปิดทริปที่สอง ("P2 boundary test single day") แล้วเห็นชื่อ/
+  // วันที่ของทริปแรก (P1 27 ส.ค. 2026) — ดึงชื่อจริงจาก /api/engine/trips เหมือน TripHeader.tsx (ยังไม่มี
+  // route ดึงทริปเดียวโดยตรง) เก็บคู่กับ tripId ที่ผลนั้นเป็นของ แล้ว derive ตอน render แทน setState ตรงๆ
+  // ในเอฟเฟกต์ กัน set-state-in-effect (แพทเทิร์นเดียวกับ usePlacePhotos.ts)
+  // ⚠️ ช่วงวันที่ยังโชว์ไม่ได้ด้วยเหตุผลเดียวกับ TripHeader — tripsForUser() (lib/engine/trip.ts) ยัง
+  // ไม่ select start_date/end_date ทั้งที่มีอยู่ในฐาน ต้องขอ P1 เพิ่มก่อนถึงจะใส่วันที่จริงกลับมาได้
+  const [titleResult, setTitleResult] = useState<{ forTripId: string; title: string | null } | null>(
+    null
+  );
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/engine/trips")
+      .then((r) => r.json())
+      .then((rows: { id: string; title: string }[]) => {
+        if (cancelled) return;
+        const match = rows.find((r) => r.id === tripId);
+        setTitleResult({ forTripId: tripId, title: match?.title ?? null });
+      })
+      .catch(() => {
+        if (!cancelled) setTitleResult({ forTripId: tripId, title: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tripId]);
+  const tripTitle = titleResult?.forTripId === tripId ? titleResult.title : undefined;
   // `?for=immigration` = เลย์เอาต์เอกสารสำหรับ ตม./K-ETA (บังคับอังกฤษเสมอ ไม่ว่าปุ่มภาษาจะเลือกอะไร)
   const immigrationView = searchParams.get("for") === "immigration";
   const en = lang === "en";
@@ -714,10 +741,10 @@ export function SummaryContent({ tripId }: { tripId: string }) {
               {isDark ? "☀️" : "🌙"}
             </button>
           </div>
-          <h1 className="mt-3 text-2xl font-extrabold">{t("summaryTitle")}</h1>
-          <p className="mt-1 text-sm text-pine-soft/80">
-            {t("tripDates")} · {t("readOnlyNote")}
-          </p>
+          <h1 className="mt-3 text-2xl font-extrabold">
+            📋 {tripTitle === undefined ? "…" : (tripTitle ?? (en ? "This trip" : "ทริปนี้"))}
+          </h1>
+          <p className="mt-1 text-sm text-pine-soft/80">{t("readOnlyNote")}</p>
           {overallLoaded && !immigrationView && (
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-cream/90">
               <span>
