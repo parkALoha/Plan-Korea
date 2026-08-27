@@ -423,12 +423,7 @@ export function tripsVisibleToMe(db: Db) {
   //       การเรียงในฝั่ง PostgREST ต้องพึ่ง `referencedTable` ซึ่งพังเงียบถ้าชื่อความสัมพันธ์เปลี่ยน
   return engineTable(db, "trips")
     .select(
-      // 🔴 **ไม่ select คอลัมน์รูปปกเลยชั่วคราว — จงใจ เพื่อให้ไม่มีหน้าต่างที่แอปพัง**
-      //    `20260827220000` เปลี่ยนชื่อ `cover_image_url` → `cover_image_path`
-      //    ระหว่างที่ไฟล์ commit แล้วแต่ยังไม่ `db:push` **ชื่อในโค้ดกับชื่อในฐานจะต่างกันเสมอ**
-      //    ไม่ว่าจะเลือกชื่อไหน → `GET /api/engine/trips` คืน 502 ให้ทุกผู้ใช้ (เกิดมาแล้ว · `fad69d0`)
-      // 🎯 **ไม่ถามถึงคอลัมน์นั้นเลย = ใช้ได้กับฐานทั้งสองสภาพ** · ต้นทุนเป็นศูนย์เพราะยังไม่มีทริปไหนมีรูปปก
-      //    → หลัง migration ลงฐาน ค่อยใส่ `cover_image_path` + เซ็น URL กลับมาในคอมมิตเดียว
+      "id, title, start_date, end_date, cover_image_path," +
         "trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en)))," +
         "trip_members(count)",
     )
