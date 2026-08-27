@@ -52,6 +52,7 @@ export type EngineTable =
   | "catalog_country_contacts"
   | "catalog_place_access"
   | "trip_days"
+  | "trip_destinations"
   | "trip_stops"
   | "custom_places"
   | "hidden_places"
@@ -114,6 +115,33 @@ export function browseCatalogPlaces(db: Db, opts: { cityId?: string; countryId?:
  */
 export function catalogPlaceById(db: Db, id: string) {
   return engineTable(db, "catalog_places").select("*").eq("id", id).maybeSingle();
+}
+
+/**
+ * ค้นเมืองในคลังด้วยคำที่ผู้ใช้พิมพ์ — ตัวป้อนของ autocomplete "เมืองปลายทาง" ในฟอร์มสร้างทริป (`E5`)
+ *
+ * ค้นทั้ง 3 ชื่อ (`name_th` · `name_en` · `name_local`) เพราะผู้ใช้พิมพ์ได้ทั้ง "ฮานอย" · "Hanoi" · "Hà Nội"
+ * และ **ไม่มีชื่อไหนเป็นชื่อหลัก** — คลังเก็บทั้งสามเป็นข้อมูลเท่ากัน
+ *
+ * 🔴 **`q` ถูกล้างก่อนต่อเป็น filter ของ PostgREST เสมอ**
+ * ไวยากรณ์ `.or()` แยกเงื่อนไขด้วย `,` และห่อด้วย `()` → คำค้นที่มีอักขระพวกนั้น
+ * **ไม่ได้ทำให้คิวรีพัง มันทำให้คิวรีกลายเป็นคิวรีอื่น** ซึ่งอ่านผลเป็น "ไม่เจอ" ได้สนิท
+ * · `%` และ `_` เป็น wildcard ของ `ilike` → ผู้ใช้พิมพ์ `%` แล้วได้ทั้งคลัง เป็นเรื่องคนละเรื่องกับที่เขาถาม
+ * 🎯 กันที่นี่ ไม่ใช่ที่ route — ใครก็ตามที่เรียกฟังก์ชันนี้ในอนาคตได้การกันไปด้วยโดยไม่ต้องรู้
+ */
+export function searchCatalogCities(
+  db: Db,
+  opts: { q: string; countryId?: string; limit?: number },
+) {
+  const safe = opts.q.replace(/[,()%_*\\]/g, " ").trim();
+  let query = engineTable(db, "catalog_cities").select("id, country_id, name_th, name_en, name_local");
+  if (safe !== "") {
+    query = query.or(
+      `name_th.ilike.%${safe}%,name_en.ilike.%${safe}%,name_local.ilike.%${safe}%`,
+    );
+  }
+  if (opts.countryId) query = query.eq("country_id", opts.countryId);
+  return query.order("name_th").limit(opts.limit ?? 20);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
