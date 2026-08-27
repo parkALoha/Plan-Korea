@@ -129,14 +129,38 @@ async function callAs(cookies: Cookie[], tripId: string, handler: Handler, metho
  * · `leak`      = 2xx → **B เขียน/อ่านของ A สำเร็จ**
  * · `server-bug`= 502 หรืออื่น (400/500) → **บั๊กของเรา** (helper อ้างคอลัมน์ที่ไม่มี ฯลฯ) — แยกไปแก้ ไม่นับเป็นผ่าน
  */
-async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak" | "server-bug"; detail: string }> {
+/**
+ * 🔴 **`rejectStatuses` — สมมติฐานว่า *"การปฏิเสธหน้าตาเป็นยังไง"* ต้องเขียนที่จุดเรียก ไม่ใช่ซ่อนในตัวช่วย**
+ * (P4 โดนเอง 28 ส.ค. · P1 สำรวจต่อแล้วเจออีก 3 จุด)
+ *
+ * ค่าปริยาย `[401,403,404,409]` ถูกสำหรับ probe ส่วนใหญ่: *"B เขียนใส่ทริป A"* → RLS/auth ปฏิเสธ
+ * และ **`400` แปลว่าเราส่ง args ผิด = probe พัง** ซึ่งเป็นเหตุผลที่ตัวช่วยนี้ถูกสร้างมา — **อย่าทำให้ 400
+ * เป็น `rejected` โดยปริยาย มันจะฆ่าคุณค่านั้นทิ้ง**
+ *
+ * ⚠️ **แต่บาง endpoint แปล error ของ *ฐาน* เป็น `400` โดยตั้งใจ** → ตรงนั้น `400` คือ*การปฏิเสธที่ถูกต้อง*
+ * ไล่แล้ววันนี้มี 4 จุด: `stops:176` · `custom-places:138` · `place-notes:112` (`23503`) · `trips:153` (`22023`)
+ * · เคสที่ยิงเส้นพวกนั้นต้อง **ระบุเอง** ไม่งั้นตัวจำแนกจะรายงาน **ของที่ทำงานถูกว่าเป็นบั๊กของเรา**
+ * 🎯 และแดงหลอกแบบนั้นแพงเป็นพิเศษ เพราะมันขึ้นป้าย *"บั๊กเรา"* บนเคสความปลอดภัย —
+ *    **คนอ่านจะไปแก้ route ทั้งที่ควรไปแก้ตัววัด**
+ */
+async function verdictFor(
+  res: Response,
+  opts: { rejectStatuses?: readonly number[] } = {},
+): Promise<{ verdict: "rejected" | "leak" | "server-bug"; detail: string }> {
+  const reject = opts.rejectStatuses ?? [401, 403, 404, 409];
   const body = await res.clone().json().catch(() => null);
   const detail = `HTTP ${res.status} ${JSON.stringify(body)}`;
   const s = res.status;
-  if (s === 401 || s === 403 || s === 404 || s === 409) return { verdict: "rejected", detail };
+  if (reject.includes(s)) return { verdict: "rejected", detail };
   if (s >= 200 && s < 300) return { verdict: "leak", detail };
-  return { verdict: "server-bug", detail }; // 502 (คอลัมน์/ helper) · 400 (body ผิด = probe พัง) · อื่น
+  return { verdict: "server-bug", detail }; // 502 (คอลัมน์/ helper) · 400 ที่ไม่ได้ประกาศไว้ · อื่น
 }
+
+/**
+ * endpoint ที่แปล error ของฐานเป็น `400` — **`400` ที่นี่คือการปฏิเสธ ไม่ใช่ args ผิด**
+ * ⚠️ ยังไม่รวม `502` โดยตั้งใจ: FK ปฏิเสธจริงแต่ route แปลรหัสไม่ออก **ยังเป็นบั๊กของเรา**
+ */
+const DB_REJECT_STATUSES = [400, 401, 403, 404, 409] as const;
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
 const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members"]);
@@ -682,7 +706,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     };
     const n1 = await count();
     const bRes = await postAs(bCookies, tripA, stopsPOST, body);
-    const { verdict, detail } = await verdictFor(bRes);
+    // `stops:176` แปลง `23503` → `400` → ที่นี่ `400` คือการปฏิเสธ ไม่ใช่ probe พัง
+    const { verdict, detail } = await verdictFor(bRes, { rejectStatuses: DB_REJECT_STATUSES });
     expect(verdict, `[stops] B → **${verdict}** (${detail})`).toBe("rejected");
     const n2 = await count();
     expect(n2, "[stops] จำนวนจุดแวะในวัน A เพิ่มหลัง B ยิง = B สร้างในทริป A สำเร็จ (leak)").toBe(n1);
@@ -785,7 +810,12 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     };
     const n1 = await cnt();
     const bRes = await postAs(bCookies, tripA, customPlacesPOST, body("cp-b"));
-    const { verdict, detail } = await verdictFor(bRes);
+    // 🔴 วันนี้ปฏิเสธด้วย RLS (`42501`→403) · **แต่ `custom-places:138` แปลง `23503`→`400` ด้วย**
+    //    วันที่ policy ถูกผ่อนแล้วให้ FK เป็นด่านแทน probe จะได้ `400` — **ต้องยังอ่านว่า "ปฏิเสธ"**
+    //    ไม่งั้นเคสความปลอดภัยจะขึ้นป้าย "บั๊กเรา" แล้วคนไปแก้ route ทั้งที่ด่านทำงานถูก (P1 ชี้)
+    //    ⚠️ การ *เปลี่ยนกลไก* (RLS→FK) เป็นเรื่องของหมุด policy fingerprint ไม่ใช่ของ probe นี้ —
+    //       probe นี้ยืนยัน *คุณสมบัติ* ("B สร้างในทริป A ไม่ได้") ซึ่งจริงทั้งสองกลไก
+    const { verdict, detail } = await verdictFor(bRes, { rejectStatuses: DB_REJECT_STATUSES });
     expect(verdict, `[custom-places] B → **${verdict}** (${detail})`).toBe("rejected");
     expect(await cnt(), "[custom-places] จำนวนเพิ่มหลัง B ยิง = B สร้างในทริป A สำเร็จ (leak)").toBe(n1);
   });
