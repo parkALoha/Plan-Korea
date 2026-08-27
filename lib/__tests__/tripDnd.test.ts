@@ -15,6 +15,8 @@ import { useTripDnd } from "@/hooks/useTripDnd";
  * → ทางที่เหลือคือ **ทดสอบโค้ดปัจจุบันโดยไม่แตะมันสักบรรทัด**: render hook จริง แล้วเรียก `handleDragEnd`
  * ด้วย event สังเคราะห์ → assert ว่า callback ตัวไหนถูกเรียกด้วย args อะไร
  * · 🔴 **jsdom เฉพาะไฟล์นี้** (`@vitest-environment` บรรทัดแรก) — `vitest.config.mts` ยังเป็น `node` ทั้งชุด ห้ามแตะ
+ * · ⚠️ **`jsdom` ตรึงที่ 25** (`//jsdom` ใน `package.json`) — 26+ ให้ `ERR_REQUIRE_ESM` บน Node 20
+ *   และอาการคือไฟล์นี้ขึ้น **`no tests` ไม่ใช่ `FAIL`** ซึ่งอ่านผ่านตาเหมือนผ่าน · อย่า bump จนกว่าทุกเครื่อง+CI จะขึ้น Node 22
  *
  * ## 🔴 ขอบเขต — อ่านตรง ๆ (P1 ย้ำให้เขียนติดไฟล์):
  * ✅ ครอบ "ย้ายไฟล์/refactor แล้ว *ตรรกะตัดสิน* เพี้ยน" — กิ่งไหนเรียก callback ไหน ด้วยลำดับ/args อะไร

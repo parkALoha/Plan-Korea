@@ -23,6 +23,7 @@
     "react-dom": "19.2.8",
     "server-only": "^0.0.1"
   },
+  "//jsdom": "jsdom ตรึงที่ 25 โดยตั้งใจ — 26+ ดึง @exodus/bytes ที่เป็น ESM ล้วน แล้ว html-encoding-sniffer require() มัน => ERR_REQUIRE_ESM บน Node 20 (เวอร์ชันของเครื่อง dev) · เทสต์ทั้งไฟล์จะ 'no tests' ไม่ใช่ FAIL ซึ่งอ่านเหมือนผ่าน · ปลดตรึงได้เมื่อทุกเครื่อง+CI ขึ้น Node 22 แล้วเท่านั้น (P4 · 27 ส.ค. 2026 · ใช้โดย lib/__tests__/tripDnd.test.ts)",
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
