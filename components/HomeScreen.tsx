@@ -24,10 +24,51 @@ type TripListItem = {
   title: string;
   start_date: string;
   end_date: string;
-  coverImageUrl: string | null;
   destinations: TripDestination[];
   memberCount: number;
 };
+
+/**
+ * รูปปกทริป — **ไม่มีตัวอัปโหลดแล้ว** (ผู้ใช้ตัดสิน 27 ส.ค. 2026: กันข้อมูลภาพเยอะเกิน ให้ระบบคำนวณจาก
+ * จุดหมายแทน) คำนวณล้วนจาก `destinations` ที่การ์ดมีอยู่แล้ว ไม่ยิง API เพิ่ม — ไล่ 3 ชั้น:
+ * รูปเมือง (`destinations[0].slug`) → รูปประเทศ (`destinations[0].countryId`) → พื้นไล่สีเดิม
+ *
+ * อาจไม่มีไฟล์ที่ชั้นใดชั้นหนึ่ง (หรือทั้งคู่) — ต้องตกไปพื้นไล่สีอย่างเงียบ ไม่ใช่รูปแตก ใช้ `onError`
+ * ไล่ทีละชั้นแทนการเช็คว่าไฟล์มีอยู่จริงก่อน (เช็คล่วงหน้าฝั่ง client ทำไม่ได้อยู่แล้วสำหรับไฟล์ static ใน
+ * public/ — ต้องปล่อยให้ browser ลองโหลดแล้วดักพลาด)
+ * 🔴 **ชุดแรกที่จะมาคือรูประดับประเทศ (P1 ทาย 3 ไฟล์)** — สภาพ "มีแต่รูปประเทศ ไม่มีรูปเมือง" คือสภาพปกติ
+ * ช่วงแรก ไม่ใช่ edge case ต้องทดสอบให้เห็นจริงเหมือน edge case อื่น (ดู state ด้านล่าง) — ทายถูกเป๊ะ:
+ * เจอ `public/covers/country-{kr,vn,th}.svg` จริงระหว่างทดสอบ (ยังไม่ commit) นามสกุลเป็น `.svg` ไม่ใช่
+ * `.jpg` ตามที่บอกไว้ตอนแรก โค้ดนี้ใช้ `.svg` ตามของจริงที่เจอ
+ */
+function TripCoverImage({ destinations }: { destinations: TripDestination[] }) {
+  const first = destinations[0] as TripDestination | undefined;
+  const [stage, setStage] = useState<"city" | "country" | "gradient">(first ? "city" : "gradient");
+
+  if (stage === "gradient" || !first) {
+    // fallback ของรูปปก — ไม่มีจุดหมาย หรือไล่ทั้งรูปเมือง/ประเทศแล้วไม่เจอสักไฟล์
+    return (
+      <div className="flex w-20 shrink-0 items-center justify-center bg-gradient-to-br from-pine to-maple text-2xl text-cream sm:w-28">
+        🗺️
+      </div>
+    );
+  }
+
+  // 🔴 .svg ไม่ใช่ .jpg ตามที่ P1 บอกไว้ตอนแรก — เจอไฟล์จริงของผู้ใช้ที่ public/covers/country-{kr,vn,th}.svg
+  // อยู่แล้วระหว่างทดสอบ (ยังไม่ commit ไม่มีใน git log) 3 ไฟล์ตรงกับ 3 ประเทศที่ P1 ทายไว้เป๊ะ — ใช้ตามที่
+  // เจอจริงแทนสเปกเดิม ต้องแจ้ง P1 ยืนยันอีกที เผื่อรูปเมืองจริงจะเป็นคนละนามสกุล
+  const src = stage === "city" ? `/covers/city-${first.slug}.svg` : `/covers/country-${first.countryId}.svg`;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง ไม่ใช่รูปผู้ใช้อัปโหลด
+    <img
+      src={src}
+      alt=""
+      className="h-auto w-20 shrink-0 object-cover sm:w-28"
+      onError={() => setStage((s) => (s === "city" ? "country" : "gradient"))}
+    />
+  );
+}
 
 // 🔴 เดิมมีก้อน COPY ท้องถิ่นแยกไว้ในไฟล์นี้เอง (เหตุผลตอนนั้น: lib/i18n.ts เขียนขอบเขตตัวเองไว้ว่า
 // "ของหน้า /summary เท่านั้น") — ย้ายเข้า E5_COPY.home ใน lib/i18n.ts แล้ว (P1 27 ส.ค. 2026 ตัดสิน:
@@ -36,8 +77,8 @@ type TripListItem = {
 const COPY = E5_COPY.home;
 
 /**
- * การ์ดทริปหนึ่งใบบน Home — `coverImageUrl`/`destinations`/`memberCount` มาจาก `GET /api/engine/trips`
- * แล้ว (P1 27 ส.ค. 2026, `f6d74ee`) ก่อนหน้านี้ยังไม่มี API เลยใช้ fallback ล้วน ตอนนี้ใช้ค่าจริง
+ * การ์ดทริปหนึ่งใบบน Home — `destinations`/`memberCount` มาจาก `GET /api/engine/trips` (P1 27 ส.ค. 2026,
+ * `f6d74ee`) รูปปกคำนวณเองจาก `destinations` แล้ว (ดู `TripCoverImage`) ไม่มาจาก API อีกต่อไป
  *
  * 🔴 `destinations: []` เป็นปกติวันนี้ (ยังไม่มีทริปไหนเขียนจุดหมาย ตาราง `trip_destinations`
  * เพิ่งเกิด) — ไม่โชว์แถวจุดหมายเลยถ้าว่าง ดีกว่าโชว์ช่องว่าง
@@ -51,20 +92,7 @@ function TripCard({ trip }: { trip: TripListItem }) {
       href={`/trip/${trip.id}`}
       className="flex overflow-hidden rounded-2xl border border-line bg-surface-raised hover:border-maple/40"
     >
-      {trip.coverImageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- รูปปกจากผู้ใช้ ไม่ใช่ static asset
-        <img
-          src={trip.coverImageUrl}
-          alt=""
-          className="h-auto w-20 shrink-0 object-cover sm:w-28"
-        />
-      ) : (
-        // fallback ของรูปปก — ยังไม่มีใครอัปโหลด (ยังไม่มีตัวอัปโหลดด้วยตามแผน E5) ไล่สีตามโทนแบรนด์
-        // แทนที่จะปล่อยว่างเปล่า อย่างน้อยรู้ว่าเป็น "การ์ดทริป" ตั้งแต่มองครั้งแรก
-        <div className="flex w-20 shrink-0 items-center justify-center bg-gradient-to-br from-pine to-maple text-2xl text-cream sm:w-28">
-          🗺️
-        </div>
-      )}
+      <TripCoverImage destinations={trip.destinations} />
       <div className="min-w-0 flex-1 p-3">
         <h3 className="truncate font-semibold text-content">{trip.title}</h3>
         <p className="mt-0.5 text-xs text-content-soft">

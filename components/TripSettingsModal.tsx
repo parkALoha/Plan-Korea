@@ -2,8 +2,6 @@
 
 import type { TripPlan } from "@/lib/supabase";
 import { Modal } from "./Modal";
-import { TripCoverUpload } from "./TripCoverUpload";
-import { useSystemMode } from "@/hooks/useSystemMode";
 
 /**
  * ของที่ตั้งครั้งเดียวแล้วแทบไม่แตะอีก — ชื่อคนใช้ / จัดการแผน A-B / ล็อกทั้งทริป (เฟส 20.3)
@@ -12,7 +10,6 @@ import { useSystemMode } from "@/hooks/useSystemMode";
  * ย้ายมาไว้หลังปุ่ม ⚙️ แทน เหลือบนหัวแค่ชื่อทริป ชื่อแผนที่ใช้อยู่ และจำนวนจุด
  */
 export function TripSettingsModal({
-  tripId,
   who,
   onWhoChange,
   plans,
@@ -26,7 +23,6 @@ export function TripSettingsModal({
   onToggleLockAll,
   onClose,
 }: {
-  tripId: string;
   who: string;
   onWhoChange: (value: string) => void;
   plans: TripPlan[];
@@ -41,13 +37,9 @@ export function TripSettingsModal({
   onClose: () => void;
 }) {
   const allLocked = totalDayCount > 0 && lockedDayCount === totalDayCount;
-  const { mode: systemMode } = useSystemMode();
-  const readOnly = systemMode.state === "ok" && systemMode.readOnly;
 
   return (
     <Modal onClose={onClose} title="ตั้งค่าทริป" size="md" bodyClassName="space-y-5">
-      <TripCoverUpload tripId={tripId} readOnly={readOnly} />
-
       <div>
         <label htmlFor="trip-who" className="mb-1 block text-xs font-medium text-content-soft">
           ชื่อคุณ

@@ -188,7 +188,6 @@ export function TripHeader({
 
       {settingsOpen && (
         <TripSettingsModal
-          tripId={tripId}
           who={who}
           onWhoChange={onWhoChange}
           plans={plans}
