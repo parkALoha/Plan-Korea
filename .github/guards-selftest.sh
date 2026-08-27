@@ -776,6 +776,51 @@ cp "$(cd "$(dirname "$0")" && pwd)"/check-*.py "$(cd "$(dirname "$0")" && pwd)"/
 git -C "$d" add -A >/dev/null 2>&1
 pyc "naive-strip: ตัวด่านทุกตัวต้องผ่านกฎของตัวเอง" pass check-naive-strip.py "$d"
 
+# ── E5 trip-links (P6 · 27 ส.ค. 2026) ─────────────────────────────────────────
+mktrip() {  # ทรีที่มี route ของทริปจริง
+  d="$(mkrepo)"; mkdir -p "$d/app/trip/[tripId]/summary" "$d/app/trip/[tripId]/today" "$d/app/summary"
+  for f in "app/trip/[tripId]/page.tsx" "app/trip/[tripId]/summary/page.tsx" "app/trip/[tripId]/today/page.tsx"; do
+    echo 'export default function P(){return null}' > "$d/$f"
+  done
+  echo "$d"
+}
+
+# 🔴 รูปที่ทำให้บั๊กจริงรอด: สตริงอยู่คนละบรรทัดกับ href= และเป็น ternary สองทาง
+#    ฉบับแรกของด่านอ่าน literal ตัวแรกตัวเดียว → เห็นบั๊กจริงแค่ 1 ใน 2 บรรทัด
+d="$(mktrip)"; cat > "$d/app/summary/page.tsx" <<'TSEOF'
+export default function S() {
+  return (
+    <Link
+      href={
+        view
+          ? `/summary?lang=${lang}`
+          : `/summary?lang=en&for=immigration`
+      }
+    >go</Link>
+  );
+}
+TSEOF
+git -C "$d" add -A >/dev/null 2>&1
+pyc "trip-links: ลิงก์ bare หลายบรรทัด (รูปบั๊กจริง) ต้องโดนจับ" fail check-trip-links.py "$d"
+
+d="$(mktrip)"; cat > "$d/app/summary/page.tsx" <<'TSEOF'
+export default function S() {
+  return <Link href={`/trip/${tripId}/summary?lang=${lang}`}>go</Link>;
+}
+TSEOF
+git -C "$d" add -A >/dev/null 2>&1
+pyc "trip-links: ลิงก์ที่มี tripId ต้องผ่าน" pass check-trip-links.py "$d"
+
+# ✅ ข้อยกเว้นที่ประกาศชื่อไว้ (manifest start_url) ต้องไม่โดนจับ
+d="$(mktrip)"; echo 'export default function S(){return <Link href="/today">t</Link>}' > "$d/app/summary/page.tsx"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "trip-links: /today ที่ประกาศยกเว้นไว้ ต้องไม่โดนจับ" pass check-trip-links.py "$d"
+
+# 🔴 เซตว่าง = ตัวไล่พัง ไม่ใช่ "ไม่มีอะไรให้ตรวจ" — ต้องแดง ไม่ใช่เขียว
+d="$(mkrepo)"; mkdir -p "$d/app"; echo 'export default function P(){return null}' > "$d/app/page.tsx"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "trip-links: ไม่มี route ของทริปเลย ต้องแดง (กับดักเซตว่าง)" fail check-trip-links.py "$d"
+
 # ── ควบคุม "สาย" ไม่ใช่ "ด่าน" ────────────────────────────────────────────────
 # 🔴 **ฉบับแรกของเคสนี้ใช้ `mkrepo` อย่างเดียว และมันจับบั๊กที่มันถูกเขียนขึ้นมาเพื่อจับ *ไม่ได้***
 #    ผมลองใส่บั๊ก `[ -d "$ROOT/.git" ]` กลับเข้าไป → **สองเคสนี้ยังเขียวทั้งคู่**

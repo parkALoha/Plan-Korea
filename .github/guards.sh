@@ -495,6 +495,15 @@ if [ -d "$ROOT/lib" ] && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 && [
   python3 "$NAIVESTRIP" "$ROOT" || fail=1
 fi
 
+# ── E5: ลิงก์ภายในที่ชี้หน้าของทริป ต้องมี tripId (P2 เจอบั๊ก · P1 ขอ · 27 ส.ค. 2026) ──
+# 🔴 ปุ่ม "Immigration sheet" ชี้ไป `/summary?...` ไม่มี `/trip/${tripId}` → กดแล้วไม่ไปไหน
+#    เป็นปุ่มที่ผู้ใช้ต้องกดหน้าเคาน์เตอร์ ตม. วันที่ 11 ต.ค. · รอดมาเพราะสตริงอยู่คนละบรรทัดกับ `href=`
+#    → `grep 'href="/'` มองไม่เห็นตามนิยาม · ด่านนี้อ่านทั้งนิพจน์โดยไล่ปีกกาให้สมดุล
+TRIPLINKS="$(cd "$(dirname "$0")" && pwd)/check-trip-links.py"
+if [ -d "$ROOT/app" ] && [ -f "$TRIPLINKS" ]; then
+  python3 "$TRIPLINKS" "$ROOT" || fail=1
+fi
+
 # ── config ของ API ที่เส้นแบ่งความปลอดภัยพึ่งอยู่ (P4 ขอ · 26 ส.ค. 2026) ─────────
 # 🔴 P4 พิสูจน์ว่าไคลเอนต์ตั้ง `app.*` GUC ไม่ได้ 5 เส้นทาง · เส้นที่เกือบเป็นทางคือ
 #    claim ใน JWT ซึ่ง PostgREST map เป็น `request.jwt.claim.<key>` **ไม่ใช่ `<key>` ตรง ๆ**
