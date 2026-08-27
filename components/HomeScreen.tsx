@@ -10,7 +10,24 @@ import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
 
-type TripListItem = { id: string; title: string; start_date: string; end_date: string };
+type TripDestination = {
+  cityId: string;
+  slug: string;
+  nameTh: string;
+  nameEn: string;
+  countryId: string;
+  countryNameTh: string;
+};
+
+type TripListItem = {
+  id: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  coverImageUrl: string | null;
+  destinations: TripDestination[];
+  memberCount: number;
+};
 
 // 🔴 เดิมมีก้อน COPY ท้องถิ่นแยกไว้ในไฟล์นี้เอง (เหตุผลตอนนั้น: lib/i18n.ts เขียนขอบเขตตัวเองไว้ว่า
 // "ของหน้า /summary เท่านั้น") — ย้ายเข้า E5_COPY.home ใน lib/i18n.ts แล้ว (P1 27 ส.ค. 2026 ตัดสิน:
@@ -18,22 +35,52 @@ type TripListItem = { id: string; title: string; start_date: string; end_date: s
 // นั้น) ยังไม่มี EN เหมือนเดิม เพิ่มตอน M2
 const COPY = E5_COPY.home;
 
-/** การ์ดทริปหนึ่งใบบน Home — รูปปก/จุดหมาย/จำนวนสมาชิกรอ API จาก P1 (`E5` ข้อ 2/3) ยังใช้ fallback ไปก่อน */
+/**
+ * การ์ดทริปหนึ่งใบบน Home — `coverImageUrl`/`destinations`/`memberCount` มาจาก `GET /api/engine/trips`
+ * แล้ว (P1 27 ส.ค. 2026, `f6d74ee`) ก่อนหน้านี้ยังไม่มี API เลยใช้ fallback ล้วน ตอนนี้ใช้ค่าจริง
+ *
+ * 🔴 `destinations: []` เป็นปกติวันนี้ (ยังไม่มีทริปไหนเขียนจุดหมาย ตาราง `trip_destinations`
+ * เพิ่งเกิด) — ไม่โชว์แถวจุดหมายเลยถ้าว่าง ดีกว่าโชว์ช่องว่าง
+ * 🔴 `memberCount === 0` เป็นไปไม่ได้จริง (ทุกทริปมีเจ้าของ ≥1) — ถ้าเจอ แปลว่าอ่าน `trip_members`
+ * ไม่ได้ ไม่ใช่ทริปไม่มีคน ปฏิบัติแบบเดียวกับ `displayName: null` ใน `TripHeader.tsx` (ห้ามเงียบ)
+ */
 function TripCard({ trip }: { trip: TripListItem }) {
+  const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
     <Link
       href={`/trip/${trip.id}`}
       className="flex overflow-hidden rounded-2xl border border-line bg-surface-raised hover:border-maple/40"
     >
-      {/* fallback ของรูปปก — ยังไม่มี cover_image_url ในฐาน (รอ migration ของ P1) ไล่สีตามโทนแบรนด์
-          แทนที่จะปล่อยว่างเปล่า อย่างน้อยรู้ว่าเป็น "การ์ดทริป" ตั้งแต่มองครั้งแรก */}
-      <div className="flex w-20 shrink-0 items-center justify-center bg-gradient-to-br from-pine to-maple text-2xl text-cream sm:w-28">
-        🗺️
-      </div>
+      {trip.coverImageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- รูปปกจากผู้ใช้ ไม่ใช่ static asset
+        <img
+          src={trip.coverImageUrl}
+          alt=""
+          className="h-auto w-20 shrink-0 object-cover sm:w-28"
+        />
+      ) : (
+        // fallback ของรูปปก — ยังไม่มีใครอัปโหลด (ยังไม่มีตัวอัปโหลดด้วยตามแผน E5) ไล่สีตามโทนแบรนด์
+        // แทนที่จะปล่อยว่างเปล่า อย่างน้อยรู้ว่าเป็น "การ์ดทริป" ตั้งแต่มองครั้งแรก
+        <div className="flex w-20 shrink-0 items-center justify-center bg-gradient-to-br from-pine to-maple text-2xl text-cream sm:w-28">
+          🗺️
+        </div>
+      )}
       <div className="min-w-0 flex-1 p-3">
         <h3 className="truncate font-semibold text-content">{trip.title}</h3>
         <p className="mt-0.5 text-xs text-content-soft">
           {tripDateRangeLabel(trip.start_date, trip.end_date)}
+        </p>
+        {destinationLabel && (
+          <p className="mt-0.5 truncate text-xs text-content-soft">📍 {destinationLabel}</p>
+        )}
+        <p className="mt-1 text-xs text-content-soft">
+          {trip.memberCount > 0 ? (
+            <>👥 {trip.memberCount}</>
+          ) : (
+            <span className="text-maple-dark" title="อ่านจำนวนสมาชิกไม่ได้ — คาดว่ามีอย่างน้อย 1 คนเสมอ">
+              👥 ?
+            </span>
+          )}
         </p>
       </div>
     </Link>
