@@ -1,7 +1,25 @@
-const MONTHS_TH_SHORT = [
+export const MONTHS_TH_SHORT = [
   "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
   "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
 ];
+
+/** ชื่อเดือนเต็ม — ใช้บนหัวปฏิทินของ `DateField` ("มกราคม 2027") */
+export const MONTHS_TH_FULL = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+/** หัวคอลัมน์ปฏิทิน เรียงตาม `Date.getDay()` (0 = อาทิตย์) */
+export const WEEKDAYS_TH_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+/**
+ * วันเดียวแบบสั้น เช่น "10 ม.ค. 2027" — ใช้โชว์ค่าที่เลือกไว้บนปุ่มของ `DateField`
+ * 🔴 ปี ค.ศ. เหมือน `tripDateRangeLabel` (เหตุผลเดียวกันเป๊ะ — ดูคำเตือนเรื่อง `th-TH` ด้านล่าง)
+ */
+export function formatIsoDateTh(iso: string): string {
+  const { y, m, d } = parseIsoParts(iso);
+  return `${d} ${MONTHS_TH_SHORT[m - 1]} ${y}`;
+}
 
 const MONTHS_EN_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",

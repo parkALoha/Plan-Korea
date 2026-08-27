@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { E5_COPY } from "@/lib/i18n";
 
 const COPY = E5_COPY.destinationPicker;
@@ -13,7 +14,7 @@ export type CityOption = {
   name_th: string;
   name_en: string;
   name_local: string | null;
-  /** ฝังมากับ `GET /api/engine/cities` แล้ว (P1 28 ส.ค. 2026, `593c36d`) — ใช้โชว์ชื่อประเทศบน chip */
+  /** ฝังมากับ `GET /api/engine/cities` แล้ว (P1 28 ส.ค. 2026, `593c36d`) */
   catalog_countries?: CountryOption | null;
 };
 
@@ -24,17 +25,56 @@ const CITY_LIMIT = 50;
 type ListState<T> = { status: "loading" } | { status: "ready"; items: T[] } | { status: "error" };
 
 /**
+ * ภาพประจำจุดหมาย — ใช้ cascade เดียวกับรูปปกการ์ดบนหน้า Home เพื่อไม่ให้มีระบบรูปสองระบบในเว็บเดียว
+ *
+ * 🔴 **วันนี้ทำได้แค่ระดับประเทศ** เพราะ `GET /api/engine/cities` ยังไม่คืน `legacy_slug` มาด้วย
+ * (`tripsForUser()` คืน แต่เส้นนี้ไม่คืน) — ขอ P1 ไว้แล้ว · และวันนี้ยังไม่มีไฟล์ `city-*.svg` สักใบอยู่ดี
+ * มีแต่ `country-{kr,vn,th}.svg` → **ต่อให้ต่อ slug วันนี้ก็จะตกมาที่รูปประเทศเหมือนกันทุกใบ**
+ * พอ slug มา เติมชั้น `city-` ข้างหน้าได้เลยโดยไม่ต้องรื้ออย่างอื่น
+ */
+function DestinationThumb({ countryId }: { countryId: string }) {
+  const [failed, setFailed] = useState(false);
+  const base = "h-10 w-10 shrink-0 overflow-hidden rounded-lg";
+
+  if (failed) {
+    return (
+      <div
+        aria-hidden
+        className={`${base} flex items-center justify-center bg-gradient-to-br from-pine to-maple text-sm text-cream`}
+      >
+        🗺️
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
+    <img
+      src={`/covers/country-${countryId}.svg`}
+      alt=""
+      className={`${base} object-cover`}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/**
  * เลือกจุดหมาย **ประเทศ → เมือง → กด +** (หลายคู่ เรียงตามลำดับที่เพิ่ม) — `E5` ข้อ 3
  *
  * ผู้ใช้สั่งรูปนี้เอง 28 ส.ค. 2026: *"ควรให้เลือกประเทศ และ เลือกเมือง และกด + เมือง/ประเทศได้ แต่ต้องอยู่ใน
  * ลิสของเรา — **เผื่อ ต่อเครื่อง หรือบินต่อ**"* · เหตุผลท้ายประโยคสำคัญกว่ารูปแบบ: ทริปจริงของเขาคือ
  * กรุงเทพฯ → ฮานอย (พักเครื่อง 11 ชม.) → ปูซาน — **จุดหมายหลายเมืองข้ามประเทศคือเคสปกติ ไม่ใช่ edge case**
- * เดิมเป็นช่องค้นข้อความช่องเดียวที่ไม่บอกด้วยซ้ำว่าเมืองไหนอยู่ประเทศอะไร
  *
  * 🔴 **ลำดับที่ผู้ใช้เพิ่มคือลำดับที่ส่ง** — ห้ามเรียงตามตัวอักษรหรือจัดใหม่ก่อนส่ง `cityIds`
- * (`POST /api/engine/trips` เก็บลำดับที่ส่งมาตามนั้น ไม่เรียงใหม่ให้)
+ * (`POST /api/engine/trips` เก็บลำดับที่ส่งมาตามนั้น ไม่เรียงใหม่ให้) · **และนั่นคือเหตุผลที่ต้องมีปุ่มสลับ
+ * ลำดับ** — ผู้ใช้สั่งเพิ่ม 28 ส.ค.: *"บอกแค่ ชื่อเมือง และภาพพอ และสลับตำแหน่งได้"* · ลำดับ = ลำดับเดินทางจริง
+ * (ต่อเครื่องฮานอยก่อนไปปูซาน ≠ ไปปูซานก่อนแล้วแวะฮานอย) เพิ่มผิดลำดับแล้วต้องลบทิ้งหมดเพื่อเรียงใหม่คือ UX ที่แย่
  *
- * 🎯 **ทำไมถึงกรองด้วย `?country=` แทนที่จะค้นรวมแล้วจัดกลุ่มฝั่ง UI:** **`limit` ตัด*หลัง*เรียง**
+ * 📌 **ทำไมเป็นปุ่ม ↑↓ ไม่ใช่ลากวาง:** ห้องนี้มี `@dnd-kit` อยู่แล้วก็จริง แต่ **ผมยืนยันผลการลากด้วย
+ * เครื่องมือทดสอบไม่ได้** (`dnd-kit` อ่าน `movementX/Y` ที่เบราว์เซอร์ใส่ให้เฉพาะ event ที่เชื่อถือได้ —
+ * เคย `E5-AC4` ต้องส่งให้คนลากมือถึงจะยืนยันได้) · **ปุ่มพิสูจน์ได้ว่าใช้งานได้จริงก่อนส่งมอบ** และบนมือถือ
+ * การลากชิปเล็ก ๆ ก็ยากกว่ากดปุ่มอยู่แล้ว · ถ้าจะเพิ่มลากวางทีหลัง ให้เพิ่ม*ทับ*ปุ่ม ไม่ใช่แทนที่
+ *
+ * 🎯 **ทำไมกรองด้วย `?country=` แทนที่จะค้นรวมแล้วจัดกลุ่มฝั่ง UI:** **`limit` ตัด*หลัง*เรียง**
  * (P1 ชนมาเอง: `q="า" limit=12` → ญี่ปุ่น 12 เมืองรวด ประเทศอื่นหายหมด) → **ยิงแยกต่อประเทศ ไม่ใช่ยิงรวม
  * แล้วหั่น** ไม่งั้นประเทศที่เมืองเยอะกินโควตาประเทศอื่นจนหายไปเงียบ ๆ
  *
@@ -124,7 +164,6 @@ export function TripDestinationPicker({
     if (!city) return;
     onChange([...selected, city]);
     // ล้างเฉพาะเมือง **เก็บประเทศไว้** — ผู้ใช้ที่เพิ่งเพิ่ม "โซล" มักจะเพิ่ม "ปูซาน" ต่อในประเทศเดิม
-    // การรีเซ็ตประเทศด้วยจะบังคับให้เลือกซ้ำทุกครั้งโดยไม่ได้อะไรกลับมา
     setCityId("");
   }
 
@@ -132,41 +171,80 @@ export function TripDestinationPicker({
     onChange(selected.filter((c) => c.id !== id));
   }
 
-  const controlClass =
-    "w-full rounded-lg border border-line bg-surface-raised px-2.5 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60";
+  /** สลับกับเพื่อนบ้าน — ไม่ใช่ย้ายไปท้าย/หัว เพื่อให้กดหลายทีแล้วเดาผลได้ตรง ๆ */
+  function move(index: number, dir: -1 | 1) {
+    const j = index + dir;
+    if (j < 0 || j >= selected.length) return;
+    const next = [...selected];
+    [next[index], next[j]] = [next[j], next[index]];
+    onChange(next);
+  }
+
+  const countryOptions: DropdownOption[] =
+    countries.status === "ready"
+      ? countries.items.map((c) => ({ value: c.id, label: c.name_th }))
+      : [];
+
+  const cityOptions: DropdownOption[] = cityItems.map((c) => ({
+    value: c.id,
+    label: c.name_th,
+    hint: selectedIds.has(c.id) ? `(${COPY.alreadyAdded})` : undefined,
+    disabled: selectedIds.has(c.id),
+  }));
+
+  const cityPlaceholder = !countryId
+    ? COPY.cityNeedsCountry
+    : cityState.status === "loading"
+      ? COPY.cityLoading
+      : COPY.cityPlaceholder;
 
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-content-soft">{COPY.label}</label>
 
       {selected.length > 0 && (
-        <ul className="mb-1.5 flex flex-wrap gap-1.5">
-          {selected.map((city) => {
-            // ชื่อประเทศมาจาก embed — ถ้าอ่านไม่ได้ตกไปใช้รหัส (`kr`) ดีกว่าโชว์ชื่อเมืองลอยไม่บอกประเทศ
-            const countryName = city.catalog_countries?.name_th ?? city.country_id.toUpperCase();
-            return (
-              <li
-                key={city.id}
-                className="flex items-center gap-1 rounded-full bg-maple-soft py-1 pl-2.5 pr-1.5 text-xs font-medium text-maple-dark"
-              >
-                <span className="opacity-70">{countryName}</span>
-                <span aria-hidden className="opacity-40">
-                  ·
-                </span>
-                <span>{city.name_th}</span>
-                {!disabled && (
+        <ul className="mb-2 space-y-1.5">
+          {selected.map((city, i) => (
+            <li
+              key={city.id}
+              className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-soft/60 p-1.5"
+            >
+              <DestinationThumb countryId={city.country_id} />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-content">
+                {city.name_th}
+              </span>
+              {!disabled && (
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => move(i, -1)}
+                    disabled={i === 0}
+                    aria-label={COPY.moveEarlier(city.name_th)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-content-soft hover:bg-surface-soft disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => move(i, 1)}
+                    disabled={i === selected.length - 1}
+                    aria-label={COPY.moveLater(city.name_th)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-content-soft hover:bg-surface-soft disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    ↓
+                  </button>
                   <button
                     type="button"
                     onClick={() => removeCity(city.id)}
-                    aria-label={COPY.remove(`${countryName} ${city.name_th}`)}
-                    className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-maple/30"
+                    aria-label={COPY.remove(city.name_th)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-content-soft hover:bg-maple-soft hover:text-maple-dark"
                   >
                     ✕
                   </button>
-                )}
-              </li>
-            );
-          })}
+                </div>
+              )}
+            </li>
+          ))}
         </ul>
       )}
 
@@ -176,61 +254,35 @@ export function TripDestinationPicker({
         <>
           <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1">
-              <label
-                htmlFor="dest-country"
-                className="mb-0.5 block text-[11px] font-medium text-content-soft"
-              >
+              <span id="dest-country-label" className="mb-0.5 block text-[11px] font-medium text-content-soft">
                 {COPY.countryLabel}
-              </label>
-              <select
+              </span>
+              <Dropdown
                 id="dest-country"
+                ariaLabel={COPY.countryLabel}
                 value={countryId}
-                onChange={(e) => {
-                  setCountryId(e.target.value);
+                onChange={(v) => {
+                  setCountryId(v);
                   // เปลี่ยนประเทศแล้วเมืองเดิมใช้ไม่ได้อีก — ล้างทันที ไม่ปล่อยให้ค้างแล้วกด + ได้เมืองผิดประเทศ
                   setCityId("");
                 }}
+                options={countryOptions}
+                placeholder={COPY.countryPlaceholder}
                 disabled={disabled || atMax || countries.status === "loading"}
-                className={controlClass}
-              >
-                <option value="">{COPY.countryPlaceholder}</option>
-                {countries.status === "ready" &&
-                  countries.items.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name_th}
-                    </option>
-                  ))}
-              </select>
+              />
             </div>
 
             <div className="min-w-0 flex-1">
-              <label
-                htmlFor="dest-city"
-                className="mb-0.5 block text-[11px] font-medium text-content-soft"
-              >
-                {COPY.cityLabel}
-              </label>
-              <select
+              <span className="mb-0.5 block text-[11px] font-medium text-content-soft">{COPY.cityLabel}</span>
+              <Dropdown
                 id="dest-city"
+                ariaLabel={COPY.cityLabel}
                 value={cityId}
-                onChange={(e) => setCityId(e.target.value)}
+                onChange={setCityId}
+                options={cityOptions}
+                placeholder={cityPlaceholder}
                 disabled={disabled || atMax || !countryId || cityState.status !== "ready"}
-                className={controlClass}
-              >
-                <option value="">
-                  {!countryId
-                    ? COPY.cityNeedsCountry
-                    : cityState.status === "loading"
-                      ? COPY.cityLoading
-                      : COPY.cityPlaceholder}
-                </option>
-                {cityItems.map((c) => (
-                  <option key={c.id} value={c.id} disabled={selectedIds.has(c.id)}>
-                    {c.name_th}
-                    {selectedIds.has(c.id) ? ` (${COPY.alreadyAdded})` : ""}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <button

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { TripDestinationPicker, type CityOption } from "@/components/TripDestinationPicker";
+import { DateField } from "@/components/DateField";
 import { showToast } from "@/lib/toast";
 
 /**
@@ -110,27 +111,33 @@ export function CreateTripForm() {
           className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
       </div>
+      {/* ปฏิทินของเราเอง ไม่ใช่ <input type="date"> ของเบราว์เซอร์ (ผู้ใช้สั่ง 28 ส.ค. 2026) — ดู DateField
+          🔴 เดิมมี `required` บน input ให้เบราว์เซอร์กันฟอร์มว่างให้ · ปุ่ม/div ไม่มี validation ในตัว
+          จึงต้องพึ่งเงื่อนไข disabled ของปุ่ม "สร้างทริป" ด้านล่างแทน (มี !startDate/!endDate อยู่แล้ว) */}
       <div className="flex gap-2">
-        <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-content-soft">เริ่ม</label>
-          <input
-            type="date"
+        <div className="min-w-0 flex-1">
+          <span className="mb-1 block text-xs font-medium text-content-soft">เริ่ม</span>
+          <DateField
+            id="trip-start"
+            ariaLabel="วันเริ่มทริป"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            required
+            onChange={(iso) => {
+              setStartDate(iso);
+              // วันจบที่มาก่อนวันเริ่มใช้ไม่ได้แล้ว — ล้างทิ้งแทนที่จะปล่อยให้ค้างแล้วโดน 400 ตอนกดสร้าง
+              if (endDate && endDate < iso) setEndDate("");
+            }}
             disabled={readOnly}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
         </div>
-        <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-content-soft">สิ้นสุด</label>
-          <input
-            type="date"
+        <div className="min-w-0 flex-1">
+          <span className="mb-1 block text-xs font-medium text-content-soft">สิ้นสุด</span>
+          <DateField
+            id="trip-end"
+            ariaLabel="วันสิ้นสุดทริป"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            required
+            onChange={setEndDate}
+            min={startDate || undefined}
             disabled={readOnly}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
         </div>
       </div>

@@ -1,0 +1,202 @@
+"use client";
+
+import { useEffect, useId, useRef, useState } from "react";
+
+export type DropdownOption = {
+  value: string;
+  label: string;
+  /** ข้อความรองต่อท้ายชื่อ เช่น "(เพิ่มไว้แล้ว)" — แสดงจาง ๆ ไม่ใช่ส่วนหนึ่งของชื่อ */
+  hint?: string;
+  disabled?: boolean;
+};
+
+/**
+ * ดรอปดาวน์ของเราเอง — ผู้ใช้สั่ง 28 ส.ค. 2026: *"ทำ dropdown ของเราเองสิ"*
+ * เดิมใช้ `<select>` ของเบราว์เซอร์ ซึ่งวาดด้วย native UI ของ OS: **ธีม/ฟอนต์/สีของเราไม่มีผลกับมันเลย**
+ * และบนมือถือมันเด้ง picker เต็มจอของระบบขึ้นมาแทน ทำให้หน้าตาไม่ตรงกับส่วนอื่นของเว็บ
+ *
+ * 🔴 **แผ่นรายการเปิดแบบ "ดันเนื้อหาลง" (in-flow) ไม่ใช่ลอยทับแบบ `absolute`** — และนี่ไม่ใช่เรื่องรสนิยม:
+ * เนื้อโมดัลของเราเป็น `overflow-y-auto` (ดู `Modal.tsx`) → **ลูกที่ `absolute` จะถูกตัดขาดที่ขอบกล่องที่
+ * เลื่อนได้ทันที** รายการยาว ๆ จะโดนเฉือนหายโดยไม่มีอะไรเตือน · ทางเลือกอื่นคือ portal ออกไปที่ `body`
+ * แล้วคำนวณตำแหน่งเอง ซึ่งแพงกว่าและพังง่ายเวลาเลื่อน/หมุนจอ — in-flow ไม่มีปัญหาทั้งสองอย่าง
+ * · จำกัดสูงด้วย `max-h-56` + เลื่อนในตัว เพื่อไม่ให้รายการ 22 เมืองดันปุ่มบันทึกหลุดจอ
+ *
+ * แพทเทิร์น a11y: combobox + `aria-activedescendant` — **โฟกัสค้างที่ปุ่มเสมอ ไม่ย้ายเข้าไปในรายการ**
+ * (ง่ายกว่าและไม่มีบั๊กโฟกัสหลุดตอนปิด) · คีย์บอร์ด: `↓/↑/Enter/Space` เปิด · `↓/↑` เลื่อน · `Enter/Space`
+ * เลือก · `Esc` ปิด · `Tab` ปิดแล้วไปช่องถัดไป
+ */
+export function Dropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled = false,
+  id,
+  ariaLabel,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: DropdownOption[];
+  placeholder: string;
+  disabled?: boolean;
+  id?: string;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLUListElement>(null);
+  const autoId = useId();
+  const baseId = id ?? `dd${autoId.replace(/:/g, "")}`;
+  const listId = `${baseId}-list`;
+
+  const selected = options.find((o) => o.value === value) ?? null;
+
+  // ปิดเมื่อคลิกนอกตัวเอง — ต้องเป็น pointerdown ไม่ใช่ click เพื่อให้ปิดก่อนที่ของอื่นจะรับคลิก
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointerDown(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
+  }, [open]);
+
+  // เปิดแล้วเลื่อนให้เห็นทั้งแผ่น — เพราะเนื้อโมดัลเลื่อนได้ แผ่นที่เปิดใต้ขอบล่างจะไม่มีใครเห็น
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.scrollIntoView({ block: "nearest" });
+  }, [open]);
+
+  // เลื่อนตัวที่ไฮไลต์ให้อยู่ในสายตาเวลาใช้คีย์บอร์ด
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.querySelector(`[data-idx="${highlight}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [open, highlight]);
+
+  function firstEnabled(): number {
+    const i = options.findIndex((o) => !o.disabled);
+    return i >= 0 ? i : 0;
+  }
+
+  function nextEnabled(cur: number, dir: 1 | -1): number {
+    for (let i = cur + dir; i >= 0 && i < options.length; i += dir) {
+      if (!options[i].disabled) return i;
+    }
+    return cur;
+  }
+
+  function openList() {
+    if (disabled) return;
+    const sel = options.findIndex((o) => o.value === value && !o.disabled);
+    setHighlight(sel >= 0 ? sel : firstEnabled());
+    setOpen(true);
+  }
+
+  function choose(i: number) {
+    const o = options[i];
+    if (!o || o.disabled) return;
+    onChange(o.value);
+    setOpen(false);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (disabled) return;
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openList();
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+    } else if (e.key === "Tab") {
+      setOpen(false);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      choose(highlight);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight((c) => nextEnabled(c, 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((c) => nextEnabled(c, -1));
+    }
+  }
+
+  return (
+    <div ref={rootRef} className={`relative ${className}`}>
+      <button
+        type="button"
+        id={baseId}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open ? `${baseId}-opt-${highlight}` : undefined}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : openList())}
+        onKeyDown={onKeyDown}
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface-raised px-3 py-2 text-left text-sm text-content hover:border-maple/50 focus:border-maple focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <span className={`truncate ${selected ? "text-content" : "text-content-soft"}`}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <span aria-hidden className={`shrink-0 text-xs text-content-soft ${open ? "rotate-180" : ""}`}>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <ul
+          ref={panelRef}
+          id={listId}
+          role="listbox"
+          aria-label={ariaLabel}
+          className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-line bg-surface-raised py-1 shadow-lg shadow-ink/10"
+        >
+          {options.map((o, i) => {
+            const isSelected = o.value === value;
+            const isHighlighted = i === highlight;
+            return (
+              <li
+                key={o.value}
+                id={`${baseId}-opt-${i}`}
+                data-idx={i}
+                role="option"
+                aria-selected={isSelected}
+                aria-disabled={o.disabled || undefined}
+                onPointerDown={(e) => {
+                  // กัน blur/โฟกัสหลุดจากปุ่ม — เลือกด้วย pointerdown ให้ทันก่อนเบราว์เซอร์ย้ายโฟกัส
+                  e.preventDefault();
+                  choose(i);
+                }}
+                onPointerEnter={() => !o.disabled && setHighlight(i)}
+                className={`flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm ${
+                  o.disabled
+                    ? "cursor-not-allowed text-content-soft/50"
+                    : isHighlighted
+                      ? "bg-maple-soft text-maple-dark"
+                      : "text-content"
+                } ${isSelected && !o.disabled ? "font-semibold" : ""}`}
+              >
+                <span className="truncate">{o.label}</span>
+                {o.hint && <span className="shrink-0 text-xs text-content-soft">{o.hint}</span>}
+                {isSelected && (
+                  <span aria-hidden className="ml-auto shrink-0 text-xs text-maple-dark">
+                    ✓
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
