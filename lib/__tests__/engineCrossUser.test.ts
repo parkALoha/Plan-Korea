@@ -204,6 +204,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let place3Id = "";
   const placeSlug4 = `exp4-${stamp}`;
   let place4Id = "";
+  let cityId = ""; // เมืองคลังที่ seed ไว้ — ใช้เป็นจุดหมายของ tripA ในเคส GET /trips owner
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -272,6 +273,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     if (co.error) throw new Error(`seed country: ${co.error.message}`);
     const ci = await admin.from("catalog_cities").insert({ country_id: CC, legacy_slug: citySlug, name_th: "เมืองทดสอบ", name_en: "TestCity", lat: 37.5, lng: 127.0, timezone: "Asia/Seoul" }).select("id").single();
     if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
+    cityId = ci.data.id as string; // ใช้เป็น city_id ของ trip_destinations (owner-sees-destinations case)
     // ชื่ออยู่ catalog_place_names แยกตาราง · probe ต้องการแค่ให้ place *มีอยู่* (ค้นด้วย legacy_slug)
     const pl = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug, category: "food", lat: 37.5, lng: 127.0 });
     if (pl.error) throw new Error(`seed place: ${pl.error.message}`);
@@ -327,6 +329,9 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const cInv = await aClient.from("trip_members").insert({ trip_id: tripA, user_id: ids.c, role: "viewer" });
     if (cInv.error) throw new Error(`invite C viewer: ${cInv.error.message}`);
     cCookies = await captureCookies(cUser.session);
+    // จุดหมาย 1 ใบบน tripA — ให้เคส GET /trips มี destinations ให้ owner เห็น (A = owner → can_write_trip)
+    const destIns = await aClient.from("trip_destinations").insert({ trip_id: tripA, city_id: cityId, rank: 1 });
+    if (destIns.error) throw new Error(`seed destination: ${destIns.error.message}`);
   });
 
   afterAll(async () => {
@@ -357,6 +362,30 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     ).toBe(200);
     const body = await res.json();
     expect(JSON.stringify(body).includes(tripA), "A ควรเห็นทริปตัวเองในรายการ").toBe(true);
+  });
+
+  /**
+   * GET /trips — owner เห็น destinations + memberCount ≥ 1 · **เส้นทางที่ service_role เดินไม่ได้** (P1 · `f6d74ee`)
+   * helper ฝัง `trip_destinations` + `trip_members(count)` ที่ผูก grant ของ `authenticated` เท่านั้น →
+   * `service_role` ยิงตรงเห็นรูปถูก แต่ **ไม่เคยมีใครเดินด้วย session ผู้ใช้จริง** · เคสนี้เดินเส้นนั้น
+   * 🔴 เคสฝั่งบวก: ถ้า embed ฝั่งไหนกรอง/พังเงียบ owner จะได้ `destinations: []` / `memberCount: 0`
+   *    ซึ่งอ่านเหมือน "ทริปว่าง" ไม่ใช่ "อ่านไม่ได้" — assert เนื้อจริง (มีจุดหมาย · สมาชิก ≥1)
+   */
+  it("🔴 GET /trips (session จริงของ A) — owner เห็น destinations + memberCount ≥ 1", async () => {
+    jar.cookies = aCookies;
+    const res = await tripsGET(new NextRequest("http://localhost:3300/api/engine/trips"));
+    expect(res.status, `ควร 200: ${await res.clone().text()}`).toBe(200);
+    const body = (await res.json()) as Array<{ id: string; destinations: unknown[]; memberCount: number }>;
+    const mine = body.find((t) => t.id === tripA);
+    expect(mine, "A ไม่เห็นทริปตัวเองใน GET /trips").toBeDefined();
+    expect(
+      mine!.destinations.length,
+      "owner เห็น destinations ว่าง ทั้งที่เพิ่งเพิ่มจุดหมาย = อ่าน trip_destinations ไม่ได้ผ่านเส้นผู้ใช้จริง",
+    ).toBeGreaterThan(0);
+    expect(
+      mine!.memberCount,
+      "memberCount 0 เป็นไปไม่ได้จริง (ทุกทริปมีเจ้าของ ≥1) → 0 = อ่าน trip_members ไม่ได้ ไม่ใช่ทริปไม่มีคน",
+    ).toBeGreaterThanOrEqual(1);
   });
 
   /**
