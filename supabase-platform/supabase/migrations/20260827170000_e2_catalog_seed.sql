@@ -7,7 +7,16 @@
 -- `architecture.md:344` นิยาม `E2` ไว้เองว่ารวม **"catalog TS → DB"**
 -- แต่ **ไม่มี AC ข้อไหนของ `E2` ที่วัดว่าข้อมูลถูกโหลดจริง** — AC วัดสคีมา · วัด RLS ·
 -- วัด `trip_id` ครบ · วัดว่าสร้างทริปเยอรมนีได้ (ซึ่งใช้คลังที่ *fixture* ยัดเข้าไปเอง)
--- → **ตารางคลังถูกสร้างครบและถูกต้อง แต่ไม่เคยมีข้อมูลจริงสักแถว** และทุกเช็คบ็อกซ์ผ่านหมด
+--
+-- 🔴 **แก้ 27 ส.ค. หลังรันจริงครั้งแรก — ฉบับแรกของผมเขียนว่า "ไม่เคยมีข้อมูลจริงสักแถว" ซึ่ง *ผิด***
+--    ตอนรัน บล็อกยืนยันท้ายไฟล์ฟ้องว่า `catalog_places` มี **766 แถว** ไม่ใช่ 72
+--    → ตาราง **ไม่ได้ว่าง** · มันเต็มไปด้วย **fixture ตกค้างของชุดทดสอบ ~700 แถว**
+--      (`engineCrossUser`/`rlsMatrix` insert `catalog_places` โดยไม่ระบุ `source` → ได้ `'curated'` จาก default)
+--
+-- 🎯 **และข้อเท็จจริงนี้ทำให้ช่องว่างของ `E2` *แย่กว่า* ที่ผมเขียนไว้ ไม่ใช่เบากว่า:**
+--    ถ้าใครเปิดดูแล้วถามว่า *"คลังมีข้อมูลไหม"* จะได้คำตอบว่า **766 แถว — ดูสุขภาพดีมาก**
+--    ทั้งที่ **สถานที่จริงของทริปสักแห่งเดียวก็ไม่มี** · การมีข้อมูลผิดชนิด ปลอมตัวเป็นการมีข้อมูล
+--    ได้แนบเนียนกว่าการไม่มีข้อมูลเลย เพราะตัวเลขไม่ใช่ศูนย์
 --
 -- 🎯 **งานนี้ตกในช่องว่างระหว่าง "คำนิยามของเฟส" กับ "รายการ AC ของเฟส"**
 --    ไม่มีใครลืม — มันไม่เคยอยู่ในรายการของใครตั้งแต่แรก
@@ -42,10 +51,20 @@
 --   ที่ raise ถ้าลงไม่ครบ — **seed ที่ลงครึ่งเดียวต้องดัง ไม่ใช่เงียบ**
 --
 -- ── rollback ──────────────────────────────────────────────────────────────
---   delete from public.catalog_place_names where source = 'curated';
---   delete from public.catalog_places where source = 'curated';
---   delete from public.catalog_cities where legacy_slug in ('hanoi','busan','sokcho','gangneung','seoul','suwon');
---   delete from public.catalog_countries where id in ('kr','vn');
+--   🔴 **ห้ามใช้ `where source = 'curated'` เด็ดขาด** — เป็น default ของคอลัมน์ และ fixture
+--      ของชุดทดสอบทุกแถวก็เป็นค่านั้น → คำสั่งนั้นจะลบของคนอื่นทิ้งไปด้วย ~700 แถว
+--      (ฉบับแรกของไฟล์นี้เขียน rollback แบบนั้นไว้จริง · จับได้ตอนแก้บล็อกยืนยัน 27 ส.ค.
+--       **ในทางยืนยันมันแค่ล้ม · ในทาง rollback มันลบข้อมูล** — predicate เดียวกัน ราคาคนละโลก)
+--
+--   ต้องลบด้วย **รายการ slug ที่ไฟล์นี้ลงจริงเท่านั้น** สร้างรายการใหม่จาก `data/places.ts`:
+--     with expected(slug) as (values ('hanoi-hoan-kiem'), ... 72 ตัว)
+--     delete from public.catalog_place_names cn using public.catalog_places p, expected e
+--      where cn.place_id = p.id and p.legacy_slug = e.slug;
+--     delete from public.catalog_places p using expected e where p.legacy_slug = e.slug;
+--   เมือง/ประเทศลบได้ตรง ๆ เพราะ slug/id เจาะจงอยู่แล้ว **แต่ต้องลบหลังสถานที่** (FK `on delete restrict`):
+--     delete from public.catalog_cities where legacy_slug in ('hanoi','busan','sokcho','gangneung','seoul','suwon');
+--     delete from public.catalog_countries where id in ('kr','vn');
+--   ⚠️ ถ้าเมืองลบไม่ออกเพราะ restrict = ยังมีสถานที่ของ **fixture** เกาะอยู่ · นั่นไม่ใช่ของไฟล์นี้ **อย่าบังคับลบ**
 -- ═══════════════════════════════════════════════════════════════════════════
 
 begin;
@@ -91,10 +110,20 @@ insert into public.catalog_cities (country_id, legacy_slug, name_th, name_en, na
 on conflict (legacy_slug) do nothing;
 
 -- ───────────────────────────────────────────────────────────────────────────
--- 3. สถานที่ 72 แถว — join เมืองด้วย legacy_slug ไม่ต้องรู้ uuid
+-- 3. รายการที่ตั้งใจ seed — พักไว้ในตารางชั่วคราวก่อน
 -- ───────────────────────────────────────────────────────────────────────────
-with src(slug, city_slug, category, lat, lng, address_local) as (
-  values
+-- 🔴 **ทำไมต้องมีตารางชั่วคราว แทนที่จะ insert ตรงแล้วนับด้วย `where source = 'curated'`**
+--    `source` มี `default 'curated'` และชุดทดสอบ insert `catalog_places` โดยไม่ระบุคอลัมน์นี้
+--    → **fixture ทุกแถวที่เคยตกค้างก็เป็น `'curated'` เหมือนกันหมด**
+--    ฉบับแรกของผมนับด้วย `source` แล้วได้ 766 (fixture ~700 + ของผม 72) → ยืนยันล้ม
+--    🎯 **ตัวนับที่นับของคนอื่นด้วย ไม่ได้ยืนยันอะไรเลย — มันแค่ล้มด้วยเหตุผลที่ถูกต้อง**
+--    → พักรายการที่ *ตั้งใจ* ลงตารางชั่วคราว แล้วนับด้วยการ join กับมัน · รายการเดียว ใช้ทั้ง insert และ verify
+create temporary table _seed_places (
+  slug text primary key, city_slug text not null, category text not null,
+  lat double precision not null, lng double precision not null, address_local text
+) on commit drop;
+
+insert into _seed_places (slug, city_slug, category, lat, lng, address_local) values
     ('hanoi-hoan-kiem', 'hanoi', 'nature', 21.0287, 105.8524, 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội, Việt Nam'),
     ('hanoi-old-quarter', 'hanoi', 'market', 21.0338, 105.8501, 'Phố cổ Hà Nội, Hoàn Kiếm, Hà Nội, Việt Nam'),
     ('hanoi-ta-hien', 'hanoi', 'nightlife', 21.0345, 105.8531, 'Tạ Hiện, Phố cổ Hà Nội, Hoàn Kiếm, Hà Nội, Việt Nam'),
@@ -166,19 +195,14 @@ with src(slug, city_slug, category, lat, lng, address_local) as (
     ('suwon-hwahongmun', 'suwon', 'viewpoint', 37.2879, 127.0166, '대한민국 경기도 수원시 팔달구 북수동 33-4'),
     ('suwon-changnyongmun', 'suwon', 'viewpoint', 37.287802, 127.025149, '대한민국 경기도 수원시 팔달구 지동 경수대로 697'),
     ('suwon-haenggung', 'suwon', 'culture', 37.281967, 127.013727, '대한민국 경기도 수원시 팔달구 정조로 825'),
-    ('suwon-tongdak-street', 'suwon', 'restaurant', 37.279326, 127.01772, '대한민국 경기도 수원시 팔달구 남수동 158-2')
-)
-insert into public.catalog_places (city_id, legacy_slug, category, source, lat, lng, address_local)
-select c.id, s.slug, s.category, 'curated', s.lat, s.lng, s.address_local
-  from src s
-  join public.catalog_cities c on c.legacy_slug = s.city_slug
-on conflict (legacy_slug) do nothing;
+    ('suwon-tongdak-street', 'suwon', 'restaurant', 37.279326, 127.01772, '대한민국 경기도 수원시 팔달구 남수동 158-2');
 
--- ───────────────────────────────────────────────────────────────────────────
--- 4. ชื่อ 216 แถว — city_id เอามาจากแถวพ่อเสมอ (D70 บังคับคีย์คู่)
--- ───────────────────────────────────────────────────────────────────────────
-with src(slug, locale, name) as (
-  values
+create temporary table _seed_names (
+  slug text not null, locale text not null, name text not null,
+  primary key (slug, locale)
+) on commit drop;
+
+insert into _seed_names (slug, locale, name) values
     ('hanoi-hoan-kiem', 'th', 'ทะเลสาบฮว่านเกี๋ยม'),
     ('hanoi-hoan-kiem', 'en', 'Hoan Kiem Lake'),
     ('hanoi-hoan-kiem', 'vi', 'Hồ Hoàn Kiếm'),
@@ -394,41 +418,63 @@ with src(slug, locale, name) as (
     ('suwon-haenggung', 'ko', '화성행궁'),
     ('suwon-tongdak-street', 'th', 'ตรอกไก่ทอดซูวอน'),
     ('suwon-tongdak-street', 'en', 'Suwon Tongdak (Fried Chicken) Street'),
-    ('suwon-tongdak-street', 'ko', '수원 통닭거리')
-)
+    ('suwon-tongdak-street', 'ko', '수원 통닭거리');
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 4. ลงคลังจริง — join เมืองด้วย legacy_slug ไม่ต้องรู้ uuid
+-- ───────────────────────────────────────────────────────────────────────────
+insert into public.catalog_places (city_id, legacy_slug, category, source, lat, lng, address_local)
+select c.id, s.slug, s.category, 'curated', s.lat, s.lng, s.address_local
+  from _seed_places s
+  join public.catalog_cities c on c.legacy_slug = s.city_slug
+on conflict (legacy_slug) do nothing;
+
+-- ชื่อ — city_id เอามาจากแถวพ่อเสมอ (D70 บังคับคีย์คู่)
 insert into public.catalog_place_names (place_id, city_id, locale, name, priority, source)
-select p.id, p.city_id, s.locale, s.name, 1, 'curated'
-  from src s
-  join public.catalog_places p on p.legacy_slug = s.slug
+select p.id, p.city_id, n.locale, n.name, 1, 'curated'
+  from _seed_names n
+  join public.catalog_places p on p.legacy_slug = n.slug
 on conflict (place_id, locale, priority) do nothing;
 
 -- ───────────────────────────────────────────────────────────────────────────
--- 5. 🔴 ยืนยันจำนวน — seed ที่ลงไม่ครบต้องดัง ไม่ใช่เงียบ
+-- 5. 🔴 ยืนยัน — นับเฉพาะของที่ไฟล์นี้ตั้งใจลง ไม่ใช่ทั้งตาราง
 -- ───────────────────────────────────────────────────────────────────────────
 do $verify$
 declare
-  n_country int; n_city int; n_place int; n_name int; n_orphan int;
+  n_country int; n_city int; n_place int; n_name int; n_orphan int; n_total int;
 begin
   select count(*) into n_country from public.catalog_countries where id in ('kr','vn');
   select count(*) into n_city    from public.catalog_cities
    where legacy_slug in ('hanoi','busan','sokcho','gangneung','seoul','suwon');
-  select count(*) into n_place   from public.catalog_places where source = 'curated';
-  select count(*) into n_name    from public.catalog_place_names where source = 'curated';
 
-  if n_country <> 2 then raise exception 'ประเทศลงไม่ครบ: % ไม่ใช่ 2', n_country; end if;
-  if n_city    <> 6 then raise exception 'เมืองลงไม่ครบ: % ไม่ใช่ 6', n_city; end if;
-  if n_place   <> 72 then raise exception 'สถานที่ลงไม่ครบ: % ไม่ใช่ 72', n_place; end if;
-  if n_name    <> 216 then raise exception 'ชื่อลงไม่ครบ: % ไม่ใช่ 216', n_name; end if;
+  select count(*) into n_place
+    from public.catalog_places p join _seed_places s on p.legacy_slug = s.slug;
+  select count(*) into n_name
+    from public.catalog_place_names cn
+    join public.catalog_places p on p.id = cn.place_id
+    join _seed_names n on n.slug = p.legacy_slug and n.locale = cn.locale;
 
-  -- 🔴 ตัวที่จับ "join พลาดเงียบ ๆ" — สถานที่ที่ไม่มีชื่อภาษาไทยเลยสักแถว
+  if n_country <> 2  then raise exception 'ประเทศลงไม่ครบ: % ไม่ใช่ 2', n_country; end if;
+  if n_city    <> 6  then raise exception 'เมืองลงไม่ครบ: % ไม่ใช่ 6', n_city; end if;
+  if n_place   <> 72 then raise exception 'สถานที่ของ seed นี้ลงไม่ครบ: % ไม่ใช่ 72', n_place; end if;
+  if n_name    <> 216 then raise exception 'ชื่อของ seed นี้ลงไม่ครบ: % ไม่ใช่ 216', n_name; end if;
+
+  -- 🔴 จับ "join พลาดเงียบ ๆ" — สถานที่ของ seed นี้ที่ไม่มีชื่อภาษาไทย
   select count(*) into n_orphan
     from public.catalog_places p
-   where p.source = 'curated'
-     and not exists (
-       select 1 from public.catalog_place_names n
-        where n.place_id = p.id and n.locale = 'th'
-     );
+    join _seed_places s on p.legacy_slug = s.slug
+   where not exists (
+     select 1 from public.catalog_place_names cn
+      where cn.place_id = p.id and cn.locale = 'th'
+   );
   if n_orphan <> 0 then raise exception 'มีสถานที่ % แถวที่ไม่มีชื่อภาษาไทย — join ผิด', n_orphan; end if;
+
+  -- 📌 **ไม่ใช่ด่าน — เป็นการรายงาน** จำนวนทั้งตารางเทียบกับ 72 ที่เราเพิ่งลง
+  --    ส่วนต่างคือ fixture ตกค้างของชุดทดสอบ · ห้าม raise เพราะมันไม่ใช่ความผิดของ seed
+  --    แต่ต้อง **เห็น** ไม่ใช่เงียบ — ตัวเลขนี้คือสิ่งเดียวที่บอกว่าคลัง dev ปนของทดสอบอยู่เท่าไร
+  select count(*) into n_total from public.catalog_places;
+  raise notice 'seed ลงครบ 72/216 · ทั้งตารางมี % แถว → fixture ตกค้าง ~% แถว (ไม่ใช่ error)',
+    n_total, n_total - 72;
 end $verify$;
 
 commit;
