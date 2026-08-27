@@ -185,9 +185,16 @@ export function searchCatalogCities(
   // ⚠️ **เพิ่มอย่างเดียว ไม่แตะฟิลด์เดิมสักตัว** — `TripDestinationPicker` อ่าน `id`/`name_th`/
   //    `name_en`/`country_id` อยู่แล้ว · เปลี่ยนรูปข้อมูลใต้มือคนอื่นคือสิ่งที่ทำหน้า Home พัง 502
   //    มาแล้ววันเดียวกันนี้ (`fad69d0`) · ของใหม่จึงเป็นคีย์ใหม่ล้วน ผู้เรียกเดิมไม่รู้สึกอะไร
-  let query = engineTable(db, "catalog_cities").select(
-    "id, country_id, name_th, name_en, name_local, catalog_countries(id, name_th, name_en)",
-  );
+  // 🔴 `!inner` + `supported` — **กัน fixture ของชุดทดสอบไม่ให้โผล่ในช่องเลือกจุดหมาย**
+  //    วัดก่อนแก้: เมืองในฐาน 1,736 · ของ 4 ประเทศที่รองรับ 42 · **fixture ที่ผู้ใช้ค้นเจอได้ 1,694 (98%)**
+  //    เจอเพราะ `q="อ"` คืนเมืองชื่อ "เมืองC" จากประเทศชื่อ "ทดสอบสาม" (ดู `20260828001500`)
+  //
+  //    ⚠️ **`!inner` จำเป็น ไม่ใช่ของแถม** — ถ้าฝังแบบธรรมดา PostgREST จะ *ยังคืนแถวเมือง*
+  //    แล้วให้ `catalog_countries` เป็น `null` แทนที่จะตัดแถวทิ้ง → กรองไม่ติด และ**ดูเหมือนติด**
+  //    เพราะผลลัพธ์หน้าตาเปลี่ยนไป
+  let query = engineTable(db, "catalog_cities")
+    .select("id, country_id, name_th, name_en, name_local, catalog_countries!inner(id, name_th, name_en)")
+    .eq("catalog_countries.supported", true);
   if (safe !== "") {
     query = query.or(
       `name_th.ilike.%${safe}%,name_en.ilike.%${safe}%,name_local.ilike.%${safe}%`,
