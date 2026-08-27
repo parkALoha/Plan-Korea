@@ -194,7 +194,6 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
   let cCookies: Cookie[] = []; // C = viewer *สมาชิก* ของทริป A (ต่างจาก B คนนอก) — สำหรับ probe members
-  let dCookies: Cookie[] = []; // D = editor ของทริป A — members probe ครอบครบ 3 role (owner/viewer/editor)
   let aDay = "";
   let aPlan = "";
   let aClient: SupabaseClient;
@@ -343,10 +342,11 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     cCookies = await captureCookies(cUser.session);
     // D = editor ของ tripA — เดิมเพิ่มมาเพื่อเคส cover (ถูกถอนแล้ว) · **เก็บไว้** เพราะ members probe
     // ใช้ยืนยันว่า viewer เห็นสมาชิกครบทั้ง 3 role ไม่ใช่แค่ owner+ตัวเอง
-    const dUser = await makeUser("d");
+    // ⚠️ ไม่เก็บคุกกี้ของ D — เคสที่เคยใช้มัน (cover PUT ในนาม editor) ถูกถอนไปแล้ว
+    //    ที่ยังต้องการคือ **ตัวตน** ของ D (`ids.d`) เพื่อให้ members probe เห็นครบ 3 role
+    await makeUser("d");
     const dInv = await aClient.from("trip_members").insert({ trip_id: tripA, user_id: ids.d, role: "editor" });
     if (dInv.error) throw new Error(`invite D editor: ${dInv.error.message}`);
-    dCookies = await captureCookies(dUser.session);
     // จุดหมาย 1 ใบบน tripA — ให้เคส GET /trips มี destinations ให้ owner เห็น (A = owner → can_write_trip)
     const destIns = await aClient.from("trip_destinations").insert({ trip_id: tripA, city_id: cityId, rank: 1 });
     if (destIns.error) throw new Error(`seed destination: ${destIns.error.message}`);
