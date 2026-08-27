@@ -52,9 +52,25 @@ begin
 end $guard$;
 
 -- ── 1. เก็บกวาดไฟล์ที่ค้างในบัคเก็ตก่อนลบบัคเก็ต ────────────────────────────
--- 🔴 ลบ bucket ทั้งที่ยังมี object = FK ของ `storage.objects` ปฏิเสธ → migration ล้มกลางทาง
---    ที่นี่คาดว่าว่างอยู่แล้ว (ฟีเจอร์ยังไม่เคยถึงมือผู้ใช้จริง) แต่ **ไม่เดา — ลบให้ชัด**
-delete from storage.objects where bucket_id = 'trip-covers';
+-- 🔴 **`delete from storage.objects` รันไม่ได้เลย — Supabase บล็อกที่ระดับฐาน** (เจอตอน push จริง)
+--    `ERROR: Direct deletion from storage tables is not allowed. Use the Storage API instead.
+--     (SQLSTATE 42501)` → ทั้ง migration rollback ไม่มีอะไรลงสักบรรทัด
+--    ⚠️ **และมันพา `20260827233000` (คลังญี่ปุ่น) ล้มไปด้วย** เพราะ `db push` หยุดที่ไฟล์แรกที่ล้ม
+--
+--    🎯 **ฉบับแรกเขียนไว้เองว่า "ไม่เดา — ลบให้ชัด" ซึ่งเป็นหลักที่ถูก แต่ใช้ผิดที่:**
+--    ที่นี่ *"ลบให้ชัด"* ไม่ได้แปลว่าแน่นอนกว่า — มันแปลว่า**เพิ่มคำสั่งที่รันไม่ได้** เข้าไปในทรานแซกชัน
+--    ตัวที่ให้ความแน่นอนจริงคือ **การยืนยัน** ไม่ใช่การลบ · P4 ยิงเช็คแล้ววันนี้: `entries=[]` ว่างสนิท
+--    (เขาเป็นคนอัปโหลด probe เข้าบัคเก็ตนี้เองทั้งวัน และ `afterAll` เก็บครบ)
+--
+--    ถ้าวันหนึ่งมันไม่ว่าง ด่านล่างนี้จะบอกตรง ๆ ว่าต้องทำอะไร แทนที่จะล้มด้วยข้อความ FK ที่อ่านไม่ออก
+do $objects$
+declare n_obj int;
+begin
+  select count(*) into n_obj from storage.objects where bucket_id = 'trip-covers';
+  if n_obj <> 0 then
+    raise exception 'บัคเก็ต trip-covers ยังมี % ไฟล์ — ลบผ่าน Storage API ก่อน (ลบด้วย SQL ไม่ได้) แล้วค่อย push ใหม่', n_obj;
+  end if;
+end $objects$;
 
 -- ── 2. policy 4 ตัว ────────────────────────────────────────────────────────
 drop policy if exists trip_covers_select on storage.objects;
@@ -97,8 +113,20 @@ begin
   if n_booking <> 4 then
     raise exception 'policy booking_files_* เหลือ % ตัว ไม่ใช่ 4 — ถอนโดนของข้างบ้าน', n_booking;
   end if;
-  if not exists (select 1 from storage.buckets where id = 'booking-files') then
-    raise exception 'บัคเก็ต booking-files หายไป — ถอนโดนของข้างบ้าน';
+  -- 🔴 **`public = false` ไม่ใช่ของแถม — มันคือเงื่อนไขทั้งหมด** (P4 ยิงจริงแล้วชี้ · 27 ส.ค. 2026)
+  --    ฉบับแรกของบรรทัดนี้เช็คแค่ *"บัคเก็ตยังอยู่ไหม"* · แต่ **สถานะที่เสียหายที่สุดของ
+  --    `booking-files` ไม่ใช่ "หายไป" — มันคือ "ยังอยู่แต่กลายเป็น public"**
+  --    ซึ่งคือ `0019`/`D12` เป๊ะ: ใครถือลิงก์ก็เปิดใบเสร็จ/ตั๋วของทริป 11 ต.ค. ได้
+  --    🎯 **และด่านฉบับแรกผ่านฉลุยในสถานะนั้น** — ด่านที่เขียวตอนของพัง แย่กว่าไม่มีด่าน
+  if not exists (select 1 from storage.buckets where id = 'booking-files' and public = false) then
+    raise exception 'booking-files หายไป หรือกลายเป็น public — ถอนโดนของข้างบ้าน';
+  end if;
+
+  -- 🔴 **`count = 4` พิสูจน์ว่า policy *ถูกลิสต์* ไม่ได้พิสูจน์ว่ามัน *ถูกบังคับใช้*** (P4)
+  --    ปิด RLS บน `storage.objects` แล้ว policy ทั้ง 4 **ยังนับได้ 4 เต็ม** และไม่มีผลสักตัว
+  --    → ด่านข้างบนเขียว ไฟล์เปิดโล่ง · รูปเดียวกับที่ทีมนี้เจอกันทั้งวัน: **นับชื่อ ≠ วัดพฤติกรรม**
+  if not (select relrowsecurity from pg_class where oid = 'storage.objects'::regclass) then
+    raise exception 'RLS บน storage.objects ถูกปิด — policy ทั้ง 4 ยังนับได้ครบแต่ไม่มีผลสักตัว';
   end if;
   if not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
