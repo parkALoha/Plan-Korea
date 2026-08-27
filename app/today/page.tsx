@@ -461,10 +461,13 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
       <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
         <header className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream">
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
+            <Link href={`/trip/${tripId}`} className="text-sm text-cream/80 hover:text-cream hover:underline">
               ← หน้าแผน
             </Link>
-            <Link href="/summary" className="text-sm text-cream/80 hover:text-cream hover:underline">
+            <Link
+              href={`/trip/${tripId}/summary`}
+              className="text-sm text-cream/80 hover:text-cream hover:underline"
+            >
               📋 สรุปแผน
             </Link>
           </div>
@@ -485,10 +488,13 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
+            <Link href={`/trip/${tripId}`} className="text-sm text-cream/80 hover:text-cream hover:underline">
               ← หน้าแผน
             </Link>
-            <Link href="/summary" className="text-sm text-cream/80 hover:text-cream hover:underline">
+            <Link
+              href={`/trip/${tripId}/summary`}
+              className="text-sm text-cream/80 hover:text-cream hover:underline"
+            >
               📋 สรุปแผน
             </Link>
           </div>
@@ -653,7 +659,7 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
           {dayStops.length === 0 && (
             <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-sm text-content-soft">
               วันนี้ยังไม่ได้วางแผนไว้เลย —{" "}
-              <Link href="/" className="text-panel-pine-ink underline">
+              <Link href={`/trip/${tripId}`} className="text-panel-pine-ink underline">
                 ไปเพิ่มจุดแวะที่หน้าแผน
               </Link>
             </div>
@@ -1085,7 +1091,7 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
       {zoomed && (
         <PhotoLightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(null)} />
       )}
-      <BottomNav />
+      <BottomNav tripId={tripId} />
     </main>
   );
 }

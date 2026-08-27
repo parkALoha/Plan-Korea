@@ -677,10 +677,13 @@ export function SummaryContent({ tripId }: { tripId: string }) {
           {/* แถวลิงก์กลับ/วันนี้แยกจากแถวปุ่มเครื่องมือเสมอ (ไม่ใช้ ml-auto ดันมาแถวเดียวกันแบบเดิม)
               บนจอมือถือแถวเดียวไม่พอที่อยู่แล้วสำหรับ 5 ปุ่ม เลยแยกให้ชัดเจนแทนที่จะปล่อย wrap มั่วๆ */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 print:hidden">
-            <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
+            <Link href={`/trip/${tripId}`} className="text-sm text-cream/80 hover:text-cream hover:underline">
               {t("backToPlan")}
             </Link>
-            <Link href="/today" className="text-sm text-cream/80 hover:text-cream hover:underline">
+            <Link
+              href={`/trip/${tripId}/today`}
+              className="text-sm text-cream/80 hover:text-cream hover:underline"
+            >
               {t("today")}
             </Link>
           </div>
@@ -974,7 +977,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
       )}
 
       <div className="print:hidden">
-        <BottomNav />
+        <BottomNav tripId={tripId} />
       </div>
     </main>
   );

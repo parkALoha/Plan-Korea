@@ -105,13 +105,13 @@ export function TripHeader({
         <div className="flex items-center justify-end gap-2">
           <div className="flex shrink-0 gap-1.5">
             <Link
-              href="/today"
+              href={`/trip/${tripId}/today`}
               className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
             >
               📍 วันนี้
             </Link>
             <Link
-              href="/summary"
+              href={`/trip/${tripId}/summary`}
               className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"
             >
               📋 สรุปแผน
@@ -133,6 +133,16 @@ export function TripHeader({
             </p>
           </div>
 
+          {/* ปุ่มกลับ Home — เพิ่มตอน "/" เปลี่ยนความหมายเป็นหน้าลิสต์ทริป (27 ส.ค. 2026, E5 ข้อ 6)
+              ก่อนหน้านี้ไม่มีทางออกจากทริปหนึ่งไปดูทริปอื่นเลยนอกจากพิมพ์ URL เอง */}
+          <Link
+            href="/"
+            aria-label="กลับไปหน้ารายการทริป"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-lg hover:bg-white/20"
+          >
+            🏠
+          </Link>
+
           <button
             onClick={() => setSettingsOpen(true)}
             aria-label="ตั้งค่าทริป"
@@ -141,7 +151,7 @@ export function TripHeader({
             ⚙️
             {/* ยังไม่ได้ใส่ชื่อ = จุดแวะที่เพิ่มจะไม่มี "เลือกโดย …" ให้อีกคนดู — สะกิดไว้ตรงนี้
                 เพราะช่องกรอกหลบเข้าไปอยู่ในโมดัลแล้ว ไม่ได้เห็นเองเหมือนตอนอยู่บนหัวเว็บ
-                ต้องรอ mounted ด้วย: `who` อ่านจาก localStorage ตอนตั้งค่า state ตั้งต้น (app/page.tsx)
+                ต้องรอ mounted ด้วย: `who` อ่านจาก localStorage ตอนตั้งค่า state ตั้งต้น (components/TripPlanScreen.tsx)
                 ซึ่งฝั่งเซิร์ฟเวอร์ได้ค่าว่างเสมอ — เครื่องที่เคยใส่ชื่อไว้จึงได้ HTML ที่มีจุดแดงมาจาก
                 build แต่ client ไม่วาด = hydration mismatch (ดู hooks/useMounted.ts) */}
             {mounted && !who && (
