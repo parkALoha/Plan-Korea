@@ -53,7 +53,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ trip
       rows.map((r) => ({
         userId: r.user_id,
         role: r.role,
-        // `null` ได้จริง — บัญชีที่สร้างจาก `createUser` ตรง ๆ ไม่มีแถวใน `profiles`
+        // 🔴 `null` = **อ่านชื่อเขาไม่ได้** (ชั้น `profiles_select` ปฏิเสธ) ไม่ใช่ "ยังไม่ตั้งชื่อ"
+        //    ทุกบัญชีมีแถว `profiles` ตั้งแต่สมัคร (`app.handle_new_user()`) — ดู `tripMembers()`
         displayName: r.profiles?.display_name ?? null,
       })),
       { headers: { "Cache-Control": "private, no-store" } },
