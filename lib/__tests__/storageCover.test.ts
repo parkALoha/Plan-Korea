@@ -136,6 +136,19 @@ describe.runIf(hasCreds)("E5-AC8 — storage cover RLS (bucket trip-covers)", ()
     ).toBe(true);
   });
 
+  // ── update (เขียนทับ in-place) — กิ่ง objects.update ที่พินขยายเพิ่งเปิดเผยว่า **ไม่มีเคสไหนยิงเลยทั้งสองบัคเก็ต** ──
+  it("🔴 owner update (เขียนทับ) ไฟล์ cover ได้ — precondition ของกิ่งลบข้างล่าง (trip_covers_update)", async () => {
+    const { error } = await A.storage.from(BUCKET).update(pathA(), new Uint8Array([0xff, 0xd8, 0xff, 0xe1]), { contentType: "image/jpeg" });
+    expect(error, `owner เขียนทับ cover ตัวเองไม่ได้: ${error?.message}`).toBeNull();
+  });
+
+  it("🔴 viewer / คนนอก update ไฟล์ cover ไม่ได้ — can_write_trip กันฝั่ง update (ไฟล์มีอยู่จริง)", async () => {
+    const v = await C.storage.from(BUCKET).update(pathA(), img, { contentType: "image/jpeg" });
+    expect(v.error, "viewer เขียนทับ cover ได้ = update policy กรองด้วยสิทธิ์อ่าน").toBeTruthy();
+    const o = await B.storage.from(BUCKET).update(pathA(), img, { contentType: "image/jpeg" });
+    expect(o.error, "คนนอกเขียนทับ cover ของทริป A ได้ = รั่วฝั่ง update ข้ามผู้เช่า").toBeTruthy();
+  });
+
   it("🔴 ไฟล์รากบัคเก็ต (path ไม่ใช่ <uuid>/… → trip_cover_trip=null) อ่านไม่ได้เลย", async () => {
     const { data, error } = await A.storage.from(BUCKET).download(rootPath);
     expect(

@@ -89,7 +89,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   function policyMapOrdered(): Map<string, string> {
     const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
     const out = new Map<string, string>();
-    const re = /(create|drop)\s+policy\s+(?:if\s+exists\s+)?(\S+)\s+on\s+public\.(\w+)([\s\S]*?);/g;
+    // 🔴 ครอบ `storage.` ด้วย (27 ส.ค. · P4 เจอตอนรีวิว d2241fd · P1 GO) — ฉบับเดิมจับเฉพาะ `public.`
+    //    → policy บน storage.objects (booking_files_* ตั้งแต่ 25 ส.ค. · trip_covers_*) **มองไม่เห็นโดยพินทุกตัว**
+    //    policy คุ้มไฟล์ตั๋วทริปจริงแก้เงียบได้สองวันโดยไม่มีพินไหนแดง · key = `objects.<policy>`
+    const re = /(create|drop)\s+policy\s+(?:if\s+exists\s+)?(\S+)\s+on\s+(?:public|storage)\.(\w+)([\s\S]*?);/g;
     for (const m of src.matchAll(re)) {
       const key = `${m[3]}.${m[2]}`;
       if (m[1] === "drop") out.delete(key);
@@ -190,6 +193,17 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "hidden_places.hidden_places_delete",
       "hidden_places.hidden_places_insert",
       "hidden_places.hidden_places_select",
+      // 🔴 เพิ่ม 27 ส.ค. (P4 · regex ครอบ storage แล้ว) — policy บน storage.objects **8 ตัว**
+      //    booking_files_* อยู่มาตั้งแต่ 25 ส.ค. แต่พินมองไม่เห็น (regex เดิมจับแค่ public.) — คุ้มไฟล์ตั๋วทริปจริง
+      //    trip_covers_* (d2241fd) — คุ้มรูปปก · เคสยิงจริง: rlsMatrix (booking-files) · storageCover/engineCrossUser (trip-covers)
+      "objects.booking_files_delete",
+      "objects.booking_files_insert",
+      "objects.booking_files_select",
+      "objects.booking_files_update",
+      "objects.trip_covers_delete",
+      "objects.trip_covers_insert",
+      "objects.trip_covers_select",
+      "objects.trip_covers_update",
       "place_notes.place_notes_insert",
       "place_notes.place_notes_select",
       "place_notes.place_notes_update",
@@ -301,7 +315,11 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       // 🔴 `Q6` 26 ส.ค. — คำบรรยายของคลัง*ทริป* เป็นข้อมูลผู้เช่า จึงอยู่ในทะเบียนนี้
       //    ส่วน `catalog_place_descriptions` **ไม่อยู่** เพราะเป็นคลังสาธารณะ เหมือน `catalog_places`
       "custom_place_descriptions", "custom_place_names", "custom_places",
-      "hidden_places", "place_notes",
+      "hidden_places",
+      // storage.objects — ไฟล์ตั๋ว (booking-files) + รูปปก (trip-covers) เป็นข้อมูลผู้เช่า · เคส 2 ทิศ:
+      // rlsMatrix (booking-files storage) · storageCover.test.ts + engineCrossUser.test.ts (trip-covers)
+      "objects",
+      "place_notes",
       "trip_day_plan_settings", "trip_days", "trip_destinations", "trip_hotels", "trip_plans", "trip_stops",
     ]);
   });
@@ -499,6 +517,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     // 🔴 อัปเดตรอบ 7 (`d223b58a…` → `01adb82c…`) — `D76` soft delete
     //    `trip_stops_select`/`custom_places_select` เติม `and deleted_at is null`
     //    · policy `DELETE` ของทั้งสองตาราง **ถูกถอดออก** (ลบผ่าน RPC เท่านั้น · `P-53`)
+    // 🔴 อัปเดตรอบ 8 (`a32b77d792483359` → `9fe8903732cbc35f`) — **ตัววัดขยายขอบเขต ไม่ใช่ policy เปลี่ยน**
+    //    (P4 · 27 ส.ค. · P1 GO): regex ครอบ `storage.` → เห็น policy บน storage.objects เพิ่ม **8 ตัว**
+    //    ที่มีอยู่แล้วในไฟล์ (booking_files_* ตั้งแต่ 25 ส.ค. · trip_covers_* จาก d2241fd) — **ไม่มี policy
+    //    ตัวไหนถูกแก้** · คนอ่านรอบหน้าต้องแยก "ค่าเปลี่ยนเพราะวัดกว้างขึ้น" ออกจาก "ค่าเปลี่ยนเพราะเงื่อนไขเปลี่ยน"
+    //    · กิ่งที่ไล่: booking_files มีเคสสดใน rlsMatrix · trip_covers มี storageCover/engineCrossUser
+    //      **ยกเว้น objects.update ที่ไม่มีเคสเลยทั้งสองบัคเก็ต** → เพิ่มเคส update ใน storageCover คอมมิตเดียวกัน
+    //    · หมายเหตุรอบ 7: กิ่ง trip_destinations ที่ตอนนั้น "ยังไม่มีเคสสด" ถูกปิดแล้ว (`15ecaae`)
     // 🔴 อัปเดตรอบ 7 (`429926002f8accf5` → `a32b77d792483359`) — `trip_destinations` 4 policy
     //    (`20260827180000` · ลงฐานแล้ว 27 ส.ค.) · `select`=`can_read_trip` · `insert`/`update`/`delete`=`can_write_trip`
     //    · `update` มีทั้ง `using` และ `with check` (กันย้ายจุดหมายข้ามทริป รูปเดียวกับ `trip_days_update`)
@@ -530,7 +555,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ที่เปลี่ยนคือ **เพิ่ม 2 policy ใหม่** (`catalog_country_contacts_select` · `catalog_place_access_select`)
       //    ทั้งคู่เป็น `for select to authenticated using (true)` — รูปเดียวกับคลังกลางอีก 4 ใบเป๊ะ
       //    **ไม่มี policy เดิมตัวไหนถูกแก้เงื่อนไข** (ยืนยันจากรายชื่อข้างบนที่เพิ่มอย่างเดียว ไม่มีตัวหาย)
-      "a32b77d792483359",
+      "9fe8903732cbc35f",
     );
   });
 
@@ -569,7 +594,22 @@ describe("ความครบของ matrix — ตรวจตัวรา�
           if (new RegExp(`\\.${v}\\(`).test(m[2])) hits.add(`${m[1]}.${v}`);
         }
       }
-      // `it.each(CACHES)` และเพื่อน ๆ ยิงผ่านตัวแปร — จับชื่อตารางในอาร์เรย์ constant ด้วย
+      // storage.objects — policy บนบัคเก็ตถูกยิงผ่าน storage API ไม่ใช่ `.from("objects")`
+      // เคสอยู่ 3 ไฟล์: booking-files ใน rlsMatrix · trip-covers ใน storageCover + engineCrossUser
+      // ⚠️ granularity หยาบกว่าตาราง: นับเป็น objects.<verb> รวมทุกบัคเก็ต (แยกราย bucket จาก call site ไม่ได้)
+      const storageSrc = stripComments([MATRIX_SRC,
+        readFileSync(new URL("./storageCover.test.ts", import.meta.url), "utf8"),
+        readFileSync(new URL("./engineCrossUser.test.ts", import.meta.url), "utf8"),
+      ].join("\n"));
+      const STORAGE_VERB: Record<string, string> = {
+        download: "select", list: "select", createSignedUrl: "select", createSignedUrls: "select",
+        upload: "insert", copy: "insert", update: "update", move: "update", remove: "delete",
+      };
+      // รับทั้ง literal ("trip-covers") และ const identifier (COVER_BUCKET/BUCKET)
+      for (const m of storageSrc.matchAll(/\.storage\s*\.from\(\s*(?:["'`][a-z0-9-]+["'`]|[A-Z_][A-Za-z0-9_]*)\s*\)\s*\.(\w+)\(/g)) {
+        const v = STORAGE_VERB[m[1]];
+        if (v) hits.add(`objects.${v}`);
+      }
       return hits;
     }
 
@@ -579,6 +619,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       expect(ex.size, "ดึง (ตาราง, verb) จากซอร์สเมทริกซ์ไม่ได้เลย").toBeGreaterThan(20);
       expect(ex, "ตัวดึงไม่เห็นการยิงที่เห็น ๆ อยู่ในไฟล์").toContain("trips.select");
       expect(ex).toContain("checklist_items.insert");
+      // storage extractor ต้องเห็นของจริงด้วย — ไม่งั้น objects.* เขียวเพราะเซตว่างของตัวดึง
+      expect(ex, "ตัวดึง storage ไม่เห็นการยิงที่มีจริง (download ใน storageCover)").toContain("objects.select");
+      expect(ex, "ตัวดึง storage ไม่เห็น upload").toContain("objects.insert");
     });
 
     it("🔴 ① ทุก (ตาราง, verb) ที่มี policy ต้องมีเคสยิงถึง", () => {

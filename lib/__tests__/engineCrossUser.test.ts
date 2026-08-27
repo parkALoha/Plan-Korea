@@ -521,8 +521,14 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   it("🔴 cover PUT โดย owner — 200 · path ขึ้นต้น <tripId>/ · ไฟล์อยู่จริง · คอลัมน์ชี้ตรง", async () => {
     const res = await putCover(aCookies, tripA, jpeg, "image/jpeg");
     expect(res.status, `owner ควร 200: ${await res.clone().text()}`).toBe(200);
-    const { coverImagePath } = (await res.json()) as { coverImagePath: string };
+    const { coverImagePath, coverImageUrl } = (await res.json()) as { coverImagePath: string; coverImageUrl: string | null };
     expect(coverImagePath.startsWith(`${tripA}/`), "path ไม่ขึ้นต้น <tripId>/ = ผิด contract ของ trip_cover_trip").toBe(true);
+    // 🔴 `coverImageUrl` = signed URL แนบให้ UI ใช้ทันที · **เซ็นล้มไม่ทำให้คำขอล้ม** (รูปตั้งสำเร็จไปแล้วจริง)
+    //    → P1 สั่งชัด: **อย่า assert ว่าไม่ null เสมอ** · ยึด path เป็นหลัก · แต่ถ้ามี URL มา มันต้องใช้ได้จริง
+    if (coverImageUrl) {
+      const fetched = await fetch(coverImageUrl);
+      expect(fetched.ok, `signed URL เซ็นมาแล้วแต่ fetch ไม่ได้ (HTTP ${fetched.status}) = URL ใช้ไม่ได้จริง`).toBe(true);
+    }
     expect(await coverFilesOfTripA(), "200 แต่ไฟล์ไม่อยู่ในบัคเก็ต").toContain(coverImagePath.split("/")[1]);
     expect(await coverColumn(), "คอลัมน์ไม่ชี้ path ที่เพิ่งตอบมา").toBe(coverImagePath);
   });
