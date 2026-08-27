@@ -72,9 +72,11 @@ const ALLOWED_ENV: Record<string, string> = {
  *   `import` เครื่องมือตัวนี้เข้ามา **มันจะกลายเป็นโค้ดที่ถูกเสิร์ฟทันที และด่านจะแดง**
  */
 const ALLOWED_FILES: Record<string, string> = {
-  // ตัวอย่างรูปแบบ (ยังไม่มีรายการจริง):
-  // "scripts/gen-db-types.mjs": "อ่านสคีมาจาก PostgREST OpenAPI เพื่อสร้าง type · รันด้วยมือตอน dev "
-  //   + "· ไม่อยู่ใน build graph ของ Next และไม่มีใครใน app/ import — P1 · 28 ส.ค. 2026",
+  "scripts/gen-db-types.mjs":
+    "อ่านสคีมาจาก PostgREST OpenAPI เพื่อสร้าง `lib/engine/database.types.ts` · รันด้วยมือตอน dev " +
+    "(`npm run gen:types`) · ไม่อยู่ใน build graph ของ Next และไม่มีไฟล์ใน `app/`/`lib/` import — " +
+    "🔴 ต้องใช้ service role key เพราะ `anon` ถูก revoke จากคลังเกือบทั้งหมด → OpenAPI จะว่างถ้าใช้คีย์อื่น " +
+    "— P1 · 28 ส.ค. 2026",
 };
 
 /**

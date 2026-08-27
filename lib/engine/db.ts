@@ -41,6 +41,7 @@ import "server-only";
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
 
 /** ตารางของแพลตฟอร์มที่ชั้นนี้ดูแล — เพิ่มตารางใหม่ = เพิ่มฟังก์ชันในไฟล์นี้ ไม่ใช่เรียก `.from` ที่อื่น */
 export type EngineTable =
@@ -76,7 +77,26 @@ export type EngineTable =
  *   เพราะไม่มีที่ไหนในไฟล์นี้ที่ *เลือก* ตัวตนได้เลย · ใครส่ง client อะไรมา ก็ได้สิทธิ์เท่านั้น
  * · ⚠️ **ห้ามใส่ค่าเริ่มต้นให้ `db`** — ค่าเริ่มต้นคือการเลือกตัวตนแทนผู้เรียก ซึ่งคือสิ่งที่ย่อหน้านี้ห้าม
  */
-export type Db = SupabaseClient;
+export type Db = SupabaseClient<Database>;
+
+/**
+ * 🔴 **ช่องที่ `Database` ยัง *ไม่* ปิด — และตั้งชื่อไว้เพื่อให้นับได้ว่ามีกี่จุด**
+ *
+ * ฟังก์ชันเขียน 7 ตัวรับ `Record<string, unknown>` ที่ route ปั้นจาก `await req.json()`
+ * → **พิมพ์ชื่อคอลัมน์ผิดกี่ตัวก็ผ่านคอมไพล์** แล้วไปตายที่ฐานเป็น `400`/`PGRST204`
+ * · เป็นตระกูลเดียวกับที่ทำเว็บพัง 502 เมื่อ 27 ส.ค. — **ฝั่ง `select` ปิดแล้ว ฝั่ง `insert` ยังเปิด**
+ *
+ * ## ทำไมยังไม่ปิดคืนนี้
+ * เปลี่ยนพารามิเตอร์เป็น `Database[...]["Insert"]` ทำได้จริง (ลองแล้ว) **แต่ดัน error ไป 16 จุดใน route**
+ * ซึ่งเกือบทั้งหมดคือ *"`b.hotelName` เป็น `{}` ไม่ใช่ `string`"* — เพราะ route อ่าน body เป็น
+ * `(await req.json()) as Record<string, unknown>` **ไม่มีการตรวจชนิดสักจุด**
+ * 🔴 **การปิดช่องนี้ให้ถูก = เพิ่มการตรวจ body ในทุก route ซึ่งเปลี่ยน *สิ่งที่ API ยอมรับ***
+ *    นั่นเป็นการเปลี่ยนพฤติกรรม ไม่ใช่การเพิ่มชนิด — **ไม่ควรลงตอนผู้ใช้ไม่อยู่**
+ *
+ * ⚠️ `as never` ข้างล่างไม่ได้แปลว่า "ปลอดภัย" — มันแปลว่า **"ตรงนี้ยังไม่มีใครตรวจ"**
+ *    ค้นด้วย `WRITE_UNCHECKED` เพื่อดูว่าเหลือกี่จุด
+ */
+type WriteUnchecked = never;
 
 /**
  * 🔴 **จุดเดียวในแอปที่พิมพ์ชื่อตารางของแพลตฟอร์มได้**
@@ -84,7 +104,7 @@ export type Db = SupabaseClient;
  * ตั้งใจไม่ `export` — ถ้ามันออกไปข้างนอกได้ ด่านของ P6 จะเห็นแค่ `engineTable(db, "x")`
  * ซึ่งเป็นสตริงเหมือนเดิม **แต่ predicate ไม่ถูกใส่ให้** = ได้ท่ากลับมาโดยไม่ได้อะไรเลย
  */
-function engineTable(db: Db, name: EngineTable) {
+function engineTable<T extends EngineTable>(db: Db, name: T) {
   return db.from(name);
 }
 
@@ -727,18 +747,31 @@ export function placeNotesOfPlan(db: Db, tripId: string, planId: string) {
  */
 export async function upsertPlaceNote(
   db: Db,
+  // 🔴 **ต้องมี `catalogPlaceId` หรือ `customPlaceId` อย่างใดอย่างหนึ่ง — บังคับที่ชนิด ไม่ใช่ที่ runtime**
+  //    (28 ส.ค. 2026 · เจอตอนใส่ generic `Database` ให้ `Db` — ไม่ใช่เจอด้วยเทสต์)
+  //
+  //    เดิมทั้งคู่เป็น optional → `keyVal` เป็น `string | null` → `.eq(keyCol, null)`
+  //    ซึ่ง PostgREST แปลเป็น `col=eq.null` = SQL `col = NULL` **ไม่มีวันเป็นจริงสักแถว**
+  //    → update ไม่โดนอะไร → insert → ฐานปฏิเสธด้วย `place_notes_one_place`
+  //    ผู้ใช้ได้ `502` พร้อมข้อความ constraint ดิบ หลังเสีย round trip สองรอบ
+  //
+  // 🎯 **เลือกบังคับที่ชนิดแทนด่าน runtime เพราะมันทำให้สถานะที่ผิด *แทนไม่ได้***
+  //    ด่าน runtime ต้องมีคนเขียนเทสต์มาพิสูจน์ว่ามันทำงาน · ชนิดพิสูจน์ตัวเองตอนคอมไพล์
+  //    · ฐานก็กันอยู่แล้ว (`check (num_nonnulls(catalog_place_id, custom_place_id) = 1)`)
+  //      → สามชั้นตรงกัน: **ชนิด · โค้ด · ฐาน** ไม่มีชั้นไหนพูดคนละเรื่อง
   row: {
     tripId: string;
     planId: string;
-    catalogPlaceId?: string | null;
-    customPlaceId?: string | null;
     note: string | null;
     photoPath: string | null;
     legacyAddedBy?: string | null;
-  }
+  } & (
+    | { catalogPlaceId: string; customPlaceId?: null }
+    | { catalogPlaceId?: null; customPlaceId: string }
+  )
 ) {
   const keyCol = row.catalogPlaceId ? "catalog_place_id" : "custom_place_id";
-  const keyVal = row.catalogPlaceId ?? row.customPlaceId ?? null;
+  const keyVal = row.catalogPlaceId ?? row.customPlaceId;   // `string` โดยโครงสร้าง — ดูลายเซ็น
   const patch = { note: row.note, photo_path: row.photoPath };
 
   const upd = await engineTable(db, "place_notes")
@@ -829,7 +862,7 @@ export function tripHotelsOfTrip(db: Db, tripId: string) {
  */
 export function insertTripHotel(db: Db, row: Record<string, unknown>) {
   // `updated_at` มาจาก trigger ฝั่งฐาน — ดึงกลับมาด้วย ไม่ให้ไคลเอนต์ปั้นเอง (`D7`)
-  return engineTable(db, "trip_hotels").insert(row).select("id, updated_at");
+  return engineTable(db, "trip_hotels").insert(row as WriteUnchecked).select("id, updated_at"); // WRITE_UNCHECKED
 }
 
 /** หาแถวที่ครอบช่วงวันนั้นพอดี — `null` = ยังไม่มีที่พักของช่วงนี้ */
@@ -873,7 +906,7 @@ export function insertChecklistItem(db: Db, row: { tripId: string; text: string;
 /** แก้รายการ — grant เปิดแค่ `text` · `category` · `is_checked` เท่านั้น */
 export function updateChecklistItem(db: Db, id: string, patch: Record<string, unknown>) {
   // `updated_at` มาจาก trigger ฝั่งฐาน — ดึงกลับมาด้วย ไม่ให้ไคลเอนต์ปั้นเอง (`D7`)
-  return engineTable(db, "checklist_items").update(patch).eq("id", id).select("id, updated_at");
+  return engineTable(db, "checklist_items").update(patch as WriteUnchecked).eq("id", id).select("id, updated_at");  // WRITE_UNCHECKED
 }
 
 export function softDeleteChecklistItem(db: Db, id: string) {
@@ -940,19 +973,19 @@ export async function upsertDaySettings(db: Db, rows: Record<string, unknown>[])
     // ① ลองแก้ของที่มีอยู่ — ส่งเฉพาะคอลัมน์ที่ `authenticated` มีสิทธิ์ `update`
     if (Object.keys(patch).length > 0) {
       const upd = await engineTable(db, "trip_day_plan_settings")
-        .update(patch).eq("plan_id", planId).eq("trip_day_id", dayId).select("trip_day_id");
+        .update(patch as WriteUnchecked).eq("plan_id", planId).eq("trip_day_id", dayId).select("trip_day_id");  // WRITE_UNCHECKED
       if (upd.error) return { data: null, error: upd.error };
       if (upd.data && upd.data.length > 0) { touched.push(dayId); continue; }
     }
 
     // ② ยังไม่มีแถว → สร้าง (สิทธิ์ `insert` ครอบคอลัมน์คีย์อยู่แล้ว)
-    const ins = await engineTable(db, "trip_day_plan_settings").insert(row).select("trip_day_id");
+    const ins = await engineTable(db, "trip_day_plan_settings").insert(row as WriteUnchecked).select("trip_day_id");  // WRITE_UNCHECKED
     if (!ins.error) { touched.push(dayId); continue; }
 
     // ③ มีคนสร้างแทรกระหว่าง ① กับ ② → แก้ทับ ไม่ใช่ล้ม
     if (ins.error.code !== "23505") return { data: null, error: ins.error };
     const retry = await engineTable(db, "trip_day_plan_settings")
-      .update(patch).eq("plan_id", planId).eq("trip_day_id", dayId).select("trip_day_id");
+      .update(patch as WriteUnchecked).eq("plan_id", planId).eq("trip_day_id", dayId).select("trip_day_id");  // WRITE_UNCHECKED
     if (retry.error) return { data: null, error: retry.error };
     if (retry.data && retry.data.length > 0) touched.push(dayId);
   }
@@ -976,11 +1009,11 @@ export function bookingsOfTrip(db: Db, tripId: string) {
 }
 
 export function insertBooking(db: Db, row: Record<string, unknown>) {
-  return engineTable(db, "bookings").insert(row).select(BOOKING_COLS).single();
+  return engineTable(db, "bookings").insert(row as WriteUnchecked).select(BOOKING_COLS).single();  // WRITE_UNCHECKED
 }
 
 export function updateBooking(db: Db, id: string, patch: Record<string, unknown>) {
-  return engineTable(db, "bookings").update(patch).eq("id", id).select("id");
+  return engineTable(db, "bookings").update(patch as WriteUnchecked).eq("id", id).select("id");  // WRITE_UNCHECKED
 }
 
 export function softDeleteBooking(db: Db, id: string) {
@@ -1062,11 +1095,11 @@ export function ranksInDay(db: Db, tripId: string, planId: string, tripDayId: st
 }
 
 export function insertStop(db: Db, row: Record<string, unknown>) {
-  return engineTable(db, "trip_stops").insert(row).select(STOP_COLS).single();
+  return engineTable(db, "trip_stops").insert(row as WriteUnchecked).select(STOP_COLS).single(); // WRITE_UNCHECKED
 }
 
 export function updateStop(db: Db, id: string, patch: Record<string, unknown>) {
-  return engineTable(db, "trip_stops").update(patch).eq("id", id).select("id");
+  return engineTable(db, "trip_stops").update(patch as WriteUnchecked).eq("id", id).select("id");  // WRITE_UNCHECKED
 }
 
 /**
@@ -1087,7 +1120,7 @@ export function updateStopInDay(
   patch: Record<string, unknown>
 ) {
   return engineTable(db, "trip_stops")
-    .update(patch)
+    .update(patch as WriteUnchecked)  // WRITE_UNCHECKED
     .eq("id", id)
     .eq("trip_id", scope.tripId)
     .eq("plan_id", scope.planId)

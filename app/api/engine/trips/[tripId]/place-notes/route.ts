@@ -88,12 +88,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   const { data: cat, error: lookup } = await catalogPlaceIdBySlug(db, body.placeId);
   if (lookup) return NextResponse.json({ error: lookup.message }, { status: 502 });
 
+  // 🔴 **แยกเป็นก้อนเดียวที่ TS มองเห็นว่า "อย่างใดอย่างหนึ่ง" ได้** (28 ส.ค. 2026)
+  //    เดิมเขียนเป็นสองเทอร์นารีแยกกัน (`cat ? id : null` และ `cat ? null : placeId`)
+  //    ซึ่ง **มนุษย์อ่านออกว่าสัมพันธ์กัน แต่ TypeScript มองเป็นสองฟิลด์อิสระ**
+  //    → มันจึงคิดว่าทั้งคู่เป็น `null` พร้อมกันได้ · และถ้าเป็นจริง `upsertPlaceNote`
+  //      จะยิง `.eq(col, null)` ซึ่งไม่มีวันตรงสักแถว (ดูเหตุผลเต็มที่ลายเซ็นของมัน)
+  //    · ไม่ใช่แค่ทำให้ชนิดผ่าน — **เขียนแบบนี้แล้วความสัมพันธ์นั้นอ่านออกจากโค้ดด้วย**
+  const place = cat
+    ? { catalogPlaceId: cat.id as string, customPlaceId: null }
+    // ไม่ใช่คลังกลาง → ถือว่าเป็นสถานที่ของทริป · **FK จะเป็นคนบอกถ้ามันไม่มีจริง**
+    : { catalogPlaceId: null, customPlaceId: body.placeId };
+
   const { data, error } = await upsertPlaceNote(db, {
     tripId,
     planId: body.planId,
-    catalogPlaceId: cat ? (cat.id as string) : null,
-    // ไม่ใช่คลังกลาง → ถือว่าเป็นสถานที่ของทริป · **FK จะเป็นคนบอกถ้ามันไม่มีจริง**
-    customPlaceId: cat ? null : body.placeId,
+    ...place,
     note: body.note ?? null,
     photoPath: body.photoUrl ?? null,
   });
