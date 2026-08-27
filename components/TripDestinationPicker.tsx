@@ -11,6 +11,8 @@ export type CountryOption = { id: string; name_th: string; name_en: string };
 export type CityOption = {
   id: string;
   country_id: string;
+  /** คีย์ของรูปประจำเมือง — `GET /api/engine/cities` คืนมาแล้ว (P1 28 ส.ค. 2026, `b20cee4`) */
+  legacy_slug?: string | null;
   name_th: string;
   name_en: string;
   name_local: string | null;
@@ -25,18 +27,23 @@ const CITY_LIMIT = 50;
 type ListState<T> = { status: "loading" } | { status: "ready"; items: T[] } | { status: "error" };
 
 /**
- * ภาพประจำจุดหมาย — ใช้ cascade เดียวกับรูปปกการ์ดบนหน้า Home เพื่อไม่ให้มีระบบรูปสองระบบในเว็บเดียว
+ * ภาพประจำจุดหมาย — **cascade เดียวกับรูปปกการ์ดบนหน้า Home** (`city-<slug>` → `country-<id>` → พื้นไล่สี)
+ * เพื่อไม่ให้มีระบบรูปสองระบบในเว็บเดียว
  *
- * 🔴 **วันนี้ทำได้แค่ระดับประเทศ** เพราะ `GET /api/engine/cities` ยังไม่คืน `legacy_slug` มาด้วย
- * (`tripsForUser()` คืน แต่เส้นนี้ไม่คืน) — ขอ P1 ไว้แล้ว · และวันนี้ยังไม่มีไฟล์ `city-*.svg` สักใบอยู่ดี
- * มีแต่ `country-{kr,vn,th}.svg` → **ต่อให้ต่อ slug วันนี้ก็จะตกมาที่รูปประเทศเหมือนกันทุกใบ**
- * พอ slug มา เติมชั้น `city-` ข้างหน้าได้เลยโดยไม่ต้องรื้ออย่างอื่น
+ * 🔴 **ฉบับแรกของคอมเมนต์นี้เขียนว่า "วันนี้ยังไม่มีไฟล์ `city-*.svg` สักใบ" — ซึ่งไม่จริง และผมเขียนเอง**
+ * ของจริงตอนนั้นมีรูปเมืองอยู่แล้ว 6 ใบ (`busan` `gangneung` `hanoi` `seoul` `sokcho` `suwon`) และรูป
+ * ประเทศ 4 ใบ ไม่ใช่ 3 · ผมสรุปจากตอนที่เคยดูโฟลเดอร์ แล้วไม่ได้ดูซ้ำตอนเขียน (P1 จับได้ · ยิง `HEAD`
+ * ยืนยันเองแล้วทั้ง 7 เส้น) — **ตระกูลเดียวกับที่ผมไล่แก้ของคนอื่นมาทั้งวัน: ข้อความที่อ่านแล้วสมเหตุสมผล
+ * แต่อ้างของที่ไม่ตรงความจริง** จดไว้เพราะมันเป็นเหตุผลที่โค้ดชุดนี้เคยตัดชั้น `city-` ทิ้งโดยไม่จำเป็น
+ *
+ * ทดสอบได้ทั้งสองชั้นด้วยข้อมูลจริงวันนี้: **ปูซาน → มี `city-busan.svg` (ชั้นเมือง)** ·
+ * **โตเกียว → ไม่มี `city-tokyo.svg` (404) จึงตกไป `country-jp.svg` (ชั้นประเทศ)**
  */
-function DestinationThumb({ countryId }: { countryId: string }) {
-  const [failed, setFailed] = useState(false);
+function DestinationThumb({ citySlug, countryId }: { citySlug: string | null; countryId: string }) {
+  const [stage, setStage] = useState<"city" | "country" | "fallback">(citySlug ? "city" : "country");
   const base = "h-10 w-10 shrink-0 overflow-hidden rounded-lg";
 
-  if (failed) {
+  if (stage === "fallback") {
     return (
       <div
         aria-hidden
@@ -46,13 +53,14 @@ function DestinationThumb({ countryId }: { countryId: string }) {
       </div>
     );
   }
+  const src = stage === "city" ? `/covers/city-${citySlug}.svg` : `/covers/country-${countryId}.svg`;
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
-      src={`/covers/country-${countryId}.svg`}
+      src={src}
       alt=""
       className={`${base} object-cover`}
-      onError={() => setFailed(true)}
+      onError={() => setStage((s) => (s === "city" ? "country" : "fallback"))}
     />
   );
 }
@@ -81,7 +89,13 @@ function DestinationThumb({ countryId }: { countryId: string }) {
  * 📌 **ทำไมไม่มีช่อง "ค้นชื่อเมืองข้ามประเทศ" (ของเดิมมี — ตัดทิ้งตั้งใจ):**
  * ตอนตัดครั้งแรกมีเหตุผลสองข้อ · **ข้อหนึ่งหมดอายุไปแล้ว ข้อที่เหลือยังอยู่ — อย่าสับสนสองข้อนี้**
  * · ~~ข้อที่หมดอายุ:~~ ตอนนั้นการค้นข้ามประเทศมี fixture ปน 1,694/1,736 แถว · **P1 ปิดไปแล้ว
- *   (`968ced0`, `supported` กรองในฐาน) — วัดซ้ำเองแล้ว `q="เมือง"`/`q="ทดสอบ"` คืน 0 แถว** เหตุผลนี้ใช้ไม่ได้อีก
+ *   (`968ced0`, `supported` กรองในฐาน) — วัดซ้ำเองแล้ว `q="เมือง"` คืน 0 แถว** เหตุผลนี้ใช้ไม่ได้อีก
+ *   🔴 **เดิมบรรทัดนี้อ้าง `q="ทดสอบ"` เป็นหลักฐานชิ้นที่สองด้วย — ถอนออกแล้วเพราะมันพิสูจน์อะไรไม่ได้เลย**
+ *   `searchCatalogCities` แมตช์แค่ `name_th`/`name_en`/`name_local` **ของเมือง** (ดู `db.ts`) · `"ทดสอบ"`
+ *   เป็นชื่อ***ประเทศ*** fixture และไม่มีเมืองไหนชื่อแบบนั้น → **ได้ 0 แถวเสมอ ต่อให้ถอดตัวกรองออกทั้งหมด**
+ *   · `q="เมือง"` ต่างออกไป: ถ้ากรองไม่ติดมันคืน 200+ แถวทันที **จึงเป็นหลักฐานจริงชิ้นเดียวที่มี**
+ *   🎯 หลักฐานสองชิ้นให้ผลเหมือนกันเป๊ะ (0 แถว) แต่ชิ้นหนึ่งไม่มีน้ำหนัก — **และแยกไม่ออกจากตัวเลขผลลัพธ์
+ *   ต้องไปดูว่าฟังก์ชันค้นคอลัมน์ไหน** (P4 จับได้ตอนใส่ control ว่า "ต้องมีเมืองชื่อนี้อยู่จริงก่อน")
  * · **ข้อที่ยังอยู่:** ผู้ใช้สั่งรูป *ประเทศ → เมือง → กด +* มาตรง ๆ · วันนี้คลังมี **4 ประเทศ** ที่คนไทย
  *   รู้อยู่แล้วว่าเมืองไหนอยู่ประเทศไหน (ฮานอย→เวียดนาม · โตเกียว→ญี่ปุ่น) → ช่องค้นเพิ่มทางเข้าที่สอง
  *   สำหรับงานเดียวกัน แลกกับความสูงบนโมดัลที่มือถือ 375px แน่นอยู่แล้ว **ยังไม่คุ้ม**
@@ -209,7 +223,7 @@ export function TripDestinationPicker({
               key={city.id}
               className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-soft/60 p-1.5"
             >
-              <DestinationThumb countryId={city.country_id} />
+              <DestinationThumb citySlug={city.legacy_slug ?? null} countryId={city.country_id} />
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-content">
                 {city.name_th}
               </span>
