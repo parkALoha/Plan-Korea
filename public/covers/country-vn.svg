@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="เวียดนาม">
+  <defs>
+    <linearGradient id="vn-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf6ec"/><stop offset="0.45" stop-color="#f6dfc4"/><stop offset="1" stop-color="#cfd3bb"/>
+    </linearGradient>
+    <linearGradient id="vn-water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7f9a8c"/><stop offset="1" stop-color="#5d7a70"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="300" fill="url(#vn-sky)"/>
+  <circle cx="150" cy="74" r="36" fill="#d9683a" opacity="0.78"/>
+  <g fill="#2b241f" opacity="0.2">
+    <path d="M60 214 C70 138 88 96 108 94 C128 96 146 138 156 214 Z"/>
+    <path d="M292 212 C304 124 324 76 346 74 C368 76 388 124 400 212 Z"/>
+    <path d="M572 216 C582 152 598 116 616 114 C634 116 650 152 660 216 Z"/>
+  </g>
+  <g fill="#2b241f" opacity="0.66">
+    <path d="M170 232 C184 118 208 56 238 54 C268 56 292 118 306 232 Z"/>
+    <path d="M424 236 C440 108 466 44 496 42 C526 44 552 108 568 236 Z"/>
+    <path d="M666 234 C678 148 696 104 716 102 C736 104 754 148 766 234 Z"/>
+  </g>
+  <g fill="#2b241f">
+    <path d="M352 232 L352 108 L426 194 Z" opacity="0.92"/>
+    <path d="M342 232 L342 138 L286 202 Z" opacity="0.78"/>
+    <path d="M274 238 L436 238 L414 262 L296 262 Z"/>
+  </g>
+  <rect y="262" width="800" height="38" fill="url(#vn-water)"/>
+  <g stroke="#fdf6ec" stroke-width="3" opacity="0.35" stroke-linecap="round">
+    <path d="M56 276 H176"/><path d="M244 290 H386"/><path d="M470 274 H580"/><path d="M604 292 H740"/>
+  </g>
+</svg>

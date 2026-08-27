@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="เกาหลีใต้">
+  <defs>
+    <linearGradient id="kr-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf6ec"/><stop offset="0.45" stop-color="#fbe0cd"/><stop offset="1" stop-color="#eeb894"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="300" fill="url(#kr-sky)"/>
+  <circle cx="648" cy="72" r="40" fill="#d9683a" opacity="0.85"/>
+  <path d="M0 168 L96 84 L164 130 L248 62 L340 148 L414 104 L494 162 L566 116 L654 172 L734 128 L800 166 L800 300 L0 300 Z" fill="#b8502a" opacity="0.24"/>
+  <path d="M0 210 L92 140 L168 186 L262 122 L356 196 L446 152 L544 212 L634 166 L726 214 L800 178 L800 300 L0 300 Z" fill="#b8502a" opacity="0.4"/>
+  <g fill="#2b241f">
+    <path d="M154 210 C186 178 224 160 286 158 C348 160 386 178 418 210 C384 196 348 188 286 188 C224 188 186 196 154 210 Z"/>
+    <rect x="200" y="210" width="172" height="52"/>
+    <rect x="218" y="226" width="34" height="36" fill="#fdf6ec" opacity="0.5"/>
+    <rect x="320" y="226" width="34" height="36" fill="#fdf6ec" opacity="0.5"/>
+    <path d="M188 186 C216 162 246 148 286 146 C326 148 356 162 384 186 C354 176 326 170 286 170 C246 170 216 176 188 186 Z" opacity="0.92"/>
+    <path d="M436 238 C462 214 486 200 528 198 C570 200 594 214 620 238 C592 228 570 224 528 224 C486 224 462 228 436 238 Z" opacity="0.85"/>
+    <rect x="472" y="238" width="112" height="24" opacity="0.85"/>
+  </g>
+  <path d="M0 262 C140 254 250 268 380 262 C500 256 600 270 720 264 C760 262 782 266 800 264 L800 300 L0 300 Z" fill="#2b241f" opacity="0.92"/>
+</svg>

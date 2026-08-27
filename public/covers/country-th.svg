@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ไทย">
+  <defs>
+    <linearGradient id="th-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf6ec"/><stop offset="0.45" stop-color="#f8e0b6"/><stop offset="1" stop-color="#e9b98a"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="300" fill="url(#th-sky)"/>
+  <circle cx="656" cy="82" r="42" fill="#d9683a" opacity="0.8"/>
+  <g fill="#2b241f">
+    <path d="M392 6 L400 56 L384 56 Z"/>
+    <path d="M392 50 C424 100 442 164 448 236 L336 236 C342 164 360 100 392 50 Z"/>
+    <path d="M310 236 C326 188 340 156 346 130 C356 164 368 198 374 236 Z" opacity="0.86"/>
+    <path d="M474 236 C458 188 444 156 438 130 C428 164 416 198 410 236 Z" opacity="0.86"/>
+    <rect x="322" y="236" width="140" height="16"/>
+  </g>
+  <g fill="#2b241f" opacity="0.84">
+    <!-- วัดฝั่งซ้าย — หลังคาสองชั้น กว้างกว่าสูง ปลายสะบัดขึ้นแบบช่อฟ้า -->
+    <path d="M64 216 L96 216 L156 176 L216 216 L248 216 L242 224 L156 190 L70 224 Z"/>
+    <path d="M96 242 L120 242 L156 214 L192 242 L216 242 L210 250 L156 226 L102 250 Z"/>
+    <rect x="128" y="250" width="56" height="20"/>
+    <path d="M150 168 L162 168 L156 148 Z"/>
+    <!-- วัดฝั่งขวา -->
+    <path d="M548 220 L578 220 L638 180 L698 220 L728 220 L722 228 L638 194 L554 228 Z"/>
+    <path d="M578 246 L602 246 L638 218 L674 246 L698 246 L692 254 L638 230 L584 254 Z"/>
+    <rect x="610" y="254" width="56" height="18"/>
+    <path d="M632 172 L644 172 L638 152 Z"/>
+  </g>
+  <path d="M0 258 C130 246 236 270 348 262 C466 254 556 276 674 266 C728 262 768 270 800 264 L800 300 L0 300 Z" fill="#2b241f" opacity="0.92"/>
+</svg>
