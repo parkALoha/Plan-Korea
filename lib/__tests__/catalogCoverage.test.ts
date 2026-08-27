@@ -142,4 +142,42 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
         "  → seed สถานที่ให้เมืองนั้น หรือถ้ายังไม่พร้อม ก็ยังไม่ควรมีแถวใน catalog_cities",
     ).toEqual([]);
   });
+
+  /**
+   * 🔴 **จุดเปลี่ยนเส้นทางต้องไม่โผล่ในลิสต์ "เพิ่มสถานที่"** — และวันนี้ **25 จาก 28 แถวโผล่อยู่**
+   *
+   * ## ทำไมเคสนี้ถึงเกิด: ผมกับ P1 เถียงกันว่าจะนับด้วย `category` หรือ `source`
+   * แล้วไปเจอว่า **แอปไม่ได้กรองด้วยคอลัมน์ไหนในสองตัวนั้นเลย** — `browseCatalogPlaces()`
+   * (`lib/engine/db.ts:103`) กรองด้วย **`picker_hidden = false`** ล้วน ๆ
+   * 🎯 **สองฝ่ายกำลังวัดตัวแทน (proxy) ที่บังเอิญตรงกัน แทนที่จะวัดเงื่อนไขที่แอปใช้จริง**
+   *
+   * ## เจตนาที่เขียนไว้เอง แต่ข้อมูลไม่ตรงตาม
+   * `transferPoints.ts:28` + `db.ts:96` เขียนว่า *"สนามบิน/สถานี ไม่ใช่ที่เที่ยว ไม่ควรโผล่ใน
+   * คลังสถานที่ให้เลือกเพิ่มลงวัน"* · เดิมกฎนั้นบังคับด้วย**การอยู่คนละไฟล์** พอย้ายมาเป็นแถวใน
+   * `catalog_places` ตารางเดียวกัน **เหลือแค่คอลัมน์ธง — และธงไม่ถูกตั้งตอน seed**
+   * · ⚠️ ไม่ใช่แค่ของใหม่: `kr` มี 12 (รวม `airport-icn` · `station-seoul`) = **คลังของทริปจริงที่จะบิน 11 ต.ค.**
+   *
+   * ## สิ่งที่ผู้ใช้เจอ
+   * กด "เพิ่มสถานที่" ในกรุงเทพ → เห็นสนามบินเชียงใหม่/ภูเก็ต/กระบี่ปนอยู่ในลิสต์ที่เที่ยว
+   * · **ไม่ใช่หน้าว่าง (ซึ่งเคสข้างบนจับ) แต่เป็นหน้าที่มีของผิดชนิดปนมา** — คนละอาการ คนละด่าน
+   */
+  it("🔴 แถวที่มาจากไฟล์จุดเปลี่ยนเส้นทาง (source='transfer') ต้อง picker_hidden = true ทุกแถว", async () => {
+    const admin = testClient(SERVICE);
+    const pl = await admin
+      .from("catalog_places")
+      .select("legacy_slug,city_id,picker_hidden")
+      .eq("source", "transfer");
+    if (pl.error) throw new Error(`อ่าน catalog_places: ${pl.error.message}`);
+    const rows = (pl.data ?? []) as { legacy_slug: string | null; city_id: string; picker_hidden: boolean }[];
+    // positive control — ถ้าไม่มีแถว transfer เลย เคสข้างล่างจะเขียวโดยไม่ได้ตรวจอะไร (P-21)
+    expect(rows.length, "ไม่มีแถว source='transfer' เลย — ตัวกรองพัง ไม่ใช่ 'ไม่มีจุดเปลี่ยนเส้นทาง'").toBeGreaterThan(0);
+    const shown = rows.filter((r) => r.picker_hidden === false).map((r) => r.legacy_slug ?? r.city_id).sort();
+    expect(
+      shown,
+      "จุดเปลี่ยนเส้นทางที่ **โผล่ในลิสต์เลือกสถานที่** (picker_hidden = false)\n" +
+        "  🔴 `browseCatalogPlaces()` กรองด้วย `picker_hidden` เท่านั้น → แถวพวกนี้ขึ้นให้ผู้ใช้เลือกจริง\n" +
+        "  ⚠️ ขัดกับเจตนาที่เขียนไว้เองใน `transferPoints.ts:28` และ `db.ts:96`\n" +
+        "  → ตั้ง `picker_hidden = true` ให้แถว `source='transfer'` ตอน seed (โซน P1 — migration)",
+    ).toEqual([]);
+  });
 });
