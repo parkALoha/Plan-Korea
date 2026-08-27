@@ -31,8 +31,12 @@ const LOUD_THRESHOLD = 50;
 type TripRow = { id: string; created_by: string; created_at: string };
 
 export default async function fixtureReaperSetup(): Promise<void> {
-  // ── gate: ปิดโดยดีฟอลต์ ──────────────────────────────────────────────────
-  if (process.env.FIXTURE_REAPER !== "1") return;
+  // ── gate: ปิดโดยดีฟอลต์ · "1" = ลบจริง · "dry" = รายงานอย่างเดียว (อ่านล้วน ไม่ลบ ไม่จับล็อก) ──
+  //    dry ใช้เกณฑ์เดียวกับลบจริงเป๊ะ ต่างแค่ไม่ลง delete → ตัวเลขเชื่อได้ ไม่ divergence (P1 ขอก่อนคุยลบจริง)
+  //    🔴 dry อ่านล้วน = อยู่ในสิทธิ์ปกติ ไม่ต้องขออนุมัติ · แต่ "1" (ลบ 890) ยังต้องมาจากผู้ใช้ของเซสชันนี้เท่านั้น
+  const mode = process.env.FIXTURE_REAPER;
+  if (mode !== "1" && mode !== "dry") return;
+  const dryRun = mode === "dry";
 
   const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -65,12 +69,16 @@ export default async function fixtureReaperSetup(): Promise<void> {
   console.error(`\n[fixture-reaper] ยืนยันฐาน engine-dev: ${JSON.stringify(ident.data)}\n`);
 
   // ── fixture_lock — ถ้ามีชุดสดถืออยู่ ข้ามรอบนี้ (timeout สั้น · globalSetup ห้ามค้าง) ──
-  const lock = await acquireFixtureLock(admin, "fixture-reaper", { ttlSeconds: 120, timeoutMs: 15_000 }).catch(
-    () => null,
-  );
-  if (lock === null) {
-    console.error("\n[fixture-reaper] มีชุดสดถือล็อกอยู่ — ข้ามการกวาดรอบนี้ (รอบหน้าเก็บ)\n");
-    return;
+  //    dry-run อ่านล้วน ไม่แก้อะไร → ไม่จับล็อก (ไม่ชนรอบสด · snapshot ณ ขณะนั้นพอสำหรับรายงาน)
+  let lock: Awaited<ReturnType<typeof acquireFixtureLock>> | null = null;
+  if (!dryRun) {
+    lock = await acquireFixtureLock(admin, "fixture-reaper", { ttlSeconds: 120, timeoutMs: 15_000 }).catch(
+      () => null,
+    );
+    if (lock === null) {
+      console.error("\n[fixture-reaper] มีชุดสดถือล็อกอยู่ — ข้ามการกวาดรอบนี้ (รอบหน้าเก็บ)\n");
+      return;
+    }
   }
 
   try {
@@ -102,7 +110,10 @@ export default async function fixtureReaperSetup(): Promise<void> {
     const fixtureTrips = trips.filter((t) => fixtureUserIds.has(t.created_by));
 
     // ── เงื่อนไข 4: แมตช์ 100% = join พัง → ล้ม อย่าลบ ─────────────────────────
-    if (trips.length > 0 && fixtureTrips.length === trips.length) {
+    //    dry-run: เตือนดัง ไม่ throw — ให้รายงานออกมาให้เห็น (100% อาจแปลว่าฐานมีแต่ fixture จริง
+    //    หรือ join พัง · การเห็นตัวเลขช่วยแยกสองอย่างนี้ · แต่ตัวลบจริงยังต้องปฏิเสธเหมือนเดิม)
+    const allFixture = trips.length > 0 && fixtureTrips.length === trips.length;
+    if (allFixture && !dryRun) {
       throw new Error(
         `🔴 [fixture-reaper] เกณฑ์แมตช์ 100% (${trips.length}/${trips.length}) — join/เงื่อนไขพัง ไม่ใช่ไม่มีข้อมูลจริง · ปฏิเสธการลบ`,
       );
@@ -111,6 +122,28 @@ export default async function fixtureReaperSetup(): Promise<void> {
     // ── อายุ: ลบเฉพาะ >2ชม. (รอบสดอายุไม่กี่นาที ไม่มีทางโดน) ──────────────────
     const cutoff = Date.now() - REAP_MIN_AGE_MS;
     const reapIds = fixtureTrips.filter((t) => Date.parse(t.created_at) < cutoff).map((t) => t.id);
+
+    // ── dry-run: รายงานอย่างเดียว เกณฑ์เดียวกับลบจริง แต่ไม่ลง delete (P1 ขอตัวเลข + รายชื่อที่จะไม่ลบ) ──
+    if (dryRun) {
+      const realTrips = trips.filter((t) => !fixtureUserIds.has(t.created_by));
+      const recentFixtures = fixtureTrips.length - reapIds.length; // fixture ที่ยังใหม่ <2ชม. → เกณฑ์อายุยังไม่โดน
+      const sample = realTrips.slice(0, 50).map((t) => `    ${t.id} · by ${t.created_by} · ${t.created_at}`);
+      console.error(
+        `\n[fixture-reaper · DRY-RUN] เกณฑ์เดียวกับลบจริง · ไม่ลบอะไรทั้งสิ้น:\n` +
+          `  trips ทั้งหมด: ${trips.length}\n` +
+          `  fixture trips (.test owner): ${fixtureTrips.length}\n` +
+          `  🔴 จะลบ (fixture + อายุ >2ชม.): ${reapIds.length}\n` +
+          `  จะ *ไม่* ลบ: ${trips.length - reapIds.length} = real/non-fixture ${realTrips.length} + fixture ที่ยังใหม่ <2ชม. ${recentFixtures}\n` +
+          (allFixture
+            ? `  🔴 100% เป็น fixture — ตัวลบจริงจะ *ปฏิเสธ* (เงื่อนไข 4) · แปลว่าฐานมีแต่ fixture หรือ join พัง — แยกด้วยตาก่อนเปิด "1"\n`
+            : "") +
+          `  ── trips ที่ไม่ใช่ fixture (real · ต้องไม่ถูกลบเด็ดขาด · แสดงสูงสุด 50) ──\n` +
+          (sample.length ? sample.join("\n") : "    (ไม่มี — ทุกทริปเป็น fixture)") +
+          (realTrips.length > 50 ? `\n    … อีก ${realTrips.length - 50} ทริป` : "") +
+          `\n`,
+      );
+      return;
+    }
 
     // ── ลบเป็นก้อน + นับจริง (เงื่อนไข 2: ทริปเท่านั้น ไม่แตะ user) ─────────────
     let deleted = 0;
@@ -136,6 +169,6 @@ export default async function fixtureReaperSetup(): Promise<void> {
       console.error(`\n[fixture-reaper] กวาด ${deleted} ทริปที่รอบก่อน (ถูกฆ่าก่อน afterAll) ทิ้งไว้\n`);
     }
   } finally {
-    await lock.release();
+    if (lock) await lock.release(); // dry-run ไม่จับล็อก → ไม่มีอะไรต้องปล่อย
   }
 }
