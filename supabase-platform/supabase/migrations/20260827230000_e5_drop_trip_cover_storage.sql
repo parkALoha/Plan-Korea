@@ -78,8 +78,24 @@ drop policy if exists trip_covers_insert on storage.objects;
 drop policy if exists trip_covers_update on storage.objects;
 drop policy if exists trip_covers_delete on storage.objects;
 
--- ── 3. bucket ─────────────────────────────────────────────────────────────
-delete from storage.buckets where id = 'trip-covers';
+-- ── 3. bucket — **ลบด้วย SQL ไม่ได้ ต้องลบผ่าน Storage API** ────────────────
+-- 🔴 บล็อกเดียวกับ `storage.objects` เป๊ะ · push จริงล้มที่บรรทัดนี้เป็นรอบที่สอง:
+--    `Direct deletion from storage tables is not allowed. Use the Storage API instead.`
+--    → คำว่า "tables" พหูพจน์ในข้อความ **ครอบทั้ง `objects` และ `buckets`** ยืนยันด้วยการรันจริงแล้ว
+--
+-- 🎯 **ไฟล์นี้จึงลบบัคเก็ตไม่ได้เลย และไม่พยายาม** — มันตรวจว่าลบไปแล้วหรือยัง (ข้อ 6)
+--    บัคเก็ต `trip-covers` ถูกลบผ่าน Storage API เมื่อ 27 ส.ค. 2026 (ตอบ 200 `Successfully deleted`
+--    · ยืนยันว่าว่าง 0 ไฟล์ก่อนลบ · `booking-files` ไม่ถูกแตะ ยังเป็น private)
+--
+-- ⚠️ **ผลต่อการ replay บนฐานใหม่:** `20260827220000` สร้างบัคเก็ตนี้ด้วย `insert into storage.buckets`
+--    (insert ไม่ถูกบล็อก · delete ถูกบล็อก — ไม่สมมาตรโดยตั้งใจของ Supabase)
+--    → ฐานใหม่จะมีบัคเก็ตอยู่ แล้วไฟล์นี้จะ **ล้มพร้อมบอกวิธีแก้** ไม่ใช่ล้มเงียบ ๆ:
+--    ```
+--    curl -X DELETE "$SUPABASE_URL/storage/v1/bucket/trip-covers" \
+--         -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY"
+--    ```
+--    🔴 **จงใจให้ล้ม ไม่ใช่ข้ามเงียบ** — ทางที่ปฏิเสธคือ "ถ้ายังมีบัคเก็ตก็ปล่อยผ่าน"
+--    ซึ่งจะทำให้ฐานใหม่มีบัคเก็ตที่ไม่มี policy สักตัวค้างอยู่ตลอดกาลโดยไม่มีใครรู้ (ตระกูล `P-50`)
 
 -- ── 4. helper ─────────────────────────────────────────────────────────────
 -- ⚠️ **ตัวนี้เท่านั้น** — `app.booking_file_trip()` เป็นคู่แฝดคนละบัคเก็ต **ห้ามแตะ**
@@ -102,7 +118,10 @@ begin
    where n.nspname = 'app' and p.proname = 'trip_cover_trip';
 
   if n_policy <> 0 then raise exception 'ยังเหลือ policy trip_covers_* % ตัว', n_policy; end if;
-  if n_bucket <> 0 then raise exception 'ยังเหลือบัคเก็ต trip-covers'; end if;
+  -- 🔴 ข้อความต้องบอก *วิธีแก้* ไม่ใช่แค่ *อาการ* — บัคเก็ตลบด้วย SQL ไม่ได้ คนอ่านต้องรู้ทันที
+  if n_bucket <> 0 then
+    raise exception 'บัคเก็ต trip-covers ยังอยู่ — ลบด้วย SQL ไม่ได้ ต้องยิง DELETE <SUPABASE_URL>/storage/v1/bucket/trip-covers ด้วย service role key ก่อน แล้ว push ใหม่';
+  end if;
   if n_col    <> 0 then raise exception 'ยังเหลือคอลัมน์ cover_image_path'; end if;
   if n_fn     <> 0 then raise exception 'ยังเหลือฟังก์ชัน app.trip_cover_trip'; end if;
 
