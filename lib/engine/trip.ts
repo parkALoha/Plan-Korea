@@ -49,15 +49,81 @@ export { chooseSoleTrip, soleTripMessage, type SoleTrip } from "./tripChoice";
  * 🔴 **ชนิดที่แคบกว่าข้อมูล ไม่ทำให้อะไรพัง — มันทำให้คนเชื่อว่าของที่มีอยู่ไม่มี** และไม่มีอะไรฟ้อง
  *   · ต่างจากชนิดที่*กว้าง*กว่าข้อมูล ซึ่งพังตอนรันและมีคนเห็น
  */
-export async function tripsForUser(
-  db: Db,
-): Promise<{ id: string; title: string; start_date: string; end_date: string }[]> {
+/** จุดหมายหนึ่งใบบนการ์ด — แบนแล้วจากโครงฝังสามชั้น เพื่อให้ UI ไม่ต้องรู้รูปของ PostgREST */
+export type TripDestination = {
+  cityId: string;
+  slug: string | null;
+  nameTh: string;
+  nameEn: string;
+  countryId: string;
+  countryNameTh: string;
+};
+
+export type TripListItem = {
+  // 🔴 4 คีย์นี้เป็น snake_case เพราะ **มีผู้เรียกอยู่แล้ว** (`HomeScreen` · `TripHeader` · `useActiveTripId`)
+  //    เปลี่ยนเป็น camelCase = แก้ 3 ที่พร้อมกันเพื่อความสวยงามล้วน ๆ · ของใหม่ใช้ camelCase
+  //    ⚠️ ปนกันโดยรู้ตัว ไม่ใช่โดยเผลอ — **อย่า "ทำให้สม่ำเสมอ" โดยไม่ไล่ผู้เรียกก่อน**
+  id: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  coverImageUrl: string | null;
+  destinations: TripDestination[];
+  memberCount: number;
+};
+
+/** รูปดิบที่ PostgREST คืนจากการฝังสามชั้น — แยกไว้เพื่อให้การแบนข้างล่างอ่านออก */
+type RawTripRow = {
+  id: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  cover_image_url: string | null;
+  trip_destinations: {
+    rank: number;
+    catalog_cities: {
+      id: string;
+      legacy_slug: string | null;
+      name_th: string;
+      name_en: string;
+      catalog_countries: { id: string; name_th: string; name_en: string } | null;
+    } | null;
+  }[] | null;
+  trip_members: { count: number }[] | null;
+};
+
+export async function tripsForUser(db: Db): Promise<TripListItem[]> {
   // 🔴 ชื่อตารางอยู่ใน `db.ts` ไฟล์เดียวตามกติกาของ `D81` ⑦.๕ — ที่นี่มีแต่ *ตรรกะการเลือก*
   //    ด่าน `dynamic-from` ของ P6 ยอมให้พิมพ์ `.from("trips")` ตรงนี้ได้ (เป็นสตริง)
   //    **แต่ยอมไม่ได้แปลว่าถูก** — แยกไว้เพราะวันที่ `trips` ต้องพก predicate มันจะมีที่ให้ใส่ที่เดียว
   const { data, error } = await tripsVisibleToMe(db);
   if (error) throw new Error(`อ่านรายการทริปไม่ได้: ${error.message}`);
-  return data ?? [];
+  const rows = (data ?? []) as unknown as RawTripRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    start_date: r.start_date,
+    end_date: r.end_date,
+    coverImageUrl: r.cover_image_url,
+    // เรียงด้วย `(rank, cityId)` — `rank` ไม่ unique โดยตั้งใจ (เหตุผลเดียวกับ `trip_stops.rank`)
+    // `cityId` คือ tie-break ที่ทำให้ทุกเครื่องได้ลำดับเดียวกัน
+    destinations: (r.trip_destinations ?? [])
+      .filter((d) => d.catalog_cities !== null)
+      .sort((a, b) => a.rank - b.rank || (a.catalog_cities!.id < b.catalog_cities!.id ? -1 : 1))
+      .map((d) => ({
+        cityId: d.catalog_cities!.id,
+        slug: d.catalog_cities!.legacy_slug,
+        nameTh: d.catalog_cities!.name_th,
+        nameEn: d.catalog_cities!.name_en,
+        // 🔴 ประเทศ **ไม่ได้เก็บซ้ำใน `trips`** โดยตั้งใจ — คลังบอกอยู่แล้ว เก็บซ้ำ = สองแหล่งความจริงที่ drift ได้
+        //    `null` ที่นี่แปลว่า RLS ของ `catalog_countries` ปฏิเสธ ไม่ใช่ "เมืองไม่มีประเทศ" (FK บังคับอยู่)
+        countryId: d.catalog_cities!.catalog_countries?.id ?? "",
+        countryNameTh: d.catalog_cities!.catalog_countries?.name_th ?? "",
+      })),
+    // PostgREST คืน aggregate เป็น array ใบเดียว · `0` ที่นี่เป็นไปไม่ได้ในทางปฏิบัติ
+    // (ทุกทริปมีเจ้าของ ≥1) → ถ้าเห็น 0 แปลว่าอ่าน `trip_members` ไม่ได้ ไม่ใช่ทริปไม่มีคน
+    memberCount: r.trip_members?.[0]?.count ?? 0,
+  }));
 }
 
 /**

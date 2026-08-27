@@ -364,7 +364,19 @@ export function tripsVisibleToMe(db: Db) {
   //    หัวหน้าจอเคยฝังช่วงวันที่ตายตัว (`"11–21 ต.ค. · เที่ยวเกาหลี 12–20"`) · P2 **ลบทิ้งแทนที่จะเดาใหม่**
   //    เพราะ helper นี้ไม่ได้ส่งวันที่มาให้ ทั้งที่ฐานมีคอลัมน์อยู่แล้ว — **ลบดีกว่าเดา**
   // ⚠️ `revoke` ที่ `20260825122247` ถอนแค่ `insert`/`update` · **`select` ระดับตารางยังอยู่** (ตรวจแล้ว)
-  return engineTable(db, "trips").select("id, title, start_date, end_date").order("created_at");
+  // 🔴 **เพิ่ม 27 ส.ค. บ่าย — จุดหมาย + รูปปก + จำนวนสมาชิก สำหรับการ์ดบนหน้า Home**
+  //    ฝัง 3 ชั้น: `trip_destinations` → `catalog_cities` → `catalog_countries`
+  //    ทุกชั้นมี policy `select` ของตัวเองอยู่แล้ว · **ไม่มี `where` เรื่องสิทธิ์ที่นี่สักตัว** (`P-15`)
+  //    · `trip_members(count)` = จำนวนสมาชิก โดยไม่ต้องดึงรายชื่อมาทั้งชุด
+  //    ⚠️ **ยังไม่เรียงที่นี่** — `rank` เรียงใน `tripsForUser()` เพราะรายการมี 2-5 ใบ
+  //       การเรียงในฝั่ง PostgREST ต้องพึ่ง `referencedTable` ซึ่งพังเงียบถ้าชื่อความสัมพันธ์เปลี่ยน
+  return engineTable(db, "trips")
+    .select(
+      "id, title, start_date, end_date, cover_image_url," +
+        "trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en)))," +
+        "trip_members(count)",
+    )
+    .order("created_at");
 }
 
 /**
