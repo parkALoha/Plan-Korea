@@ -192,6 +192,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let admin: SupabaseClient;
   const ids: Record<string, string> = {};
   let tripA = "";
+  let tripB = ""; // ทริปของ B — สำหรับ probe ชี้ custom place ข้ามทริป (D70)
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
   let cCookies: Cookie[] = []; // C = viewer *สมาชิก* ของทริป A (ต่างจาก B คนนอก) — สำหรับ probe members
@@ -311,7 +312,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     aClient = a.client;
     const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
     tripA = await mkTrip(a.client, "a");
-    await mkTrip(b.client, "b");
+    tripB = await mkTrip(b.client, "b");
     // 🔴 forward-compat กับ migration `create_trip_makes_days` ที่จอด pending-review (P1/P3):
     //    หลัง migration ลง create_trip จะสร้าง trip_days ให้เอง → insert วันซ้ำจะชน `trip_days_unique_date`
     //    → อ่านวันที่มีอยู่ก่อน ถ้าไม่มีค่อย insert · robust ทั้งก่อน/หลัง migration ลง (ไม่ต้องแก้เทสต์ตอนมันลง)
@@ -448,6 +449,67 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       ghost.status,
       `uuid ที่ไม่มีจริงควร 404 · ถ้าได้ 200 [] = แยก "เมืองว่าง" กับ "ไม่มีเมือง" ไม่ออก: ${await ghost.clone().text()}`,
     ).toBe(404);
+  });
+
+
+  /**
+   * 🔴 `D70` ผ่าน route — **ชี้ custom place ของทริปอื่นไม่ได้** · กิ่งที่ไม่มีเคยมีเคสไหนเดินเลย
+   *
+   * ## ช่องที่เคสนี้ปิด
+   * `stops POST` (`route.ts:42-47`) รับ `placeId` เป็น uuid แล้ว **ใส่ลง `custom_place_id` ตรง ๆ
+   * โดยไม่ตรวจว่ามันเป็นของทริปนี้ไหม** — และนั่น**ถูกต้องตาม `D38`** (ไม่ตรวจซ้ำสิ่งที่ฐานตรวจ)
+   * → ตัวที่กันจริงคือ **composite FK** `trip_stops_custom_place_fk (trip_id, custom_place_id)`
+   *   (`20260825140656:114`) · **ฐานคือด่านเดียวที่ยืนอยู่ตรงนี้**
+   *
+   * 🔴 **แต่ไม่มีเคยมีเคสไหนเดินกิ่งนี้เลย** — `rlsMatrix` เคส `D70` ครอบ *แผน+วัน* ข้ามทริป
+   *    **ไม่ได้ครอบ `custom_place`** · และ `engineCrossUser` ก็ไม่เคยยิงเส้นนี้
+   * → ถ้ามีคนเปลี่ยน FK ประกอบเป็น FK เดี่ยวบน `custom_place_id` ด้วยเหตุผลว่า *"ง่ายกว่า"*
+   *   **การชี้ข้ามทริปจะสำเร็จเงียบ ๆ** และไม่มีอะไรจับได้
+   *
+   * ## 🎯 คู่ในเคสเดียว — ต่างกันแค่ *เจ้าของ* ของ placeId
+   * ยิงคำสั่งเดียวกันสองครั้ง ต่างกันที่ uuid ที่ส่ง: **ของตัวเอง → 201 · ของทริปอื่น → ถูกปฏิเสธ**
+   * ถ้าไม่มีข้อแรก *"ถูกปฏิเสธ"* อาจแปลว่า **route ปฏิเสธ placeId ทุกตัว** ซึ่งพิสูจน์คนละเรื่องกันเลย
+   */
+  it("🔴 D70 ผ่าน route — A ชี้ custom place ของทริป B ไม่ได้ (ของตัวเอง 201 · ของคนอื่นถูกปฏิเสธ)", async () => {
+    // ① control: custom place ของ tripA เอง → เพิ่มเป็นจุดแวะได้
+    const mine = await postAs(aCookies, tripA, customPlacesPOST, {
+      city: citySlug, category: "food", maps_query: "q-own", name_th: `own-${stamp}`, lat: 37.5, lng: 127.0,
+    });
+    expect(mine.status, `สร้าง custom place ของ A ควร 201: ${await mine.clone().text()}`).toBe(201);
+    const ownId = ((await mine.json()) as { id: string }).id;
+    const okStop = await postAs(aCookies, tripA, stopsPOST, { planId: aPlan, tripDayId: aDay, placeId: ownId });
+    expect(
+      okStop.status,
+      `ชี้ custom place ของทริปตัวเองควร 201 — ถ้าแดง เคส ② ข้างล่างไม่ได้พิสูจน์ว่ากันข้ามทริป: ${await okStop.clone().text()}`,
+    ).toBe(201);
+
+    // ② B สร้าง custom place ใน **ทริปของ B เอง** (ถูกต้องตามสิทธิ์ของ B)
+    const theirs = await postAs(bCookies, tripB, customPlacesPOST, {
+      city: citySlug, category: "food", maps_query: "q-b", name_th: `b-${stamp}`, lat: 37.6, lng: 127.1,
+    });
+    expect(theirs.status, `B สร้าง custom place ในทริปตัวเองควร 201: ${await theirs.clone().text()}`).toBe(201);
+    const foreignId = ((await theirs.json()) as { id: string }).id;
+
+    // 🔴 A ชี้ของ B ในทริปของ A — composite FK ต้องปฏิเสธ
+    const bad = await postAs(aCookies, tripA, stopsPOST, { planId: aPlan, tripDayId: aDay, placeId: foreignId });
+    const badBody = await bad.clone().text();
+    // ⚠️ **ไม่ใช้ `verdictFor()` ที่นี่ และเหตุผลสำคัญกว่าตัวเคส** — ตัวนั้นแปล `400` เป็น `server-bug`
+    //    ซึ่ง**ถูกสำหรับ probe ที่มันถูกสร้างมาเพื่อ** (B เขียนใส่ทริป A → การปฏิเสธหน้าตาเป็น 401/403/404
+    //    ส่วน 400 แปลว่าเราส่ง args ผิด = บั๊กเรา) · **แต่ผิดสำหรับเส้นนี้**: route แปลง FK violation
+    //    (`23503`) เป็น **`400` โดยตั้งใจ** (`stops/route.ts:77`) → `400` คือ*การปฏิเสธที่ถูกต้อง* ตรงนี้
+    // 🎯 **ตัวจำแนกที่ใช้ร่วมกัน ฝังสมมติฐานว่า "การปฏิเสธหน้าตาเป็นยังไง" ไว้ข้างใน** — และสมมติฐานนั้น
+    //    ไม่จริงกับทุก endpoint · ใช้ผิดที่แล้วมันจะรายงาน **ของที่ทำงานถูกว่าเป็นบั๊ก** (ผมโดนเองรอบแรก)
+    expect(
+      bad.status,
+      `A ชี้ custom place ของทริป B ควรได้ 400 (FK 23503 → 400) · ได้ ${bad.status}: ${badBody}\n` +
+        "  🔴 2xx = FK ประกอบ (trip_id, custom_place_id) ไม่ได้กัน — สถานที่ของทริปอื่นถูกอ้างเข้ามาในแผนได้\n" +
+        "  🔴 502 = FK ปฏิเสธจริงแต่ route แปลรหัสไม่ออก — กันได้แต่ผู้ใช้ได้ข้อความที่อ่านไม่รู้เรื่อง",
+    ).toBe(400);
+
+    // ③ ยืนยันที่ฐาน: ไม่มีแถวไหนในทริป A ชี้ไปที่ custom place ของ B (ไม่เชื่อแค่ status)
+    const { data, error } = await admin.from("trip_stops").select("id").eq("trip_id", tripA).eq("custom_place_id", foreignId);
+    if (error) throw new Error(`admin อ่าน trip_stops: ${error.message}`);
+    expect(data ?? [], "ถูกปฏิเสธแต่มีแถวเกิดขึ้นจริง = ปฏิเสธที่ผิวแต่เขียนลงไปแล้ว").toEqual([]);
   });
 
   function postTrip(cookies: Cookie[], body: unknown): Promise<Response> {
