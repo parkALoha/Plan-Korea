@@ -193,7 +193,12 @@ export function searchCatalogCities(
   //    แล้วให้ `catalog_countries` เป็น `null` แทนที่จะตัดแถวทิ้ง → กรองไม่ติด และ**ดูเหมือนติด**
   //    เพราะผลลัพธ์หน้าตาเปลี่ยนไป
   let query = engineTable(db, "catalog_cities")
-    .select("id, country_id, name_th, name_en, name_local, catalog_countries!inner(id, name_th, name_en)")
+    // 🔴 `legacy_slug` เพิ่ม 27 ส.ค. 2026 (P2 ขอ) — เป็น**คีย์ของรูปประจำเมือง** ไม่ใช่ของแถม
+    //    `TripCoverImage` บนการ์ด Home ประกอบ URL เป็น `/covers/city-<slug>.svg` แล้วตกไป
+    //    `/covers/country-<id>.svg` ถ้าไม่เจอ · picker ต้องใช้ **cascade เดียวกัน** ไม่ใช่ระบบรูปที่สอง
+    //    · ฐานมีข้อมูลอยู่แล้ว (`tripsForUser()` ดึง `legacy_slug` อยู่) แค่ไม่ได้ส่งออกทางนี้
+    //    ⚠️ **เพิ่มอย่างเดียว ไม่แตะฟิลด์เดิม** — ผู้เรียกที่มีอยู่ไม่รู้สึกอะไร
+    .select("id, country_id, legacy_slug, name_th, name_en, name_local, catalog_countries!inner(id, name_th, name_en)")
     .eq("catalog_countries.supported", true);
   if (safe !== "") {
     query = query.or(
