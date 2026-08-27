@@ -337,12 +337,32 @@ describe("ความครบของ matrix — ตรวจตัวรา�
    * ⚠️ **`E3` คือการเพิ่ม RPC เป็นชุด** — ถ้าไม่มีด่านนี้ มันคือการรื้อรั้วทีละท่อนโดยไม่มีใครนับ
    */
   it("🔴 รายชื่อ security definer ต้องไม่เปลี่ยน — RPC ใหม่ต้องถูกตรวจก่อนขึ้นทะเบียน", () => {
+    // 🔴 **drop-aware** (P4 · 27 ส.ค. 2026 · P1 GO) — ฉบับเดิมสแกนแต่ `create` → ทะเบียนลิสต์ฟังก์ชัน
+    //    ที่ถูก `drop` ไปแล้ว = **แผนที่พื้นผิวโจมตีที่เกินจริง** · และรูที่แท้จริงคือ: ถ้ามีคน `create`
+    //    ชื่อเดิมขึ้นใหม่ด้วย body ต่าง **ชื่ออยู่ในทะเบียนแล้ว พินชื่อจึงไม่แดง** — ทางเข้าที่ไม่ถูกตรวจ
+    //    · เดิน create/drop **สลับกันตามลำดับจริง** · `create or replace` = อัปเดต ไม่ใช่ของใหม่ (P1)
+    //    · ⚠️ strip comment ก่อนสแกนเสมอ — ไฟล์ migration มีคำแนะนำ rollback เป็นคอมเมนต์
+    //      (`--   drop function if exists public.create_trip(...)`) ถ้าอ่านดิบจะหักของที่ยังอยู่จริงออก
     const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
     const found = new Set<string>();
     const re =
-      /create\s+(?:or\s+replace\s+)?function\s+((?:app|public)\.\w+)\s*\([\s\S]*?\)\s*returns([\s\S]*?)(?:\$\$|\bas\b)/gi;
+      /create\s+(?:or\s+replace\s+)?function\s+((?:app|public)\.\w+)\s*\([\s\S]*?\)\s*returns([\s\S]*?)(?:\$\$|\bas\b)|drop\s+function\s+(?:if\s+exists\s+)?((?:app|public)\.\w+)\s*\(/gi;
+    // 🔴 `everDefiner` = เคย *ถูกสร้าง* เป็น definer (รวมตัวที่ถูก drop ในไฟล์เดียวกัน)
+    //    เก็บแยกเพราะ **สองลิสต์ตอบคนละคำถาม และ P1 ถูกทั้งคู่:**
+    //    · `found`      → *"ตอนนี้มีอะไรอยู่จริง"* = แผนที่พื้นผิวโจมตี (ต้อง drop-aware ไม่งั้นเกินจริง)
+    //    · `everDefiner` → *"อะไรเคยถูกสร้างและต้องมีคนอ่าน"* = ด่านรีวิว
+    //      🎯 definer ที่ทำ DML ต้องถูกอ่านโดยคน **แม้มีชีวิตแค่ในทรานแซกชันเดียว** (P1 · 26 ส.ค.)
+    //      ถ้าทำ drop-aware อย่างเดียว ตัวชั่วคราวจะ *ไม่เคย* เข้าลิสต์ → ไม่มีใครถูกบังคับให้รีวิว
+    const everDefiner = new Set<string>();
     for (const m of src.matchAll(re)) {
-      if (m[2].toLowerCase().includes("security definer")) found.add(m[1]);
+      if (m[3]) {
+        found.delete(m[3]);
+        continue;
+      }
+      if (m[2]?.toLowerCase().includes("security definer")) {
+        found.add(m[1]);
+        everDefiner.add(m[1]);
+      }
     }
     expect(found.size, "อ่านฟังก์ชันไม่เจอเลย — regex หรือรูปแบบไฟล์เปลี่ยน").toBeGreaterThan(5);
     expect(
@@ -389,13 +409,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · ไม่มี DML · อ่าน `app.system_mode` อย่างเดียว**
       "app.mode_is_active",
       "app.preserve_authorship",
-      // 🔴 เพิ่ม 26 ส.ค. (P1) — **ฟังก์ชันที่ถูกสร้างและถูก `drop` ในไฟล์เดียวกัน**
-      //    (`20260826182000` · สร้าง → เรียก 4 เส้นทาง → `drop` ก่อน `commit`)
-      //    ⚠️ **ไม่มีอยู่ในฐานตอนนี้** — ด่านนี้อ่าน *ไฟล์ migration* ไม่ใช่ฐาน จึงยังเห็นมัน
-      //    🎯 และผมคิดว่านั่น**ถูก**: definer ที่ทำ DML ต้องถูกอ่านโดยคน แม้จะมีชีวิตแค่ในทรานแซกชันเดียว
-      //    คำตอบของคำถามข้างบน: รับ `p_id uuid` ตัวเดียว · `update … set note = note` (no-op ที่ยิง trigger)
-      //    · ไม่แตะคอลัมน์ที่ column grant ห้าม · ไม่เคยถูก `grant execute` ให้ใครเลย
-      "app.probe_definer_write",
+      // ⚠️ `app.probe_definer_write` **ย้ายไปลิสต์ ephemeral ข้างล่าง** (27 ส.ค. · ทำ drop-aware)
+      //    ไม่ได้หายไปจากการรีวิว — มันถูก `drop` ในไฟล์เดียวกับที่สร้าง จึงไม่ใช่พื้นผิวที่มีอยู่จริง
       // 🔴 เพิ่ม 27 ส.ค. — promote plan on delete (trigger fn · after delete) · ไม่รับ input · รันใน trigger เท่านั้น (P1 ประกาศ)
       "app.promote_plan_if_none_active",
       // 🔴 เพิ่ม 27 ส.ค. (P1) — คืนรายชื่อตารางใน `public` ที่ไม่มี `zz_read_only_guard`
@@ -493,6 +508,17 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.unsafe_state_reason",
       "public.unsafe_state_set",
     ]);
+
+    // 🔴 definer ที่ **เคยถูกสร้างแล้ว drop ในไฟล์เดียวกัน** — ไม่ใช่พื้นผิวที่มีอยู่ แต่ต้องมีคนอ่าน
+    //    (P1 · 26 ส.ค.: *"definer ที่ทำ DML ต้องถูกอ่านโดยคน แม้มีชีวิตแค่ในทรานแซกชันเดียว"*)
+    //    · `app.probe_definer_write` (`20260826182000`/`…200000`/`…210000` · สร้าง → เรียก 4 เส้นทาง → `drop` ก่อน `commit`)
+    //      รับ `p_id uuid` ตัวเดียว · `update … set note = note` (no-op ที่ยิง trigger) · ไม่แตะคอลัมน์ที่ column grant ห้าม
+    //      · **ไม่เคยถูก `grant execute` ให้ใครเลย** — ตรวจแล้วตอนขึ้นทะเบียน
+    //    🎯 ตัวชั่วคราวตัวใหม่ที่โผล่มาที่นี่ = **ต้องรีวิวก่อน** เหมือนกัน แม้จะไม่มีวันอยู่ในฐาน
+    expect(
+      [...everDefiner].filter((n) => !found.has(n)).sort(),
+      "มี security definer ชั่วคราว (สร้างแล้ว drop ในไฟล์เดียวกัน) ตัวใหม่ — ต้องรีวิวก่อนขึ้นทะเบียน",
+    ).toEqual(["app.probe_definer_write"]);
   });
 
   it("🔴 เงื่อนไขของ policy ต้องไม่เปลี่ยน — ชื่อเดิมแต่กว้างขึ้น คือเคสที่รายชื่ออย่างเดียวมองไม่เห็น", () => {
@@ -940,14 +966,18 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       "app.assert_trip_has_plan", "app.booking_file_trip", "app.bootstrap_trip_owner", "app.can_read_trip",
       "app.can_write_trip", "app.default_expiry_minutes", "app.deny_write_when_read_only",
       "app.freeze_created_by", "app.handle_new_user", "app.like_literal", "app.mode_is_active",
-      "app.preserve_authorship", "app.probe_definer_write", "app.probe_log", "app.promote_plan_if_none_active",
+      // ⚠️ 27 ส.ค. — `app.probe_definer_write` · `app.probe_log` · `app.trip_cover_trip` ออกจากลิสต์
+      //    เพราะ `effectiveFunctions()` **drop-aware แล้ว** · สองตัวแรกถูก drop ในไฟล์เดียวกับที่สร้าง
+      //    (ไม่เคยมีอยู่ในฐาน) · ตัวที่สามถูก drop ตอนถอนฟีเจอร์รูปปก (`20260827230000`)
+      //    🔴 **ตัวชั่วคราวยังถูกบังคับรีวิวอยู่** — ผ่านลิสต์ ephemeral ในหมุด security definer
+      "app.preserve_authorship", "app.promote_plan_if_none_active",
       "app.read_only_uncovered_tables", "app.search_norm",
       "app.shares_trip_with", "app.stamp_added_by", "app.stamp_checked_by", "app.stamp_hidden_by",
       // 🔴 เพิ่ม 27 ส.ค. (P1) — `app.trip_cover_trip()` (`20260827220000`) อ่าน `trip_id` จาก path
       //    ของ object ในบัคเก็ต `trip-covers` · **คู่แฝดของ `app.booking_file_trip()` คนละบัคเก็ต**
       //    ไม่รวมเป็นตัวเดียวโดยตั้งใจ: การรวมต้องแก้ body ของตัวที่ policy ไฟล์ตั๋ว*ทริปจริง*พึ่งอยู่
       //    เพื่อความสวยงามล้วน ๆ (`P-48`) · ⚠️ **แก้ข้อตกลงเรื่อง path เมื่อไหร่ ต้องแก้ทั้งคู่**
-      "app.touch_updated_at", "app.touch_updated_at_only", "app.trip_cover_trip",
+      "app.touch_updated_at", "app.touch_updated_at_only",
       "app.trip_owner_count", "app.trip_role",
       "app.write_is_blocked",
     ]);
@@ -962,7 +992,15 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     //    (`create or replace function app.read_only_uncovered_tables()`) · ไม่มี `create or replace`
     //    ทับฟังก์ชันเดิมสักตัว · รายชื่อ 28 → 29 ตัว ต่างกันแค่ตัวใหม่นี้
     //    ⚠️ นี่คือขั้นตอนที่หมุดนี้มีไว้บังคับ — **ขึ้นค่าโดยไม่ไล่ = ฆ่าหมุด** (`P-48`)
-    ).toBe("f998beab86f83087c2f9734f3b6ee8ece54d535832895b70f135a58f1aea916e");
+    // 🔴 ขึ้นค่ารอบ 4 · 27 ส.ค. (P4 · P1 GO) — **เปลี่ยนเพราะ *สมาชิกของเซต* ไม่ใช่เพราะ body เปลี่ยน**
+    //    `effectiveFunctions()` เป็น **drop-aware** แล้ว → 3 ตัวออกจากเซตที่ถูก hash:
+    //      · `app.probe_definer_write` · `app.probe_log` — **สร้างแล้ว `drop` ในไฟล์เดียวกัน ไม่เคยมีในฐาน**
+    //      · `app.trip_cover_trip` — ถูก `drop` ตอนถอนฟีเจอร์รูปปก (`20260827230000`)
+    //    🔴 **ไล่ก่อนขึ้นค่าตามที่หมุดบังคับ (`P-48`):** เทียบ body ของ *ผู้รอดทุกตัว* ระหว่างอัลกอริทึม
+    //       เก่า/ใหม่ทีละตัว → **ไม่มี `app.*` ตัวไหน body เปลี่ยนเลยสักตัว** (`can_write_trip` ฯลฯ เหมือนเดิมเป๊ะ)
+    //       · ต่างเฉพาะ `public.search_place_names` ซึ่ง **ไม่อยู่ในเซตที่ hash** (กรอง `app.` เท่านั้น)
+    //         และต่างเพราะฉบับใหม่ strip คอมเมนต์ *ก่อน* ตัด 4000 ตัวอักษร → **เก็บ body จริงได้มากกว่าเดิม**
+    ).toBe("fa3bd11c82cdf5f1afd787a64bd1b409f53e83362f7a08845eab38537e217dc9");
     // 🔴 ขึ้นค่ารอบ 3 · 27 ส.ค. (P1) — **เปลี่ยนเพราะ *เพิ่ม* ฟังก์ชัน ไม่ใช่ *แก้* body ตัวเดิม**
     //    (ต่างจากรอบ 2 ที่แก้ `read_only_uncovered_tables` · เหมือนรอบ 1 ที่เพิ่มตัวใหม่)
     //    ตัวใหม่คือ `app.trip_cover_trip()` — `20260827220000` มี `create or replace function app.*`

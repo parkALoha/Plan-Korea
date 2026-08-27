@@ -262,13 +262,25 @@ export function tripScopedTables(): string[] {
 export function effectiveFunctions(): Map<string, string> {
   const out = new Map<string, string>();
   for (const f of migrationFiles) {
-    const sql = readFileSync(f, "utf8");
-    for (const m of sql.matchAll(
-      /create\s+(?:or\s+replace\s+)?function\s+((?:app|public)\.\w+)\s*\(/gi,
-    )) {
+    // 🔴 **strip comment ก่อนสแกน ไม่ใช่หลัง** (P4 · 27 ส.ค. 2026)
+    //    ไฟล์ migration หลายใบมี *คำแนะนำ rollback* เป็นคอมเมนต์ เช่น
+    //    `--   drop function if exists public.create_trip(text, date, date, text);`
+    //    ถ้าสแกน `drop` จากข้อความดิบ ฟังก์ชันที่ยังอยู่จริงจะถูกหักออกจากทะเบียน
+    //    → **ทะเบียนจะ *ต่ำกว่า* ความจริง ซึ่งอันตรายกว่าสูงเกิน** (แผนที่พื้นผิวที่บอกว่าไม่มีของที่มี)
+    const sql = stripComments(readFileSync(f, "utf8"));
+    // เดิน `create` กับ `drop` **สลับกันตามลำดับที่ปรากฏจริง** — ไม่ใช่ create ทั้งหมดแล้วค่อย drop
+    // · `create or replace` = **อัปเดต** (ทับ body เดิม) ไม่ใช่ของใหม่ และไม่ใช่ drop → hash ตัวสุดท้ายเสมอ (P1)
+    // · `drop` = หักออก · สร้างชื่อเดิมใหม่ทีหลัง = เข้าทะเบียนใหม่พร้อม body ใหม่ (จุดที่ด่านนี้ตั้งใจปิด)
+    const EVENT =
+      /create\s+(?:or\s+replace\s+)?function\s+((?:app|public)\.\w+)\s*\(|drop\s+function\s+(?:if\s+exists\s+)?((?:app|public)\.\w+)\s*\(/gi;
+    for (const m of sql.matchAll(EVENT)) {
+      if (m[2]) {
+        out.delete(m[2].toLowerCase());
+        continue;
+      }
       const rest = sql.slice(m.index ?? 0);
       const end = rest.indexOf("\n$$;");
-      out.set(m[1].toLowerCase(), stripComments(end > 0 ? rest.slice(0, end) : rest.slice(0, 4000)));
+      out.set(m[1].toLowerCase(), end > 0 ? rest.slice(0, end) : rest.slice(0, 4000));
     }
   }
   return out;
