@@ -59,6 +59,25 @@ const ALLOWED_ENV: Record<string, string> = {
 };
 
 /**
+ * ทะเบียน **ไฟล์** ที่ยกเว้นจากกฎ — *"เครื่องมือ build-time ไม่ใช่โค้ดที่ถูกเสิร์ฟ"*
+ *
+ * 🔴 **ยกเว้นเป็น *ไฟล์* ไม่ใช่ *โฟลเดอร์* โดยตั้งใจ** (P1 เสนอ · P4 ตัดสิน · 28 ส.ค. 2026)
+ * ยกทั้งโฟลเดอร์ (`scripts/`) = **เปิดที่ว่างถาวรให้ไฟล์ที่ยังไม่มีใครเขียน** — ไฟล์ตัวที่สองใน
+ * โฟลเดอร์นั้นจะได้รับการยกเว้นฟรีจากการที่ไม่มีใครนึกถึง · **นั่นคือ *ทิศของการนับ* ที่หัวไฟล์นี้เตือนไว้เอง**
+ *
+ * 🎯 **และการมีชื่ออยู่ที่นี่ไม่ใช่ใบอนุญาต — เหมือน `ALLOWED_ENV` เป๊ะ:** มันคือ *"มีคนอ้างว่าไฟล์นี้
+ * ไม่ถูกเสิร์ฟ"* · **คำอ้างนั้นต้องหักล้างได้** → เคส `ทะเบียนไฟล์ยกเว้น` ข้างล่าง**พิสูจน์คำอ้าง**
+ * ด้วยการยืนยันว่า (ก) ไฟล์มีอยู่จริง (ข) **ไม่มีไฟล์ในโซนสแกนไหน import มันเลย**
+ * · (ข) คือข้อที่ทำให้มันต่างจาก "เชื่อเพราะอยู่คนละโฟลเดอร์" — ถ้าวันหนึ่งมี route ไหน
+ *   `import` เครื่องมือตัวนี้เข้ามา **มันจะกลายเป็นโค้ดที่ถูกเสิร์ฟทันที และด่านจะแดง**
+ */
+const ALLOWED_FILES: Record<string, string> = {
+  // ตัวอย่างรูปแบบ (ยังไม่มีรายการจริง):
+  // "scripts/gen-db-types.mjs": "อ่านสคีมาจาก PostgREST OpenAPI เพื่อสร้าง type · รันด้วยมือตอน dev "
+  //   + "· ไม่อยู่ใน build graph ของ Next และไม่มีใครใน app/ import — P1 · 28 ส.ค. 2026",
+};
+
+/**
  * รูปของคีย์ที่มีสิทธิ์ **ตามที่ Supabase เป็นคนออกแบบ ไม่ใช่ที่เราคิดขึ้น**
  * 🎯 นี่คือสิ่งที่ทำให้ด่านไม่ถูก `P-30`: ผู้เขียนเปลี่ยน*ชื่อ*ได้ตามใจ
  *    แต่ทำให้คีย์ลับ**เลิกขึ้นต้นด้วยคำนำหน้าของมันเอง**ไม่ได้
@@ -89,6 +108,11 @@ function violations(src: string): string[] {
   return hits;
 }
 
+/** path เทียบ root แบบ posix — คีย์ของ `ALLOWED_FILES` ใช้รูปนี้ */
+function relFromRoot(p: string): string {
+  return p.slice(ROOT.length + 1).split("\\").join("/");
+}
+
 function walk(dir: string): string[] {
   let found: string[] = [];
   let entries: string[];
@@ -103,7 +127,8 @@ function walk(dir: string): string[] {
       if (SKIP_DIRS.has(name)) continue;
       found = found.concat(walk(p));
     } else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(name) && !/\.d\.ts$/.test(name)) {
-      found.push(p);
+      // ไฟล์ที่ลงทะเบียนยกเว้นไว้ — **คำอ้างถูกพิสูจน์ในเคส `ทะเบียนไฟล์ยกเว้น` ไม่ใช่เชื่อที่นี่**
+      if (!(relFromRoot(p) in ALLOWED_FILES)) found.push(p);
     }
   }
   return found;
@@ -114,6 +139,39 @@ const FILES = walk(ROOT);
 describe("E3-AC9 / D38 — ฝั่งเซิร์ฟเวอร์ต้องไม่มีสิทธิ์มากกว่าเบราว์เซอร์", () => {
   // 🔴 เคสด้านบวกของ "ตัวชุดเช็คเอง" — ถ้าไม่มีไฟล์ให้สแกน ทุกเคสข้างล่างจะเขียวโดยไม่ตรวจอะไรเลย
   //    (P-21 ของ P4: "สแกนแคบลง" กับ "สแกนความว่างเปล่า" ให้ผลเหมือนกันเป๊ะ)
+  it("🔴 ทะเบียนไฟล์ยกเว้น — ไฟล์ต้องมีอยู่จริง **และต้องไม่มีใครในโซนสแกน import มัน**", () => {
+    const entries = Object.keys(ALLOWED_FILES);
+    // (ก) ไม่มีรายการค้าง — ไฟล์ถูกลบ/ย้ายแล้วทะเบียนยังชี้ = ทะเบียนโกหก (รูปเดียวกับ stale ใน SURFACE)
+    const missing = entries.filter((rel) => {
+      try {
+        return !statSync(join(ROOT, rel)).isFile();
+      } catch {
+        return true;
+      }
+    });
+    expect(missing, `ทะเบียนยกเว้นชี้ไฟล์ที่ไม่มีอยู่: ${missing.join(" · ")}`).toEqual([]);
+
+    // (ข) 🔴 **ข้อที่ทำให้การยกเว้นนี้ *พิสูจน์ได้* ไม่ใช่ *ประกาศเอา***
+    //     ถ้ามีไฟล์ในโซนสแกน import ไฟล์ที่ยกเว้น → มันเดินเข้า build graph = ถูกเสิร์ฟจริง
+    //     → คำอ้าง "เครื่องมือ build-time" เป็นเท็จทันที และต้องแดง
+    const importers: string[] = [];
+    for (const rel of entries) {
+      const base = rel.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, "");
+      const needle = base.split("/").pop() ?? base;
+      for (const f of FILES) {
+        const code = stripTsComments(readFileSync(f, "utf8"));
+        const re = new RegExp(`(?:from|require\\(|import\\()\\s*["'\`][^"'\`]*${needle}["'\`]`);
+        if (re.test(code)) importers.push(`${relFromRoot(f)} → ${rel}`);
+      }
+    }
+    expect(
+      importers,
+      "ไฟล์ที่ลงทะเบียนว่า 'ไม่ถูกเสิร์ฟ' ถูก import จากโค้ดในโซนสแกน\n" +
+        "  🔴 แปลว่ามันเดินเข้า build graph แล้ว — คำอ้างในทะเบียนเป็นเท็จ\n" +
+        "  → ถอดออกจากทะเบียน แล้วทำให้มันไม่แตะคีย์ที่มีสิทธิ์ หรือย้ายส่วนที่ถูก import ออกมา",
+    ).toEqual([]);
+  });
+
   it("มีไฟล์ให้สแกนจริง และครอบไฟล์ที่เคยหลุด", () => {
     expect(FILES.length).toBeGreaterThan(0);
     // 🔴 ระบุไฟล์ที่ **เคยหลุดจริง** ไม่ใช่แค่ "โฟลเดอร์มีของ" — ถ้าใครหด `SKIP_DIRS`
