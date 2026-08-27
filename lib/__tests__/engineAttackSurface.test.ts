@@ -66,7 +66,7 @@ const isTripScoped = (rel: string) => rel.includes("trips/[tripId]/");
  * · `trip`  = รับ tripId จาก URL → เป้ายิงข้าม → ต้องมี probe ใน `engineCrossUser.test.ts`
  * · `account` = หา target จากตัวผู้เรียก/ไม่มี tripId → ไม่ใช่เป้ายิงข้าม · **ต้องมีเหตุผล `why`**
  */
-const SURFACE: Record<string, { scope: "trip" | "account"; why?: string }> = {
+const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExempt?: true }> = {
   "app/api/engine/cities/route.ts": {
     scope: "account",
     why: "ค้นคลังเมืองสาธารณะ · ไม่มี tripId เป็น input และไม่แตะข้อมูลของทริปใดเลย "
@@ -78,7 +78,9 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string }> = {
   },
   "app/api/engine/system-mode/route.ts": {
     scope: "account",
-    why: "ธงโหมดอ่านอย่างเดียว · 401-exempt โดยตั้งใจ · ไม่มีข้อมูลรายทริป",
+    authExempt: true,
+    why: "ธงโหมดอ่านอย่างเดียว · 401-exempt **โดยตั้งใจ** · ไม่มีข้อมูลรายทริป "
+      + "· ใส่ getUser() ที่นี่ = คนที่เซสชันหมดอายุระหว่าง cutover มองไม่เห็น banner (route.ts:19)",
   },
   "app/api/engine/trips/route.ts": {
     scope: "account",
@@ -152,6 +154,61 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     for (const [rel, meta] of Object.entries(SURFACE)) {
       if (meta.scope !== "trip") continue;
       expect(methodsOf(rel).length, `${rel}: ไม่ export HTTP method เลย`).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * 🔴 ทะเบียนบอกว่า route ถูก **จำแนก** แล้ว · ไม่ได้บอกว่ามัน **บังคับ auth จริง** (P4/P1 · 27 ส.ค. 2026)
+   * route ที่ประกาศ account/trip แล้วลืม `getUser()` **ผ่านทะเบียนเงียบ ๆ** — รูปเดียวกับ `why` ที่เป็น
+   * *คำสัญญา* ไม่ใช่ *ข้อเท็จจริงที่ถูกวัด* · ก่อนหน้านี้ P4 ไปวัดด้วยมือว่า cities เรียก getUser() — ถูก
+   * แต่นั่นคือ*คนทำ* ไม่ใช่*ด่านทำ* · route ตัวที่ 11 จะไม่มีใครวัด · ด่านนี้อ่าน source มายืนยันทุกตัว
+   *
+   * 🎯 จับ **การเรียกจริง** ไม่ใช่แค่ import: match `getUser(` / `unauthenticatedResponse(` (มีวงเล็บ)
+   *    บรรทัด import เขียน `getUser,` ไม่มีวงเล็บ → ไม่ match · และตัด comment ออกก่อน (docstring ของ
+   *    system-mode พูดถึง `getUser()` ทั้งที่ตั้งใจไม่มี — ถ้าไม่ตัด comment จะ false-green)
+   */
+  const codeOnly = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/([^:]|^)\/\/[^\n]*/g, "$1");
+
+  it("🔴 ทุก route ที่ไม่ authExempt ต้อง gate ด้วย getUser()+unauthenticatedResponse — ทะเบียนไม่ได้บังคับ auth ให้", () => {
+    // control: ตัวจับต้องแยก "gate จริง" ออกจาก "เปล่า" และ "import เฉย ๆ" — ไม่งั้นเซตว่างข้างล่าง
+    // แปลว่า regex พัง ไม่ใช่ route ปลอดภัย · เคส importOnly คือหัวใจของดีไซน์ "จับการเรียก ไม่ใช่ import"
+    const has = (s: string) => /\bgetUser\s*\(/.test(s) && /\bunauthenticatedResponse\s*\(/.test(s);
+    const gated = codeOnly('import { getUser, unauthenticatedResponse } from "@/lib/auth/server";\n'
+      + "export async function GET() { const u = await getUser(); if (!u) return unauthenticatedResponse(); }");
+    const open = codeOnly("export async function GET() { return Response.json({}); }");
+    const importOnly = codeOnly('import { getUser, unauthenticatedResponse } from "@/lib/auth/server";\n'
+      + "export async function GET() { return Response.json({}); }");
+    expect(has(gated), "control: route ที่ gate จริงต้องผ่าน").toBe(true);
+    expect(has(open), "control: route เปล่าต้องถูกจับ").toBe(false);
+    expect(has(importOnly), "control: import getUser แต่ไม่เรียก = ไม่นับว่า gate (บรรทัด import ไม่มีวงเล็บ)").toBe(false);
+
+    const offenders: string[] = [];
+    for (const [rel, meta] of Object.entries(SURFACE)) {
+      if (meta.authExempt) continue;
+      const src = codeOnly(readFileSync(resolve(process.cwd(), rel), "utf8"));
+      const missing: string[] = [];
+      // getUser() = อ่านตัวตน · unauthenticatedResponse() = ปิดประตูเมื่อไม่มี user — ขาดตัวใดตัวหนึ่ง = ไม่ได้ gate
+      // (getUser() เฉย ๆ ไม่ตามด้วยการปฏิเสธ = อ่านแล้วปล่อยผ่าน · unauthenticatedResponse ไม่มี = ไม่มีประตูจะปิด)
+      if (!/\bgetUser\s*\(/.test(src)) missing.push("getUser()");
+      if (!/\bunauthenticatedResponse\s*\(/.test(src)) missing.push("unauthenticatedResponse()");
+      if (missing.length) offenders.push(`${rel} (ขาด ${missing.join("+")})`);
+    }
+    expect(
+      offenders,
+      "engine route ที่ไม่ประกาศ authExempt แต่ไม่ gate auth — เปิด anon เงียบ ๆ\n" +
+        "  → เพิ่ม getUser()+unauthenticatedResponse() ที่หัว handler · หรือถ้าตั้งใจเปิด ประกาศ authExempt:true พร้อม why\n" +
+        `  ไฟล์: ${offenders.join(" · ")}`,
+    ).toEqual([]);
+  });
+
+  it("authExempt ทุกตัวต้องมี why — 401-exempt เป็นการตัดสินใจที่ต้องอธิบาย ไม่ใช่ของหลุด", () => {
+    for (const [rel, meta] of Object.entries(SURFACE)) {
+      if (!meta.authExempt) continue;
+      expect(
+        (meta.why ?? "").length,
+        `${rel}: authExempt:true แต่ไม่มี why — เขียนว่าทำไม route นี้ถึงไม่ต้องล็อกอิน (ไม่งั้นถูกอ่านเป็น "ลืมใส่ getUser")`,
+      ).toBeGreaterThan(0);
     }
   });
 });
