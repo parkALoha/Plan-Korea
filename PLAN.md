@@ -54,6 +54,25 @@ select category, count(*) from public.bookings group by category order by catego
 ### ④ `npm run db:push` ทุกครั้งที่มี migration ใหม่
 ทีมรัน migration เองไม่ได้ตาม `PLAN.md §5`
 
+### ⑤ จะปิดรูสุดท้ายของด่านตรวจคอลัมน์ไหม — **ต้องการมือคุณ 1 ครั้ง (keychain)**
+ด่านทำงานแล้ว (ดูหลักฐานในกล่อง "ตัดสินแล้ว") **แต่ 15 จุดยังปลดด่านด้วย `as unknown as`**
+· วัดแล้วว่า **ถอด cast ไม่ได้เลยจนกว่า `Relationships` จะมีข้อมูล** — P4 ยิงโพรบยืนยัน:
+  ถอด cast ที่ `lib/engine/trip.ts:105` → `SelectQueryError<"could not find the relation between trips and trip_destinations">`
+
+**ทำไมผมสร้าง `Relationships` เองไม่ได้ครบ** (ยิง OpenAPI ของฐาน dev ดูแล้ว 28 ส.ค.):
+| แหล่ง | ได้ | ขาด |
+|---|---|---|
+| **OpenAPI ของ PostgREST** (`npm run gen:types` ใช้อยู่) | **44 เส้น · 19/27 ตาราง** · ครอบทุก embed ที่โค้ดใช้วันนี้ | 🔴 **ตัด FK หลายคอลัมน์ทิ้งทั้ง 11 เส้น** (`trip_stops_day_fk` ฯลฯ) · ไม่มีชื่อ constraint |
+| **`supabase gen types`** | ครบทุกอย่างรวมชื่อจริง | **ต้องให้คุณกดอนุญาต keychain** (เหมือนตอน `db dump`) |
+
+· ⚠️ **ชื่อ constraint สำคัญจริง ไม่ใช่ของประดับ** — `lib/engine/db.ts:587` ใช้
+  `catalog_cities!trip_days_overnight_city_id_fkey(...)` ในคิวรีจริง · ผมปั้นชื่อเองไม่ได้เพราะ
+  migration ตั้งชื่อเองไป 12 ตัว (`tdps_plan_fk` · `place_notes_plan_fk` …) **ชื่อ default จึงไม่ใช่ชื่อจริงเสมอไป**
+· 🎯 **ชนิดที่แกล้งรู้สิ่งที่แหล่งไม่ได้บอก คือชนิดที่ผิด ไม่ใช่ชนิดที่เข้ม** — บทเรียนเดียวกับที่ทำให้ RPC args แดง 7 จุด
+
+**ทางเลือก:** (ก) กด keychain ให้ `supabase gen types` → ปิดรูได้หมด · (ข) ปล่อยไว้ — cast 15 จุดเป็นของจำเป็น ไม่ใช่หนี้ · (ค) เอาเท่าที่ OpenAPI ให้ (44 เส้น) → embed ส่วนใหญ่ถูกตรวจ · composite ยังต้อง cast
+🔴 **ผมไม่เริ่มเองเพราะมันเขียนทับไฟล์ชนิดที่ทั้งโปรเจกต์ใช้ และผลกระทบต้องมีคนรีวิว**
+
 ---
 
 ### ✅ ตัดสินแล้ว ไม่ต้องทำอะไรต่อ
