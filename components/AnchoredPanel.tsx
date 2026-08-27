@@ -88,6 +88,25 @@ export function AnchoredPanel({
     return () => document.removeEventListener("pointerdown", onDocPointerDown);
   }, [anchorRef]);
 
+  /**
+   * 🔴 **Esc ต้องปิดแค่แผ่นนี้ ไม่ใช่ปิดโมดัลทั้งกล่อง** — บั๊กจริงที่เจอ 28 ส.ค. 2026
+   * `Modal` ปิดตัวเองด้วย `useDismissable` ที่ดัก `keydown` ที่ **`document` ระดับ bubble**
+   * → เดิมกด Esc เพื่อปิดดรอปดาวน์ **แล้วฟอร์มสร้างทริปปิดทั้งใบ ชื่อ/วันที่/จุดหมายที่กรอกไว้หายหมด**
+   *
+   * ดักที่ `document` **ระดับ capture (`true`)** เพราะ capture ของ document วิ่งก่อน bubble ของ document
+   * เสมอ — เป็นทางเดียวที่การันตีว่าได้จัดการก่อน `useDismissable` ไม่ว่า React จะผูก listener ไว้ชั้นไหน
+   * (`stopPropagation` ใน React handler พึ่งพาตำแหน่งที่ React attach ซึ่งเปลี่ยนได้ตามเวอร์ชัน)
+   */
+  useEffect(() => {
+    function onDocKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onCloseRef.current();
+    }
+    document.addEventListener("keydown", onDocKeyDown, true);
+    return () => document.removeEventListener("keydown", onDocKeyDown, true);
+  }, []);
+
   return createPortal(
     <div
       ref={panelRef}
