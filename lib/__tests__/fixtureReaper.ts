@@ -28,6 +28,15 @@ const ENGINE_DEV_REF = "pmvxwcimjebogjfimzqy";
 const REAP_MIN_AGE_MS = 2 * 60 * 60 * 1000; // 2ชม. — เผื่อมากกว่าเวลารอบสด (~3นาที) หลายเท่า
 const LOUD_THRESHOLD = 50;
 
+// 🔴 **ถ้าวันหนึ่งขยาย reaper ไปกวาด catalog fixture (890 ทริป ↔ ~1,600 เมืองค้าง รากเดียวกัน · P1 27 ส.ค.):**
+//    ตัวแยก test/real ของ catalog **ไม่ใช่ `source`** (default `'curated'` เหมือนกันทั้งสองฝั่ง) — ต้องใช้
+//    **country code สงวน** (`TEST_COUNTRY_CODES` = ISO user-assigned `z*`/`x*` · ไม่มีทางเป็นประเทศจริง) ผ่าน city→country
+//    🎯 **เกณฑ์ต้องเป็น allowlist ของ *test* ("ใต้โค้ดสงวน = ลบ") ห้ามกลับด้านเป็น allowlist ของ *จริง* ("ไม่ใช่ kr/vn/th = ลบ")**
+//    · P1 วัด: 1,606 เมือง · 1,599 ใต้โค้ดสงวน · แต่ `tokyo` (ใต้ `jp`) 1 แถว สร้างมือ 26 ส.ค. slug สะอาด ชื่อไทยครบ
+//      = **ไม่ใช่ fixture และไม่ใช่ seed · ไม่มีกฎไหนจำแนกได้ หน้าตาเหมือนของจริงเป๊ะ** (น่าจะทดลอง multi-country)
+//    · เกณฑ์ "ใต้โค้ดสงวน" ปล่อย tokyo (under-delete = ปลอดภัย · fail-safe เหมือน `.test` ของทริป)
+//      เกณฑ์ "ไม่ใช่ประเทศจริง" ที่*อ่านสมเหตุสมผลกว่า* จะฆ่า tokyo ทันที (over-delete) — **นี่คือแถวที่พิสูจน์ว่าห้ามกลับด้าน**
+
 type TripRow = { id: string; created_by: string; created_at: string };
 
 export default async function fixtureReaperSetup(): Promise<void> {
