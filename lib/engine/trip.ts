@@ -146,3 +146,86 @@ export async function soleTrip(db: Db): Promise<SoleTrip> {
   }
 }
 
+
+// ───────────────────────────────────────────────────────────────────────────
+// คลังสถานที่ → การ์ดในไซด์บาร์ (`B6`) — P1 · 28 ส.ค. 2026
+// ───────────────────────────────────────────────────────────────────────────
+
+/** รูปดิบที่ `browseCatalogPlaces()` คืน — ฝังชื่อ/คำบรรยายมาเป็นอาร์เรย์แยก locale */
+type RawCatalogPlace = {
+  id: string;
+  legacy_slug: string | null;
+  category: string;
+  source: string;
+  lat: number;
+  lng: number;
+  address_local: string | null;
+  maps_query: string | null;
+  google_place_id: string | null;
+  youtube_query: string | null;
+  weather_sensitivity: string | null;
+  catalog_cities: { legacy_slug: string | null; country_id: string } | null;
+  catalog_place_names: { locale: string; name: string; priority: number }[];
+  catalog_place_descriptions: { locale: string; description: string }[];
+};
+
+export type CatalogPlaceCard = {
+  id: string;
+  slug: string | null;
+  category: string;
+  citySlug: string | null;
+  countryId: string | null;
+  lat: number;
+  lng: number;
+  nameTh: string | null;
+  nameEn: string | null;
+  nameLocal: string | null;
+  description: string | null;
+  addressLocal: string | null;
+  mapsQuery: string | null;
+  googlePlaceId: string | null;
+  youtubeQuery: string | null;
+  weatherSensitivity: string | null;
+};
+
+/**
+ * แบนแถวคลังให้เป็นการ์ดที่ไซด์บาร์ใช้ได้ตรง ๆ
+ *
+ * 🔴 **`nameLocal` เลือกจาก "locale ที่ไม่ใช่ `th`/`en`" — ไม่ได้ map จากประเทศ**
+ * ทางที่ปฏิเสธคือตารางแปล `kr→ko · jp→ja · vn→vi` ในโค้ด · มันจะ **ผิดทันทีที่มีประเทศที่ 5**
+ * และไม่มีอะไรฟ้อง (`D48` — ห้าม allowlist ตามชื่อ) · วิธีนี้อ่านจากข้อมูลที่มีจริง
+ * · 🎯 **ผลข้างเคียงที่ถูกต้อง: สถานที่ในไทยจะได้ `nameLocal = null`** เพราะภาษาท้องถิ่นของไทย
+ *   *คือ*ภาษาไทย — ไม่ใช่ข้อมูลขาด · การ์ดไม่ต้องโชว์บรรทัดซ้ำ
+ *
+ * ⚠️ **`description` เป็น `null` ได้และเป็นสภาพปกติวันนี้** — เกาหลี 62/62 มี · ฮานอย 10/18
+ * · **ญี่ปุ่น 0/57 · ไทย 0/37** (`20260828010000` seed เฉพาะ 72 แห่งเดิมที่มีแหล่งตรวจแล้ว)
+ * 🔴 UI ต้องตัดสินใจว่าจะแสดงยังไงเมื่อไม่มี **อย่าปล่อยเป็นช่องว่างเปล่า** — ความไม่สม่ำเสมอ
+ *   ระหว่างการ์ดเกาหลีกับการ์ดญี่ปุ่นเป็นสิ่งที่ผู้ใช้จะเห็นแน่นอน
+ *
+ * ⚠️ `priority` ต่ำ = สำคัญกว่า (ดู `catalog_place_names`) → เรียงแล้วหยิบตัวแรก
+ */
+export function catalogPlaceCards(rows: unknown[]): CatalogPlaceCard[] {
+  return (rows as RawCatalogPlace[]).map((r) => {
+    const names = [...(r.catalog_place_names ?? [])].sort((a, b) => a.priority - b.priority);
+    const pick = (locale: string) => names.find((n) => n.locale === locale)?.name ?? null;
+    const local = names.find((n) => n.locale !== "th" && n.locale !== "en")?.name ?? null;
+    return {
+      id: r.id,
+      slug: r.legacy_slug,
+      category: r.category,
+      citySlug: r.catalog_cities?.legacy_slug ?? null,
+      countryId: r.catalog_cities?.country_id ?? null,
+      lat: r.lat,
+      lng: r.lng,
+      nameTh: pick("th"),
+      nameEn: pick("en"),
+      nameLocal: local,
+      description: (r.catalog_place_descriptions ?? []).find((d) => d.locale === "th")?.description ?? null,
+      addressLocal: r.address_local,
+      mapsQuery: r.maps_query,
+      googlePlaceId: r.google_place_id,
+      youtubeQuery: r.youtube_query,
+      weatherSensitivity: r.weather_sensitivity,
+    };
+  });
+}

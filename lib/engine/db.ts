@@ -118,13 +118,30 @@ export function browseCatalogPlaces(db: Db, opts: { cityId?: string; countryId?:
   //
   // ⚠️ วันนี้ยังไม่มีใครเรียกฟังก์ชันนี้จากโค้ดแอป (ไซด์บาร์ยังอ่าน `data/places.ts` สถิตย์ — งาน `B6`)
   //    → **ผู้ใช้ยังไม่เห็นบั๊กนี้** · แก้ตอนนี้เพราะ `B6` จะเปิดมันทันทีที่ย้าย ไม่ใช่เพราะกำลังไหม้
+  //
+  // 🔴 **ฝังชื่อ+คำบรรยายมาด้วย ไม่ใช่ `select("*")`** (28 ส.ค. 2026 · `B6`)
+  //    `catalog_places` **ไม่มีคอลัมน์ชื่อเลยสักคอลัมน์** — ชื่ออยู่ใน `catalog_place_names`
+  //    (แยกตาม locale · `B6`) และคำบรรยายอยู่ใน `catalog_place_descriptions` (แยกตาม locale · `Q6`)
+  //    → `select("*")` คืนแถวที่ **แสดงบนการ์ดไม่ได้เลย** เพราะไม่มีชื่อ
+  //    ⚠️ ผู้เรียกจะต้องยิงเพิ่มอีก 2 คำขอต่อสถานที่ **หนึ่งใบ** ถ้าไม่ฝังมาตรงนี้
+  //
+  // 🔴 **`catalog_cities!inner` ไม่ใช่แค่เอา slug เมือง** — `catalog_places` ไม่มี `country_id`
+  //    (ประเทศผูกกับ *เมือง* ไม่ใช่กับ *สถานที่*) · ฉบับก่อนหน้าเขียน `.eq("country_id", …)`
+  //    ตรงกับตารางนี้ ซึ่ง **เป็นคอลัมน์ที่ไม่มีอยู่จริง** → ตัวกรองนั้นไม่เคยทำงาน
+  //    · ไม่มีใครเห็นเพราะยังไม่มีโค้ดไหนเรียกฟังก์ชันนี้เลย
   let q = engineTable(db, "catalog_places")
-    .select("*")
+    .select(
+      // 🔴 **`source` ต้องอยู่ใน select เสมอ ถึงแม้ UI ไม่ได้ใช้** — `catalogCoverage.test.ts:190`
+      //    assert ว่าไม่มีแถวไหน `source === 'transfer'` · ถอดออกเมื่อไหร่ ทุกแถวจะเป็น `undefined`
+      //    แล้ว **เคสนั้นผ่านฟรีตลอดกาลโดยไม่ตรวจอะไรเลย** — ปลดด่านโดยไม่มีอะไรฟ้อง
+      //    (ผมถอดออกจริงตอนเขียนรอบแรก · `tsc` จับได้เพราะเทสต์ cast ชนิดไว้ ไม่ใช่เพราะมีเคสจับ)
+      "id, legacy_slug, category, source, lat, lng, address_local, maps_query, google_place_id, youtube_query, weather_sensitivity, catalog_cities!inner(legacy_slug, country_id), catalog_place_names(locale, name, priority), catalog_place_descriptions(locale, description)",
+    )
     .eq("picker_hidden", false)
     .neq("source", "transfer");
   if (opts.cityId) q = q.eq("city_id", opts.cityId);
-  if (opts.countryId) q = q.eq("country_id", opts.countryId);
-  return q.limit(opts.limit ?? 50);
+  if (opts.countryId) q = q.eq("catalog_cities.country_id", opts.countryId);
+  return q.order("legacy_slug").limit(opts.limit ?? 50);
 }
 
 /**

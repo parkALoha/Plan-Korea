@@ -69,6 +69,11 @@ const isTripScoped = (rel: string) => rel.includes("trips/[tripId]/");
  * · `account` = หา target จากตัวผู้เรียก/ไม่มี tripId → ไม่ใช่เป้ายิงข้าม · **ต้องมีเหตุผล `why`**
  */
 const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExempt?: true }> = {
+  "app/api/engine/places/route.ts": {
+    scope: "account",
+    why: "คลังสถานที่สาธารณะของเมืองหนึ่ง · รับ `cityId` ไม่ใช่ `tripId` และไม่แตะข้อมูลของทริปใดเลย "
+      + "· `cityId` ไม่ใช่ความลับ (มาจาก /api/engine/cities ที่ใครล็อกอินก็เรียกได้) จึงไม่ใช่เป้ายิงข้าม",
+  },
   "app/api/engine/countries/route.ts": {
     scope: "account",
     why: "รายชื่อประเทศที่รองรับ · ไม่มี tripId เป็น input และไม่แตะข้อมูลของทริปใดเลย "
