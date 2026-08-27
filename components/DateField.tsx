@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { AnchoredPanel } from "@/components/AnchoredPanel";
 import { MONTHS_TH_FULL, WEEKDAYS_TH_SHORT, formatIsoDateTh } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
 
@@ -70,29 +71,15 @@ export function DateField({
   const [open, setOpen] = useState(false);
   const autoId = useId();
   const baseId = id ?? `df${autoId.replace(/:/g, "")}`;
-  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const initial = parseIso(value) ?? parseIso(min ?? "") ?? parseIso(todayIso())!;
   const [view, setView] = useState({ y: initial.y, m: initial.m });
   const [focusIso, setFocusIso] = useState(value || min || todayIso());
 
-  useEffect(() => {
-    if (!open) return;
-    function onDocPointerDown(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", onDocPointerDown);
-    return () => document.removeEventListener("pointerdown", onDocPointerDown);
-  }, [open]);
-
-  // เปิดแล้วเลื่อนให้เห็นทั้งแผ่น (เนื้อโมดัลเลื่อนได้ แผ่นที่เปิดใต้ขอบล่างจะไม่มีใครเห็น)
-  useEffect(() => {
-    if (!open) return;
-    gridRef.current?.scrollIntoView({ block: "nearest" });
-  }, [open]);
-
   // ย้ายโฟกัสจริงไปยังวันที่ถูกเลือกด้วยลูกศร (roving tabindex)
+  // (การปิดเมื่อคลิกนอก + การวางตำแหน่งแผ่น เป็นหน้าที่ของ `AnchoredPanel` แล้ว)
   useEffect(() => {
     if (!open) return;
     const el = gridRef.current?.querySelector<HTMLButtonElement>(`[data-iso="${focusIso}"]`);
@@ -157,8 +144,9 @@ export function DateField({
   const today = todayIso();
 
   return (
-    <div ref={rootRef} className="relative">
+    <div>
       <button
+        ref={buttonRef}
         type="button"
         id={baseId}
         aria-haspopup="dialog"
@@ -177,11 +165,12 @@ export function DateField({
       </button>
 
       {open && (
-        <div
-          ref={gridRef}
-          className="mt-1 rounded-lg border border-line bg-surface-raised p-2 shadow-lg shadow-ink/10"
-          onKeyDown={onGridKeyDown}
+        <AnchoredPanel
+          anchorRef={buttonRef}
+          onClose={() => setOpen(false)}
+          className="rounded-lg border border-line bg-surface-raised shadow-lg shadow-ink/10"
         >
+        <div ref={gridRef} className="w-64 p-2" onKeyDown={onGridKeyDown}>
           <div className="mb-1.5 flex items-center justify-between">
             <button
               type="button"
@@ -246,6 +235,7 @@ export function DateField({
             })}
           </div>
         </div>
+        </AnchoredPanel>
       )}
     </div>
   );

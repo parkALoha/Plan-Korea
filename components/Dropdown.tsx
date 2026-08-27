@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { AnchoredPanel } from "@/components/AnchoredPanel";
 
 export type DropdownOption = {
   value: string;
@@ -46,7 +47,7 @@ export function Dropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLUListElement>(null);
   const autoId = useId();
   const baseId = id ?? `dd${autoId.replace(/:/g, "")}`;
@@ -54,23 +55,8 @@ export function Dropdown({
 
   const selected = options.find((o) => o.value === value) ?? null;
 
-  // ปิดเมื่อคลิกนอกตัวเอง — ต้องเป็น pointerdown ไม่ใช่ click เพื่อให้ปิดก่อนที่ของอื่นจะรับคลิก
-  useEffect(() => {
-    if (!open) return;
-    function onDocPointerDown(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", onDocPointerDown);
-    return () => document.removeEventListener("pointerdown", onDocPointerDown);
-  }, [open]);
-
-  // เปิดแล้วเลื่อนให้เห็นทั้งแผ่น — เพราะเนื้อโมดัลเลื่อนได้ แผ่นที่เปิดใต้ขอบล่างจะไม่มีใครเห็น
-  useEffect(() => {
-    if (!open) return;
-    panelRef.current?.scrollIntoView({ block: "nearest" });
-  }, [open]);
-
   // เลื่อนตัวที่ไฮไลต์ให้อยู่ในสายตาเวลาใช้คีย์บอร์ด
+  // (การปิดเมื่อคลิกนอก + การวางตำแหน่งแผ่น เป็นหน้าที่ของ `AnchoredPanel` แล้ว)
   useEffect(() => {
     if (!open) return;
     panelRef.current?.querySelector(`[data-idx="${highlight}"]`)?.scrollIntoView({ block: "nearest" });
@@ -129,8 +115,9 @@ export function Dropdown({
   }
 
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
+    <div className={className}>
       <button
+        ref={buttonRef}
         type="button"
         id={baseId}
         role="combobox"
@@ -153,12 +140,17 @@ export function Dropdown({
       </button>
 
       {open && (
+        <AnchoredPanel
+          anchorRef={buttonRef}
+          onClose={() => setOpen(false)}
+          matchWidth
+          className="rounded-lg border border-line bg-surface-raised py-1 shadow-lg shadow-ink/10"
+        >
         <ul
           ref={panelRef}
           id={listId}
           role="listbox"
           aria-label={ariaLabel}
-          className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-line bg-surface-raised py-1 shadow-lg shadow-ink/10"
         >
           {options.map((o, i) => {
             const isSelected = o.value === value;
@@ -203,6 +195,7 @@ export function Dropdown({
             );
           })}
         </ul>
+        </AnchoredPanel>
       )}
     </div>
   );
