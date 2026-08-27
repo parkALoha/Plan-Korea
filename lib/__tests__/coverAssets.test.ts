@@ -1,0 +1,93 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+/**
+ * `E5` — **รูปปกทริปใน `public/covers/`** · เจ้าของ: P1-Lead · 27 ส.ค. 2026
+ *
+ * ## 🔴 ทำไมต้องมีด่าน ทั้งที่มันเป็นแค่ไฟล์รูป
+ *
+ * `TripCoverImage` (`components/HomeScreen.tsx`) ไล่ 3 ชั้น **ด้วย `onError`**:
+ * ```
+ * /covers/city-<slug>.svg  →  /covers/country-<id>.svg  →  พื้นไล่สี 🗺️
+ * ```
+ * ซึ่งเป็นการออกแบบที่ถูก (เช็คว่าไฟล์ static มีจริงจากฝั่ง client ทำไม่ได้)
+ * **แต่แปลว่าไฟล์หาย ไฟล์พัง และชื่อไฟล์เพี้ยน ให้ผลลัพธ์เดียวกันเป๊ะกับ "ยังไม่มีรูปเมืองนี้"**
+ * → ลบ `country-kr.svg` ทิ้งวันนี้ ทริปเกาหลีทุกใบตกไปพื้นไล่สี · ไม่มี error ไม่มี log ไม่มีเทสต์แดง
+ *
+ * 🎯 **fallback ที่ทำงานได้ดี คือ fallback ที่กลบความพังให้ดูเหมือนสถานะปกติ** — ด่านนี้อยู่ตรงนั้น
+ *
+ * ## ⚠️ สิ่งที่ไฟล์นี้ **ไม่ได้** ตรวจ และห้ามอ่านว่าตรวจแล้ว
+ *
+ * **มันไม่รู้ว่ารูปออกมาหน้าตายังไง** และไม่มีวันรู้ · วันที่เขียนชุดนี้ ของที่หลุด parser มาได้ทั้งหมด:
+ * บ้านปูซานลอยอยู่บนผิวน้ำ · ต้นไม้ฮานอยไม่มีลำต้นจนอ่านเป็นก้อนเมฆ · เจดีย์ที่อ่านเป็นใบไม้ ·
+ * วัดไทยที่อ่านเป็นต้นสน — **XML ถูกต้องทุกไฟล์ ทุกครั้ง**
+ * → เพิ่ม/แก้รูปเมื่อไหร่ **ต้องเปิดดูด้วยตา** (`/covers/<ไฟล์>.svg` บน dev server) ด่านนี้แทนไม่ได้
+ *
+ * ที่มันตรวจได้จริงคือ **ของที่พังแบบเงียบ**: ชื่อไฟล์ที่ resolver ประกอบเป็น URL ไม่ได้ ·
+ * ค่าสีที่พิมพ์แตก (เจอจริง: `#e9b98a` → `#e9b craft` — เป็น attribute ที่ถูกต้องตาม XML
+ * ทุกประการ เบราว์เซอร์ทิ้งเงียบ ๆ แล้ววาดเป็นสีดำ) · และไฟล์ชั้นสุดท้ายที่หายไป
+ */
+
+const COVERS_DIR = join(__dirname, "../../public/covers");
+
+/**
+ * ประเทศที่ **ต้อง** มีรูป — คือชั้นสุดท้ายก่อนพื้นไล่สี ถ้าหายจะเงียบที่สุด
+ *
+ * 🔴 ตั้งใจ hardcode ไม่ได้อ่านจาก `catalog_countries` — ด่านที่ถามฐานว่า "ต้องมีอะไรบ้าง"
+ *    จะเขียวทันทีที่มีคนลบแถวประเทศออกจากฐาน · เลขคาดหวังต้องมาคนละแหล่งกับของที่ถูกตรวจ (`P-63`)
+ *    · 3 ตัวนี้ = ประเทศที่ `catalog_cities` มีเมืองอยู่จริงวันนี้ (kr · vn · th)
+ *      เพิ่มประเทศที่ 4 เมื่อไหร่ ให้เพิ่มรูปกับบรรทัดนี้พร้อมกัน
+ */
+const REQUIRED_COUNTRIES = ["kr", "vn", "th"] as const;
+
+/** `city-<slug>.svg` / `country-<id>.svg` — `slug`/`id` ถูกเสียบลง URL ตรง ๆ โดยไม่ encode */
+const CITY_NAME = /^city-[a-z0-9]+(-[a-z0-9]+)*\.svg$/;
+const COUNTRY_NAME = /^country-[a-z]{2}\.svg$/;
+
+/** ค่าสีที่ขึ้นต้นด้วย `#` ต้องเป็น hex ที่ใช้ได้จริง — 3/4/6/8 หลัก ไม่มีอย่างอื่น */
+const HEX_OK = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+const files = readdirSync(COVERS_DIR).filter((f) => !f.startsWith("."));
+const read = (f: string) => readFileSync(join(COVERS_DIR, f), "utf8");
+
+describe("รูปปกทริป — public/covers", () => {
+  it("C1 · มีไฟล์อยู่จริง (โฟลเดอร์ว่าง = ทุกทริปตกพื้นไล่สีเงียบ ๆ)", () => {
+    // 🔴 ด่านที่วนลิสต์ว่างแล้วเขียว คือด่านที่ไม่ได้ตรวจอะไรเลย — เคสนี้กันข้อนั้นให้ทุกเคสข้างล่าง
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it("C2 · ทุกไฟล์ตั้งชื่อตามรูปที่ resolver ประกอบ URL ได้", () => {
+    const bad = files.filter((f) => !CITY_NAME.test(f) && !COUNTRY_NAME.test(f));
+    expect(bad, `ชื่อไฟล์ที่ TripCoverImage หาไม่เจอ: ${bad.join(", ")}`).toEqual([]);
+  });
+
+  it("C3 · รูประดับประเทศครบทุกประเทศที่มีเมืองในคลัง", () => {
+    const missing = REQUIRED_COUNTRIES.filter((c) => !files.includes(`country-${c}.svg`));
+    expect(missing, `ประเทศที่จะตกพื้นไล่สีโดยไม่มีอะไรฟ้อง: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("C4 · ค่าสีทุกตัวเป็น hex ที่ใช้ได้ (ตัวจับ `#e9b craft`)", () => {
+    const broken: string[] = [];
+    for (const f of files) {
+      // ดูเฉพาะค่าใน attribute ที่รับสี — `id="b-sky"` ไม่ใช่สี และ `#b-sky` ใน `url(#…)` ก็ไม่ใช่
+      for (const m of read(f).matchAll(/(?:fill|stroke|stop-color|flood-color|color)="([^"]*)"/g)) {
+        const v = m[1].trim();
+        if (v.startsWith("#") && !HEX_OK.test(v)) broken.push(`${f}: ${m[0]}`);
+      }
+    }
+    expect(broken, `ค่าสีที่เบราว์เซอร์จะทิ้งเงียบ ๆ:\n${broken.join("\n")}`).toEqual([]);
+  });
+
+  it("C5 · ไม่มีไฟล์ไหนอ้างอิงของนอกเครื่อง", () => {
+    // ปกโหลดผ่าน <img src> จึงไม่รันสคริปต์อยู่แล้ว — ที่กันคือ **การยิงออกนอก**:
+    // รูปที่ดึงของจากโดเมนอื่นทำให้หน้า Home เปิดออฟไลน์ไม่ได้ และบอก IP ผู้ใช้ให้เจ้าของโดเมนนั้น
+    const leaky = files.filter((f) => /https?:\/\/(?!www\.w3\.org\/)/i.test(read(f)));
+    expect(leaky, `รูปที่ดึงของจากข้างนอก: ${leaky.join(", ")}`).toEqual([]);
+  });
+
+  it("C6 · ทุกไฟล์มี viewBox (ไม่มี = object-cover ครอบผิดสัดส่วน)", () => {
+    const noViewBox = files.filter((f) => !/\sviewBox="[^"]+"/.test(read(f)));
+    expect(noViewBox).toEqual([]);
+  });
+});
