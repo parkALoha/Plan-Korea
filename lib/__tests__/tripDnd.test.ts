@@ -25,8 +25,12 @@ import { useTripDnd } from "@/hooks/useTripDnd";
  */
 
 // showUndoToast แตะ DOM ของ toast จริง — mock เก็บ message+undo ให้เคสตรวจ (undo คือครึ่งหนึ่งของ contract)
+// 🔴 **spread ของเดิมกลับเข้าไปเสมอ (`S6`)** — factory ที่ไม่ spread จะ *แทนที่ทั้งโมดูล*:
+//    `showToast`/`dismissToast`/`subscribeToasts`/`getToasts`/`getServerToasts` หายหมด **และกลืน export
+//    ใหม่ทุกตัวที่ใครเพิ่มทีหลังโดยไม่มีอะไรเตือน** · ฉบับแรกของไฟล์นี้ผิดข้อนี้ (`4ef1898` → แก้ที่นี่)
 const toasts = vi.hoisted(() => ({ list: [] as { message: string; undo: () => void }[] }));
-vi.mock("@/lib/toast", () => ({
+vi.mock("@/lib/toast", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/toast")>()),
   showUndoToast: (message: string, undo: () => void) => {
     toasts.list.push({ message, undo });
   },
