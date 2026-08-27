@@ -375,6 +375,8 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    คำตอบของคำถามข้างบน: รับ `p_id uuid` ตัวเดียว · `update … set note = note` (no-op ที่ยิง trigger)
       //    · ไม่แตะคอลัมน์ที่ column grant ห้าม · ไม่เคยถูก `grant execute` ให้ใครเลย
       "app.probe_definer_write",
+      // 🔴 เพิ่ม 27 ส.ค. — promote plan on delete (trigger fn · after delete) · ไม่รับ input · รันใน trigger เท่านั้น (P1 ประกาศ)
+      "app.promote_plan_if_none_active",
       "app.shares_trip_with",
       "app.trip_owner_count",
       "app.trip_role",
@@ -389,10 +391,15 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    เหตุผลที่ต้องเป็น definer: สคีมา `supabase_migrations` ไม่เปิดให้ role ทดสอบ
       //    🎯 ทิศที่อันตรายคือ **เขียวหลอก**: commit ที่ migration ยังไม่ถูก apply จะเขียว
       //       ถ้าฐานบังเอิญมีสภาพที่มันคาดหวังอยู่แล้วจากงานคนอื่น
+      // 🔴 เพิ่ม 27 ส.ค. — fixture-lock RPC + assert_engine_dev (E0) · definer · service_role เท่านั้น · P1 ประกาศครบ
+      //    acquire/release เขียนเฉพาะ app.fixture_lock · holder/assert อ่านอย่างเดียว · ไม่รับ input จากผู้ใช้แอป
+      "public.acquire_fixture_lock",
       "public.applied_migrations",
+      "public.assert_engine_dev",
       "public.authorship_columns",
       "public.client_writable_timestamps",
       "public.create_trip",
+      "public.fixture_lock_holder",
       // 🔴 เพิ่ม 26 ส.ค. (P1) — **ตัวอ่านผลการวัด ไม่ใช่ฟีเจอร์ · ของชั่วคราวโดยประกาศ**
       //    `app.role_probe` เก็บคำตอบของคำถามที่ P6 ตั้งและยืนยันเองไม่ได้ (เครื่องไม่มี `psql`):
       //    *trigger ที่ถูกยิงจากข้างใน `security definer` เห็น `current_user` เป็นใคร*
@@ -417,6 +424,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · ไม่มี DML · `service_role` เท่านั้น**
       "public.mode_limits",
       "public.read_only_selftest",
+      "public.release_fixture_lock",
       "public.role_probe_result",
       // 🔴 `P-53` — soft delete ต้องผ่าน RPC เพราะ PostgREST ห่อ `UPDATE` ด้วย `RETURNING` เสมอ
       //    → แถวที่เพิ่งทำให้ตัวเองหายไป ไม่ผ่าน policy `SELECT` ของตัวเอง · **`P-26` กลับด้าน**
@@ -825,7 +833,8 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       "custom_places_touch", "hidden_places_stamp_hidden_by", "on_auth_user_created",
       "place_notes_stamp_added_by", "place_notes_touch", "profiles_preserve_authorship", "profiles_touch",
       "tdps_touch", "trip_days_no_orphan_stops", "trip_days_touch", "trip_hotels_stamp_added_by",
-      "trip_hotels_touch", "trip_members_keep_owner", "trip_plans_keep_one", "trip_plans_touch",
+      "trip_hotels_touch", "trip_members_keep_owner", "trip_plans_keep_one",
+      "trip_plans_promote_active", "trip_plans_touch",
       "trip_stops_stamp_added_by", "trip_stops_touch", "trips_bootstrap_owner", "trips_freeze_created_by",
       "trips_touch",
     ]);
@@ -837,7 +846,7 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       sha(JSON.stringify(defs)),
       "definition ของ trigger สักตัวเปลี่ยน (when/timing/ฟังก์ชัน) โดยรายชื่อไม่ขยับ\n" +
         "  🔴 ถอด `when (...)` ตัวเดียว = updated_at เปลี่ยนความหมายทั้งตาราง · log `[...staticTriggerDefs().entries()]` (ตัวสกัดอยู่ใน describe นี้) ดูตัวที่เปลี่ยน",
-    ).toBe("08c13364639b11f4622b7dcb2b3c2ef4382c31ada93578847a2085e5ab9ccc35");
+    ).toBe("331a154de8de326179d700f949888f0ff61e2e64189c31f0aea607af107ba0b6");
   });
 
   it("🔴 pin:app-fn-body — body ของทุกฟังก์ชัน app.* ต้องไม่เปลี่ยนเงียบ", () => {
@@ -859,7 +868,8 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       "app.assert_trip_has_plan", "app.booking_file_trip", "app.bootstrap_trip_owner", "app.can_read_trip",
       "app.can_write_trip", "app.default_expiry_minutes", "app.deny_write_when_read_only",
       "app.freeze_created_by", "app.handle_new_user", "app.like_literal", "app.mode_is_active",
-      "app.preserve_authorship", "app.probe_definer_write", "app.probe_log", "app.search_norm",
+      "app.preserve_authorship", "app.probe_definer_write", "app.probe_log", "app.promote_plan_if_none_active",
+      "app.search_norm",
       "app.shares_trip_with", "app.stamp_added_by", "app.stamp_checked_by", "app.stamp_hidden_by",
       "app.touch_updated_at", "app.touch_updated_at_only", "app.trip_owner_count", "app.trip_role",
       "app.write_is_blocked",
@@ -870,7 +880,7 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       sha(JSON.stringify(bodies)),
       "body ของฟังก์ชัน app.* สักตัวเปลี่ยน — `create or replace` เปลี่ยนได้เงียบ ๆ · " +
         "ถ้าเป็น can_write_trip = สิทธิ์เขียน 88 policy เปลี่ยนพร้อมกัน · ไล่กิ่งก่อนแก้ค่านี้",
-    ).toBe("4e1d2702d388ca67d00366651ef85b1e73f9f8279082b2819b39195a28d6876a");
+    ).toBe("44e665b0c8488857d60e0153a152baba1b484e3f4da5a3a52e26f70e85245024");
   });
 
   it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
