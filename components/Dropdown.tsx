@@ -176,6 +176,13 @@ export function Dropdown({
                   e.preventDefault();
                   choose(i);
                 }}
+                // 🔴 **ต้องมี `onClick` ด้วย ไม่ใช่ `onPointerDown` อย่างเดียว** (P1 เจอ 28 ส.ค. 2026)
+                // ของที่ยิง `click` โดยไม่มี pointer event นำหน้า — **voice control · AT บางตัว · ส่วนขยาย
+                // เบราว์เซอร์ · เครื่องมือทดสอบ** — จะกดตัวเลือกนี้ไม่ได้เลย และ **เงียบสนิท ไม่มี error**
+                // ผู้ใช้เมาส์/นิ้ว/คีย์บอร์ดไม่เคยเจอ จึงไม่มีใครรายงาน
+                // 📌 ไม่ยิงซ้อนกับ pointerdown: พอ pointerdown เลือกเสร็จ ลิสต์ปิดทันที `<li>` ถูกถอดออก
+                //    จาก DOM ก่อน `click` จะมาถึง — เส้นนี้จึงทำงานเฉพาะตอนที่ไม่มี pointerdown จริง ๆ
+                onClick={() => choose(i)}
                 onPointerEnter={() => !o.disabled && setHighlight(i)}
                 className={`flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm ${
                   o.disabled
