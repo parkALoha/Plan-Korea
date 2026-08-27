@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { TripPlan } from "@/lib/supabase";
 import { TripSettingsModal } from "./TripSettingsModal";
+import { InitialAvatar } from "./InitialAvatar";
 import { useMounted } from "@/hooks/useMounted";
+import { useTripMembers } from "@/hooks/useTripMembers";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 
 interface TripHeaderProps {
@@ -91,6 +93,12 @@ export function TripHeader({
       ? tripDateRangeLabel(tripResult.startDate, tripResult.endDate)
       : null;
 
+  // แถวสมาชิก (E5 ข้อ 6) — GET /api/engine/trips/[tripId]/members (P1 27 ส.ค. 2026, b81b42e)
+  // 🔴 displayName: null ไม่ใช่ "ยังไม่ตั้งชื่อ" — แปลว่าอ่านชื่อไม่ได้ (สิทธิ์สองชั้นไม่ตรงกัน) ห้ามโชว์
+  // เป็นวงกลมว่างเงียบๆ ใช้ "?" + title บอกสถานะตรงๆ แทน (ดู P1: "ถ้าเจอ null ในของจริง รายงานทันที" —
+  // ยังไม่เจอในทริปทดสอบที่มีสมาชิกคนเดียว จะดูอีกทีตอนมีทริปที่มีสมาชิกหลายคนข้ามบัญชี)
+  const { members } = useTripMembers(tripId);
+
   return (
     // focus-ring-on-dark: กรอบโฟกัสสีเมเปิลจมไปกับพื้นสีสน สลับเป็นสีทองเฉพาะในหัวนี้ (เฟส 20.1)
     <header className="focus-ring-on-dark bg-pine px-4 pb-4 pt-6 text-cream sm:pb-6">
@@ -131,6 +139,20 @@ export function TripHeader({
             <p className="mt-1 truncate text-xs text-cream/80">
               {activePlan ? `${activePlan.name} · ` : ""}🗺️ {stopsCount} จุดในแผนนี้
             </p>
+            {members.length > 0 && (
+              <div className="mt-1.5 flex items-center gap-1">
+                {members.map((m) => (
+                  <InitialAvatar
+                    key={m.userId}
+                    name={m.displayName ?? "?"}
+                    label={m.displayName ?? "อ่านชื่อสมาชิกคนนี้ไม่ได้"}
+                    className={`h-6 w-6 text-[11px] ring-2 ring-pine ${
+                      m.displayName ? "" : "bg-maple text-cream"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ปุ่มกลับ Home — เพิ่มตอน "/" เปลี่ยนความหมายเป็นหน้าลิสต์ทริป (27 ส.ค. 2026, E5 ข้อ 6)

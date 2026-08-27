@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CreateTripForm } from "@/components/CreateTripForm";
+import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSystemMode } from "@/hooks/useSystemMode";
@@ -16,19 +17,6 @@ type TripListItem = { id: string; title: string; start_date: string; end_date: s
 // ผ่าน lib/i18n.ts จริงตามที่ E5-AC7 สั่ง แต่เป็น namespace ที่สอง ไม่ปนกับ DICT ของ /summary — ดูหัวไฟล์
 // นั้น) ยังไม่มี EN เหมือนเดิม เพิ่มตอน M2
 const COPY = E5_COPY.home;
-
-/** ตัวย่อชื่อในวงกลม — ไม่มีคอลัมน์รูปให้ avatar จริง (`profiles` มีแค่ `display_name`) */
-function InitialAvatar({ name, className = "" }: { name: string; className?: string }) {
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-  return (
-    <span
-      aria-hidden
-      className={`flex shrink-0 items-center justify-center rounded-full bg-maple-soft font-bold text-maple-dark ${className}`}
-    >
-      {initial}
-    </span>
-  );
-}
 
 /** การ์ดทริปหนึ่งใบบน Home — รูปปก/จุดหมาย/จำนวนสมาชิกรอ API จาก P1 (`E5` ข้อ 2/3) ยังใช้ fallback ไปก่อน */
 function TripCard({ trip }: { trip: TripListItem }) {
