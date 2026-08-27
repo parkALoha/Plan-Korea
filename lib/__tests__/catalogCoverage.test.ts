@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readEnvKey, requireLiveCreds, TEST_COUNTRY_CODES } from "./_helpers";
 import { testClient } from "./_testClient";
+import { browseCatalogPlaces } from "@/lib/engine/db";
 
 /**
  * `E4` — ประเทศที่ **ประกาศรองรับ** ต้องมีสถานที่ให้เที่ยวจริง · เจ้าของ: P4 (27 ส.ค. 2026)
@@ -144,40 +145,51 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
   });
 
   /**
-   * 🔴 **จุดเปลี่ยนเส้นทางต้องไม่โผล่ในลิสต์ "เพิ่มสถานที่"** — และวันนี้ **25 จาก 28 แถวโผล่อยู่**
+   * 🔴 **`browseCatalogPlaces()` ต้องไม่คืนสนามบิน/สถานี** — วัด *พฤติกรรมของฟังก์ชัน* ไม่ใช่ค่าธงในตาราง
    *
-   * ## ทำไมเคสนี้ถึงเกิด: ผมกับ P1 เถียงกันว่าจะนับด้วย `category` หรือ `source`
-   * แล้วไปเจอว่า **แอปไม่ได้กรองด้วยคอลัมน์ไหนในสองตัวนั้นเลย** — `browseCatalogPlaces()`
-   * (`lib/engine/db.ts:103`) กรองด้วย **`picker_hidden = false`** ล้วน ๆ
-   * 🎯 **สองฝ่ายกำลังวัดตัวแทน (proxy) ที่บังเอิญตรงกัน แทนที่จะวัดเงื่อนไขที่แอปใช้จริง**
+   * ## ประวัติของเคสนี้ — ฉบับแรกของผม **บังคับกฎที่ผิด** (P1 จับได้ · 27 ส.ค. 2026)
+   * ผมเคยเขียนว่า *"แถว `source='transfer'` ต้อง `picker_hidden = true` ทุกแถว"* แล้วรายงานว่ามี 25 แถวผิด
+   * · ผมอ่านความหมายของ `picker_hidden` จาก **docstring ของ `browseCatalogPlaces()`** แทนที่จะอ่าน
+   *   **นิยามที่ต้นทาง** (`data/transferPoints.ts:25-28`) ซึ่งเขียนไว้ชัดว่า:
+   *   > *"true = ไม่ต้องโผล่ในลิสต์ให้เลือกของ modal **'✈️ ไปสนามบิน/สถานี'** … เช่นสนามบิน
+   *   >  ต้นทาง/ต่อเครื่องนอกเกาหลี ซึ่งไม่มีวันไหนในทริปนี้ต้องแทรกแถว 'ไปสนามบิน' ไปหา"*
+   * 🎯 **`airport-pus` เป็น `false` เพราะผู้ใช้ *ต้องการ* เลือก "ไปสนามบินกิมแฮ" ในโมดัลนั้น**
+   *   → กลับเป็น `true` ทั้ง 25 แถวตามที่ผมเสนอ = **โมดัล "ไปสนามบิน/สถานี" ว่างเปล่า**
+   *   = ยัดความหมายที่สองลงคอลัมน์เดิม แล้วความหมายแรกตายเงียบ — **ตระกูลเดียวกับที่ผมเคยค้าน
+   *     ตอนจะเติมแถวเข้า `read_only_selftest()` ให้ `blocked` แปลว่าคนละอย่างตามแถว** · คอลัมน์หนึ่งตอบคำถามเดียว
    *
-   * ## เจตนาที่เขียนไว้เอง แต่ข้อมูลไม่ตรงตาม
-   * `transferPoints.ts:28` + `db.ts:96` เขียนว่า *"สนามบิน/สถานี ไม่ใช่ที่เที่ยว ไม่ควรโผล่ใน
-   * คลังสถานที่ให้เลือกเพิ่มลงวัน"* · เดิมกฎนั้นบังคับด้วย**การอยู่คนละไฟล์** พอย้ายมาเป็นแถวใน
-   * `catalog_places` ตารางเดียวกัน **เหลือแค่คอลัมน์ธง — และธงไม่ถูกตั้งตอน seed**
-   * · ⚠️ ไม่ใช่แค่ของใหม่: `kr` มี 12 (รวม `airport-icn` · `station-seoul`) = **คลังของทริปจริงที่จะบิน 11 ต.ค.**
+   * ## บทเรียนที่ทำให้เคสนี้เปลี่ยนรูป
+   * ของที่ผิดคือ **`browseCatalogPlaces()` กรองผิดคอลัมน์** (P1 แก้ที่ `06aa86b` — เพิ่ม `.neq("source","transfer")`)
+   * 🔴 **ด่านจึงต้องวัดสิ่งที่ฟังก์ชัน *คืนออกมา* ไม่ใช่ค่าธงที่มันบังเอิญใช้** — ธงเป็นรายละเอียดการทำงาน
+   *    เปลี่ยนได้ · สัญญาที่ผู้ใช้เห็นคือ *"ลิสต์คลังที่เที่ยวต้องไม่มีสนามบิน"*
    *
-   * ## สิ่งที่ผู้ใช้เจอ
-   * กด "เพิ่มสถานที่" ในกรุงเทพ → เห็นสนามบินเชียงใหม่/ภูเก็ต/กระบี่ปนอยู่ในลิสต์ที่เที่ยว
-   * · **ไม่ใช่หน้าว่าง (ซึ่งเคสข้างบนจับ) แต่เป็นหน้าที่มีของผิดชนิดปนมา** — คนละอาการ คนละด่าน
+   * ## ⚠️ ขอบเขต — วันนี้ **ยังไม่มีผู้ใช้คนไหนเห็นบั๊กนี้**
+   * `browseCatalogPlaces()` **ไม่มีผู้เรียกจากโค้ดแอปเลยสักที่** (ไซด์บาร์ยังอ่าน `data/places.ts` สถิตย์
+   * ซึ่งไม่เคยมีแถว transfer — กฎเดิมบังคับด้วยการอยู่คนละไฟล์) · **`B6` คือวันที่มันจะมีผู้เรียก**
+   * → เคสนี้คือด่านที่รอไว้ก่อน ไม่ใช่รายงานว่าผู้ใช้เจอแล้ว (ผมเคยเขียนผิดว่าเจอแล้ว — ถอนแล้ว)
    */
-  it("🔴 แถวที่มาจากไฟล์จุดเปลี่ยนเส้นทาง (source='transfer') ต้อง picker_hidden = true ทุกแถว", async () => {
+  it("🔴 browseCatalogPlaces() ต้องไม่คืนแถว source='transfer' — คลังที่เที่ยวไม่ใช่ที่รวมสนามบิน", async () => {
     const admin = testClient(SERVICE);
-    const pl = await admin
-      .from("catalog_places")
-      .select("legacy_slug,city_id,picker_hidden")
-      .eq("source", "transfer");
-    if (pl.error) throw new Error(`อ่าน catalog_places: ${pl.error.message}`);
-    const rows = (pl.data ?? []) as { legacy_slug: string | null; city_id: string; picker_hidden: boolean }[];
-    // positive control — ถ้าไม่มีแถว transfer เลย เคสข้างล่างจะเขียวโดยไม่ได้ตรวจอะไร (P-21)
-    expect(rows.length, "ไม่มีแถว source='transfer' เลย — ตัวกรองพัง ไม่ใช่ 'ไม่มีจุดเปลี่ยนเส้นทาง'").toBeGreaterThan(0);
-    const shown = rows.filter((r) => r.picker_hidden === false).map((r) => r.legacy_slug ?? r.city_id).sort();
+    // ยิงผ่านฟังก์ชันจริงที่แอปจะใช้ (B6) — ไม่ใช่ประกอบ query เองในเทสต์ ซึ่งจะวัดคนละอย่างกับของจริง
+    const { data, error } = await browseCatalogPlaces(admin as never, { limit: 1000 });
+    if (error) throw new Error(`browseCatalogPlaces: ${error.message}`);
+    const rows = (data ?? []) as { legacy_slug: string | null; source: string | null }[];
+    // positive control ① — คืนศูนย์แถวแล้วเคสข้างล่างจะเขียวโดยไม่ได้ตรวจอะไร (P-21)
+    expect(rows.length, "browse ไม่คืนอะไรเลย — ตัวกรองพังหรือคลังว่าง ไม่ใช่ 'ไม่มีสนามบินปน'").toBeGreaterThan(0);
+    // positive control ② — **ต้องมีแถว transfer อยู่จริงในตาราง ไม่งั้นตัวกรองไม่ได้ทำงานอะไรเลย**
+    //    ถ้าวันหนึ่งไม่มีสนามบินในคลังเลย เคสนี้จะ "ผ่าน" โดยไม่เคยพิสูจน์ว่ากรองได้ — เซตว่างอีกรูป
+    const inTable = await admin.from("catalog_places").select("id", { count: "exact", head: true }).eq("source", "transfer");
     expect(
-      shown,
-      "จุดเปลี่ยนเส้นทางที่ **โผล่ในลิสต์เลือกสถานที่** (picker_hidden = false)\n" +
-        "  🔴 `browseCatalogPlaces()` กรองด้วย `picker_hidden` เท่านั้น → แถวพวกนี้ขึ้นให้ผู้ใช้เลือกจริง\n" +
-        "  ⚠️ ขัดกับเจตนาที่เขียนไว้เองใน `transferPoints.ts:28` และ `db.ts:96`\n" +
-        "  → ตั้ง `picker_hidden = true` ให้แถว `source='transfer'` ตอน seed (โซน P1 — migration)",
+      inTable.count ?? 0,
+      "ไม่มีแถว source='transfer' ในตารางเลย — เคสข้างล่างจะเขียวเพราะไม่มีอะไรให้กรอง ไม่ใช่เพราะกรองได้",
+    ).toBeGreaterThan(0);
+    const leaked = rows.filter((r) => r.source === "transfer").map((r) => r.legacy_slug ?? "(ไม่มี slug)").sort();
+    expect(
+      leaked,
+      "คลัง 'ที่เที่ยว' คืนสนามบิน/สถานีออกมาด้วย\n" +
+        "  🔴 ผู้ใช้จะเห็นสนามบินปนในลิสต์เพิ่มสถานที่ทันทีที่ `B6` ย้ายไซด์บาร์มาใช้ฟังก์ชันนี้\n" +
+        "  ⚠️ **ทางแก้ไม่ใช่กลับค่า `picker_hidden`** — ธงนั้นคุมโมดัล 'ไปสนามบิน/สถานี' คนละเรื่องกัน\n" +
+        "  → กรองที่ `browseCatalogPlaces()` ด้วย `source` (ดู `lib/engine/db.ts`)",
     ).toEqual([]);
   });
 });
