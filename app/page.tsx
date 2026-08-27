@@ -97,7 +97,7 @@ export function HomeContent({ tripId }: { tripId: string }) {
     restoreItem: restoreChecklistItem,
   } = useChecklist(tripId);
   const { plans, activePlanId, loaded: plansLoaded, createPlan, renamePlan, deletePlan, switchActivePlan } =
-    usePlans();
+    usePlans(tripId);
   const {
     stops,
     loaded: stopsLoaded,

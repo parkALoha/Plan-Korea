@@ -180,7 +180,7 @@ export default function TodayPage() {
 export function TodayPageContent({ tripId }: { tripId: string }) {
   const { hotels } = useHotels();
   const { bookings, loaded: bookingsLoaded } = useBookings();
-  const { plans, activePlanId, loaded: plansLoaded } = usePlans();
+  const { plans, activePlanId, loaded: plansLoaded } = usePlans(tripId);
   const {
     stops,
     loaded: stopsLoaded,

@@ -23,13 +23,29 @@ type PlanRow = TripPlan & { is_active: boolean };
  * **แผนที่ก๊อปมาไม่ครบ ไม่มีทางรู้ว่าขาดอะไร** เพราะไม่เคยมีใครเห็นว่ามันล้ม
  * · ตอนนี้ **ทุกจุดรับค่าที่คืนมา** และ **การก๊อปทั้งใบอยู่ใน RPC ทรานแซกชันเดียว**
  *   → ล้ม = ไม่มีแผนใหม่เลย **ซึ่งดีกว่าแผนครึ่งใบ**
+ *
+ * ## 🔴 `tripId` เป็น prop บังคับตั้งแต่วันนี้ — แก้บั๊กที่ผู้ใช้จริงเจอ (P1 พบ, P3 แก้, 27 ส.ค. 2026)
+ * เดิมไม่รับ `tripId` เลย (เขียนก่อน `E5-AC1` มี `/trip/[tripId]`) เรียก `/api/engine/plans` เฉย ๆ ซึ่งฝั่ง
+ * เซิร์ฟเวอร์ต้องเดาทริปเองผ่าน `soleTrip()` — **พอผู้ใช้มีทริปที่สอง เดาไม่ได้ คืน `409 ambiguous` ทุกครั้งที่
+ * เปิดหน้า** ทั้งที่หน้านั้นรู้ทริปที่ถูกต้องอยู่แล้วจาก `useActiveTripId()` (ส่งเป็น prop ลงมาให้ 9 hook ที่
+ * เหลือใช้กันหมดแล้ว) — สองกลไกตัดสินใจ "ทริปไหน" ในหน้าเดียวกัน คนละที่ คนละคำตอบ
+ * ⚠️ **เมื่อคืน `fetchReadJson` (§27) เปิด toast ให้ทุกจุดอ่านที่เคยเงียบ** — `409 ambiguous` (สถานะที่
+ * ต้องมีหน้าเลือกทริป ไม่ใช่ "อ่านไม่สำเร็จ") เลยกลายเป็น toast แดง *"ลองรีเฟรชอีกครั้ง"* ที่รีเฟรชกี่ครั้งก็
+ * ไม่หาย — งานทั้งสองฝั่งถูกคนละเรื่อง รวมกันได้ผลที่ไม่มีใครตั้งใจ
+ * 🎯 **ทางแก้คือส่ง `tripId` ที่ resolve แล้วไปให้ route ใช้ตรง ๆ ไม่ใช่ปิดเสียง toast** — ตัด `soleTrip()`
+ * ออกจากเส้นทางนี้ทั้งเส้น ambiguous หมดไปเพราะไม่มีอะไรให้เดาอีกแล้ว ไม่ใช่เพราะซ่อนผลของมัน
  */
-export function usePlans() {
+export function usePlans(tripId: string | null) {
   const [plans, setPlans] = useState<TripPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
+  const tripIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    tripIdRef.current = tripId;
+  }, [tripId]);
 
   const applyRows = useCallback((rows: PlanRow[]) => {
     setPlans(rows.map(({ id, name, created_at }) => ({ id, name, created_at })));
@@ -38,8 +54,9 @@ export function usePlans() {
   }, []);
 
   const reload = useCallback(async () => {
-    if (!supabaseConfigured) return;
-    const rows = await fetchReadJson<PlanRow[]>("/api/engine/plans");
+    const id = tripIdRef.current;
+    if (!supabaseConfigured || !id) return;
+    const rows = await fetchReadJson<PlanRow[]>(`/api/engine/plans?tripId=${encodeURIComponent(id)}`);
     if (!rows) return;
     applyRows(rows);
     writeCache("plans", { plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })), activePlanId: rows.find((r) => r.is_active)?.id ?? null });
@@ -50,7 +67,8 @@ export function usePlans() {
   }, [reload]);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
+    if (!supabaseConfigured || !tripId) return;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
     const channelName = `trip_plans_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -63,7 +81,9 @@ export function usePlans() {
         setLoaded(true);
       }
 
-      const rows = await fetchReadJson<PlanRow[]>("/api/engine/plans");
+      const rows = await fetchReadJson<PlanRow[]>(
+        `/api/engine/plans?tripId=${encodeURIComponent(activeTripId)}`
+      );
       if (cancelled) return;
       if (rows) {
         applyRows(rows);
@@ -90,7 +110,7 @@ export function usePlans() {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [applyRows]);
+  }, [tripId, applyRows]);
 
   /**
    * 🔴 **ทุกจุดรับค่าที่คืนมา** — `P-71` คือการทิ้งค่าที่คืนมา 6 จุดในไฟล์นี้
@@ -117,10 +137,11 @@ export function usePlans() {
       //    `id` ของเดิมถูกถอด: ไคลเอนต์ตั้ง `id` ไม่ได้แล้ว (grant ไม่เปิด) ฐานเป็นคนออก
       options?: { duplicateFrom?: string; activate?: boolean }
     ): Promise<string | null> => {
-      if (!supabaseConfigured) return null;
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return null;
       let newId: string | null = null;
       const ok = await call("สร้างแผนใหม่", async () => {
-        const res = await fetch("/api/engine/plans", {
+        const res = await fetch(`/api/engine/plans?tripId=${encodeURIComponent(tripId)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, duplicateFrom: options?.duplicateFrom }),
@@ -135,7 +156,7 @@ export function usePlans() {
       // ค่าเริ่มต้นคือสลับไปแผนใหม่ทันที — ตรงกับพฤติกรรมเดิม (`activate !== false`)
       if (newId && options?.activate !== false) {
         await call("สลับแผนที่ใช้อยู่", () =>
-          fetch("/api/engine/plans", {
+          fetch(`/api/engine/plans?tripId=${encodeURIComponent(tripId)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: newId, makeActive: true }),
@@ -150,10 +171,11 @@ export function usePlans() {
 
   const renamePlan = useCallback(
     async (id: string, name: string) => {
-      if (!supabaseConfigured) return;
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return;
       setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
       await call("เปลี่ยนชื่อแผน", () =>
-        fetch("/api/engine/plans", {
+        fetch(`/api/engine/plans?tripId=${encodeURIComponent(tripId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, name }),
@@ -165,9 +187,12 @@ export function usePlans() {
 
   const deletePlan = useCallback(
     async (id: string) => {
-      if (!supabaseConfigured) return;
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return;
       const ok = await call("ลบแผน", () =>
-        fetch(`/api/engine/plans?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+        fetch(`/api/engine/plans?tripId=${encodeURIComponent(tripId)}&id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        })
       );
       // 🔴 ดึงใหม่เสมอแม้สำเร็จ — ลบแผนที่ active อยู่ทำให้ *แผนอื่นกลายเป็น active*
       //    ซึ่งเป็นผลข้างเคียงที่ฝั่งนี้เดาเองไม่ได้
@@ -178,11 +203,12 @@ export function usePlans() {
 
   const switchActivePlan = useCallback(
     async (id: string) => {
-      if (!supabaseConfigured) return;
+      const tripId = tripIdRef.current;
+      if (!supabaseConfigured || !tripId) return;
       const before = activePlanId;
       setActivePlanId(id);
       const ok = await call("สลับแผนที่ใช้อยู่", () =>
-        fetch("/api/engine/plans", {
+        fetch(`/api/engine/plans?tripId=${encodeURIComponent(tripId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, makeActive: true }),

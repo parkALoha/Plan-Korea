@@ -541,7 +541,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
     bookings.filter((b) => isImageAttachment(b.file_name, b.file_url)).map((b) => b.file_url)
   );
   const { items: checklistItems, loaded: checklistLoaded } = useChecklist(tripId);
-  const { plans, activePlanId, loaded: plansLoaded } = usePlans();
+  const { plans, activePlanId, loaded: plansLoaded } = usePlans(tripId);
   const { stops, loaded: stopsLoaded } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
   const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
