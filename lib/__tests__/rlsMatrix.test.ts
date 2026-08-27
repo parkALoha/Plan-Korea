@@ -4260,6 +4260,10 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "trip_day_plan_settings.update": ["is_locked","note","return_travel_mode","start_time"],
       "trip_days.insert": ["city_id","date","id","overnight_city_id","overnight_kind","timezone","trip_id"],
       "trip_days.update": ["city_id","date","overnight_city_id","overnight_kind","timezone","trip_id"],
+      // 🔴 `E5` 27 ส.ค. — `trip_destinations` (`20260827180000`) · `trip_id` **ไม่อยู่ฝั่ง update** โดยตั้งใจ
+      //    (ย้ายจุดหมายข้ามทริปไม่ได้ · policy with_check กันอีกชั้น) · ทะเบียนนี้ควรลงพร้อม migration แต่ตกหล่น
+      "trip_destinations.insert": ["city_id","rank","trip_id"],
+      "trip_destinations.update": ["city_id","rank"],
       "trip_hotels.insert": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","legacy_added_by","lng","name_en","name_local","phone","trip_id"],
       "trip_hotels.update": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","lng","name_en","name_local","phone"],
       "trip_members.insert": ["invited_by","role","trip_id","user_id"],
@@ -4268,8 +4272,9 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "trip_plans.update": ["is_active","name","trip_id"],
       "trip_stops.insert": ["catalog_place_id","custom_place_id","day_offset","dwell_minutes","event_kind","fixed_end_time","fixed_start_time","flight_from_code","flight_from_en","flight_no","flight_to_code","flight_to_en","icon","intercity_from","intercity_mode","intercity_to","is_alert","kind","layover_baggage","layover_immigration","layover_leaves_airport","layover_terminal_change","legacy_added_by","note","photo_path","place_ref","plan_id","rank","schedule_bound","time_is_flexible","title","title_en","transfer_target_label","transfer_target_time","travel_mode","trip_day_id","trip_id","visited_at"],
       "trip_stops.update": ["catalog_place_id","custom_place_id","day_offset","dwell_minutes","event_kind","fixed_end_time","fixed_start_time","flight_from_code","flight_from_en","flight_no","flight_to_code","flight_to_en","icon","intercity_from","intercity_mode","intercity_to","is_alert","kind","layover_baggage","layover_immigration","layover_leaves_airport","layover_terminal_change","note","photo_path","place_ref","plan_id","rank","schedule_bound","time_is_flexible","title","title_en","transfer_target_label","transfer_target_time","travel_mode","trip_day_id","visited_at"],
-      "trips.insert": ["base_timezone","created_by","end_date","id","start_date","status","title"],
-      "trips.update": ["base_timezone","end_date","start_date","status","title"],
+      // 🔴 `E5` 27 ส.ค. — `cover_image_url` เพิ่มเข้า trips (`20260827180000` · รูปปกหน้า Home) · grant ทีละคอลัมน์
+      "trips.insert": ["base_timezone","cover_image_url","created_by","end_date","id","start_date","status","title"],
+      "trips.update": ["base_timezone","cover_image_url","end_date","start_date","status","title"],
     };
 
     /** ดึง column grant ของ `authenticated` จากฐาน — `table_exposure` รายงาน ACL จริง */
@@ -4467,6 +4472,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           trip_id: tripS, city_id: ci.data.id, hotel_name: `โรงแรม ${stamp}`,
           check_in: "2026-10-12", check_out: "2026-10-14",
         }],
+        // 🔴 `E5` 27 ส.ค. — `trip_destinations` มี `trip_id` → เข้า SCOPED เอง · ต้องมี fixture ไม่งั้นเคสกวาดเขียวฟรี
+        ["trip_destinations", { trip_id: tripS, city_id: ci.data.id, rank: 1 }],
       ];
       for (const [table, row] of rows) {
         const { error } = await A.from(table).insert(row);
