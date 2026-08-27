@@ -5446,6 +5446,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     let tripS = "";
     let filePath = "";
     const rootPath = `root-${stamp}.pdf`; // ไม่มี prefix uuid → booking_file_trip() = null
+    let bFilePath = ""; // ไฟล์ใน **ทริปของ B เอง** — สำหรับเคส cross-tenant ที่ผู้บุกรุก *มีทริปของตัวเอง*
 
     beforeAll(async () => {
       const { data: trip, error } = await A.rpc("create_trip", {
@@ -5475,10 +5476,19 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         .from(BUCKET)
         .upload(rootPath, new Blob(["x"], { type: "application/pdf" }), { contentType: "application/pdf" });
       if (rootUp.error) throw new Error(`วางไฟล์รากไม่ได้: ${rootUp.error.message}`);
+
+      // ไฟล์ในทริปของ B เอง (`tripB` จาก fixture หลัก) — A ไม่ได้เป็นสมาชิกของทริปนั้น
+      bFilePath = `${tripB}/receipt-b-${stamp}.pdf`;
+      const bUp = await B.storage
+        .from(BUCKET)
+        .upload(bFilePath, new Blob([`ใบเสร็จของ B ${stamp}`], { type: "application/pdf" }), {
+          contentType: "application/pdf",
+        });
+      if (bUp.error) throw new Error(`B อัปโหลดไฟล์ในทริปตัวเองไม่ได้: ${bUp.error.message}`);
     });
 
     afterAll(async () => {
-      const rm = await admin.storage.from(BUCKET).remove([filePath, rootPath]);
+      const rm = await admin.storage.from(BUCKET).remove([filePath, rootPath, bFilePath]);
       if (rm.error) console.warn(`\n⚠️  ลบไฟล์ fixture ไม่สำเร็จ: ${rm.error.message}\n`);
     });
 
@@ -5578,6 +5588,20 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(
         Boolean(error) || !data,
         "anon ที่ถือคีย์ไคลเอนต์โหลดใบเสร็จได้ = บัคเก็ตหลุดแบบ 0019 ที่ D12 บันทึกไว้ (ไฟล์มีอยู่จริง)",
+      ).toBe(true);
+    });
+
+    it("🔴 cross-tenant: A **ที่มีทริปของตัวเอง** อ่านไฟล์ในทริปของ B ไม่ได้ (เข้มกว่าเคสคนนอกที่ไม่มีทริปเลย)", async () => {
+      // 🎯 ต่างจากเคส `C` ข้างบนตรงที่ A **มีสิทธิ์จริงบางอย่างในระบบ** (เป็นเจ้าของทริปตัวเอง)
+      //    → ถ้า `can_read_trip` เผลอตอบ "จริง" เพราะผู้เรียกมีทริป*สักใบ* แทนที่จะเป็น*ทริปนี้* เคสนี้จับได้
+      //    (เคส C จับไม่ได้ เพราะ C ไม่มีทริปเลย ตอบจริงทั้งสองนิยามไม่ได้อยู่แล้ว)
+      const mine = await B.storage.from(BUCKET).download(bFilePath);
+      expect(mine.error, "precondition: เจ้าของไฟล์ (B) ต้องโหลดได้ ไม่งั้นเคสข้างล่างเขียวเพราะไม่มีไฟล์").toBeNull();
+
+      const { data, error } = await A.storage.from(BUCKET).download(bFilePath);
+      expect(
+        Boolean(error) || !data,
+        "A อ่านใบเสร็จในทริปของ B ได้ = can_read_trip ตัดสินด้วย 'มีทริปไหม' ไม่ใช่ 'เป็นสมาชิกทริปนี้ไหม'",
       ).toBe(true);
     });
   });

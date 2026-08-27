@@ -193,17 +193,14 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "hidden_places.hidden_places_delete",
       "hidden_places.hidden_places_insert",
       "hidden_places.hidden_places_select",
-      // 🔴 เพิ่ม 27 ส.ค. (P4 · regex ครอบ storage แล้ว) — policy บน storage.objects **8 ตัว**
+      // 🔴 เพิ่ม 27 ส.ค. (P4 · regex ครอบ storage แล้ว) — policy บน storage.objects
       //    booking_files_* อยู่มาตั้งแต่ 25 ส.ค. แต่พินมองไม่เห็น (regex เดิมจับแค่ public.) — คุ้มไฟล์ตั๋วทริปจริง
-      //    trip_covers_* (d2241fd) — คุ้มรูปปก · เคสยิงจริง: rlsMatrix (booking-files) · storageCover/engineCrossUser (trip-covers)
+      //    ⚠️ `trip_covers_*` เคยอยู่ที่นี่ 4 ตัว · หายไปเองเมื่อ `20260827230000` `drop policy` (policyMapOrdered
+      //       เดิน create/drop ตามลำดับ) — **ถอนเพราะฟีเจอร์ถูกถอนตามมติผู้ใช้ ไม่ใช่เพราะ policy เคยผิด**
       "objects.booking_files_delete",
       "objects.booking_files_insert",
       "objects.booking_files_select",
       "objects.booking_files_update",
-      "objects.trip_covers_delete",
-      "objects.trip_covers_insert",
-      "objects.trip_covers_select",
-      "objects.trip_covers_update",
       "place_notes.place_notes_insert",
       "place_notes.place_notes_select",
       "place_notes.place_notes_update",
@@ -517,6 +514,11 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     // 🔴 อัปเดตรอบ 7 (`d223b58a…` → `01adb82c…`) — `D76` soft delete
     //    `trip_stops_select`/`custom_places_select` เติม `and deleted_at is null`
     //    · policy `DELETE` ของทั้งสองตาราง **ถูกถอดออก** (ลบผ่าน RPC เท่านั้น · `P-53`)
+    // 🔴 อัปเดตรอบ 9 (`9fe8903732cbc35f` → `00c860dfe1d5dd05`) — **policy ถูก *ถอนจริง* ไม่ใช่เงื่อนไขเปลี่ยน**
+    //    `20260827230000` `drop policy trip_covers_{select,insert,update,delete}` (ฟีเจอร์รูปปกแบบอัปโหลด
+    //    ถูกถอนตามมติผู้ใช้ 27 ส.ค. — รูปปกเป็นไฟล์สถิตย์แทน) · policy 68 → 64
+    //    · ไล่แล้ว: ไม่มี policy ตัวไหน*เปลี่ยนเงื่อนไข* · ① ยังคง 64/64 เพราะเคสที่ยังจริงถูก**ย้ายไป
+    //      `booking-files`** (`9505bb9`) ไม่ได้ถูกทิ้ง — โดยเฉพาะกิ่ง `objects.update` ที่ไม่มีเคสอื่นเลย
     // 🔴 อัปเดตรอบ 8 (`a32b77d792483359` → `9fe8903732cbc35f`) — **ตัววัดขยายขอบเขต ไม่ใช่ policy เปลี่ยน**
     //    (P4 · 27 ส.ค. · P1 GO): regex ครอบ `storage.` → เห็น policy บน storage.objects เพิ่ม **8 ตัว**
     //    ที่มีอยู่แล้วในไฟล์ (booking_files_* ตั้งแต่ 25 ส.ค. · trip_covers_* จาก d2241fd) — **ไม่มี policy
@@ -555,7 +557,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ที่เปลี่ยนคือ **เพิ่ม 2 policy ใหม่** (`catalog_country_contacts_select` · `catalog_place_access_select`)
       //    ทั้งคู่เป็น `for select to authenticated using (true)` — รูปเดียวกับคลังกลางอีก 4 ใบเป๊ะ
       //    **ไม่มี policy เดิมตัวไหนถูกแก้เงื่อนไข** (ยืนยันจากรายชื่อข้างบนที่เพิ่มอย่างเดียว ไม่มีตัวหาย)
-      "9fe8903732cbc35f",
+      "00c860dfe1d5dd05",
     );
   });
 
