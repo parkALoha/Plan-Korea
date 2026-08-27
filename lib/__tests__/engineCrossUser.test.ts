@@ -58,7 +58,7 @@ vi.mock("next/headers", () => ({
 // import handler หลัง vi.mock (vitest hoist mock ให้)
 import { POST as bookingsPOST } from "@/app/api/engine/trips/[tripId]/bookings/route";
 import { POST as checklistPOST } from "@/app/api/engine/trips/[tripId]/checklist/route";
-import { GET as tripsGET } from "@/app/api/engine/trips/route";
+import { GET as tripsGET, POST as tripsPOST } from "@/app/api/engine/trips/route";
 import { PATCH as daysPATCH } from "@/app/api/engine/trips/[tripId]/days/route";
 import { PUT as daySettingsPUT } from "@/app/api/engine/trips/[tripId]/day-settings/route";
 import { POST as stopsPOST } from "@/app/api/engine/trips/[tripId]/stops/route";
@@ -205,6 +205,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   const placeSlug4 = `exp4-${stamp}`;
   let place4Id = "";
   let cityId = ""; // เมืองคลังที่ seed ไว้ — ใช้เป็นจุดหมายของ tripA ในเคส GET /trips owner
+  let cityId2 = ""; // เมืองที่ 2/3 — สำหรับเคส POST /trips cityIds (ลำดับ rank)
+  let cityId3 = "";
 
   async function makeUser(tag: string) {
     const email = `xu-${tag}-${stamp}@example.test`;
@@ -274,6 +276,13 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const ci = await admin.from("catalog_cities").insert({ country_id: CC, legacy_slug: citySlug, name_th: "เมืองทดสอบ", name_en: "TestCity", lat: 37.5, lng: 127.0, timezone: "Asia/Seoul" }).select("id").single();
     if (ci.error) throw new Error(`seed city: ${ci.error.message}`);
     cityId = ci.data.id as string; // ใช้เป็น city_id ของ trip_destinations (owner-sees-destinations case)
+    const mkCity = async (n: number) => {
+      const r = await admin.from("catalog_cities").insert({ country_id: CC, legacy_slug: `exc${n}-${stamp}`, name_th: `เมือง${n}`, name_en: `City${n}`, lat: 37.5 + n / 10, lng: 127.0 + n / 10, timezone: "Asia/Seoul" }).select("id").single();
+      if (r.error) throw new Error(`seed city${n}: ${r.error.message}`);
+      return r.data.id as string;
+    };
+    cityId2 = await mkCity(2);
+    cityId3 = await mkCity(3);
     // ชื่ออยู่ catalog_place_names แยกตาราง · probe ต้องการแค่ให้ place *มีอยู่* (ค้นด้วย legacy_slug)
     const pl = await admin.from("catalog_places").insert({ city_id: ci.data.id, legacy_slug: placeSlug, category: "food", lat: 37.5, lng: 127.0 });
     if (pl.error) throw new Error(`seed place: ${pl.error.message}`);
@@ -386,6 +395,70 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       mine!.memberCount,
       "memberCount 0 เป็นไปไม่ได้จริง (ทุกทริปมีเจ้าของ ≥1) → 0 = อ่าน trip_members ไม่ได้ ไม่ใช่ทริปไม่มีคน",
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  function postTrip(cookies: Cookie[], body: unknown): Promise<Response> {
+    jar.cookies = cookies;
+    const req = new NextRequest("http://localhost:3300/api/engine/trips", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return tripsPOST(req);
+  }
+  const tripDates = { startDate: "2026-10-11", endDate: "2026-10-21" };
+
+  /**
+   * POST /trips + cityIds (P1 · `7230241`) — เส้นเขียน trip_destinations ที่ยังไม่มีใครยิง
+   * 🔴 ทางบวก: rank ต้องเรียง **ตามลำดับที่ส่ง** (route ตัดซ้ำแต่รักษาลำดับแรก · เรียงใหม่ = บั๊ก · ผู้ใช้จัดเอง)
+   */
+  it("🔴 POST /trips + cityIds — จุดหมายครบ + rank เรียงตามลำดับที่ส่ง (ไม่เรียงใหม่)", async () => {
+    // ส่งลำดับที่ *ไม่* เรียงตาม cityId → ถ้า GET คืนลำดับนี้ = รักษาลำดับส่ง · ถ้าคืนเรียง = บั๊ก
+    const sorted = [cityId, cityId2, cityId3].sort();
+    const sendOrder = [sorted[2], sorted[0], sorted[1]];
+    const res = await postTrip(aCookies, { title: `dest-order-${stamp}`, ...tripDates, cityIds: sendOrder });
+    expect(res.status, `POST ควร 201: ${await res.clone().text()}`).toBe(201);
+    const created = (await res.json()) as { id: string; destinationsError?: string };
+    expect(created.destinationsError, "เมืองจริงทั้งหมด ไม่ควรมี destinationsError").toBeUndefined();
+
+    const getRes = await tripsGET(new NextRequest("http://localhost:3300/api/engine/trips"));
+    const list = (await getRes.json()) as Array<{ id: string; destinations: { cityId: string }[] }>;
+    const mine = list.find((t) => t.id === created.id);
+    expect(mine, "ไม่เห็นทริปที่เพิ่งสร้างใน GET /trips").toBeDefined();
+    expect(
+      mine!.destinations.map((d) => d.cityId),
+      "ลำดับ destinations ไม่ตรงกับที่ส่ง = rank ถูกเรียงใหม่ (บั๊ก — ผู้ใช้จัดลำดับเมืองเอง)",
+    ).toEqual(sendOrder);
+  });
+
+  /**
+   * 🔴 ทางที่ P1 ห่วงกว่า — **ความล้มเหลวครึ่งทาง**: จุดหมายเขียนนอกธุรกรรมของ create_trip
+   * เขียนล้ม → ยังคืน 201 (ทริปเกิดจริง) + แนบ `destinationsError` · **เคสฝั่งบวกของความล้มเหลว**
+   * ถ้าไม่ยิง เราไม่รู้เลยว่าสัญญาณถูกส่งจริงหรือถูกกลืน (อาการเดียวกับ "บันทึกแล้วไม่เปลี่ยน")
+   */
+  it("🔴 POST /trips + cityIds uuid ถูกรูปแต่ไม่มีในคลัง — 201 + destinationsError (FK) + ทริปยังใช้ได้", async () => {
+    const ghost = "00000000-0000-4000-8000-000000000000"; // uuid ถูกรูป ไม่มีในคลัง → FK ปฏิเสธ
+    const res = await postTrip(aCookies, { title: `dest-fail-${stamp}`, ...tripDates, cityIds: [ghost] });
+    expect(res.status, `ควร 201 (ทริปเกิดแม้จุดหมายล้ม): ${await res.clone().text()}`).toBe(201);
+    const body = (await res.json()) as { id: string; destinationsError?: string };
+    expect(
+      body.destinationsError,
+      "จุดหมายล้มแต่ไม่มี destinationsError = สัญญาณถูกกลืน · ผู้ใช้ไม่รู้ว่าเมืองที่เลือกหาย",
+    ).toBeTruthy();
+
+    const getRes = await tripsGET(new NextRequest("http://localhost:3300/api/engine/trips"));
+    const list = (await getRes.json()) as Array<{ id: string; destinations: unknown[] }>;
+    const mine = list.find((t) => t.id === body.id);
+    expect(mine, "ทริปหายหลังจุดหมายล้ม = ครึ่งทางพัง (ทริปควรอยู่ใช้งานได้)").toBeDefined();
+    expect(mine!.destinations, "จุดหมายล้ม → destinations ควรว่าง (ไม่ใช่บางส่วน)").toEqual([]);
+  });
+
+  it("POST /trips รูป cityIds ผิด → 400 (ไม่ใช่ array · uuid ผิดรูป · เกินเพดาน 20)", async () => {
+    expect((await postTrip(aCookies, { title: `bad1-${stamp}`, ...tripDates, cityIds: "notarray" })).status, "cityIds ไม่ใช่ array").toBe(400);
+    expect((await postTrip(aCookies, { title: `bad2-${stamp}`, ...tripDates, cityIds: ["not-a-uuid"] })).status, "uuid ผิดรูป").toBe(400);
+    // 21 uuid *ต่างกัน* — route ตัดซ้ำก่อนนับ ส่งตัวเดียวกัน 21 ครั้งจะเหลือ 1 ไม่ทริกเกอร์เพดาน
+    const many = Array.from({ length: 21 }, (_, i) => `00000000-0000-4000-8000-0000000000${String(i).padStart(2, "0")}`);
+    expect((await postTrip(aCookies, { title: `bad3-${stamp}`, ...tripDates, cityIds: many })).status, "เกิน 20 เมือง").toBe(400);
   });
 
   /**
