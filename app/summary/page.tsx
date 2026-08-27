@@ -35,6 +35,7 @@ import {
 } from "@/components/BookingsPanel";
 import { BottomNav } from "@/components/BottomNav";
 import { ImmigrationSheet, formatDateEn } from "@/components/ImmigrationSheet";
+import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { LayoverBadges } from "@/components/LayoverBadges";
 import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { PlaceDetailModal } from "@/components/PlaceDetailModal";
@@ -533,34 +534,45 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   const searchParams = useSearchParams();
   // 🔴 เดิม t("summaryTitle")/t("tripDates") ฝังชื่อ+ช่วงวันของทริปเกาหลีตายตัว — หน้านี้มีปุ่ม "หน้าสำหรับ
   // ตม." อยู่บนตัวมันเอง ยื่นให้คนนอกดูจริง เปิดทริปที่สอง ("P2 boundary test single day") แล้วเห็นชื่อ/
-  // วันที่ของทริปแรก (P1 27 ส.ค. 2026) — ดึงชื่อจริงจาก /api/engine/trips เหมือน TripHeader.tsx (ยังไม่มี
-  // route ดึงทริปเดียวโดยตรง) เก็บคู่กับ tripId ที่ผลนั้นเป็นของ แล้ว derive ตอน render แทน setState ตรงๆ
-  // ในเอฟเฟกต์ กัน set-state-in-effect (แพทเทิร์นเดียวกับ usePlacePhotos.ts)
-  // ⚠️ ช่วงวันที่ยังโชว์ไม่ได้ด้วยเหตุผลเดียวกับ TripHeader — tripsForUser() (lib/engine/trip.ts) ยัง
-  // ไม่ select start_date/end_date ทั้งที่มีอยู่ในฐาน ต้องขอ P1 เพิ่มก่อนถึงจะใส่วันที่จริงกลับมาได้
-  const [titleResult, setTitleResult] = useState<{ forTripId: string; title: string | null } | null>(
-    null
-  );
+  // วันที่ของทริปแรก (P1 27 ส.ค. 2026) — ดึงชื่อ+วันที่จริงจาก /api/engine/trips เหมือน TripHeader.tsx
+  // (ยังไม่มี route ดึงทริปเดียวโดยตรง) เก็บคู่กับ tripId ที่ผลนั้นเป็นของ แล้ว derive ตอน render แทน
+  // setState ตรงๆ ในเอฟเฟกต์ กัน set-state-in-effect (แพทเทิร์นเดียวกับ usePlacePhotos.ts)
+  // 📌 start_date/end_date ถูกเพิ่มเข้า select ของ tripsForUser() แล้ว (27 ส.ค. 2026 f89ecd8)
+  const [tripResult, setTripResult] = useState<{
+    forTripId: string;
+    title: string | null;
+    startDate: string | null;
+    endDate: string | null;
+  } | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/engine/trips")
       .then((r) => r.json())
-      .then((rows: { id: string; title: string }[]) => {
+      .then((rows: { id: string; title: string; start_date: string; end_date: string }[]) => {
         if (cancelled) return;
         const match = rows.find((r) => r.id === tripId);
-        setTitleResult({ forTripId: tripId, title: match?.title ?? null });
+        setTripResult({
+          forTripId: tripId,
+          title: match?.title ?? null,
+          startDate: match?.start_date ?? null,
+          endDate: match?.end_date ?? null,
+        });
       })
       .catch(() => {
-        if (!cancelled) setTitleResult({ forTripId: tripId, title: null });
+        if (!cancelled) setTripResult({ forTripId: tripId, title: null, startDate: null, endDate: null });
       });
     return () => {
       cancelled = true;
     };
   }, [tripId]);
-  const tripTitle = titleResult?.forTripId === tripId ? titleResult.title : undefined;
+  const tripTitle = tripResult?.forTripId === tripId ? tripResult.title : undefined;
   // `?for=immigration` = เลย์เอาต์เอกสารสำหรับ ตม./K-ETA (บังคับอังกฤษเสมอ ไม่ว่าปุ่มภาษาจะเลือกอะไร)
   const immigrationView = searchParams.get("for") === "immigration";
   const en = lang === "en";
+  const tripDateRange =
+    tripResult?.forTripId === tripId && tripResult.startDate && tripResult.endDate
+      ? tripDateRangeLabel(tripResult.startDate, tripResult.endDate, lang)
+      : null;
   const { hotels, loaded: hotelsLoaded } = useHotels();
   const { bookings, loaded: bookingsLoaded } = useBookings();
   // เซ็นรวมทีเดียวทั้งทริป (E2-AC13 ②) — ส่วน "ตั๋ว/booking ทั้งหมด" โชว์ทุกใบพร้อมกันในหน้าเดียว
@@ -744,7 +756,10 @@ export function SummaryContent({ tripId }: { tripId: string }) {
           <h1 className="mt-3 text-2xl font-extrabold">
             📋 {tripTitle === undefined ? "…" : (tripTitle ?? (en ? "This trip" : "ทริปนี้"))}
           </h1>
-          <p className="mt-1 text-sm text-pine-soft/80">{t("readOnlyNote")}</p>
+          <p className="mt-1 text-sm text-pine-soft/80">
+            {tripDateRange ? `${tripDateRange} · ` : ""}
+            {t("readOnlyNote")}
+          </p>
           {overallLoaded && !immigrationView && (
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-cream/90">
               <span>

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { TripPlan } from "@/lib/supabase";
 import { TripSettingsModal } from "./TripSettingsModal";
 import { useMounted } from "@/hooks/useMounted";
+import { tripDateRangeLabel } from "@/lib/tripDateRange";
 
 interface TripHeaderProps {
   /** ทริปที่กำลังดูอยู่ — ใช้ดึงชื่อทริปจริง (E5) แทนชื่อ/วันที่ที่เคยฮาร์ดโค้ดไว้ */
@@ -50,41 +51,57 @@ export function TripHeader({
   const mounted = useMounted();
   const activePlan = plans.find((p) => p.id === activePlanId);
 
-  // 🔴 ชื่อทริปจริง (P1: /trip/[tripId] ลงแล้ว มีทริปที่สองแล้ว — เปิดทริปที่สองวันนี้หัวจอจะบอกชื่อ
+  // 🔴 ชื่อ+วันที่ทริปจริง (P1: /trip/[tripId] ลงแล้ว มีทริปที่สองแล้ว — เปิดทริปที่สองวันนี้หัวจอจะบอกชื่อ
   // ทริปแรก) — เดิม "🍁 แพลนเที่ยวเกาหลี" ฮาร์ดโค้ด ตามที่เขียนไว้เองใน ux-flows.md §2.1 ว่าต้องดึงเป็น
   // prop ก่อนถึงจะขยายได้ · ใช้ /api/engine/trips (รายการ) เดียวกับที่ useActiveTripId() เรียกอยู่แล้ว
   // เพราะยังไม่มี route ดึงทริปเดียวโดยตรง — เก็บคู่กับ tripId ที่ผลนั้นเป็นของ แล้ว derive ตอน render
   // (แพทเทิร์นเดียวกับ usePlacePhotos.ts) แทน setState ตรงๆ ในเอฟเฟกต์ กัน set-state-in-effect
-  const [titleResult, setTitleResult] = useState<{ forTripId: string; title: string | null } | null>(
-    null
-  );
+  // 📌 start_date/end_date ถูกเพิ่มเข้า select ของ tripsForUser() แล้ว (27 ส.ค. 2026 f89ecd8) —
+  // ดึงมาพร้อมชื่อในคำขอเดียวกันเลย ไม่ต้องยิงซ้ำ
+  const [tripResult, setTripResult] = useState<{
+    forTripId: string;
+    title: string | null;
+    startDate: string | null;
+    endDate: string | null;
+  } | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/engine/trips")
       .then((r) => r.json())
-      .then((rows: { id: string; title: string }[]) => {
+      .then((rows: { id: string; title: string; start_date: string; end_date: string }[]) => {
         if (cancelled) return;
         const match = rows.find((r) => r.id === tripId);
-        setTitleResult({ forTripId: tripId, title: match?.title ?? null });
+        setTripResult({
+          forTripId: tripId,
+          title: match?.title ?? null,
+          startDate: match?.start_date ?? null,
+          endDate: match?.end_date ?? null,
+        });
       })
       .catch(() => {
-        if (!cancelled) setTitleResult({ forTripId: tripId, title: null });
+        if (!cancelled) setTripResult({ forTripId: tripId, title: null, startDate: null, endDate: null });
       });
     return () => {
       cancelled = true;
     };
   }, [tripId]);
-  const tripTitle = titleResult?.forTripId === tripId ? titleResult.title : undefined;
+  const tripTitle = tripResult?.forTripId === tripId ? tripResult.title : undefined;
+  const tripDateRange =
+    tripResult?.forTripId === tripId && tripResult.startDate && tripResult.endDate
+      ? tripDateRangeLabel(tripResult.startDate, tripResult.endDate)
+      : null;
 
   return (
     // focus-ring-on-dark: กรอบโฟกัสสีเมเปิลจมไปกับพื้นสีสน สลับเป็นสีทองเฉพาะในหัวนี้ (เฟส 20.1)
     <header className="focus-ring-on-dark bg-pine px-4 pb-4 pt-6 text-cream sm:pb-6">
       <div className="mx-auto max-w-2xl lg:max-w-7xl">
-        {/* เดิมมีบรรทัดวันที่ตายตัว "11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20" ตรงนี้ — ลบทิ้งแล้ว
-            (P1 27 ส.ค. 2026) ไม่ใช่แค่ผิดกับทริปอื่น แต่ผิดกับทริปนี้เองด้วยซ้ำ (ทริปจริงคือ 11–21
-            ไม่ใช่ 12–20) ยังไม่มีที่มาให้ดึงช่วงวันที่จริง — tripsForUser() (lib/engine/trip.ts) เลือก
-            แค่ {"{id, title}"} ทั้งที่ trips.start_date/end_date มีอยู่ในฐานแล้ว ต้องขอ P1 เพิ่มเข้า
-            select ก่อนถึงจะใส่บรรทัดนี้กลับมาได้ด้วยข้อมูลจริง — โชว์ว่างดีกว่าโชว์ค่าผิด */}
+        {/* เดิมมีบรรทัดวันที่ตายตัว "11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20" ตรงนี้ — ลบไปตอนที่ยังดึง
+            วันที่จริงไม่ได้ (P1 27 ส.ค. 2026) ตอนนี้ start_date/end_date มาจาก tripsForUser() แล้ว
+            (f89ecd8) จึงใส่กลับมาด้วยข้อมูลจริงแทนวันที่ฝังตาย — ไม่โชว์อะไรถ้ายังไม่รู้ (tripDateRange
+            เป็น null ระหว่างโหลด/หาไม่เจอ) โชว์ว่างดีกว่าโชว์ค่าผิดเหมือนเดิม */}
+        {tripDateRange && (
+          <p className="text-right text-xs text-cream/70">{tripDateRange}</p>
+        )}
         <div className="flex items-center justify-end gap-2">
           <div className="flex shrink-0 gap-1.5">
             <Link
