@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="คังนึง">
+  <defs>
+    <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f6e0cd"/><stop offset="1" stop-color="#dfc0a6"/></linearGradient>
+    <linearGradient id="g-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ba0ad"/><stop offset="1" stop-color="#54808f"/></linearGradient>
+  </defs>
+  <rect width="800" height="300" fill="url(#g-sky)"/>
+  <circle cx="600" cy="80" r="38" fill="#d9683a" opacity="0.78"/>
+  <path d="M0 176 L88 128 L162 166 L246 122 L330 172 L404 142 L470 178 L800 178 L800 206 L0 206 Z" fill="#b8502a" opacity="0.24"/>
+  <!-- ต้นสนชายทะเล -->
+  <g fill="#2b241f" opacity="0.88">
+    <path d="M92 206 L112 156 L132 206 Z"/><rect x="108" y="204" width="8" height="20"/>
+    <path d="M156 206 L172 168 L188 206 Z"/><rect x="168" y="204" width="7" height="18"/>
+    <path d="M700 206 L718 162 L736 206 Z"/><rect x="714" y="204" width="8" height="20"/>
+  </g>
+  <!-- ศาลาริมทะเล -->
+  <g fill="#2b241f">
+    <path d="M300 202 C324 180 348 170 384 169 C420 170 444 180 468 202 C440 192 420 188 384 188 C348 188 324 192 300 202 Z"/>
+    <rect x="330" y="202" width="8" height="24"/><rect x="426" y="202" width="8" height="24"/>
+    <rect x="316" y="224" width="136" height="8" opacity="0.9"/>
+  </g>
+  <path d="M0 240 L800 240 L800 250 L0 250 Z" fill="#2b241f" opacity="0.88"/>
+  <rect y="250" width="800" height="50" fill="url(#g-sea)"/>
+  <g stroke="#fdf6ec" stroke-width="4" opacity="0.36" stroke-linecap="round">
+    <path d="M40 266 H186"/><path d="M232 288 H392"/><path d="M448 264 H572"/><path d="M604 290 H756"/>
+  </g>
+</svg>

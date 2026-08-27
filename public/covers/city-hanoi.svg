@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ฮานอย">
+  <defs>
+    <linearGradient id="h-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f2e4c8"/><stop offset="1" stop-color="#cdd6bd"/></linearGradient>
+    <linearGradient id="h-lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7d9a86"/><stop offset="1" stop-color="#54755f"/></linearGradient>
+  </defs>
+  <rect width="800" height="300" fill="url(#h-sky)"/>
+  <circle cx="656" cy="62" r="32" fill="#d9683a" opacity="0.75"/>
+  <!-- ตึกแถวเมืองเก่า -->
+  <g fill="#2b241f" opacity="0.5">
+    <rect x="20" y="150" width="44" height="98"/><rect x="70" y="128" width="38" height="120"/>
+    <rect x="114" y="162" width="42" height="86"/><rect x="162" y="140" width="36" height="108"/>
+    <rect x="602" y="146" width="40" height="102"/><rect x="648" y="126" width="36" height="122"/>
+    <rect x="690" y="158" width="42" height="90"/><rect x="738" y="138" width="38" height="110"/>
+  </g>
+  <!-- ต้นไม้ริมทะเลสาบ — มีลำต้น ยืนบนฝั่ง -->
+  <g fill="#2b241f" opacity="0.82">
+    <rect x="216" y="196" width="9" height="52"/>
+    <circle cx="220" cy="184" r="30"/><circle cx="246" cy="196" r="22"/><circle cx="196" cy="198" r="20"/>
+    <rect x="560" y="200" width="9" height="48"/>
+    <circle cx="564" cy="190" r="27"/><circle cx="588" cy="202" r="19"/><circle cx="542" cy="204" r="17"/>
+  </g>
+  <!-- หอเต่ากลางทะเลสาบ -->
+  <g fill="#2b241f">
+    <rect x="356" y="200" width="88" height="48"/>
+    <rect x="366" y="168" width="68" height="34" opacity="0.94"/>
+    <rect x="378" y="142" width="44" height="28" opacity="0.9"/>
+    <path d="M396 142 L404 142 L400 114 Z"/>
+    <path d="M342 200 L458 200 L446 190 L354 190 Z"/>
+    <path d="M354 168 L446 168 L434 158 L366 158 Z" opacity="0.94"/>
+    <rect x="374" y="214" width="20" height="34" fill="#f2e4c8" opacity="0.5"/>
+    <rect x="406" y="214" width="20" height="34" fill="#f2e4c8" opacity="0.5"/>
+  </g>
+  <path d="M0 244 L800 244 L800 254 L0 254 Z" fill="#2b241f" opacity="0.88"/>
+  <rect y="254" width="800" height="46" fill="url(#h-lake)"/>
+  <g fill="#2b241f" opacity="0.24"><rect x="356" y="254" width="88" height="22"/></g>
+  <g stroke="#fdf6ec" stroke-width="3" opacity="0.3" stroke-linecap="round">
+    <path d="M56 270 H190"/><path d="M540 268 H674"/><path d="M244 288 H352"/>
+  </g>
+</svg>
