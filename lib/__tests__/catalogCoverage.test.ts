@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readEnvKey, requireLiveCreds, TEST_COUNTRY_CODES } from "./_helpers";
+import { readEnvKey, requireLiveCreds } from "./_helpers";
 import { testClient } from "./_testClient";
 import { browseCatalogPlaces, searchCatalogCities } from "@/lib/engine/db";
 
@@ -14,11 +14,14 @@ import { browseCatalogPlaces, searchCatalogCities } from "@/lib/engine/db";
  *    → เคสนี้จึงนับ **เฉพาะสถานที่ที่ไปเที่ยวได้** (`category <> 'transport'`) ไม่ใช่นับแถวดิบ
  *
  * ## รายชื่อประเทศมาจาก **นิยาม ไม่ใช่ลิสต์ที่คนพิมพ์**
- * = ทุกแถวใน `catalog_countries` ที่ **ไม่ใช่รหัสทดสอบสงวน** (`TEST_COUNTRY_CODES`)
- * · เพิ่มประเทศใหม่เข้าคลัง = **เข้าเกณฑ์นี้เองทันที** ไม่ต้องมาแก้เทสต์ (ถ้าใช้ลิสต์ที่พิมพ์ไว้
+ * = ทุกแถวใน `catalog_countries` ที่ **`supported = true`** (คอลัมน์จาก `20260828001500`)
+ * · เพิ่มประเทศใหม่ที่เปิดใช้ = **เข้าเกณฑ์นี้เองทันที** ไม่ต้องมาแก้เทสต์ (ถ้าใช้ลิสต์ที่พิมพ์ไว้
  *   ประเทศใหม่จะได้รับการยกเว้นฟรีจากการที่ไม่มีใครนึกถึง — `P-21`)
- * · fixture ของชุดทดสอบอยู่ใต้รหัส ISO user-assigned (`z*`/`x*`) จึงถูกกรองออกตามนิยาม
- *   **ไม่ใช่กรองด้วย `source`** ซึ่งเป็น default ค่าเดียวกันทั้ง fixture และของจริง แยกไม่ได้
+ * · 🔴 **เคยกรองด้วย "ไม่ใช่รหัสทดสอบสงวน" (`TEST_COUNTRY_CODES`) — เลิกใช้แล้ว 28 ส.ค.**
+ *   denylist แบบนั้นแปลว่า **โค้ดต้องรู้จัก artifact ของชุดทดสอบ** · `supported` เป็น allowlist
+ *   ที่ระบบประกาศเอง (`default false`) → **fail-safe โดยโครงสร้าง ไม่ใช่โดยความขยันจด**
+ *   ⚠️ ทะเบียนรหัสสงวนยังมีอยู่และยังจำเป็น — **แต่สำหรับกันบล็อกเทสต์ชนกันเท่านั้น**
+ *   ไม่ใช่สำหรับตัดสินว่าผู้ใช้เห็นอะไร · **อย่าดึงมันกลับมาที่นี่**
  *
  * ## ⚠️ สิ่งที่เคสนี้ **ไม่** พิสูจน์
  * · ไม่ได้บอกว่าสถานที่ที่มี **ดีพอ/ครบ/ถูกต้อง** — บอกแค่ว่า *ไม่ว่าง*
@@ -39,8 +42,6 @@ describe("การรันชุดนี้", () => {
 });
 
 describe.runIf(hasCreds)("E4 — คลังของประเทศที่ประกาศรองรับ ต้องไม่ว่าง", () => {
-  const reserved = new Set<string>(Object.values(TEST_COUNTRY_CODES));
-
   async function survey() {
     const admin = testClient(SERVICE);
     // 🔴 **แหล่งความจริงเดียวคือคอลัมน์ `supported`** (`20260828001500` · P1) — ไม่ใช่ "ไม่ใช่รหัสสงวน" อีกแล้ว
@@ -109,7 +110,7 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
       "ไม่มีประเทศไหนมีสถานที่เที่ยวเลยสักแห่ง — น่าจะเป็นตัวนับพัง ไม่ใช่คลังว่างทั้งใบ",
     ).toBe(true);
     console.warn(
-      "\n📊 คลังต่อประเทศ (ไม่รวมรหัสทดสอบ):\n" +
+      "\n📊 คลังต่อประเทศ (supported = true):\n" +
         rows
           .map(
             (r) =>
