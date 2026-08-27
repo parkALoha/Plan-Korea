@@ -42,7 +42,7 @@ describe.runIf(hasCreds)("fixture lock — เดินเส้นทางจ�
       // ③ คนอื่นปลดไม่ได้ (ปลดได้เฉพาะเจ้าของ)
       expect((await admin.rpc("release_fixture_lock", { p_holder: "verify-other" })).data).toBe(false);
       // holder ยังเป็นเจ้าของจริง
-      expect((await admin.rpc("fixture_lock_holder")).data?.held_by).toBe("verify-owner");
+      expect((await admin.rpc("fixture_lock_holder")).data?.[0]?.held_by).toBe("verify-owner");
     } finally {
       // ④ เจ้าของปลดได้ (helper เช็ค lock-loss ในตัว)
       await lock.release();
