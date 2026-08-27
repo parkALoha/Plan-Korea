@@ -434,6 +434,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · ไม่มี DML · `service_role` เท่านั้น**
       "public.mode_limits",
       "public.read_only_selftest",
+      // 🔴 เพิ่ม 27 ส.ค. (P1) — **ทางเรียกของ `app.read_only_uncovered_tables()`**
+      //    ตัวข้างในอยู่ schema `app` ที่ไม่ถูก expose + `revoke all` → **ไม่มีใครเรียกได้เลย**
+      //    (P4 วัดได้ `PGRST202`) · **ตัวตรวจที่เรียกไม่ได้ ไม่ใช่ด่าน มันคือโค้ดที่ตายแล้ว** (`P-50`)
+      //    · definer โดยจำเป็น: ถ้าเป็น invoker จะเรียกตัวข้างในไม่ได้ (ยัง revoke อยู่)
+      //    · ไม่รับพารามิเตอร์ · อ่านเฉพาะ `pg_catalog` · ไม่แตะข้อมูลผู้ใช้ · `grant execute`
+      //      ให้ `service_role` เท่านั้น = **ข้อยกเว้นที่ 6 ใน `TEAM.md`**
+      "public.read_only_uncovered_tables",
       "public.release_fixture_lock",
       "public.role_probe_result",
       // 🔴 `P-53` — soft delete ต้องผ่าน RPC เพราะ PostgREST ห่อ `UPDATE` ด้วย `RETURNING` เสมอ
@@ -904,7 +911,14 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     //    (`create or replace function app.read_only_uncovered_tables()`) · ไม่มี `create or replace`
     //    ทับฟังก์ชันเดิมสักตัว · รายชื่อ 28 → 29 ตัว ต่างกันแค่ตัวใหม่นี้
     //    ⚠️ นี่คือขั้นตอนที่หมุดนี้มีไว้บังคับ — **ขึ้นค่าโดยไม่ไล่ = ฆ่าหมุด** (`P-48`)
-    ).toBe("30c3fe8c428ba55865ecd17a7fbfdf9105460288fe464aa0c55212526b8cbfd1");
+    ).toBe("273dcd1109f14da6ec46f5b401f798be4d9ef315dbad642718199a85c0e48118");
+    // 🔴 ขึ้นค่ารอบ 2 · 27 ส.ค. (P1) — **คราวนี้เปลี่ยนเพราะ *แก้ body ของตัวเดิม* ซึ่งเป็นเคส
+    //    ที่หมุดนี้มีไว้จับโดยตรง ไม่ใช่การเพิ่มฟังก์ชันแบบรอบก่อน**
+    //    ตัวที่แก้: `app.read_only_uncovered_tables()` · `20260827210000` · **เปลี่ยนเงื่อนไขเดียว**
+    //    `relkind = 'r'` → `relkind in ('r', 'p')` — ตาราง partitioned (`p`) เคยถูกข้ามเงียบ
+    //    → ถ้ามีตาราง partitioned ที่ไม่ติด guard ฟังก์ชันจะคืน `[]` เหมือนเดิมทุกประการ
+    //    ⚠️ **ไม่มีฟังก์ชันอื่นถูกแตะ** — migration นั้นมี `create or replace` บรรทัดเดียว
+    //       และ **ไม่เปลี่ยนรูปที่คืน** → เคส `readOnlyCoverage.test.ts` ยังเขียวโดยไม่ต้องแก้
   });
 
   it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
