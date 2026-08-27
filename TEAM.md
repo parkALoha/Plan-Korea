@@ -172,6 +172,31 @@ mcp__ccd_session_mgmt__list_sessions
   · 🔴 **ห้ามใช้ `git stash` แก้ปัญหานี้เด็ดขาด** — มันกวาดของที่คนอื่นกำลังพิมพ์อยู่
   · ⚠️ ตัวหลอกใน worktree ใหม่: `tsc` จะฟ้อง `Cannot find name 'LayoutProps'` เพราะไม่มี `.next/types`
     ที่ Next generate ตอน build — **ไม่ใช่ error จริง** ให้รัน `tsc` ในทรีจริงแทน (ชุดเทสต์รันใน worktree ได้ปกติ)
+  · ⚠️ **`ln -s node_modules` ใช้กับ `npm run build` ไม่ได้** — Turbopack ปฏิเสธ symlink ที่ชี้ออกนอก
+    filesystem root (`Symlink [project]/node_modules is invalid`) · **ไม่ใช่โค้ดพัง**
+    → ใช้ `cp -al <ทรีจริง>/node_modules <worktree>/node_modules` (hard link · 508M แต่เร็วเพราะไม่ก๊อปจริง)
+    · ชุดเทสต์กับ `lint` ใช้ symlink ได้ **เฉพาะ `build` ที่ไม่ได้**
+
+  🔴 **แก้ 27 ส.ค. 2026 (เย็น) — รันครบ *สามตัว* ยังไม่พอ ต้องรัน *สิ่งที่ CI รัน* (P1 ทำ CI แดงด้วยข้อนี้)**
+  ผม push `6777309` หลังยืนยันว่า `Tests 994/994 · tsc สะอาด · guards ❌0 ✅18 · eslint 0 error`
+  **แล้ว CI แดง** · สาเหตุ: `npm run lint` = **`eslint --max-warnings=0`** · ผมรัน `npx eslint .` ซึ่งไม่มีธงนั้น
+  → เห็น `1 warning` แล้ว**ตัดสินเองว่าไม่บล็อก** และส่งไปบอกเจ้าของไฟล์ว่า *"ไม่บล็อกอะไร"*
+
+  🎯 **ต่างจากตระกูล "หลักฐานที่ให้ผลเหมือนกันทั้งตอนพังและไม่พัง" ที่ทีมไล่กันทั้งวัน —
+     รอบนี้หลักฐานทุกชิ้น *ถูกต้อง* แต่ *ไม่ครอบสิ่งที่ CI ตรวจ*** · ยืนยัน 3 ใน 4 แล้วรายงานว่าครบ
+
+  **✅ สิ่งที่ CI รันจริง (`.github/workflows/ci.yml`) — ไล่จากไฟล์ ไม่ใช่จากความจำ:**
+  ```bash
+  npm run lint          # = eslint --max-warnings=0   ← ไม่ใช่ `npx eslint .`
+  npx next typegen      # ต้องรันก่อน tsc ไม่งั้น LayoutProps หาย
+  npx tsc --noEmit
+  npm run build         # 🔴 ตัวที่ไม่เคยอยู่ในรอบยืนยันของใครเลยจนถึงวันนี้
+  npx vitest run lib/__tests__/rlsMatrix.test.ts
+  ```
+  🔴 **`npm run build` สำคัญเป็นพิเศษ และ `vitest.config.mts` เขียนเหตุผลไว้เอง:**
+  ด่าน `server-only` ใน `lib/engine/db.ts` **บังคับได้เฉพาะตอน `next build`** เพราะมันเลือกไฟล์ด้วย
+  export condition `react-server` ที่มีเฉพาะตอน build → **ชุดเทสต์พิสูจน์เรื่องนี้ให้ไม่ได้ตามนิยาม**
+  · แปลว่าทุกครั้งที่ใครรายงานว่า *"ยืนยันครบแล้ว"* โดยไม่ได้ build **ด่านนั้นไม่เคยถูกตรวจเลย**
 
   🔴 **แก้ไขวันเดียวกัน หลัง P6 ปฏิเสธคำสั่งของ P1 — และ P6 ถูก:**
   P1 เขียนไปว่า *"push ของคุณได้เลย ไม่ต้องถามผู้ใช้"* — **ประโยคนั้นผิด และถูกถอนแล้ว**
