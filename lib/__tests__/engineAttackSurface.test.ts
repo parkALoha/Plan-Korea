@@ -166,6 +166,16 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
    * 🎯 จับ **การเรียกจริง** ไม่ใช่แค่ import: match `getUser(` / `unauthenticatedResponse(` (มีวงเล็บ)
    *    บรรทัด import เขียน `getUser,` ไม่มีวงเล็บ → ไม่ match · และตัด comment ออกก่อน (docstring ของ
    *    system-mode พูดถึง `getUser()` ทั้งที่ตั้งใจไม่มี — ถ้าไม่ตัด comment จะ false-green)
+   *
+   * 🔴 **ขอบเขตของด่านนี้ — อ่านตรง ๆ อย่าอ่านเกิน (P1 review `30f5214` · 27 ส.ค. 2026):**
+   * ด่านถามว่าสองสัญลักษณ์ *ปรากฏที่ไหนสักแห่งในไฟล์* — **ไม่ใช่** *ถูกเรียกก่อนแตะฐาน* หรือ *ครบทุก handler ที่ export*
+   *   ✅ จับ:   **"ลืม gate ทั้งไฟล์"** (ไม่มี getUser()/unauthenticatedResponse() เลยสักที่) — โหมดพังที่เกิดจริงตอนเพิ่ม route
+   *   ❌ ไม่จับ: · **"gate ไม่ครบทุก handler"** — ไฟล์ที่ `GET` gate แต่ `POST` ไม่ gate → สัญลักษณ์ครบในไฟล์ → เขียว
+   *            · **"gate ผิดลำดับ"** — เรียก getUser() ท้ายฟังก์ชัน หลังอ่าน/เขียนฐานไปแล้ว → เขียว
+   * → เวอร์ชันถูกต้องต้องเดิน AST ต่อ handler · **จงใจไม่ทำวันนี้**: `bookings/route.ts` ใช้ helper `guard()` ร่วม
+   *   (getUser โผล่ครั้งเดียวใน helper สำหรับ 4 handler) → AST per-handler จะ false-positive ทันที · ราคาไม่คุ้มช่องที่เหลือ
+   * 🎯 **เขียวของด่านนี้ = "ไม่มี route ไหนลืม auth ทั้งไฟล์" ไม่ใช่ "auth ถูกพิสูจน์ครบทั้งพื้นผิว"**
+   *   การยิงข้ามผู้ใช้จริงต่อ handler (ที่*บังคับ*ลำดับ+ความครบ) อยู่ที่ `engineCrossUser.test.ts` — คนละชั้น เสริมกัน
    */
   const codeOnly = (src: string) =>
     src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/([^:]|^)\/\/[^\n]*/g, "$1");
