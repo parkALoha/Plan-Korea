@@ -83,7 +83,6 @@ type RawTripRow = {
   title: string;
   start_date: string;
   end_date: string;
-  cover_image_url: string | null;
   trip_destinations: {
     rank: number;
     catalog_cities: {
@@ -124,7 +123,8 @@ export async function tripsForUser(db: Db): Promise<TripListItem[]> {
     title: r.title,
     start_date: r.start_date,
     end_date: r.end_date,
-    coverImageUrl: r.cover_image_url,
+    // ยังไม่อ่านจากฐานระหว่างช่วงเปลี่ยนชื่อคอลัมน์ — ดูเหตุผลใน `tripsVisibleToMe()`
+    coverImageUrl: null,
     // เรียงด้วย `(rank, cityId)` — `rank` ไม่ unique โดยตั้งใจ (เหตุผลเดียวกับ `trip_stops.rank`)
     // `cityId` คือ tie-break ที่ทำให้ทุกเครื่องได้ลำดับเดียวกัน
     destinations: (r.trip_destinations ?? [])
