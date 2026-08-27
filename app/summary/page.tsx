@@ -713,8 +713,8 @@ export function SummaryContent({ tripId }: { tripId: string }) {
                 <Link
                   href={
                     immigrationView
-                      ? `/summary?lang=${lang}`
-                      : `/summary?lang=en&for=immigration`
+                      ? `/trip/${tripId}/summary?lang=${lang}`
+                      : `/trip/${tripId}/summary?lang=en&for=immigration`
                   }
                   aria-label={immLabel}
                   className="shrink-0 whitespace-nowrap rounded-lg bg-cream/15 px-2.5 py-1 text-xs font-medium hover:bg-cream/25"
