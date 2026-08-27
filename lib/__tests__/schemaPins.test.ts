@@ -204,6 +204,12 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "trip_days.trip_days_insert",
       "trip_days.trip_days_select",
       "trip_days.trip_days_update",
+      // 🔴 เพิ่ม 27 ส.ค. (P1) — `trip_destinations` (`20260827180000`) · **มี `delete` ต่างจาก `trip_days`**
+      //    โดยตั้งใจ: วันถูกสร้าง/ลบตามช่วงวันของทริป (`D18`) แต่จุดหมายเป็นของที่ผู้ใช้เพิ่ม/เอาออกเอง
+      "trip_destinations.trip_destinations_delete",
+      "trip_destinations.trip_destinations_insert",
+      "trip_destinations.trip_destinations_select",
+      "trip_destinations.trip_destinations_update",
       "trip_hotels.trip_hotels_insert",
       "trip_hotels.trip_hotels_select",
       "trip_hotels.trip_hotels_update",
@@ -296,7 +302,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ส่วน `catalog_place_descriptions` **ไม่อยู่** เพราะเป็นคลังสาธารณะ เหมือน `catalog_places`
       "custom_place_descriptions", "custom_place_names", "custom_places",
       "hidden_places", "place_notes",
-      "trip_day_plan_settings", "trip_days", "trip_hotels", "trip_plans", "trip_stops",
+      "trip_day_plan_settings", "trip_days", "trip_destinations", "trip_hotels", "trip_plans", "trip_stops",
     ]);
   });
 
@@ -377,6 +383,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "app.probe_definer_write",
       // 🔴 เพิ่ม 27 ส.ค. — promote plan on delete (trigger fn · after delete) · ไม่รับ input · รันใน trigger เท่านั้น (P1 ประกาศ)
       "app.promote_plan_if_none_active",
+      // 🔴 เพิ่ม 27 ส.ค. (P1) — คืนรายชื่อตารางใน `public` ที่ไม่มี `zz_read_only_guard`
+      //    definer เพราะอ่าน `pg_catalog` · **ไม่รับ input · ไม่แตะข้อมูลผู้ใช้ · ไม่ `grant execute` ให้ใครเลย**
+      //    (เครื่องมือของชุดทดสอบ/ปฏิบัติการ — ดู `read-only-switch.md` ข้อ 5.1)
+      "app.read_only_uncovered_tables",
       "app.shares_trip_with",
       "app.trip_owner_count",
       "app.trip_role",
@@ -482,6 +492,15 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     // 🔴 อัปเดตรอบ 7 (`d223b58a…` → `01adb82c…`) — `D76` soft delete
     //    `trip_stops_select`/`custom_places_select` เติม `and deleted_at is null`
     //    · policy `DELETE` ของทั้งสองตาราง **ถูกถอดออก** (ลบผ่าน RPC เท่านั้น · `P-53`)
+    // 🔴 อัปเดตรอบ 7 (`429926002f8accf5` → `a32b77d792483359`) — `trip_destinations` 4 policy
+    //    (`20260827180000` · ลงฐานแล้ว 27 ส.ค.) · `select`=`can_read_trip` · `insert`/`update`/`delete`=`can_write_trip`
+    //    · `update` มีทั้ง `using` และ `with check` (กันย้ายจุดหมายข้ามทริป รูปเดียวกับ `trip_days_update`)
+    // 🔴 **ต่างจากรอบ 1-6 ทุกรอบ: รอบนี้ *ยังไม่มีเคสสด* ของกิ่งเหล่านี้เลยสักกิ่ง**
+    //    รอบก่อน ๆ เขียนว่า "ทุกกิ่งมีเคสสดแล้ว" ก่อนขึ้นค่า · **รอบนี้เขียนแบบนั้นไม่ได้ และผมจะไม่เขียน**
+    //    → นั่นคือสิ่งที่เคส `E2-AC11 ①` ยัง**แดง**อยู่ตอนนี้ · **ปล่อยให้มันแดงไว้ถูกแล้ว**
+    //    ⚠️ ค่า fingerprint กับความครอบคลุมของเคส เป็นคนละคำถาม — ตัวนี้ปักว่า *เงื่อนไขไม่เปลี่ยนเงียบ ๆ*
+    //       ไม่ได้ปักว่า *มีคนทดสอบเงื่อนไขแล้ว* · **ขึ้นค่านี้แล้วอย่าอ่านว่า `trip_destinations` ถูกตรวจแล้ว**
+    //       (เคสสด 4 verb เป็นงาน P4 · ทำได้แล้วเพราะตารางมีอยู่จริงในฐาน)
     // 🔴 อัปเดตรอบ 6 (`be2d37ba…` → `d223b58a…`) — `trip_stops` 4 policy
     //    กิ่งที่ไล่แล้ว: editor เขียนได้ · viewer ถูกปฏิเสธ · `D70` ชี้สถานที่ข้ามทริปไม่ได้
     //    · `D53` check ผูกกับ `kind` (0 · 1 · ห้าม 2) · `trip_id` เขียนไม่ได้ · `D73` trigger ยิงจริง
@@ -504,7 +523,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ที่เปลี่ยนคือ **เพิ่ม 2 policy ใหม่** (`catalog_country_contacts_select` · `catalog_place_access_select`)
       //    ทั้งคู่เป็น `for select to authenticated using (true)` — รูปเดียวกับคลังกลางอีก 4 ใบเป๊ะ
       //    **ไม่มี policy เดิมตัวไหนถูกแก้เงื่อนไข** (ยืนยันจากรายชื่อข้างบนที่เพิ่มอย่างเดียว ไม่มีตัวหาย)
-      "429926002f8accf5",
+      "a32b77d792483359",
     );
   });
 
@@ -869,7 +888,7 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       "app.can_write_trip", "app.default_expiry_minutes", "app.deny_write_when_read_only",
       "app.freeze_created_by", "app.handle_new_user", "app.like_literal", "app.mode_is_active",
       "app.preserve_authorship", "app.probe_definer_write", "app.probe_log", "app.promote_plan_if_none_active",
-      "app.search_norm",
+      "app.read_only_uncovered_tables", "app.search_norm",
       "app.shares_trip_with", "app.stamp_added_by", "app.stamp_checked_by", "app.stamp_hidden_by",
       "app.touch_updated_at", "app.touch_updated_at_only", "app.trip_owner_count", "app.trip_role",
       "app.write_is_blocked",
@@ -880,7 +899,12 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       sha(JSON.stringify(bodies)),
       "body ของฟังก์ชัน app.* สักตัวเปลี่ยน — `create or replace` เปลี่ยนได้เงียบ ๆ · " +
         "ถ้าเป็น can_write_trip = สิทธิ์เขียน 88 policy เปลี่ยนพร้อมกัน · ไล่กิ่งก่อนแก้ค่านี้",
-    ).toBe("44e665b0c8488857d60e0153a152baba1b484e3f4da5a3a52e26f70e85245024");
+    // 🔴 ขึ้นค่า 27 ส.ค. 2026 (P1) — **เปลี่ยนเพราะ *เพิ่ม* ฟังก์ชัน ไม่ใช่เพราะ *แก้* body ของตัวเดิม**
+    //    ไล่แล้วก่อนขึ้นค่า: `20260827180000` เป็น migration เดียวที่แตะ `app.*` และมีบรรทัดเดียว
+    //    (`create or replace function app.read_only_uncovered_tables()`) · ไม่มี `create or replace`
+    //    ทับฟังก์ชันเดิมสักตัว · รายชื่อ 28 → 29 ตัว ต่างกันแค่ตัวใหม่นี้
+    //    ⚠️ นี่คือขั้นตอนที่หมุดนี้มีไว้บังคับ — **ขึ้นค่าโดยไม่ไล่ = ฆ่าหมุด** (`P-48`)
+    ).toBe("30c3fe8c428ba55865ecd17a7fbfdf9105460288fe464aa0c55212526b8cbfd1");
   });
 
   it("🔴 pin:fk-set-null — FK `on delete set null` (คลาส ①) ต้องไม่เพิ่มเงียบ", () => {
