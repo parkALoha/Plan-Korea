@@ -351,6 +351,24 @@ export function tripMembers(db: Db, tripId: string) {
     .order("created_at");
 }
 
+/**
+ * เขียนจุดหมายของทริป — ใช้ตอนสร้างทริปใหม่ (`E5`)
+ *
+ * 🔴 **ไม่ใช่ RPC และไม่ต้องเป็น** — `trip_destinations_insert` (`can_write_trip`) เป็นคนตัดสินสิทธิ์อยู่แล้ว
+ *    เขียนผ่าน client ของผู้ใช้จริงตรง ๆ = **RLS ทำงานเหมือนทุกตาราง ไม่มีทางลัดใหม่ให้ดูแล** (`D38`)
+ *    · ทางที่ปฏิเสธ: ขยาย `create_trip` ให้รับ `p_city_ids` — Postgres ถือว่าลายเซ็นใหม่เป็น
+ *      **ฟังก์ชันคนละตัว** (overload) → PostgREST กำกวม (`PGRST203`) ต้อง `drop` ตัวเดิมก่อน
+ *      = แตะ RPC ที่ flow สร้างทริปจริงใช้อยู่ **เพื่อฟีเจอร์ที่ไม่ต้องแตะมันเลยก็ได้**
+ *
+ * ⚠️ **`rank` มาจากลำดับใน array ที่ผู้เรียกส่งมา** — ผู้ใช้เรียงเมืองเอง ไม่ใช่เราจัดให้
+ *    ไม่ unique โดยตั้งใจ (เหตุผลเดียวกับ `trip_stops.rank`) · tie-break อยู่ที่ `tripsForUser()`
+ */
+export function insertTripDestinations(db: Db, tripId: string, cityIds: readonly string[]) {
+  return engineTable(db, "trip_destinations").insert(
+    cityIds.map((cityId, i) => ({ trip_id: tripId, city_id: cityId, rank: i })),
+  );
+}
+
 export function tripsVisibleToMe(db: Db) {
   // 🔴 **`title` ไม่ใช่ `name`** — แก้ 27 ส.ค. 2026 (P4 เจอตอนสร้าง harness ยิง route จริง)
   //    คอลัมน์ชื่อ `title` มาตั้งแต่ `…043822_identity.sql:122` และ `create_trip` ก็ insert `title`

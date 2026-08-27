@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { tripsForUser } from "@/lib/engine/trip";
-import { createTrip } from "@/lib/engine/db";
+import { createTrip, insertTripDestinations } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
 /**
@@ -39,6 +39,8 @@ export async function GET(req: NextRequest) {
 
 /** ISO `YYYY-MM-DD` เท่านั้น — ไม่รับรูปอื่น เพราะคอลัมน์เป็น `date` และเราไม่อยากให้ Postgres เดาแทน */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** รูป uuid ของ Postgres — ใช้ปฏิเสธค่าที่เป็นไปไม่ได้ก่อนถึงฐาน */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * สร้างทริปใหม่ — `POST /api/engine/trips`
@@ -109,6 +111,36 @@ export async function POST(req: NextRequest) {
     ? b.baseTimezone.trim()
     : null;
 
+  /**
+   * เมืองปลายทาง — **ไม่บังคับ** · ทริปที่ยังไม่รู้ว่าจะไปไหนเป็นสภาพที่ถูกต้อง
+   *
+   * 🔴 ตรวจ **รูป** ที่นี่ ไม่ใช่ตรวจ **สิทธิ์** — `city_id` ที่ไม่มีจริงจะโดน FK ปฏิเสธที่ฐาน
+   *    และสิทธิ์เขียนเป็นเรื่องของ `trip_destinations_insert` (`can_write_trip`)
+   *    ที่นี่กันแค่ค่าที่ **เป็นไปไม่ได้ตั้งแต่ต้น** ไม่ให้เดินทางไปให้ Postgres ตอบด้วยข้อความที่แปลยาก
+   * ⚠️ **ตัดตัวซ้ำออก แต่รักษาลำดับแรกที่พบ** — ลำดับใน array คือ `rank` ที่ผู้ใช้จัดเอง
+   *    ถ้าเรียงใหม่หรือเรียงตามตัวอักษร เราจะเปลี่ยนสิ่งที่ผู้ใช้ตั้งใจโดยไม่บอก
+   */
+  const cityIds: string[] = [];
+  if (b.cityIds !== undefined && b.cityIds !== null) {
+    if (!Array.isArray(b.cityIds)) {
+      return NextResponse.json({ error: "cityIds ต้องเป็น array" }, { status: 400 });
+    }
+    const seen = new Set<string>();
+    for (const raw of b.cityIds) {
+      if (typeof raw !== "string" || !UUID.test(raw)) {
+        return NextResponse.json({ error: "cityIds ต้องเป็น uuid ของเมืองในคลัง" }, { status: 400 });
+      }
+      if (!seen.has(raw)) { seen.add(raw); cityIds.push(raw); }
+    }
+    // เพดานกันคำขอเดียวยัดทั้งคลัง · ทริปข้ามเมืองจริงยังไม่เคยเกิน 6 เมือง
+    if (cityIds.length > 20) {
+      return NextResponse.json(
+        { error: `เลือกเมืองปลายทางได้สูงสุด 20 เมือง (ส่งมา ${cityIds.length})` },
+        { status: 400 },
+      );
+    }
+  }
+
   try {
     const db = await createServerSupabase();
     const { data, error } = await createTrip(db, { title, startDate, endDate, baseTimezone });
@@ -121,7 +153,27 @@ export async function POST(req: NextRequest) {
         error.code === "22023" ? 400 : 502;
       return NextResponse.json({ error: error.message, code: error.code }, { status });
     }
-    return NextResponse.json(data, { status: 201, headers: { "Cache-Control": "private, no-store" } });
+    /**
+     * 🔴 **จุดหมายเขียน *หลัง* ทริปเกิด และไม่ได้อยู่ในธุรกรรมเดียวกัน — จงใจ และต้องรายงานให้ตรง**
+     *
+     * ถ้าเขียนจุดหมายล้ม **ทริปยังอยู่และใช้งานได้ปกติ** (จุดหมายเป็นข้อมูลเสริม ไม่ใช่แกน)
+     * → คืน `201` เพราะสิ่งที่ผู้ใช้ขอ (ทริป) เกิดขึ้นจริงแล้ว
+     * 🎯 **แต่ห้ามคืน `201` เปล่า ๆ เหมือนไม่มีอะไรเกิดขึ้น** — ผู้ใช้เลือกเมืองไว้แล้วมันหาย
+     *    และเขาจะไม่มีทางรู้จนกว่าจะเปิดการ์ดมาดูแล้วสงสัยเอง
+     *    → แนบ `destinationsError` ไปด้วย ให้ฝั่ง UI บอกได้ว่า *"ทริปสร้างแล้ว แต่บันทึกจุดหมายไม่สำเร็จ"*
+     * ⚠️ **นี่คือเหตุผลที่ผมไม่ยอมให้มันเงียบ** — ความล้มเหลวที่เงียบในเส้นทางเขียน คืออาการเดียวกับ
+     *    "บันทึกแล้วไม่เปลี่ยน" ที่ column grant ที่หายไปทำให้เกิด และมันหาสาเหตุยากมาก
+     */
+    const trip = data as { id?: string } | null;
+    let destinationsError: string | null = null;
+    if (cityIds.length > 0 && trip?.id) {
+      const { error: destErr } = await insertTripDestinations(db, trip.id, cityIds);
+      if (destErr) destinationsError = destErr.message;
+    }
+    return NextResponse.json(
+      destinationsError ? { ...(data as object), destinationsError } : data,
+      { status: 201, headers: { "Cache-Control": "private, no-store" } },
+    );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "สร้างทริปไม่ได้" },
