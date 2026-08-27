@@ -143,7 +143,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
     const { data: cat, error: lookErr } = await catalogPlaceIdBySlug(db, placeId);
     if (lookErr) return NextResponse.json({ error: lookErr.message }, { status: 502 });
     if (cat) row.catalog_place_id = cat.id;
-    else row.custom_place_id = placeId;
+    else if (UUID.test(placeId)) row.custom_place_id = placeId;
+    else {
+      /**
+       * 🔴 **ไม่เจอในคลัง และไม่ใช่ uuid = ไม่ใช่ทั้งสองอย่าง** — เดิมกิ่งนี้ยัดค่าลง
+       * `custom_place_id` ซึ่งเป็นคอลัมน์ `uuid` → Postgres โยน `22P02` → เราตอบ **502**
+       *
+       * 🎯 **502 แปลว่า "เซิร์ฟเวอร์เรามีปัญหา" ซึ่งผิด และมันพาคนไปหาบั๊กผิดที่**
+       * P2 เจอ 502 นี้ตอน 27 ส.ค. แล้วสรุปว่า *"ไม่มีสะพาน slug → uuid เลยในโปรเจกต์"*
+       * — สะพานมีอยู่และทำงานถูก (`catalogPlaceIdBySlug` บรรทัดบน) · **ของที่ไม่มีคือ *ข้อมูล* ในคลัง**
+       * `catalog_places` **ยังไม่มี migration ไหน seed มันเลยสักแถว** (งานของ `E7`)
+       * → slug ทุกตัวจาก `data/places.ts` จะไม่เจอ และเดินมาถึงกิ่งนี้ทั้งหมด
+       *
+       * ⚠️ **การเช็ครูปสตริงตรงนี้ไม่ได้ขัดกับคอมเมนต์ข้างบน** — คอมเมนต์นั้นห้าม*เดาว่าจะลงคอลัมน์ไหน*
+       * จากรูปสตริง ซึ่งยังไม่เดาเหมือนเดิม (ฐานเป็นคนตอบ) · ตัวนี้แค่ปฏิเสธค่าที่ **เป็นไปไม่ได้ทั้งสองทาง**
+       * ก่อนส่งให้ฐานโยน error ที่ผู้ใช้อ่านไม่รู้เรื่อง
+       */
+      return NextResponse.json(
+        {
+          error:
+            `ไม่รู้จักสถานที่ "${placeId}" — ไม่มีใน catalog_places และไม่ใช่ id ของสถานที่ในทริป ` +
+            `(ถ้ามาจากคลังสถิตย์ใน data/places.ts: คลังในฐานยังไม่ถูก seed — E7)`,
+          code: "PLACE_NOT_IN_CATALOG",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   const { data, error } = await insertStop(db, row);
