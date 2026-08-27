@@ -48,22 +48,40 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
       .filter((c) => !reserved.has(c.id))
       .sort((a, b) => (a.id < b.id ? -1 : 1));
 
-    const out: { id: string; nameTh: string; cities: number; visitable: number; transit: number }[] = [];
+    const out: {
+      id: string;
+      nameTh: string;
+      cities: number;
+      visitable: number;
+      transit: number;
+      deadEnds: string[];
+    }[] = [];
     for (const c of supported) {
-      const ci = await admin.from("catalog_cities").select("id").eq("country_id", c.id);
+      const ci = await admin.from("catalog_cities").select("id,legacy_slug").eq("country_id", c.id);
       if (ci.error) throw new Error(`อ่านเมืองของ ${c.id}: ${ci.error.message}`);
-      const cityIds = ((ci.data ?? []) as { id: string }[]).map((x) => x.id);
+      const cities = (ci.data ?? []) as { id: string; legacy_slug: string | null }[];
+      const cityIds = cities.map((x) => x.id);
       let visitable = 0;
       let transit = 0;
+      const visitableByCity = new Map<string, number>();
       if (cityIds.length) {
-        const pl = await admin.from("catalog_places").select("category").in("city_id", cityIds);
+        const pl = await admin.from("catalog_places").select("city_id,category").in("city_id", cityIds);
         if (pl.error) throw new Error(`อ่านสถานที่ของ ${c.id}: ${pl.error.message}`);
-        for (const p of (pl.data ?? []) as { category: string }[]) {
-          if (p.category === TRANSIT_ONLY) transit += 1;
-          else visitable += 1;
+        for (const p of (pl.data ?? []) as { city_id: string; category: string }[]) {
+          if (p.category === TRANSIT_ONLY) {
+            transit += 1;
+            continue;
+          }
+          visitable += 1;
+          visitableByCity.set(p.city_id, (visitableByCity.get(p.city_id) ?? 0) + 1);
         }
       }
-      out.push({ id: c.id, nameTh: c.name_th, cities: cityIds.length, visitable, transit });
+      // 🔴 เมือง "ทางตัน" = ผู้ใช้เลือกเมืองนี้ได้ แต่กดเข้าไปแล้วไม่มีอะไรให้เพิ่ม
+      const deadEnds = cities
+        .filter((x) => (visitableByCity.get(x.id) ?? 0) === 0)
+        .map((x) => x.legacy_slug ?? x.id)
+        .sort();
+      out.push({ id: c.id, nameTh: c.name_th, cities: cityIds.length, visitable, transit, deadEnds });
     }
     return out;
   }
@@ -78,7 +96,13 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
     ).toBe(true);
     console.warn(
       "\n📊 คลังต่อประเทศ (ไม่รวมรหัสทดสอบ):\n" +
-        rows.map((r) => `    ${r.id} ${r.nameTh}: เมือง ${r.cities} · เที่ยวได้ ${r.visitable} · ทางผ่าน ${r.transit}`).join("\n") +
+        rows
+          .map(
+            (r) =>
+              `    ${r.id} ${r.nameTh}: เมือง ${r.cities} · เที่ยวได้ ${r.visitable} · ทางผ่าน ${r.transit}` +
+              (r.deadEnds.length ? ` · 🔴 เมืองทางตัน ${r.deadEnds.length}: ${r.deadEnds.join(", ")}` : ""),
+          )
+          .join("\n") +
         "\n",
     );
   });
@@ -94,6 +118,28 @@ describe.runIf(hasCreds)("E4 — คลังของประเทศที�
         "  🔴 ผู้ใช้สร้างทริปได้ · เลือกวันได้ · แล้วกด 'เพิ่มสถานที่' เจอหน้าว่าง\n" +
         "  ⚠️ ตัวเลข 'ทางผ่าน' ที่ไม่ใช่ศูนย์ทำให้มันดูเหมือนมีข้อมูล — นั่นคือสิ่งที่เคสนี้มีไว้จับ\n" +
         "  → seed สถานที่ของประเทศนั้น หรือถ้ายังไม่พร้อมรองรับ ก็ยังไม่ควรมีแถวใน catalog_countries",
+    ).toEqual([]);
+  });
+
+  /**
+   * 🔴 **เกณฑ์รายประเทศเขียวได้ทั้งที่รูเปิด — P1 เจอ 27 ส.ค.**
+   * เวียดนามมีสถานที่ 10 แห่ง จึง *"ดูมีของ"* · **แต่ทั้ง 10 อยู่ฮานอยหมด → โฮจิมินห์ว่างเปล่า**
+   * · *"เวียดนามมีสถานที่ไหม"* → มี · *"เมืองไหนกดเข้าไปว่าง"* → hcmc
+   * 🎯 **ผู้ใช้เลือก *เมือง* ไม่ได้เลือก *ประเทศ*** — ตัวเลขระดับประเทศจึงกลบทางตันรายเมืองได้ทั้งแถบ
+   *    รูปเดียวกับ 766 แถวที่ 694 เป็น fixture: **การรวมยอดซ่อนช่องที่เปิดอยู่**
+   * ⚠️ บล็อกยืนยันใน migration ตรวจแค่ *ตอนรัน* ครั้งเดียว — เมืองที่ใครเพิ่มทีหลังโดยไม่ใส่สถานที่
+   *    ไม่มีอะไรฟ้อง · **เคสนี้คือด่านถาวรของข้อนั้น**
+   */
+  it("🔴 ทุกเมืองในประเทศที่รองรับ ต้องไม่เป็น 'ทางตัน' — เลือกเมืองได้แต่ไม่มีอะไรให้เพิ่ม", async () => {
+    const rows = await survey();
+    const dead = rows
+      .filter((r) => r.deadEnds.length > 0)
+      .map((r) => `${r.id}: ${r.deadEnds.length}/${r.cities} เมือง → ${r.deadEnds.join(", ")}`);
+    expect(
+      dead,
+      "มีเมืองที่ผู้ใช้เลือกได้ แต่ไม่มีสถานที่ให้เพิ่มเลยสักแห่ง (นับเฉพาะที่ไม่ใช่ทางผ่าน)\n" +
+        "  🔴 **ยอดรวมระดับประเทศกลบข้อนี้ได้** — ประเทศมีสถานที่ครบ แต่กระจุกอยู่เมืองเดียว\n" +
+        "  → seed สถานที่ให้เมืองนั้น หรือถ้ายังไม่พร้อม ก็ยังไม่ควรมีแถวใน catalog_cities",
     ).toEqual([]);
   });
 });
