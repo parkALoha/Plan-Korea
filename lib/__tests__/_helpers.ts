@@ -167,6 +167,8 @@ export const TEST_COUNTRY_CODES = {
   descriptions: "xy",
   /** บล็อกยิง engine route ข้ามผู้ใช้ (`E3-AC9②` · seed catalog country+city+place) — P4 */
   engineCrossUser: "xz",
+  /** บล็อก `trip_destinations` (`E5` · editor ลบได้ · viewer ลบไม่ได้ · seed catalog country+city) — P4 */
+  tripDestinations: "xp",
 } as const;
 
 /** โฟลเดอร์ migration ที่ **รันจริง** — ไม่ใช่เอกสารออกแบบ (ต่างกันแล้วหลายสิบบรรทัด) */

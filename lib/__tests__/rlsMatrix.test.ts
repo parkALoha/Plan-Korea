@@ -1375,6 +1375,128 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  describe("🔴 E5 — trip_destinations: จุดหมายของทริป · editor ลบได้ · viewer ลบไม่ได้ (P-44)", () => {
+    /**
+     * trip_destinations ผูก `can_write_trip` ทั้ง insert/update/**delete** — ต่างจาก `trip_days`
+     * ที่ **ไม่มี** delete policy (D18) โดยตั้งใจ · จุดหมายเป็นของที่ผู้ใช้เพิ่ม/เอาออกเอง →
+     * **editor ต้องลบได้ · viewer ต้องลบไม่ได้** · "C ลบไม่ได้" อย่างเดียวไม่พอ ต้องมี "B(editor) ลบได้" คู่กัน
+     *
+     * 🔴 ด้านบวกของ editor (เขียน+ลบได้) เป็น **precondition** — ถ้ามันแดง เคส viewer ด้านลบเขียวเพราะ
+     *    can_write_trip ปฏิเสธทุกคน ไม่ใช่เพราะกัน viewer ถูกจุด (P-44 · รูปเดียวกับ trip_days)
+     * สร้างทริป+คลังของตัวเอง (country code สงวน `xp`) ไม่ผูก tripA/tripD · fixture อยู่ใต้โค้ดสงวน (reap-safe)
+     */
+    const CC_DEST = TEST_COUNTRY_CODES.tripDestinations;
+    let tripDT = "";
+    let cityA = "";
+    let cityB = "";
+    let cityC = "";
+
+    beforeAll(async () => {
+      const { data, error } = await A.rpc("create_trip", {
+        p_title: `dest-${stamp}`,
+        p_start_date: "2026-10-11",
+        p_end_date: "2026-10-21",
+      });
+      if (error) throw new Error(`สร้างทริป trip_destinations ไม่ได้: ${error.message}`);
+      tripDT = data.id as string;
+
+      const e1 = await A.from("trip_members").insert({ trip_id: tripDT, user_id: ids.b, role: "editor" });
+      if (e1.error) throw new Error(`เชิญ B เป็น editor ไม่ได้: ${e1.error.message}`);
+      const e2 = await A.from("trip_members").insert({ trip_id: tripDT, user_id: ids.c, role: "viewer" });
+      if (e2.error) throw new Error(`เชิญ C เป็น viewer ไม่ได้: ${e2.error.message}`);
+
+      // คลังใต้โค้ดสงวน — purge ก่อน กันรอบก่อนตายค้าง (ลูกก่อนพ่อ)
+      await admin.from("catalog_cities").delete().eq("country_id", CC_DEST);
+      await admin.from("catalog_countries").delete().eq("id", CC_DEST);
+      const co = await admin.from("catalog_countries").insert({ id: CC_DEST, name_th: "ทดสอบจุดหมาย", name_en: "DestTest" });
+      if (co.error) throw new Error(`seed country: ${co.error.message}`);
+      const mkCity = async (n: number) => {
+        const r = await admin
+          .from("catalog_cities")
+          .insert({
+            country_id: CC_DEST,
+            legacy_slug: `dest-${n}-${stamp}`.slice(0, 40),
+            name_th: `เมือง${n}`,
+            name_en: `DestCity${n}`,
+            lat: 37.5,
+            lng: 127.0,
+            timezone: "Asia/Seoul",
+          })
+          .select("id")
+          .single();
+        if (r.error) throw new Error(`seed city ${n}: ${r.error.message}`);
+        return r.data.id as string;
+      };
+      cityA = await mkCity(1);
+      cityB = await mkCity(2);
+      cityC = await mkCity(3);
+    });
+
+    afterAll(async () => {
+      if (tripDT) await admin.from("trips").delete().eq("id", tripDT); // cascade → trip_destinations หายก่อน city
+      await admin.from("catalog_cities").delete().eq("country_id", CC_DEST);
+      await admin.from("catalog_countries").delete().eq("id", CC_DEST);
+    });
+
+    // ── ด้านบวก — precondition (แดงที่นี่ = เคส viewer ด้านลบไม่ได้พิสูจน์อะไร · P-44) ──
+    describe("ด้านบวก — ถ้าตรงนี้แดง เคสด้านลบข้างล่างไม่ได้พิสูจน์อะไรเลย", () => {
+      it("owner เพิ่มจุดหมายได้", async () => {
+        const { error } = await A.from("trip_destinations").insert({ trip_id: tripDT, city_id: cityA, rank: 1 });
+        expect(error, `owner เพิ่มจุดหมายไม่ได้: ${error?.message}`).toBeNull();
+      });
+
+      it("🔴 editor เพิ่มจุดหมายได้ — กิ่งที่ทำให้ editor ต่างจาก viewer", async () => {
+        const { error } = await B.from("trip_destinations").insert({ trip_id: tripDT, city_id: cityB, rank: 2 });
+        expect(
+          error,
+          `editor เพิ่มจุดหมายไม่ได้: ${error?.message}\n` +
+            "  ถ้าข้อนี้แดง อย่าเพิ่งเชื่อเคส viewer ข้างล่าง — มันเขียวเพราะไม่มีใครเขียนได้เลย",
+        ).toBeNull();
+      });
+
+      it("🔴 editor ลบจุดหมายได้ — trip_destinations มี DELETE policy ต่างจาก trip_days (จุดหมายเอาออกเองได้)", async () => {
+        const del = await B.from("trip_destinations").delete().eq("trip_id", tripDT).eq("city_id", cityB);
+        expect(del.error, `editor ลบจุดหมายไม่ได้: ${del.error?.message}`).toBeNull();
+        // อ่านซ้ำในฐานะ owner — DELETE ที่ RLS กรองคืน 200 เงียบ ๆ ได้ ต้องยืนยันว่าหายจริง
+        const { data } = await A.from("trip_destinations").select("city_id").eq("trip_id", tripDT).eq("city_id", cityB);
+        expect(data ?? [], "editor สั่งลบแล้วแต่แถวยังอยู่ = delete ไม่มีผลจริง").toHaveLength(0);
+      });
+
+      it("🔴 viewer อ่านจุดหมายได้ — คนถูกเชิญมาดู ต้องเห็นแผน (P-44)", async () => {
+        const { data, error } = await C.from("trip_destinations").select("city_id").eq("trip_id", tripDT);
+        expect(error).toBeNull();
+        const owner = await A.from("trip_destinations").select("city_id").eq("trip_id", tripDT);
+        expect(
+          (data ?? []).length,
+          "viewer เห็นไม่เท่า owner = แผนหายบางส่วนโดยที่ข้ออ้างความปลอดภัยยังจริงทุกข้อ",
+        ).toBe((owner.data ?? []).length);
+        expect((data ?? []).length, "viewer เห็นหน้าเปล่า").toBeGreaterThan(0);
+      });
+    });
+
+    // ── ด้านลบ ────────────────────────────────────────────────────────────────
+    it("🔴 viewer เพิ่มจุดหมายไม่ได้", async () => {
+      const { error } = await C.from("trip_destinations").insert({ trip_id: tripDT, city_id: cityC, rank: 9 });
+      expect(
+        error?.code,
+        `viewer เพิ่มจุดหมายได้: ${error?.message ?? "ไม่มี error เลย"} = policy ฝั่งเขียนกรองด้วยสิทธิ์อ่าน`,
+      ).toBe("42501");
+    });
+
+    it("🔴 viewer แก้จุดหมายไม่ได้ — UPDATE ที่ RLS กรองคืน 200 ต้องอ่านซ้ำถึงรู้ผลจริง", async () => {
+      await C.from("trip_destinations").update({ rank: 99 }).eq("trip_id", tripDT).eq("city_id", cityA);
+      const { data } = await A.from("trip_destinations").select("rank").eq("trip_id", tripDT).eq("city_id", cityA).single();
+      expect(data?.rank, "viewer แก้ rank ของจุดหมายได้").toBe(1);
+    });
+
+    it("🔴 viewer ลบจุดหมายไม่ได้ — DELETE policy มีอยู่เพื่อกันข้อนี้ (viewer ≠ editor)", async () => {
+      await C.from("trip_destinations").delete().eq("trip_id", tripDT).eq("city_id", cityA);
+      const { data } = await A.from("trip_destinations").select("city_id").eq("trip_id", tripDT).eq("city_id", cityA);
+      expect(data ?? [], "viewer ลบจุดหมายของ owner ได้ = delete policy กรองด้วยสิทธิ์อ่าน ไม่ใช่สิทธิ์เขียน").toHaveLength(1);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2 — ชั้นแผน: trip_plans + trip_day_plan_settings (D52 · D69 · D70)", () => {
     /**
      * ทริปของบล็อกนี้แยกจากบล็อกอื่นด้วยเหตุผลเดียวกับบล็อก `trip_days`:
