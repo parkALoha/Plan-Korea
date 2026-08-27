@@ -35,6 +35,52 @@ function requireEnv(name: string): string {
  * ⚠️ `cookies()` ของ Next 16 เป็น **async** (เวอร์ชัน 14 ลงไปเป็น sync)
  *    — ดู `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/cookies.md`
  */
+/**
+ * 🔴 **ลองใหม่เฉพาะเคส "นาฬิกาเหลื่อม" — ไม่ใช่ retry ทั่วไป** (P1 · 27 ส.ค. 2026)
+ *
+ * ## เจอบนหน้าเว็บจริง ไม่ใช่ในเทสต์
+ * ```
+ * GET /api/engine/trips → 502 {"error":"อ่านรายการทริปไม่ได้: JWT issued at future"}
+ * (คำขอถัดไป 200)
+ * ```
+ * โทเคนออกโดย GoTrue · ตรวจโดย PostgREST — **คนละเครื่อง** · นาฬิกาเหลื่อมกันเสี้ยววินาที
+ * โทเคนที่เพิ่ง refresh จะมี `iat` **ล้ำหน้า** ในสายตา PostgREST → ปฏิเสธ → route โยน → ผู้ใช้ได้ `502`
+ * 🎯 **รอสักครู่แล้วยิงใหม่ = โทเคนใบเดิมใช้ได้** — ไม่ต้องล็อกอินใหม่ ไม่ต้องรีเฟรช
+ * ⚠️ **เมื่อคืนตัวนี้ทำชุดทดสอบแดง และผมสรุปว่า "transient ในเทสต์" — ผิด · มันโดนผู้ใช้จริงด้วย**
+ *
+ * ## ทำไมแก้ที่นี่ ไม่ใช่ที่ route
+ * `status: 502` มี **24 จุดใน 12 route** — แก้ทีละที่คือกฎ 24 ฉบับที่ต้องคอยให้ตรงกัน
+ * · ที่นี่คือจุดเดียวที่ทุก route เดินผ่าน · **ไม่ต้องแตะ route สักไฟล์**
+ *
+ * ## 🔴 ขอบเขตแคบโดยตั้งใจ — สามเงื่อนไขต้องครบ
+ * ① `401` ② เนื้อคำตอบมีคำว่า `issued at future` ③ คำขอไม่มี body หรือ body เป็นสตริง
+ * · **①+② กัน retry ใส่ auth ที่ล้มจริง** (โทเคนหมดอายุ · ถูกเพิกถอน) ซึ่ง retry ไปก็ได้คำตอบเดิม
+ *   — และมันจะ **ทำให้ผู้ใช้รอนานขึ้นเพื่อจะได้ error เดิม**
+ * · **③ เพราะ body ที่เป็น stream ส่งซ้ำไม่ได้** — ยิงซ้ำจะได้ body ว่าง ซึ่งแย่กว่าไม่ยิง
+ * ⚠️ **ไม่ retry `5xx` และไม่ retry timeout** — สองอย่างนั้น**ไม่รู้ว่าฝั่งโน้นทำไปแล้วหรือยัง**
+ *   (คำขอเขียนอาจสำเร็จแล้วแต่คำตอบหาย) · **เคสนี้รู้แน่ว่าไม่มีอะไรเกิดขึ้น เพราะถูกปฏิเสธที่ประตู**
+ */
+const CLOCK_SKEW_HINT = "issued at future";
+const CLOCK_SKEW_BACKOFF_MS = [250, 600];
+
+export async function fetchRetryingClockSkew(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const bodyIsReplayable = !init?.body || typeof init.body === "string";
+  let res = await fetch(input, init);
+
+  for (const waitMs of CLOCK_SKEW_BACKOFF_MS) {
+    if (res.status !== 401 || !bodyIsReplayable) return res;
+    // 🔴 `clone()` เพราะถ้าตัดสินใจ *ไม่* retry ผู้เรียกต้องยังอ่าน body ได้
+    const text = await res.clone().text().catch(() => "");
+    if (!text.includes(CLOCK_SKEW_HINT)) return res;
+    await new Promise((r) => setTimeout(r, waitMs));
+    res = await fetch(input, init);
+  }
+  return res;
+}
+
 export async function createServerSupabase(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
 
@@ -44,6 +90,8 @@ export async function createServerSupabase(): Promise<SupabaseClient> {
     {
       // 🔴 S1 — เหตุผลเต็มอยู่ใน `lib/auth/noRealtime.ts` · ขาดบรรทัดนี้แล้วโยนบน Node 20
       realtime: { transport: NO_REALTIME_TRANSPORT },
+      // 🔴 เหตุผลเต็มที่ `fetchRetryingClockSkew` — แก้ที่นี่ที่เดียวแทน 24 จุดใน 12 route
+      global: { fetch: fetchRetryingClockSkew },
       cookies: {
         getAll: () => cookieStore.getAll(),
         setAll: (list) => {
