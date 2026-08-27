@@ -21,6 +21,8 @@ import { describe, expect, it } from "vitest";
  * · `trips` (list) = คืนทริปของผู้เรียกเอง · RLS คุม · ไม่มี tripId เป็น input
  * → ทั้งสามยิงข้ามด้วย tripId ของคนอื่นไม่ได้ · **เป้าจริงคือ 9 route ใต้ `trips/[tripId]/`**
  *
+ * 🔴 อัปเดต 27 ส.ค. 2026 — `cover` (route ที่ 11) **ถูกถอนทั้งชุด** ตามมติผู้ใช้ (รูปปกเป็นไฟล์สถิตย์
+ *    ไม่ใช่ของอัปโหลด) → กลับมาเป็น **10** · **ถอนเพราะสโคปเปลี่ยน ไม่ใช่เพราะ probe ผิด**
  * 🔴 อัปเดต 27 ส.ค. 2026 — **เป็น 10 แล้ว**: เพิ่ม `members` (GET · แถว avatar ใน TripHeader ของ P2)
  *    · P1 เขียน route · P4 เขียน probe ข้ามผู้ใช้ (viewer เห็น/คนนอกได้ []) ก่อนขยับเลข 9→10 ที่นี่
  *    · **คนเขียน route ≠ คนเขียน probe** โดยตั้งใจ — probe วัดสิ่งที่ผู้โจมตีลอง ไม่ใช่สิ่งที่ route ตั้งใจ
@@ -88,11 +90,6 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   },
   "app/api/engine/trips/[tripId]/bookings/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/checklist/route.ts": { scope: "trip" },
-  "app/api/engine/trips/[tripId]/cover/route.ts": {
-    scope: "trip",
-    why: "PUT/DELETE เท่านั้น **ไม่มี GET** — การอ่านรูปปกเดินทางกับ GET /trips (เซ็น URL ทีเดียวทั้งชุด) "
-      + "· route นี้จึงไม่มีทางอ่านให้ยิงข้าม มีแต่ทางเขียน (probe: editor 403+ไม่มีกำพร้า · outsider/anon ปิด)",
-  },
   "app/api/engine/trips/[tripId]/custom-places/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/day-settings/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/days/route.ts": { scope: "trip" },
@@ -141,7 +138,7 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     }
   });
 
-  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 11 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
+  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 10 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
     const trip = Object.entries(SURFACE)
       .filter(([, m]) => m.scope === "trip")
       .map(([r]) => r)
@@ -151,8 +148,8 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     expect(trip, "ทะเบียน trip-scoped ไม่ตรงกับที่อยู่ใต้ trips/[tripId]/ บนดิสก์").toEqual(tripOnDisk);
     expect(
       trip.length,
-      "จำนวน route ยิงข้ามเปลี่ยนจาก 11 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
-    ).toBe(11);
+      "จำนวน route ยิงข้ามเปลี่ยนจาก 10 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
+    ).toBe(10);
   });
 
   it("ทุก trip-scoped route ต้อง export อย่างน้อยหนึ่ง HTTP method (ไม่งั้น probe จะไม่มีอะไรยิง)", () => {

@@ -37,9 +37,10 @@ import { join, resolve } from "node:path";
  *
  * ## 🔴 สถานะความครอบคลุม (เขียนตรง ๆ ไม่ให้เข้าใจว่าครบ)
  * ครอบแล้ว: **bookings · checklist** (POST) · **members** (GET · viewer เห็น/คนนอกไม่เห็น) + pin `GET /trips`=200
- *   · เหลืออีก 7 ใน 11 trip-scoped route: custom-places · hidden-places · stops (POST) · day-settings · days · hotels · place-notes (PUT/PATCH)
- * · `engineAttackSurface.test.ts` ค้ำว่าทั้ง 11 ถูกจำแนกไว้ · **ด่านบังคับ "ครบทั้ง 11"** จะเปิดเมื่อ probe ครบ
- * · **cover** (PUT/DELETE · route ที่ 11) probe แล้ว: editor 403+ไม่มีกำพร้า · ทับรูป ①→②→③ · outsider/anon · DELETE ลบจริง
+ *   · เหลืออีก 7 ใน 10 trip-scoped route: custom-places · hidden-places · stops (POST) · day-settings · days · hotels · place-notes (PUT/PATCH)
+ * · `engineAttackSurface.test.ts` ค้ำว่าทั้ง 10 ถูกจำแนกไว้ · **ด่านบังคับ "ครบทั้ง 10"** จะเปิดเมื่อ probe ครบ
+ * · 🔴 `cover` (route ที่ 11) **ถูกถอนทั้งชุด 27 ส.ค.** — ผู้ใช้เปลี่ยนสโคปเป็นรูปสถิตย์ ไม่ใช่เพราะ probe ผิด
+ *   เคสที่ยังจริงถูก **ย้ายไป `booking-files`** ใน `rlsMatrix` (viewer อ่านได้/เขียนไม่ได้ · update · ไฟล์ราก · anon)
  */
 
 const URL_ = readEnvKey("NEXT_PUBLIC_SUPABASE_URL");
@@ -68,7 +69,6 @@ import { POST as customPlacesPOST } from "@/app/api/engine/trips/[tripId]/custom
 import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
 import { PUT as placeNotesPUT, DELETE as placeNotesDELETE } from "@/app/api/engine/trips/[tripId]/place-notes/route";
 import { GET as membersGET } from "@/app/api/engine/trips/[tripId]/members/route";
-import { PUT as coverPUT, DELETE as coverDELETE } from "@/app/api/engine/trips/[tripId]/cover/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -138,7 +138,7 @@ async function verdictFor(res: Response): Promise<{ verdict: "rejected" | "leak"
 }
 
 /** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members", "cover"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members"]);
 
 /** 10 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
 function tripScopedRouteNames(): string[] {
@@ -156,9 +156,9 @@ function tripScopedRouteNames(): string[] {
 // 🔴 แบนเนอร์ความครอบคลุม — **รันเสมอ ไม่ต้องมี creds** เพื่อให้ตัวเลขโผล่ทุกครั้งที่รัน
 //    ไม่ใช่แค่คอมเมนต์ (P1): กันคนเห็นไฟล์เขียวแล้วสรุปว่า cross-user ถูกทดสอบครบ
 describe("E3-AC9 ② — ความครอบคลุม (ต้องเห็นตอนรัน)", () => {
-  it("📊 coverage — เขียวไม่ได้แปลว่าครบ 11 · ตัวเลขต้องโผล่ตอนรัน", () => {
+  it("📊 coverage — เขียวไม่ได้แปลว่าครบ 10 · ตัวเลขต้องโผล่ตอนรัน", () => {
     const all = tripScopedRouteNames();
-    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(11);
+    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(10);
     const covered = [...COVERED].sort();
     const stale = covered.filter((c) => !all.includes(c));
     expect(stale, `COVERED ชี้ route ที่ไม่มีบนดิสก์: ${stale.join(", ")}`).toEqual([]);
@@ -169,7 +169,7 @@ describe("E3-AC9 ② — ความครอบคลุม (ต้องเ�
         : `\n⚠️  AC9② cross-user: ครอบ ${covered.length}/${all.length} trip-route — เขียวไม่ได้แปลว่า cross-user ถูกทดสอบครบ\n` +
           `    เหลือ: ${remaining.join(" · ")}\n`;
     console.warn(banner);
-    // 🔴 ด่านบังคับ "ครบ 11" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ตัวที่ 12 ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
+    // 🔴 ด่านบังคับ "ครบ 10" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ตัวที่ 11 ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
     expect(remaining, "มี trip-scoped route ที่ยังไม่มี probe ข้ามผู้ใช้ — เพิ่ม probe ใน describe นี้ก่อน").toEqual([]);
   });
 });
@@ -194,7 +194,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
   let cCookies: Cookie[] = []; // C = viewer *สมาชิก* ของทริป A (ต่างจาก B คนนอก) — สำหรับ probe members
-  let dCookies: Cookie[] = []; // D = editor ของทริป A — สำหรับ probe cover (สองด่านเข้มไม่เท่ากัน: upload ได้ · ชี้คอลัมน์ไม่ได้)
+  let dCookies: Cookie[] = []; // D = editor ของทริป A — members probe ครอบครบ 3 role (owner/viewer/editor)
   let aDay = "";
   let aPlan = "";
   let aClient: SupabaseClient;
@@ -341,7 +341,8 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const cInv = await aClient.from("trip_members").insert({ trip_id: tripA, user_id: ids.c, role: "viewer" });
     if (cInv.error) throw new Error(`invite C viewer: ${cInv.error.message}`);
     cCookies = await captureCookies(cUser.session);
-    // D = editor ของ tripA — เคส cover ต้องการคนที่ผ่านด่าน upload (can_write_trip) แต่ตกด่านคอลัมน์ (owner-only)
+    // D = editor ของ tripA — เดิมเพิ่มมาเพื่อเคส cover (ถูกถอนแล้ว) · **เก็บไว้** เพราะ members probe
+    // ใช้ยืนยันว่า viewer เห็นสมาชิกครบทั้ง 3 role ไม่ใช่แค่ owner+ตัวเอง
     const dUser = await makeUser("d");
     const dInv = await aClient.from("trip_members").insert({ trip_id: tripA, user_id: ids.d, role: "editor" });
     if (dInv.error) throw new Error(`invite D editor: ${dInv.error.message}`);
@@ -353,11 +354,6 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
 
   afterAll(async () => {
     const userIds = Object.values(ids);
-    if (tripA) {
-      // safety net — เคส DELETE ลบ cover อยู่แล้ว แต่ถ้ารอบตายกลางทาง ไฟล์จะค้าง (บทเรียน 890)
-      const cov = await admin.storage.from("trip-covers").list(tripA);
-      if (cov.data?.length) await admin.storage.from("trip-covers").remove(cov.data.map((f) => `${tripA}/${f.name}`));
-    }
     if (tripA) {
       for (const t of CHILD_TABLES) {
         const { error } = await admin.from(t).delete().eq("trip_id", tripA);
@@ -474,114 +470,6 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect((await postTrip(aCookies, { title: `bad3-${stamp}`, ...tripDates, cityIds: many })).status, "เกิน 20 เมือง").toBe(400);
   });
 
-  // ─── cover (route ที่ 11 · PUT/DELETE · E5-AC8) ─────────────────────────────
-  const COVER_BUCKET = "trip-covers";
-  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
-
-  function putCover(cookies: Cookie[], tripId: string, bytes: Uint8Array | ArrayBuffer, contentType: string): Promise<Response> {
-    jar.cookies = cookies;
-    const req = new NextRequest(`http://localhost:3300/api/engine/trips/${tripId}/cover`, {
-      method: "PUT",
-      headers: { "content-type": contentType },
-      body: bytes as BodyInit,
-    });
-    return coverPUT(req, { params: Promise.resolve({ tripId }) });
-  }
-
-  /** ไฟล์ในโฟลเดอร์ cover ของ tripA — อ่านด้วย service_role (BYPASSRLS) = สถานะบัคเก็ตจริง ไม่ผ่าน policy */
-  async function coverFilesOfTripA(): Promise<string[]> {
-    const { data, error } = await admin.storage.from(COVER_BUCKET).list(tripA);
-    if (error) throw new Error(`list covers: ${error.message}`);
-    return (data ?? []).map((f) => f.name).sort();
-  }
-  async function coverColumn(): Promise<string | null> {
-    const { data, error } = await aClient.from("trips").select("cover_image_path").eq("id", tripA).single();
-    if (error) throw new Error(`read cover_image_path: ${error.message}`);
-    return (data?.cover_image_path as string | null) ?? null;
-  }
-
-  /**
-   * 🔴 เคสที่ P1 ขอหนักสุด — **สองด่านเข้มไม่เท่ากัน**: upload = can_write_trip (editor ผ่าน) ·
-   * ชี้คอลัมน์ = trips_update (owner เท่านั้น) → editor อัปโหลดสำเร็จขั้น ① แล้วตกขั้น ②
-   * ต้องได้ 403 **และไฟล์ที่เพิ่งวางต้องถูกเก็บกวาด** — cleanup พัง = ไฟล์กำพร้าสะสมทุกครั้งที่ editor ลอง
-   * · แยก 403-ขั้น② ออกจาก 403-ขั้น① ด้วย *body*: ขั้น② พูดถึง "เจ้าของ" (ผ่าน upload มาแล้ว) · ขั้น① เป็นข้อความ storage
-   */
-  it("🔴 cover PUT โดย editor — 403 จากขั้นชี้คอลัมน์ (ไม่ใช่ขั้น upload) และไม่มีไฟล์กำพร้าค้าง", async () => {
-    const before = await coverFilesOfTripA();
-    const res = await putCover(dCookies, tripA, jpeg, "image/jpeg");
-    const body = (await res.clone().json().catch(() => ({}))) as { error?: string };
-    expect(res.status, `editor ควร 403: HTTP ${res.status} ${JSON.stringify(body)}`).toBe(403);
-    expect(
-      body.error ?? "",
-      "403 ต้องมาจากขั้นชี้คอลัมน์ (ข้อความพูดถึงเจ้าของ) — ถ้าเป็นข้อความ storage แปลว่า editor ตกตั้งแต่ upload = policy คนละตัวกับที่คิด",
-    ).toMatch(/เจ้าของ/);
-    expect(await coverFilesOfTripA(), "editor โดน 403 แต่ไฟล์ค้างในบัคเก็ต = cleanup ขั้น ② พัง (ไฟล์กำพร้าสะสม)").toEqual(before);
-  });
-
-  it("🔴 cover PUT โดย owner — 200 · path ขึ้นต้น <tripId>/ · ไฟล์อยู่จริง · คอลัมน์ชี้ตรง", async () => {
-    const res = await putCover(aCookies, tripA, jpeg, "image/jpeg");
-    expect(res.status, `owner ควร 200: ${await res.clone().text()}`).toBe(200);
-    const { coverImagePath, coverImageUrl } = (await res.json()) as { coverImagePath: string; coverImageUrl: string | null };
-    expect(coverImagePath.startsWith(`${tripA}/`), "path ไม่ขึ้นต้น <tripId>/ = ผิด contract ของ trip_cover_trip").toBe(true);
-    // 🔴 `coverImageUrl` = signed URL แนบให้ UI ใช้ทันที · **เซ็นล้มไม่ทำให้คำขอล้ม** (รูปตั้งสำเร็จไปแล้วจริง)
-    //    → P1 สั่งชัด: **อย่า assert ว่าไม่ null เสมอ** · ยึด path เป็นหลัก · แต่ถ้ามี URL มา มันต้องใช้ได้จริง
-    if (coverImageUrl) {
-      const fetched = await fetch(coverImageUrl);
-      expect(fetched.ok, `signed URL เซ็นมาแล้วแต่ fetch ไม่ได้ (HTTP ${fetched.status}) = URL ใช้ไม่ได้จริง`).toBe(true);
-    }
-    expect(await coverFilesOfTripA(), "200 แต่ไฟล์ไม่อยู่ในบัคเก็ต").toContain(coverImagePath.split("/")[1]);
-    expect(await coverColumn(), "คอลัมน์ไม่ชี้ path ที่เพิ่งตอบมา").toBe(coverImagePath);
-  });
-
-  it("🔴 cover PUT ทับรูปเดิม — ไฟล์เก่าหาย · ไฟล์ใหม่อยู่ · path ชี้ตัวใหม่ (ลำดับ ①→②→③ ของ P1)", async () => {
-    const oldPath = await coverColumn();
-    expect(oldPath, "precondition: ต้องมีรูปเดิมจากเคสก่อน").toBeTruthy();
-    const res = await putCover(aCookies, tripA, jpeg, "image/png");
-    expect(res.status, `ทับรูปควร 200: ${await res.clone().text()}`).toBe(200);
-    const { coverImagePath: newPath } = (await res.json()) as { coverImagePath: string };
-    expect(newPath, "ชื่อไฟล์ใหม่ต้องไม่ซ้ำของเก่า (upsert:false)").not.toBe(oldPath);
-    const files = await coverFilesOfTripA();
-    expect(files, "ไฟล์เก่ายังค้าง = ขั้น ③ (เก็บกวาด) ไม่ทำงาน").not.toContain(oldPath!.split("/")[1]);
-    expect(files, "ไฟล์ใหม่ไม่อยู่").toContain(newPath.split("/")[1]);
-    expect(await coverColumn(), "path ไม่ชี้ตัวใหม่").toBe(newPath);
-  });
-
-  it("🔴 cover PUT/DELETE โดย B (คนนอก) — ถูกปฏิเสธ · ไฟล์จริงยังอยู่ครบ · คอลัมน์ไม่ขยับ", async () => {
-    const filesBefore = await coverFilesOfTripA();
-    const colBefore = await coverColumn();
-    expect(filesBefore.length, "precondition: ต้องมีไฟล์จริงตอนยิง (กันกับดักเซตว่าง)").toBeGreaterThan(0);
-
-    const put = await putCover(bCookies, tripA, jpeg, "image/jpeg");
-    const { verdict, detail } = await verdictFor(put);
-    expect(verdict, `B PUT cover → ${verdict} (${detail})`).toBe("rejected");
-
-    const del = await callAs(bCookies, tripA, coverDELETE, "DELETE");
-    const dv = await verdictFor(del);
-    expect(dv.verdict, `B DELETE cover → ${dv.verdict} (${dv.detail})`).toBe("rejected");
-
-    expect(await coverFilesOfTripA(), "B ยิงแล้วไฟล์ของ A เปลี่ยน = leak ฝั่งเขียน").toEqual(filesBefore);
-    expect(await coverColumn(), "B ยิงแล้วคอลัมน์ของ A ขยับ").toBe(colBefore);
-  });
-
-  it("cover PUT ไม่ล็อกอิน → 401 (ไฟล์จริงยังอยู่)", async () => {
-    const res = await putCover([], tripA, jpeg, "image/jpeg");
-    expect(res.status, "ไม่มี session ต้อง 401").toBe(401);
-  });
-
-  it("cover PUT รูปผิด → 415 (ชนิด) · 413 (เกิน 5MB) · 400 (ว่าง)", async () => {
-    expect((await putCover(aCookies, tripA, jpeg, "text/plain")).status, "content-type ผิดชนิด").toBe(415);
-    expect((await putCover(aCookies, tripA, new Uint8Array(5 * 1024 * 1024 + 1), "image/jpeg")).status, "เกิน 5MB").toBe(413);
-    expect((await putCover(aCookies, tripA, new Uint8Array(0), "image/jpeg")).status, "ไฟล์ว่าง").toBe(400);
-  });
-
-  it("🔴 cover DELETE โดย owner — path เป็น null และไฟล์หายจากบัคเก็ตจริง (ไม่ใช่แค่คอลัมน์ว่าง)", async () => {
-    expect((await coverFilesOfTripA()).length, "precondition: ต้องมีไฟล์อยู่ก่อนลบ").toBeGreaterThan(0);
-    const res = await callAs(aCookies, tripA, coverDELETE, "DELETE");
-    expect(res.status, `owner DELETE ควร 200: ${await res.clone().text()}`).toBe(200);
-    expect(((await res.json()) as { coverImagePath: null }).coverImagePath).toBeNull();
-    expect(await coverColumn(), "คอลัมน์ไม่ถูกล้าง").toBeNull();
-    expect(await coverFilesOfTripA(), "คอลัมน์ว่างแต่ไฟล์ยังค้างในบัคเก็ต = ลบไม่จริง (ไฟล์กำพร้า)").toEqual([]);
-  });
 
   /**
    * members GET (route ตัวที่ 10) — **บวกสำคัญกว่าลบ** (P1/P4 · 27 ส.ค. 2026)

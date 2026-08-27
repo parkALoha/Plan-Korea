@@ -597,8 +597,9 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       // storage.objects — policy บนบัคเก็ตถูกยิงผ่าน storage API ไม่ใช่ `.from("objects")`
       // เคสอยู่ 3 ไฟล์: booking-files ใน rlsMatrix · trip-covers ใน storageCover + engineCrossUser
       // ⚠️ granularity หยาบกว่าตาราง: นับเป็น objects.<verb> รวมทุกบัคเก็ต (แยกราย bucket จาก call site ไม่ได้)
+      // 🔴 `storageCover.test.ts` ถูกลบ 27 ส.ค. (ฟีเจอร์รูปปกถูกถอนตามมติผู้ใช้) — เคสที่ยังจริงย้ายไป
+      //    บล็อก booking-files ใน `rlsMatrix` แล้ว · เหลืออ่านสองไฟล์นี้
       const storageSrc = stripComments([MATRIX_SRC,
-        readFileSync(new URL("./storageCover.test.ts", import.meta.url), "utf8"),
         readFileSync(new URL("./engineCrossUser.test.ts", import.meta.url), "utf8"),
       ].join("\n"));
       const STORAGE_VERB: Record<string, string> = {

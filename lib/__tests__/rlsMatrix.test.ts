@@ -5445,6 +5445,7 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     const BUCKET = "booking-files";
     let tripS = "";
     let filePath = "";
+    const rootPath = `root-${stamp}.pdf`; // ไม่มี prefix uuid → booking_file_trip() = null
 
     beforeAll(async () => {
       const { data: trip, error } = await A.rpc("create_trip", {
@@ -5461,10 +5462,23 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
           contentType: "application/pdf",
         });
       if (up.error) throw new Error(`เจ้าของทริปอัปโหลดไม่ได้: ${up.error.message}`);
+
+      // 🔴 B = **viewer** ของทริปนี้ (C ยังเป็นคนนอกเหมือนเดิม — เคสเดิมพึ่งมันอยู่)
+      //    ย้ายมาจากบล็อก trip-covers ที่ถูกถอน (E5-AC8) — บัคเก็ตนั้นหายแต่ **ข้อเท็จจริงยังจริง**
+      //    และ booking-files ไม่เคยมี persona viewer เลย → คู่ "อ่านได้/เขียนไม่ได้" ขาดหายมาตลอด
+      const inv = await A.from("trip_members").insert({ trip_id: tripS, user_id: ids.b, role: "viewer" });
+      if (inv.error) throw new Error(`เชิญ B เป็น viewer ไม่ได้: ${inv.error.message}`);
+
+      // ไฟล์ที่วางไว้ **รากบัคเก็ต** (ไม่มี prefix uuid) — `app.booking_file_trip()` คืน null
+      // วางด้วย service_role เพราะไคลเอนต์วางไม่ได้อยู่แล้ว (นั่นคือสิ่งที่เคสข้างล่างพิสูจน์)
+      const rootUp = await admin.storage
+        .from(BUCKET)
+        .upload(rootPath, new Blob(["x"], { type: "application/pdf" }), { contentType: "application/pdf" });
+      if (rootUp.error) throw new Error(`วางไฟล์รากไม่ได้: ${rootUp.error.message}`);
     });
 
     afterAll(async () => {
-      const rm = await admin.storage.from(BUCKET).remove([filePath]);
+      const rm = await admin.storage.from(BUCKET).remove([filePath, rootPath]);
       if (rm.error) console.warn(`\n⚠️  ลบไฟล์ fixture ไม่สำเร็จ: ${rm.error.message}\n`);
     });
 
@@ -5507,6 +5521,64 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         .from(BUCKET)
         .upload(`${tripS}/evil-${stamp}.pdf`, new Blob(["x"], { type: "application/pdf" }));
       expect(error, "คนนอกวางไฟล์ในโฟลเดอร์ทริปคนอื่นได้").not.toBeNull();
+    });
+
+    /**
+     * ── ย้ายมาจาก `storageCover.test.ts` (บัคเก็ต `trip-covers` · ถูกถอนตามมติผู้ใช้ 27 ส.ค.) ──
+     * 🎯 **ฟีเจอร์หาย แต่ข้อเท็จจริงที่เคสพิสูจน์ยังจริง** และ `booking-files` **ยังคุ้มไฟล์ตั๋วของทริปที่จะบิน 11 ต.ค.**
+     * · `app.booking_file_trip()` ออกแบบเหมือน `app.trip_cover_trip()` เป๊ะ (คืน `null` ถ้า segment แรกไม่ใช่ uuid)
+     * · policy ครบ 4 verb · `anon` ไม่มี policy สักตัว → ทุกเคสมีฝาแฝดตรงตัว
+     * 🔴 **เคส `update` สำคัญเป็นพิเศษ:** ก่อนย้าย **ไม่มีเคสไหนในโปรเจกต์ยิง `.update()` บน storage เลย**
+     *    (บล็อกนี้ยิง upload/remove/download/createSignedUrl เท่านั้น) → `booking_files_update`
+     *    เป็น *ข้อความในไฟล์* มาตลอด · ถ้าปล่อยให้เคสหายไปกับ trip-covers กิ่งนี้จะกลับไปไม่มีใครยิง
+     */
+    it("ด้านบวก: viewer โหลดไฟล์ตั๋วได้ — `can_read_trip` ครอบ viewer (คู่กับเคสเขียนข้างล่าง)", async () => {
+      const { data, error } = await B.storage.from(BUCKET).download(filePath);
+      expect(error, `viewer โหลดไฟล์ไม่ได้: ${error?.message} — คนถูกเชิญมาดูต้องเห็นตั๋ว`).toBeNull();
+      expect(data, "viewer ได้ไฟล์ null").toBeTruthy();
+    });
+
+    it("🔴 viewer อัปโหลดไฟล์ตั๋วไม่ได้ — `can_write_trip` กัน viewer (viewer ≠ editor)", async () => {
+      const { error } = await B.storage
+        .from(BUCKET)
+        .upload(`${tripS}/viewer-${stamp}.pdf`, new Blob(["x"], { type: "application/pdf" }));
+      expect(error, "viewer วางไฟล์ตั๋วได้ = policy ฝั่งเขียนกรองด้วยสิทธิ์อ่าน").not.toBeNull();
+    });
+
+    it("🔴 เจ้าของเขียนทับไฟล์ตั๋วของตัวเองได้ — precondition ของกิ่ง `update` (ไม่มีเคสไหนยิงมาก่อนเลย)", async () => {
+      const { error } = await A.storage
+        .from(BUCKET)
+        .update(filePath, new Blob([`ใบเสร็จแก้ไข ${stamp}`], { type: "application/pdf" }), {
+          contentType: "application/pdf",
+        });
+      expect(error, `เจ้าของเขียนทับไฟล์ตัวเองไม่ได้: ${error?.message}`).toBeNull();
+    });
+
+    it("🔴 viewer / คนนอก เขียนทับไฟล์ตั๋วไม่ได้ — ไฟล์มีอยู่จริงตอนยิง", async () => {
+      const blob = () => new Blob(["hijack"], { type: "application/pdf" });
+      const v = await B.storage.from(BUCKET).update(filePath, blob(), { contentType: "application/pdf" });
+      expect(v.error, "viewer เขียนทับใบเสร็จได้ = update กรองด้วยสิทธิ์อ่าน").not.toBeNull();
+      const o = await C.storage.from(BUCKET).update(filePath, blob(), { contentType: "application/pdf" });
+      expect(o.error, "คนนอกเขียนทับใบเสร็จของทริปคนอื่นได้ = รั่วฝั่ง update ข้ามผู้เช่า").not.toBeNull();
+    });
+
+    it("🔴 ไฟล์ที่วางไว้รากบัคเก็ต (path ไม่ใช่ `<uuid>/…` → `booking_file_trip()` = null) อ่านไม่ได้เลย", async () => {
+      // ไฟล์มีอยู่จริง (วางด้วย service_role ใน beforeAll) → "อ่านไม่ได้" แปลว่าถูกกัน ไม่ใช่ "ไม่มีไฟล์"
+      const { data, error } = await A.storage.from(BUCKET).download(rootPath);
+      expect(
+        Boolean(error) || !data,
+        "ไฟล์รากอ่านได้ = booking_file_trip ไม่คืน null → can_read_trip(null) ไม่ได้กัน (ไฟล์มีอยู่จริง)",
+      ).toBe(true);
+    });
+
+    it("🔴 anon ด้วย **คีย์ไคลเอนต์** โหลดไฟล์ไม่ได้ — เวกเตอร์ที่สาม (`D12`/`0019`)", async () => {
+      // ต่างจากสองเคส `fetch` ข้างบน: อันนั้นยิง URL เปล่า ๆ · อันนี้ยิงผ่าน client ที่ถือ anon key จริง
+      // บัคเก็ตนี้ไม่มี policy ให้ `anon` สักตัว → ต้องปิดสนิททุกทาง
+      const { data, error } = await D.storage.from(BUCKET).download(filePath);
+      expect(
+        Boolean(error) || !data,
+        "anon ที่ถือคีย์ไคลเอนต์โหลดใบเสร็จได้ = บัคเก็ตหลุดแบบ 0019 ที่ D12 บันทึกไว้ (ไฟล์มีอยู่จริง)",
+      ).toBe(true);
     });
   });
 
