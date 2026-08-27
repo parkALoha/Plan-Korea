@@ -423,7 +423,7 @@ export function tripsVisibleToMe(db: Db) {
   //       การเรียงในฝั่ง PostgREST ต้องพึ่ง `referencedTable` ซึ่งพังเงียบถ้าชื่อความสัมพันธ์เปลี่ยน
   return engineTable(db, "trips")
     .select(
-      "id, title, start_date, end_date, cover_image_path," +
+      "id, title, start_date, end_date, cover_image_url," +
         "trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en)))," +
         "trip_members(count)",
     )

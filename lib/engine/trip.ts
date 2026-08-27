@@ -1,4 +1,4 @@
-import { signTripCovers, tripsVisibleToMe, type Db } from "./db";
+import { tripsVisibleToMe, type Db } from "./db";
 import { chooseSoleTrip, type SoleTrip } from "./tripChoice";
 
 // 🔴 re-export ให้ผู้เรียก *ฝั่งเซิร์ฟเวอร์* เท่านั้น — ฝั่ง client ต้อง import จาก `./tripChoice` ตรง ๆ
@@ -83,7 +83,7 @@ type RawTripRow = {
   title: string;
   start_date: string;
   end_date: string;
-  cover_image_path: string | null;
+  cover_image_url: string | null;
   trip_destinations: {
     rank: number;
     catalog_cities: {
@@ -104,17 +104,27 @@ export async function tripsForUser(db: Db): Promise<TripListItem[]> {
   const { data, error } = await tripsVisibleToMe(db);
   if (error) throw new Error(`อ่านรายการทริปไม่ได้: ${error.message}`);
   const rows = (data ?? []) as unknown as RawTripRow[];
-  // เซ็น URL รูปปกทีเดียวทั้งชุด ก่อนแบนแถว — ดู `signTripCovers()`
-  const covers = await signTripCovers(
-    db,
-    rows.map((r) => r.cover_image_path).filter((p): p is string => !!p),
-  );
+  /**
+   * 🔴 **ยังอ่าน `cover_image_url` (ชื่อเดิม) และยังไม่เซ็น — โดยตั้งใจ จนกว่า `20260827220000` จะลงฐาน**
+   *
+   * ผม (P1) เปลี่ยนชื่อคอลัมน์ใน migration แล้วแก้โค้ดให้ตามทันที **ทั้งที่ฐานยังไม่ถูก rename**
+   * → `GET /api/engine/trips` คืน **502 `column trips.cover_image_path does not exist`** ให้ทุกผู้ใช้
+   *   และหน้า Home แสดง "ยังไม่มีทริป" ทั้งที่มีทริปอยู่ (P2 เจอ 27 ส.ค.)
+   *
+   * 🎯 **นี่คือความผิดพลาดเดียวกับที่ `5ab0abe` ของผมเองเขียนบทเรียนไว้เมื่อเช้าวันเดียวกัน:**
+   *    *"ลำดับที่ถูกคือ migration ลงฐานก่อน แล้วโค้ดตามไป — ผม commit สลับลำดับเอง"*
+   *    ครั้งนั้นผลคือ **เทสต์แดง** · ครั้งนี้ผลคือ **แอปพังกับผู้ใช้จริง** — รากเดียวกัน ราคาต่างกันมาก
+   * ⚠️ **และผมมองไม่เห็นเพราะคิดถึงแต่ทิศเดียว** — ผมเตือน P4 ว่าเทสต์เขาจะแดง *หลัง* migration ลง
+   *    แต่ไม่ได้คิดว่าโค้ดของผมเอง **พังทันทีที่ commit ก่อน** migration ลง
+   *
+   * 📌 คืนเป็น `cover_image_path` + เซ็น URL **พร้อมกันในคอมมิตเดียวหลัง migration ลงฐาน**
+   */
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
     start_date: r.start_date,
     end_date: r.end_date,
-    coverImageUrl: r.cover_image_path ? covers.get(r.cover_image_path) ?? null : null,
+    coverImageUrl: r.cover_image_url,
     // เรียงด้วย `(rank, cityId)` — `rank` ไม่ unique โดยตั้งใจ (เหตุผลเดียวกับ `trip_stops.rank`)
     // `cityId` คือ tie-break ที่ทำให้ทุกเครื่องได้ลำดับเดียวกัน
     destinations: (r.trip_destinations ?? [])
