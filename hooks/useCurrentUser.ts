@@ -9,11 +9,13 @@ export type CurrentUser =
    *  (ทุก path ที่ไม่อยู่ใน PUBLIC_PATHS ต้องมี session ถึงจะเรนเดอร์ถึงตรงนี้) แต่ยังรับสถานะนี้ไว้
    *  เป็นข้อมูลป้องกันชั้นสอง ไม่ใช่ด่าน — สอดคล้องกับที่ `createBrowserSupabase()` บอกไว้ว่า "UX เท่านั้น" */
   | { status: "anon" }
-  | { status: "ready"; displayName: string | null };
+  | { status: "ready"; id: string; displayName: string | null };
 
 /**
  * ผู้ใช้ที่ล็อกอินอยู่ตอนนี้ — สำหรับโชว์ผล UX เท่านั้น (ทักทายด้วยชื่อ) **ไม่ใช่ตัวตัดสินสิทธิ์**
  * (`lib/auth/browser.ts` เขียนกำกับไว้ชัดว่าห้ามใช้ไฟล์นั้นตัดสินสิทธิ์ — สิทธิ์จริงมาจาก RLS เท่านั้น)
+ * `id` ก็เป็นแบบเดียวกัน — ใช้เทียบกับ `role` จาก `GET /trips/[tripId]/members` เพื่อ **ซ่อน/โชว์ปุ่ม**
+ * เท่านั้น (เช่น ปุ่มอัปโหลดรูปปกที่ owner เท่านั้นทำได้) ห้ามใช้แทนการเช็ค 403 จาก route จริง
  *
  * ยังไม่มี route/hook สำหรับ `profiles.display_name` ในโปรเจกต์นี้ (27 ส.ค. 2026) — อ่านตรงผ่าน
  * `createBrowserSupabase()` แทนที่จะเปิด API route ใหม่ เพราะ `profiles_select` policy อนุญาตให้อ่าน
@@ -40,7 +42,7 @@ export function useCurrentUser(): CurrentUser {
         .eq("id", user.id)
         .maybeSingle();
       if (cancelled) return;
-      setState({ status: "ready", displayName: profile?.display_name ?? null });
+      setState({ status: "ready", id: user.id, displayName: profile?.display_name ?? null });
     })().catch(() => {
       if (!cancelled) setState({ status: "anon" });
     });
