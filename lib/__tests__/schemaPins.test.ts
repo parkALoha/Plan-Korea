@@ -1042,3 +1042,32 @@ describe("🔴 reachability — ทุก RPC ที่แอปเรียก 
     expect(reachable.has("this_fn_does_not_exist_zzz"), "ชื่อมั่วต้องไม่อยู่").toBe(false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+describe("🔴 fixture lock per-run — acquireFixtureLock เรียกได้เฉพาะใน globalSetup (①b (a))", () => {
+  /**
+   * P1 เงื่อนไข ① ของ (a): หลังย้ายล็อกไป globalSetup (per-run) · ถ้าไฟล์ไหนยังเรียก acquireFixtureLock ใน beforeAll
+   * → รอล็อกที่ globalSetup ถืออยู่ → 30s hook timeout → **skip เงียบ** ("ย้ายไม่ครบ") · ด่านนี้จับตอน PR เป็นกลไก ไม่ใช่ความจำ
+   * (จับ `acquireFixtureLock(` = การ *เรียก* · ไม่ใช่ import/คอมเมนต์ · stripComments ตัดคอมเมนต์ก่อน)
+   */
+  it("🔴 ไม่มีไฟล์สดเรียก acquireFixtureLock — เฉพาะ globalSetup + ที่ทดสอบ helper เอง", () => {
+    const dir = resolve(process.cwd(), "lib/__tests__");
+    const allowed = new Set([
+      "_testClient.ts",           // นิยาม
+      "fixtureLockGlobal.ts",     // globalSetup — ที่เดียวที่ acquire ล็อกจริง per-run
+      "fixtureLockRetry.test.ts", // unit test กิ่ง error ด้วย fake client (ไม่แตะล็อกจริง)
+      "fixtureReaper.ts",         // reaper (globalSetup แยก · gated) — acquire แบบ skip-if-busy
+    ]);
+    const offenders: string[] = [];
+    for (const f of readdirSync(dir)) {
+      if (!/\.tsx?$/.test(f) || allowed.has(f)) continue;
+      const src = stripComments(readFileSync(join(dir, f), "utf8"));
+      if (/acquireFixtureLock\s*\(/.test(src)) offenders.push(f);
+    }
+    expect(
+      offenders.sort(),
+      "ไฟล์เหล่านี้เรียก acquireFixtureLock นอก globalSetup → รอล็อกที่ถืออยู่ = 30s hook timeout = skip เงียบ\n" +
+        "  → ย้าย logic ที่ต้องล็อกไปพึ่ง globalSetup (per-run · ถือล็อกครั้งเดียวต่อรอบแล้ว)",
+    ).toEqual([]);
+  });
+});

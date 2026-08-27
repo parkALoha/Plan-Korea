@@ -147,5 +147,10 @@ export default defineConfig({
     testTimeout: 30_000,
 
     reporters: ["default", runIntegrityReporter],
+
+    // 🔴 ①b (a) · P4/P1 27 ส.ค. — จับ fixture lock **ครั้งเดียวต่อรอบ** ที่นี่ แทนที่จะจับต่อไฟล์ใน beforeAll
+    //    R11 เป็น cross-session · ล็อกต่อไฟล์ serialize ไฟล์ในรอบเดียวโดยไม่จำเป็น → รอ > hookTimeout 30s = skip เงียบ
+    //    ห้ามมีไฟล์ไหนเรียก acquireFixtureLock ใน beforeAll อีก — ด่าน source ใน schemaPins บังคับ (ดู fixtureLockGlobal.ts)
+    globalSetup: ["./lib/__tests__/fixtureLockGlobal.ts"],
   },
 });
