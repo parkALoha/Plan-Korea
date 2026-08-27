@@ -402,6 +402,35 @@ export async function signTripCovers(
   return out;
 }
 
+/**
+ * ตั้ง/ล้างรูปปกของทริป — เขียน **path** ไม่ใช่ URL (`cover_image_path`)
+ *
+ * 🔴 **ไม่มีการตรวจสิทธิ์ที่นี่โดยตั้งใจ** — `trips_update` (`app.trip_role = 'owner'`) เป็นคนตัดสิน
+ *    และ column grant บังคับอีกชั้นว่าคอลัมน์นี้ส่งมาแก้ได้ (`20260827220000`)
+ * ⚠️ **`null` = ล้างรูปปก** ไม่ใช่ "ไม่เปลี่ยน" — ผู้เรียกที่ไม่อยากเปลี่ยน อย่าเรียกฟังก์ชันนี้
+ */
+export function setTripCoverPath(db: Db, tripId: string, path: string | null) {
+  return engineTable(db, "trips").update({ cover_image_path: path }).eq("id", tripId).select("id");
+}
+
+/** path รูปปกปัจจุบัน — ใช้ตอนอัปโหลดทับ เพื่อรู้ว่าต้องเก็บกวาดไฟล์เก่าใบไหน */
+export function tripCoverPath(db: Db, tripId: string) {
+  return engineTable(db, "trips").select("cover_image_path").eq("id", tripId).maybeSingle();
+}
+
+/** ลบไฟล์ในบัคเก็ตรูปปก — ใช้เก็บกวาดของเก่าหลังอัปโหลดทับสำเร็จแล้วเท่านั้น */
+export function removeTripCovers(db: Db, paths: readonly string[]) {
+  return db.storage.from(TRIP_COVERS_BUCKET).remove([...paths]);
+}
+
+/**
+ * อัปโหลดไฟล์รูปปก — **ใช้ client ของผู้ใช้จริง** สิทธิ์จึงเป็นของ `trip_covers_insert`
+ * (`app.can_write_trip` ผ่าน segment แรกของ path) · ไม่มีทางลัดใหม่ให้ดูแล (`D38`)
+ */
+export function uploadTripCover(db: Db, path: string, body: ArrayBuffer, contentType: string) {
+  return db.storage.from(TRIP_COVERS_BUCKET).upload(path, body, { contentType, upsert: false });
+}
+
 export function tripsVisibleToMe(db: Db) {
   // 🔴 **`title` ไม่ใช่ `name`** — แก้ 27 ส.ค. 2026 (P4 เจอตอนสร้าง harness ยิง route จริง)
   //    คอลัมน์ชื่อ `title` มาตั้งแต่ `…043822_identity.sql:122` และ `create_trip` ก็ insert `title`
