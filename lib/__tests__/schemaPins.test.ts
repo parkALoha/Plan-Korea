@@ -1202,3 +1202,46 @@ describe("🔴 fixture lock per-run — acquireFixtureLock เรียกได
     ).toEqual([]);
   });
 });
+
+/**
+ * 🔴 **`E5` — ห่วงโซ่ที่ทำให้ "ละพารามิเตอร์" ปลอดภัย** (P4 · P1 ขอ · 28 ส.ค. 2026)
+ *
+ * `lib/engine/db.ts` ส่ง `p_base_timezone: args.baseTimezone ?? undefined` — **ละพารามิเตอร์เมื่อไม่มีค่า**
+ * (เดิมเป็น `?? null` · เปลี่ยนเพราะชนิดจาก `supabase gen types` ประกาศ `p_base_timezone?: string`)
+ *
+ * 🎯 **`?? null` ไม่สนใจ default ของฟังก์ชันเลย · `?? undefined` ผูกกับมันเต็ม ๆ** — การพึ่งพานี้
+ * **เพิ่งเกิดขึ้น และไม่มีด่านไหนตรวจมัน** · ห่วงโซ่ที่ต้องจริงทั้งเส้นคือ:
+ *
+ *     ละพารามิเตอร์ → `default null` → `coalesce(nullif(trim(...), ''), 'Asia/Bangkok')` → ได้ค่าเริ่มต้น
+ *
+ * ⚠️ **และ `20260824221550:81` เคยเป็น `default 'Asia/Bangkok'` มาก่อนจริง ๆ** — default ตัวนี้
+ * **เปลี่ยนมาแล้วหนึ่งครั้งในประวัติ** จึงไม่ใช่ความเสี่ยงเชิงทฤษฎี
+ *
+ * 🔴 **เคส `createTripRoute.test.ts` จับข้อนี้ไม่ได้ตามนิยาม** — มันรับทั้ง `null`/`undefined`
+ * ตามเจตนา (ไม่ผูกกับตัวแทนของค่าว่าง ซึ่งถูก) → ถ้า default เปลี่ยนกลับ **ทริปทุกใบได้ timezone
+ * ผิดโดยไม่มีเทสต์ไหนแดง** · หมุดนี้คือชั้นที่หายไปพอดี ไม่ใช่การตรวจซ้ำ
+ */
+describe("🔴 E5 — `create_trip` · default ที่ `db.ts` พึ่งพาอยู่", () => {
+  const CREATE_TRIP = "public.create_trip";
+
+  it("🔴 pin:create-trip-tz-default — `p_base_timezone` ต้องมี `default null` และ coalesce ต้องยังอยู่", () => {
+    const src = effectiveFunctions().get(CREATE_TRIP);
+    // ควบคุมฝั่งบวก — ทะเบียนหาไม่เจอต้องไม่กลายเป็น "ผ่าน" (รูปเดียวกับ pin:app-fn-body)
+    expect(src, `ไม่เจอ ${CREATE_TRIP} ในทะเบียน — ตัวสกัดพัง ไม่ใช่ด่านผ่าน`).toBeTruthy();
+
+    const def = /p_base_timezone\s+text\s+default\s+([^\s,)]+)/i.exec(src!);
+    expect(
+      def?.[1]?.toLowerCase(),
+      "`db.ts` ละพารามิเตอร์นี้เมื่อไม่มีค่า → ความหมายมาจาก default ตัวนี้ล้วน ๆ\n" +
+        "  🔴 เปลี่ยน default = เปลี่ยน timezone ของทริปที่สร้างใหม่ทุกใบ โดยไม่มีเคสอื่นแดง\n" +
+        "  → ถ้าตั้งใจเปลี่ยน ต้องแก้ `db.ts` ให้ส่งค่าตรง ๆ ก่อน แล้วค่อยขยับหมุดนี้",
+    ).toBe("null");
+
+    // ห่วงโซ่ครึ่งหลัง — `null` จะกลายเป็น 'Asia/Bangkok' ได้ก็ต่อเมื่อ coalesce ยังอยู่
+    expect(
+      /coalesce\s*\(\s*nullif\s*\(\s*trim\s*\(\s*p_base_timezone\s*\)\s*,\s*''\s*\)\s*,\s*'Asia\/Bangkok'\s*\)/i.test(src!),
+      "ถอด `coalesce` ออก → `default null` จะลง `trips.base_timezone` เป็น null แทนค่าเริ่มต้น\n" +
+        "  🎯 หมุดครึ่งบนอย่างเดียวไม่พอ — *ทั้งเส้น* ต้องจริง ไม่ใช่ปลายข้างเดียว",
+    ).toBe(true);
+  });
+});
