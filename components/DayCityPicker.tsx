@@ -72,19 +72,24 @@ export function DayCityPicker({
 
   return (
     <div className="min-w-0">
-      <Dropdown
-        id={`day-city-${dayId}`}
-        ariaLabel={`${E5_COPY.dayCityPicker.ariaLabel} ${dateLabel}`}
-        className="max-w-[15rem]"
-        value={currentCityId ?? CLEAR_VALUE}
-        onChange={choose}
-        disabled={saving}
-        placeholder={E5_COPY.dayCityPicker.placeholder}
-        options={[
-          { value: CLEAR_VALUE, label: E5_COPY.dayCityPicker.unset },
-          ...options.map((c) => ({ value: c.id, label: c.nameTh })),
-        ]}
-      />
+      {/* ไอคอนอยู่นอกตัวกด ไม่ใช่ในป้ายตัวเลือก — ป้ายในรายการต้องเป็นชื่อเมืองล้วน ๆ ให้ค้นด้วยตาได้
+          และเครื่องอ่านหน้าจอไม่ต้องอ่านอิโมจิซ้ำ 31 รอบ */}
+      <div className="flex min-w-0 items-center gap-1.5 text-lg font-bold">
+        <span aria-hidden>{icon}</span>
+        <Dropdown
+          id={`day-city-${dayId}`}
+          ariaLabel={`${E5_COPY.dayCityPicker.ariaLabel} ${dateLabel}`}
+          variant="inline"
+          value={currentCityId ?? CLEAR_VALUE}
+          onChange={choose}
+          disabled={saving}
+          placeholder={E5_COPY.dayCityPicker.placeholder}
+          options={[
+            { value: CLEAR_VALUE, label: E5_COPY.dayCityPicker.unset },
+            ...options.map((c) => ({ value: c.id, label: c.nameTh })),
+          ]}
+        />
+      </div>
       {error && (
         // `role="alert"` เพื่อให้เครื่องอ่านหน้าจอพูดทันทีที่บันทึกล้ม — ไม่ต้องรอผู้ใช้ไปโฟกัสเจอเอง
         <p role="alert" className="mt-1 text-xs font-normal text-cream/90">

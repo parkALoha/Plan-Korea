@@ -38,6 +38,7 @@ export function Dropdown({
   disabled = false,
   id,
   ariaLabel,
+  variant = "field",
   className = "",
 }: {
   value: string;
@@ -47,6 +48,15 @@ export function Dropdown({
   disabled?: boolean;
   id?: string;
   ariaLabel?: string;
+  /**
+   * หน้าตาของตัวกด — **รายการที่กางออกเหมือนกันทั้งสองแบบ ต่างแค่ตัวกด**
+   * · `"field"` (ค่าเริ่มต้น) — กล่องอินพุตมีขอบ ใช้ในฟอร์ม
+   * · `"inline"` — ข้อความล้วนสืบสีจากพ่อ + เส้นใต้ประ + `▾` · สำหรับที่ที่**ค่านั้นคือหัวข้อ ไม่ใช่ช่องกรอก**
+   *   🔴 มีเพราะหัวการ์ดวันแสดงชื่อเมืองเป็นหัวข้อตัวใหญ่มาตลอด · ยัดกล่องอินพุตสีขาวลงไปแทน
+   *   ทำให้ **ลำดับความสำคัญของหัวการ์ดหายไป** และวันที่ยังไม่ระบุเมืองดูเหมือนฟอร์มที่ยังกรอกไม่เสร็จ
+   *   ทั้งที่มันคือ *สถานะปกติ* ของทุกวันในทริปใหม่ (P1 ชี้ 28 ส.ค. 2026)
+   */
+  variant?: "field" | "inline";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -133,12 +143,25 @@ export function Dropdown({
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openList())}
         onKeyDown={onKeyDown}
-        className="flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface-raised px-3 py-2 text-left text-sm text-content hover:border-maple/50 focus:border-maple focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        className={
+          variant === "inline"
+            ? "flex max-w-full items-center gap-1.5 border-b border-dashed border-current/50 text-left text-lg font-bold text-inherit hover:border-current focus:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-60"
+            : "flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface-raised px-3 py-2 text-left text-sm text-content hover:border-maple/50 focus:border-maple focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        }
       >
-        <span className={`truncate ${selected ? "text-content" : "text-content-soft"}`}>
+        <span
+          className={`truncate ${
+            variant === "inline" ? "" : selected ? "text-content" : "text-content-soft"
+          }`}
+        >
           {selected ? selected.label : placeholder}
         </span>
-        <span aria-hidden className={`shrink-0 text-xs text-content-soft ${open ? "rotate-180" : ""}`}>
+        <span
+          aria-hidden
+          className={`shrink-0 text-xs ${variant === "inline" ? "opacity-80" : "text-content-soft"} ${
+            open ? "rotate-180" : ""
+          }`}
+        >
           ▾
         </span>
       </button>
