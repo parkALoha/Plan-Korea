@@ -137,18 +137,13 @@ export async function del(key: string): Promise<void> {
  * 🔴 **ต้อง `await`** — `signOut()` ที่ไม่รอ จะเพิ่งเริ่มลบตอนผู้ใช้ถูกพาออกจากหน้าไปแล้ว
  */
 export async function clearAll(): Promise<void> {
-  const factory = idb();
-  if (!factory) return;
-  // ปิดคอนเนกชันของเราก่อน ไม่งั้น `deleteDatabase` จะติด `blocked` และเงียบ
-  const db = await open();
-  db?.close();
-  openPromise = null;
-  await new Promise<void>((resolve) => {
-    const req = factory.deleteDatabase(DB_NAME);
-    req.onsuccess = () => resolve();
-    req.onerror = () => resolve();
-    req.onblocked = () => resolve(); // แท็บอื่นค้างอยู่ — ไม่รอตลอดกาล
-  });
+  // 🔴 **ล้าง object store ไม่ใช่ `deleteDatabase()`** — ฉบับแรกของผมใช้ `deleteDatabase` แล้วต้องเขียน
+  //    ทางถอยให้ `onblocked` (แท็บอื่นเปิดฐานค้างอยู่ = คำขอลบค้าง แล้ว *ลบทีหลัง* ตอนแท็บนั้นปิด
+  //    ซึ่งอาจไปลบข้อมูลที่เขียนใหม่ไปแล้ว) · **`clear()` เป็นทรานแซกชันธรรมดา ไม่มี `blocked`
+  //    ไม่มีคำขอค้าง และทำงานได้แม้แท็บอื่นเปิดอยู่** — ได้ผลเดียวกันโดยไม่มีเคสขอบสักอัน
+  // ✅ ข้อได้เปรียบหลักยังอยู่ครบ: **ล้างของเราทั้งหมดโดยไม่ต้องมีรายการ** และเอื้อมไม่ถึง `localStorage`
+  //    → `sb-*` ของ `supabase-js` ปลอดภัยโดยโครงสร้างเหมือนเดิม
+  await tx("readwrite", (s) => s.clear());
 }
 
 /**
