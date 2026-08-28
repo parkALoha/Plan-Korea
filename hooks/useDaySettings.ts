@@ -33,12 +33,19 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       const toMap = (rows: { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[], bridge: ReturnType<typeof buildDayBridge>) => {
         const map: Record<string, TripDaySettings> = {};
         for (const row of rows) {
-          // 🔴 คีย์ด้วย id ของไฟล์เดิม — วันที่ไม่มีในไฟล์ **ข้าม ไม่ใช่ใส่ uuid**
-          const legacyId = bridge.toLegacyId(row.trip_day_id);
-          if (!legacyId) continue;
-          map[legacyId] = {
+          /**
+           * คีย์ต้องเป็น **`Day.id` ที่ UI ใช้จริง** ซึ่งไม่ใช่ `"d0"` เสมอไปอีกแล้ว
+           * · ทริปเกาหลี → `"d0"` (มาจาก `ITINERARY`) · ทริปแพลตฟอร์ม → **`uuid`** (มาจาก `usePlatformItinerary`)
+           *
+           * ⚠️ **ข้อความเดิมตรงนี้เขียนว่า "วันที่ไม่มีในไฟล์ ข้าม ไม่ใช่ใส่ uuid" — หมดอายุแล้ว**
+           * มันถูกตอนที่ UI พูด `"d0"` ภาษาเดียว · ตอนนี้ *ข้าม* แปลว่า **ทริปแพลตฟอร์มอ่านค่าที่บันทึกไว้
+           * ไม่เจอเลยสักวัน** (เวลาออกเดินทาง · ล็อกวัน · โหมดเดินทางขากลับ หายทั้งหมดหลังรีเฟรช)
+           * · วัดจริง 28 ส.ค. 2026: กด "🔓 ล็อกวันนี้" บนทริปแพลตฟอร์มแล้วปุ่มไม่เปลี่ยน
+           */
+          const key = bridge.toLegacyId(row.trip_day_id) ?? row.trip_day_id;
+          map[key] = {
             plan_id: planId ?? "",
-            day_id: legacyId,
+            day_id: key,
             start_time: row.start_time,
             return_travel_mode: row.return_travel_mode,
             is_locked: row.is_locked,
@@ -66,9 +73,15 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[daySettings] ${warn}`);
       reportDayBridgeWarningIfAny(bridge);
-      dayIdRef.current = new Map(
-        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
-      );
+      // 🔴 วันของทริปแพลตฟอร์มอ้างด้วย `uuid` ของตัวเอง — ไม่มีคู่ใน `ITINERARY` เลย
+      //    (รูปเดียวกับ `useStops` · เหตุผลเต็มอยู่ที่นั่น) · ถ้าไม่เติม แมปจะว่างสำหรับทริปพวกนั้น
+      //    แล้วทุกการตั้งค่าจะเด้งออกพร้อมข้อความที่โทษ `E7` ทั้งที่วันอยู่ในฐานเรียบร้อย
+      dayIdRef.current = new Map([
+        ...ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)] as const).filter(
+          (e): e is readonly [string, string] => e[1] !== null
+        ),
+        ...dbDays.map((d) => [d.id, d.id] as const),
+      ]);
 
       const rows = await fetchReadJson<
         { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[]
