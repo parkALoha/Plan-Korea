@@ -89,5 +89,43 @@ export function clearCache(key: string): void {
   }
 }
 
+/**
+ * 🔴 **คีย์ที่ผูกกับทริป — ต้องผ่านทางนี้เท่านั้น** (P3 วัดเจอ · P1 ลง · 28 ส.ค. 2026)
+ *
+ * ## ของที่รั่วจริง และมันไม่ใช่แคชค้างเฉย ๆ
+ * `hotels` · `bookings` · `customPlaces` · `overnightOverrides` · `plans` **คีย์ไม่มี `tripId`**
+ * และ hook พวกนี้ `setState(cached)` **แล้ว** `setLoaded(true)` ทันที (เช่น `useHotels.tsx:89-92`)
+ * → สลับทริป A → B **ผู้ใช้เห็นที่พัก/ตั๋ว/สถานที่/แผนของ A โผล่เป็นของ B** จนกว่า fetch จะกลับมาทับ
+ * 🔴 **ตอนออฟไลน์ไม่มีอะไรมาทับ = เห็นของผิดทริปค้างถาวร**
+ *
+ * ## 🎯 `E6-AC6` เขียนว่าเป็นเรื่องของ service worker — **ชี้ผิดใบ** (P3 วัดทั้ง 3 cache แล้ว)
+ * `DATA_CACHE` เป็นข้อมูลอ้างอิงสาธารณะ (place/พิกัด/วันที่ ไม่มี `tripId`) · `ASSET_CACHE` เป็น build asset
+ * · `SHELL_CACHE` คีย์ด้วย URL ซึ่ง `/trip/A` กับ `/trip/B` แยกกันอยู่แล้ว
+ * → **ใส่ `tripId` ลงชื่อ cache ของ SW ได้ความซับซ้อนเพิ่มโดยไม่ปิดอะไรเลย**
+ *
+ * ## กติกาของคีย์ในไฟล์นี้ — สามชนิด แยกกันจริง
+ * ```
+ * ผูกทริป   ต้องใช้ readTripCache/writeTripCache        hotels · bookings · customPlaces · overnightOverrides · plans
+ * ผูกแผน    `xxx:{planId}` — planId เป็น uuid ไม่ซ้ำข้ามทริป  stops · daySettings · placeNotes
+ * global    ตั้งใจให้ข้ามทริป                              lastTripId · ดัชนีไฟล์ที่แคชไว้
+ * ```
+ * ⚠️ **ชนิดที่สามต้องเขียนเหตุผลไว้ทุกครั้ง** — ไม่งั้นคีย์ที่ลืมใส่ scope จะแยกไม่ออกจากคีย์ที่ตั้งใจ global
+ */
+export function tripCacheKey(tripId: string, name: string): string {
+  return `trip:${tripId}:${name}`;
+}
+
+export function readTripCache<T>(tripId: string, name: string): T | null {
+  return readCache<T>(tripCacheKey(tripId, name));
+}
+
+export function writeTripCache(tripId: string, name: string, value: unknown): void {
+  writeCache(tripCacheKey(tripId, name), value);
+}
+
+export function clearTripCache(tripId: string, name: string): void {
+  clearCache(tripCacheKey(tripId, name));
+}
+
 /** 🔴 เปิดให้เทสต์เท่านั้น — ด่านที่ไม่มีเคสด้านบวก คือด่านที่ไม่มีใครรู้ว่ายังทำงานอยู่ไหม */
 export const __cachePrefixForTests = PREFIX;
