@@ -83,6 +83,20 @@ const rel = (p: string) => relative(ROOT, p);
 const dataFiles = (graph: Map<string, string | null>) =>
   [...graph.keys()].filter((f) => rel(f).startsWith("data/")).map(rel).sort();
 
+/**
+ * ไฟล์ในกราฟที่**เปิด realtime channel จริง** — ต้องมีทั้ง `postgres_changes` และ `.subscribe()`
+ * ⚠️ ตัวเดียวไม่พอ: `lib/engine/realtimeStatus.ts` พูดถึง `postgres_changes` ในคอมเมนต์ยาว ๆ
+ * แต่ไม่ได้เปิด channel เอง — เงื่อนไขคู่จึงกันไฟล์นั้นออกโดยไม่ต้องมีรายการยกเว้นให้ใครมาลืมอัปเดต
+ */
+const realtimeFiles = (graph: Map<string, string | null>) =>
+  [...graph.keys()]
+    .filter((f) => {
+      const src = readFileSync(f, "utf8");
+      return src.includes("postgres_changes") && src.includes(".subscribe()");
+    })
+    .map(rel)
+    .sort();
+
 /** พิมพ์เส้นทางจาก entry ถึงไฟล์ที่ผิด — ให้คนแก้เห็นว่าต้องไปตัดตรงไหน */
 function chainTo(graph: Map<string, string | null>, file: string): string {
   const chain: string[] = [];
@@ -133,5 +147,40 @@ describe("import graph ของ app/layout.tsx", () => {
     const found = dataFiles(walk(resolve(ROOT, "components/TripPlanScreen.tsx")));
     expect(found.length).toBeGreaterThan(0);
     expect(found).toContain("data/itinerary.ts");
+  });
+
+  /**
+   * 🔴 `E6-AC2` — **root layout ต้องไม่ลาก realtime subscription เข้ามา** (P3 · 27 ส.ค. 2026)
+   *
+   * เกณฑ์เดิมของ AC เขียนว่า *"`TripDataProvider` เปิด 3 channel จาก root ทุกหน้า
+   * (`app/layout.tsx:12`)"* — **หมดอายุไปแล้วตั้งแต่ `E5-AC1`** ย้าย `TripDataProvider` ออกจาก root
+   * (ต้องมี `tripId` จริงก่อนถึงจะ mount ได้) → `/login` และ 404 ไม่เปิด channel อยู่แล้ววันนี้
+   *
+   * 🎯 **แต่มันเป็นคุณสมบัติที่ไม่มีอะไรรักษาไว้ — เหมือน `data/*` ก่อนไฟล์นี้จะมี**
+   * ใครเติม provider ที่ subscribe ลง root layout เพื่อความสะดวก (เช่น "ให้ toast รู้ว่ามีคนแก้")
+   * ข้อสรุปพลิกทันทีโดยไม่มีอะไรฟ้อง — และราคาคือ **ทุกหน้า** เปิด WebSocket รวมหน้าที่ไม่ต้องล็อกอิน
+   *
+   * ⚠️ วันนี้ subscription ทั้ง 9 จุดเป็น no-op (publication ว่าง — ดู `lib/engine/realtimeStatus.ts`)
+   * **ไม่ใช่เหตุผลให้ปล่อยผ่าน** — วันที่เปิด publication จริง ของที่อยู่ใน root จะเริ่มทำงานทันที
+   * โดยไม่มีใครทบทวนว่ามันควรอยู่ตรงนั้นไหม
+   */
+  it("🔴 E6-AC2 — chain ของ layout ต้องไม่ไปถึง realtime subscription เลยสักไฟล์", () => {
+    const found = realtimeFiles(graph);
+    const detail = found.map((f) => chainTo(graph, resolve(ROOT, f))).join("\n\n");
+    expect(
+      found,
+      found.length
+        ? `layout ลาก realtime subscription เข้ามาแล้ว → **ทุกหน้า** จะเปิด channel รวม /login · 404\n` +
+            `เส้นทาง:\n    ${detail}`
+        : ""
+    ).toEqual([]);
+  });
+
+  // 🔴 กฎข้อ 2 อีกครั้ง — ถ้าตัวตรวจ realtime เสีย เคสข้างบนจะเขียวโดยไม่ได้พิสูจน์อะไร
+  //    `TripDataProvider` เป็นตัวที่ *ควร* ไปถึง subscription จริง (Hotels/Bookings/CustomPlaces)
+  it("ตัวตรวจจับได้จริง — TripDataProvider ต้องไปถึง realtime subscription", () => {
+    const found = realtimeFiles(walk(resolve(ROOT, "components/TripDataProvider.tsx")));
+    expect(found.length).toBeGreaterThan(0);
+    expect(found).toContain("hooks/useHotels.tsx");
   });
 });
