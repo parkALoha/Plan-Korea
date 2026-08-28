@@ -19,6 +19,10 @@ import { resolve } from "node:path";
  * · ครึ่ง **ลำดับ** ไล่ทุก `.order("rank"` ในไฟล์ → ไม่หลบด้วยรูปการประกาศ (arrow / ชื่อตารางผ่านตัวแปร)
  * · 🔴 ครึ่ง **`deleted_at`** ยังไล่ทีละ `export function` → **arrow function ที่ลืม `deleted_at` ยังหลุด**
  *   (ปิดครึ่งแรกแล้วเพราะ P4 หักได้จริง · ครึ่งนี้ยังไม่มีใครหัก **แต่ช่องเดียวกันอยู่ตรงนั้น**)
+ * · 🔴 **จักรวาลคือ *ทุก* `.order("rank"` ในไฟล์ → บังคับสัญญานี้กับทุกตารางที่มีคอลัมน์ `rank`**
+ *   วันนี้มีแค่ `trip_stops` ที่ใช้ rank-key จึงยังไม่กระทบใคร · **ถ้าวันหนึ่งตารางอื่นมี `rank` แล้วด่านนี้แดง
+ *   ให้เติม tie-break ไม่ใช่ถอดเงื่อนไข** — `rank` ไม่ unique โดยตั้งใจ (`D6`) การเรียงโดยไม่มี tie-break
+ *   เป็นข้อบกพร่องที่ไหนก็ตามที่มันโผล่ · **แดงเกินมีคนไปดู แดงขาดไม่มี**
  * · สแกน *ข้อความ* ใน `db.ts` เท่านั้น
  * ไม่ได้พิสูจน์ว่าฐานคืนแถวตามลำดับนั้นจริง และไม่เห็นคิวรีที่เขียนนอกไฟล์นี้
  * · `scheduleBounds.test.ts` **ทดสอบผู้ใช้ของสัญญา ไม่ได้ทดสอบว่าใครทำสัญญาให้**
@@ -46,12 +50,24 @@ function stripComments(s: string): string {
  * · `engineTable(db, STOPS_TABLE)` ผ่านตัวแปร → ตัวกรองสตริงตรงตัวมองไม่เห็น
  * **ทั้งสองทางหายไปเงียบ · ไล่ที่ตัว `.order()` เองแทน ไม่มีทางหลบด้วยรูปการประกาศ**
  */
-function rankOrderSites(): { idx: number; tail: string }[] {
+function rankOrderSites(): { idx: number; stmt: string }[] {
   const code = stripComments(SRC);
-  const out: { idx: number; tail: string }[] = [];
+  const out: { idx: number; stmt: string }[] = [];
   let i = code.indexOf('.order("rank"');
   while (i !== -1) {
-    out.push({ idx: i, tail: code.slice(i, i + 200) });
+    // 🔴 หยุดที่ *ขอบ statement จริง* ไม่ใช่ที่จำนวนตัวอักษร (P4 หักด้วย B5 · 29 ส.ค. 2026)
+    //    ฉบับก่อนใช้หน้าต่าง 200 ตัวอักษร + [^;] → arrow ที่ไม่มี `;` ปิด chain (ASI)
+    //    ทำให้ regex วิ่งข้ามขอบฟังก์ชันไปยืม .order("id") ของ *ก้อนถัดไป* มาเป็นหลักฐาน
+    //    รอดครั้งนั้นเพราะระยะ 232 > 200 เท่านั้น — **ชื่อตัวแปรสั้นลงตัวเดียวก็พลิกเป็น false pass**
+    //    🎯 false pass ตัวนั้นร้ายกว่า B2: มันรายงานว่า site *นี้* ผ่าน ด้วยหลักฐานของ site *อื่น*
+    // ขอบ = `;` ตัวแรก **หรือ** ปีกกาที่ขึ้นต้นบรรทัด (ปิดฟังก์ชัน)
+    // 🔴 ห้ามหยุดที่ `}` ตัวแรก — มันคือ `{ ascending: true }` ของตัวเอง
+    const rest = code.slice(i);
+    // 🔴 ต้องมี `\n\s*\n` และ `\nexport ` ด้วย — ฉบับที่หยุดแค่ `;`/`}` **ยังไม่ปิด B5**
+    //    (P4 ยิงซ้ำแล้วได้ 11 passed · arrow ที่ไม่มี `;` ทำให้ `;` ตัวแรกไปอยู่ใน *ฟังก์ชันถัดไป*
+    //     ตัวสแกนจึงยืม .order("id") ของก้อนนั้นมาเป็นหลักฐานให้ตัวละเมิด)
+    const m2 = /;|\n\s*}|\n\s*\n|\nexport /.exec(rest);
+    out.push({ idx: i, stmt: rest.slice(0, m2 ? m2.index : rest.length) });
     i = code.indexOf('.order("rank"', i + 1);
   }
   return out;
@@ -97,17 +113,14 @@ describe("E2-AC8 — DAL ต้องคืน trip_stops เรียง (rank,
   });
 
   // ── ① แดงเมื่อละเมิด ──────────────────────────────────────────────────
-  it("① ทุก .order(\"rank\") ต้องตามด้วย .order(\"id\") และทั้งคู่ ascending: true", () => {
+  it("① ทุก .order(\"rank\") ต้องตามด้วย .order(\"id\") ใน statement เดียวกัน และ ascending: true", () => {
     const sites = rankOrderSites();
-    // ③④ จักรวาลมาจากไฟล์บนดิสก์ · sentinel กันกรณีสแกนความว่างเปล่า
-    expect(sites.length).toBeGreaterThanOrEqual(5);
-    for (const { tail } of sites) {
-      // 🔴 B2 ของ P4: ฉบับแรกเทียบแค่ *ตำแหน่ง* → ascending:false ผ่านฉลุยแล้วคืนแถวย้อนลำดับทั้งวัน
-      //    และ it.each พิมพ์ ✓ ออกมาเป็นหลักฐานว่าฟังก์ชันนั้นถูกตรวจแล้ว — แย่กว่าไม่มีด่าน
-      const rankAsc = /^\.order\("rank",\s*\{\s*ascending:\s*true\s*\}\)/.test(tail);
-      const thenId = /\.order\("rank"[^;]*?\.order\("id",\s*\{\s*ascending:\s*true\s*\}\)/s.test(tail);
-      expect({ site: tail.slice(0, 70), rankAsc, thenId }).toEqual({
-        site: tail.slice(0, 70), rankAsc: true, thenId: true,
+    expect(sites.length).toBeGreaterThanOrEqual(5); // ③④ จักรวาลจากดิสก์ + sentinel ข้างบน
+    for (const { stmt } of sites) {
+      const rankAsc = /^\.order\("rank",\s*\{\s*ascending:\s*true\s*\}\)/.test(stmt);
+      const thenId = /\.order\("id",\s*\{\s*ascending:\s*true\s*\}\)/.test(stmt);
+      expect({ site: stmt.slice(0, 60), rankAsc, thenId }).toEqual({
+        site: stmt.slice(0, 60), rankAsc: true, thenId: true,
       });
     }
   });
