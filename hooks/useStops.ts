@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
+import { buildUuidToDayKey, mapStopRows } from "@/hooks/dayKeyMaps";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
@@ -50,18 +51,11 @@ export function useStops(tripId: string | null, planId: string | null) {
     tripIdRef.current = tripId;
   }, [tripId]);
 
+  // ตรรกะจริงอยู่ใน `hooks/dayKeyMaps.ts` เพื่อให้ยิงเทสต์ได้ตรง ๆ — **จุดเรียกนี้คือที่ที่บั๊กเกิด
+  // และเป็นที่ที่เทสต์เข้าไม่ถึงตอนนั้น** (P4 ชี้ · 28 ส.ค. 2026)
   const mapRows = useCallback(
     (rows: StopDto[]): TripStop[] =>
-      rows
-        .map((r) => {
-          const dayId = uuidToDay.current.get(r.trip_day_id);
-          // ⚠️ **เดิมเขียนว่า "วันที่ไม่มีในไฟล์เดิม → ข้าม ไม่ใช่ใส่ uuid ที่ UI หาไม่เจอ" — หมดอายุ**
-          //    ตอนนี้ UI *หา `uuid` เจอ* สำหรับทริปแพลตฟอร์ม (`Day.id` เป็น `uuid`) · ที่ยังต้องข้ามคือ
-          //    วันที่ **ไม่มีในฐานเลย** ซึ่ง `uuidToDay` ไม่มีคีย์ให้อยู่แล้ว
-          if (!dayId) return null;
-          return { ...r, plan_id: planId ?? "", day_id: dayId } as TripStop;
-        })
-        .filter((s): s is TripStop => s !== null),
+      mapStopRows(rows, uuidToDay.current, planId ?? ""),
     [planId]
   );
 
@@ -112,16 +106,8 @@ export function useStops(tripId: string | null, planId: string | null) {
       // 🔴 เคยประกอบเองอยู่พักหนึ่ง แล้ว `useDaySettings`/`useOvernightOverrides` ก็ประกอบของตัวเอง
       //    ซึ่งเป็นสิ่งที่ `dayBridge` เตือนไว้ตั้งแต่หัวไฟล์ว่า *"มันจะแปลงไม่เหมือนกันสักวัน"*
       dayToUuid.current = new Map(bridge.dayKeyToDbId);
-      /**
-       * 🔴 **กลับด้านเองไม่ได้ — `dayKeyToDbId` มีสองคีย์ที่ชี้ `uuid` เดียวกัน** (`"d0"` และ `uuid` เอง)
-       * `new Map([...dayKeyToDbId].map(([k,v]) => [v,k]))` จะให้ตัว *ท้าย* ชนะ = `uuid → uuid` เสมอ
-       * → **ทริปเกาหลีจะได้ `day_id` เป็น `uuid` ที่ `ITINERARY` ไม่รู้จัก → จุดแวะหลุดจากวันทั้งหมด**
-       * · วัดจริง 28 ส.ค. 2026: หัวการ์ดบอก `🗺️ 12 จุดในแผนนี้` แต่ **ทั้ง 11 วันขึ้น "ยังไม่มีจุดแวะ"**
-       * 🎯 ตัวเลขรวมมาจากอีกทาง จึงยังถูก — **"นับได้" กับ "ผูกกับวันถูก" เป็นคนละคำถาม**
-       *   และหน้าจอจะดูเหมือนแค่ *"ยังไม่ได้ใส่จุดแวะ"* ซึ่งเป็นสภาพที่ปกติมากจนไม่มีใครสงสัย
-       * → ถามสะพานตรง ๆ ว่าวันนี้มีชื่อในไฟล์เดิมไหม · ไม่มีก็ใช้ `uuid` (ทริปแพลตฟอร์มใช้ `uuid` เป็น `Day.id`)
-       */
-      uuidToDay.current = new Map(dbDays.map((d) => [d.id, bridge.toLegacyId(d.id) ?? d.id]));
+      // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
+      uuidToDay.current = buildUuidToDayKey(dbDays, bridge);
 
       await refetchRef.current?.();
       if (cancelled) return;

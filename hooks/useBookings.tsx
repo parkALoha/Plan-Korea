@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { buildUuidToDayKey } from "@/hooks/dayKeyMaps";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/localCache";
@@ -85,11 +86,8 @@ function useBookingsStore(tripId: string | null) {
       reportDayBridgeWarningIfAny(bridge);
       // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
       dayToUuid.current = new Map(bridge.dayKeyToDbId);
-      // 🔴 **ห้ามกลับด้าน `dayKeyToDbId` เพื่อทำแมปย้อน** — มันมีสองคีย์ชี้ `uuid` เดียวกัน
-      //    (`"d0"` และ `uuid` เอง) → ตัวท้ายชนะ → ได้ `uuid → uuid` เสมอ แล้ว **ทริปเกาหลีจะได้
-      //    `day_id` เป็น `uuid` ที่ `ITINERARY` ไม่รู้จัก → ตั๋วหลุดจากวันทั้งหมด**
-      //    (เกิดจริงกับ `useStops` 28 ส.ค. 2026 · จุดแวะ 12 จุดหลุดจากวันโดยที่ตัวเลขรวมยังถูก)
-      uuidToDay.current = new Map(dbDays.map((d) => [d.id, bridge.toLegacyId(d.id) ?? d.id]));
+      // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
+      uuidToDay.current = buildUuidToDayKey(dbDays, bridge);
 
       const rows = await fetchReadJson<(TripBooking & { trip_day_id: string | null })[]>(
         `/api/engine/trips/${tripId}/bookings`
