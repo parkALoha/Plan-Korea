@@ -146,6 +146,14 @@ jobs:
           NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY: placeholder-not-a-real-key
           GOOGLE_MAPS_API_KEY: placeholder-not-a-real-key
 
+      # 🔴 `E6-AC10` เทียบรอบต่อรอบ (P1 เสนอ · P6 สร้าง · 28 ส.ค. 2026)
+      #    เดิมทั้งคู่คิดว่า `npm run build` พิมพ์ตาราง "First Load JS" อยู่แล้ว — **Next.js 16.3.0
+      #    ในเรพนี้ไม่พิมพ์เลย** (`AGENTS.md` เตือนไว้แล้วว่านี่ไม่ใช่ Next ที่อยู่ในความจำ)
+      #    ใช้ `.next/server/app/**/*_client-reference-manifest.js` แทน — ตัวเดียวที่มีจริง
+      #    ทดสอบแล้วกับทั้ง 40 route ในเรพจริง: parse error 0 · chunk หาย 0
+      #    🔴 เทียบรอบต่อรอบเท่านั้น ไม่ตัดสินว่าโตเท่าไหร่ถึงเกินไป (ของคนตั้ง AC) · แดงเฉพาะ "วัดไม่ได้"
+      - run: .github/check-bundle-size.py .
+
   # ── E1: RLS matrix ของ P4 — ต้องรันจริงกับ engine-dev ───────────────────────────
   # 🔴 แยกเป็น job ของตัวเองโดยตั้งใจ ไม่ยัดเข้า `verify`
   #    เพราะ job นี้จะ **แดงจนกว่าผู้ใช้จะตั้ง secret ครบ** — ถ้าปนอยู่ใน verify
