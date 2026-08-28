@@ -38,7 +38,18 @@ export type CatalogPlacesState =
  */
 function toPlace(row: CatalogPlaceRow): Place {
   return {
-    id: row.id,
+    /**
+     * 🔴 **`id` ของ `Place` ต้องเป็น `slug` ไม่ใช่ `uuid`** — และนี่ไม่ใช่เรื่องรสนิยม (P2 · 28 ส.ค. 2026)
+     * `place_id` ที่ระบบจุดแวะใช้คือ **`catalog_places.legacy_slug`** ทั้งขาเขียนและขาอ่าน:
+     * · เขียน: `POST …/stops { placeId }` → `catalogPlaceIdBySlug()` → `catalog_place_id`
+     * · อ่าน:  `GET …/stops` คืน `place_id = catalog_places.legacy_slug`
+     * 🎯 **ส่ง `uuid` ไปแทน = API หา slug ไม่เจอ → ตกกิ่ง `UUID.test()` → ลง `custom_place_id` ผิดคอลัมน์**
+     *    → FK `23503` → `400 "ไม่รู้จักสถานที่"` (วัดจริง: กด "+ เพิ่มลงวันนี้" แล้วได้ 400 สองใบ)
+     * · และถ้ารอดไปได้ ตัวกรอง "เพิ่มไปแล้ว" ก็จะเทียบ `uuid` กับ `slug` — **ไม่ตรงตลอดกาล อย่างเงียบ ๆ**
+     * ⚠️ **ฟิลด์ที่ API เรียกว่า `slug` คือ `legacy_slug` ในฐาน** (`lib/engine/db.ts:158`) — อ่านจาก DAL
+     *    ไม่ใช่เดาจากชื่อฟิลด์ · ค่าจริงหน้าตาอย่าง `busan-bay101` ตรงรูปเดียวกับ id ใน `data/places.ts`
+     */
+    id: row.slug,
     nameTh: row.nameTh,
     nameEn: row.nameEn,
     nameLocal: row.nameLocal ?? undefined,

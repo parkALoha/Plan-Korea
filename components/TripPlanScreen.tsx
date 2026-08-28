@@ -225,6 +225,25 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   const [focusedDayId, setFocusedDayId] = useState<string>(firstDestinationDay.id);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
+  /**
+   * 🔴 **วันที่ไซด์บาร์เล็งอยู่ ต้องเป็นวันที่มีอยู่จริงใน `itinerary` ที่กำลังแสดง**
+   *
+   * `focusedDayId` ตั้งต้นจาก `ITINERARY` (ไฟล์ทริปเกาหลี) **เสมอ** เพราะเป็น `useState` initializer
+   * ที่รันครั้งเดียวตอน mount — ตอนนั้นยังไม่รู้ด้วยซ้ำว่าทริปนี้เป็นแบบไหน
+   * 🎯 **อาการบนทริปแพลตฟอร์ม: ปุ่ม "+ เพิ่มลงวันนี้" ในคลังไม่เพิ่มอะไรเลย**
+   *    ⚠️ **ผมเขียนไว้ก่อนหน้านี้ว่า "เงียบสนิท ไม่มี toast ไม่มี error" — ผิด และถอนแล้ว**
+   *    ของจริงมีทั้ง toast และ `console.error` · รอบแรกผมอ่าน console **หลังโหลดหน้าใหม่**
+   *    และ toast หมดอายุไปแล้ว → **ผมวัดไม่เจอ แล้วสรุปว่ามันไม่มี** ซึ่งเป็นคนละเรื่องกัน
+   *    🔴 ของจริงแย่กว่าเงียบ: มันบอกเหตุผล**ผิด** — *"วันนี้ยังไม่มีในระบบของทริปนี้"* + ชี้ไปที่ `E7`
+   *    ทั้งที่วันนั้นอยู่ในฐานเรียบร้อย · ดูรายละเอียดที่ `useStops.ts` (แมป `dayToUuid`)
+   * · ⚠️ **นี่คือเหตุผลที่ผมยืนยันข้อ "ตัวกรองเมืองผิดใบ" ไม่ได้ตอนแรก** — เพิ่มจุดแวะไม่ติดตั้งแต่ต้นทาง
+   * · derive ตอน render แทนที่จะ `setState` ใน effect (แพทเทิร์นเดียวกับ `useTripCatalogCities`)
+   */
+  const focusedDayIdInList = itinerary.some((d) => d.id === focusedDayId)
+    ? focusedDayId
+    : (itinerary[0]?.id ?? focusedDayId);
+
+
   function openPickerForDay(dayId: string) {
     const day = itinerary.find((d) => d.id === dayId);
     if (!day) return;
@@ -669,7 +688,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
               onUnhidePlace={unhidePlace}
               activeCity={activeCity}
               onActiveCityChange={setActiveCity}
-              focusedDayId={focusedDayId}
+              focusedDayId={focusedDayIdInList}
               onFocusedDayIdChange={setFocusedDayId}
               mobileOpen={sidebarMobileOpen}
               onMobileOpenChange={setSidebarMobileOpen}

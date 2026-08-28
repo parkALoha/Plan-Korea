@@ -106,9 +106,20 @@ export function useStops(tripId: string | null, planId: string | null) {
       const { ITINERARY } = await import("@/data/itinerary");
       const bridge = buildDayBridge(ITINERARY, dbDays);
       reportDayBridgeWarningIfAny(bridge);
-      dayToUuid.current = new Map(
-        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
-      );
+      // 🔴 **วันที่เกิดบนแพลตฟอร์มอ้างด้วย `uuid` ของตัวเอง ไม่มีคู่ใน `ITINERARY` เลย** (`B6` · P2 · 28 ส.ค. 2026)
+      //    สะพานแปลง `"d0"` → `uuid` ได้อย่างเดียว · ทริปที่สร้างบนแพลตฟอร์มไม่มี `"d0"` สักตัว
+      //    → แมปว่างสำหรับทริปพวกนั้น → `insertAt` เด้งออกทุกครั้ง
+      //    🎯 **อาการที่หลอกที่สุดคือ *ข้อความ* ไม่ใช่ความเงียบ**: มันขึ้น
+      //       *"วันนี้ยังไม่มีในระบบของทริปนี้"* + `console.error("… E7 อาจยังไม่ได้ย้ายข้อมูล")`
+      //       **ทั้งที่วันนั้นอยู่ในฐานเรียบร้อยแล้ว** — ชี้ไปที่ `E7` ซึ่งไม่เกี่ยวอะไรเลย
+      //       (วัดจริง: กด "+ เพิ่มลงวันนี้" บนทริปแพลตฟอร์ม ได้ id `8f959fd1…` ซึ่ง `GET …/days` คืนมาเอง)
+      //    · วันจากฐานจึงต้องแมปเข้าตัวเอง — `uuid → uuid` · ไม่กระทบทริปเกาหลีเพราะคีย์คนละชุด
+      dayToUuid.current = new Map([
+        ...ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)] as const).filter(
+          (e): e is readonly [string, string] => e[1] !== null
+        ),
+        ...dbDays.map((d) => [d.id, d.id] as const),
+      ]);
       uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
 
       await refetchRef.current?.();
