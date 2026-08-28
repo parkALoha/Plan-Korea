@@ -203,3 +203,41 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
     expect(dirty.sort()).toEqual([...PLATFORM_ROUTES].sort());
   });
 });
+
+/**
+ * 🔴 **`PLATFORM_ROUTES` ครบหรือเปล่า — ตรวจ *นอก* `skipIf(!hasBuild)` โดยตั้งใจ**
+ * (P4 ชี้ · 28 ส.ค. 2026 · เขาไม่ได้เขียนเองเพราะเป็นโซน P3)
+ *
+ * `hasBuild` ให้ขา *"route หายไป"* มาแล้วโดยบังเอิญ — manifest ขาดใบเดียวมันโยนดัง ๆ ก่อนถึงเคส
+ * (นั่นคือเหตุผลที่ตัวเช็ค manifest ในตัว xfail ถูกถอดออก — ยิงไม่ออก)
+ * 🎯 **แต่ขา *"route เพิ่มมาใหม่"* ไม่มีใครถือเลย** และ `ratchet` ก็ไม่ใช่ตัวนั้น:
+ * ```
+ * :203  expect(dirty.sort()).toEqual([...PLATFORM_ROUTES].sort())   ← เทียบลิสต์กับ *ตัวมันเอง*
+ * ```
+ * → วันที่ใครเพิ่ม `app/trip/[tripId]/map/page.tsx` **มันไม่อยู่ในลิสต์ → ไม่ถูกสแกน → ไม่มีอะไรฟ้อง**
+ * และ route ใหม่คือ **สิ่งที่ด่านนี้มีไว้ตรวจพอดี** · ตระกูลเดียวกับทะเบียนของ P4 ที่มีสองขา
+ * (*ผู้เรียกใหม่ต้องขึ้นทะเบียน* · *ชื่อที่เลิกเรียกต้องหลุด*) — อันนี้เคยมีศูนย์ขา
+ *
+ * ⚠️ **อยู่นอก `skipIf` เพราะมันอ่าน *ซอร์ส* ไม่ใช่ `.next/`** — ถ้าวางไว้ในนั้น มันจะเงียบทุกครั้งที่
+ * ไม่มี build ซึ่งเป็นสภาพปกติของ `npm test` ใน CI · **ตัวตรวจที่ไม่ต้องพึ่ง build ไม่ควรถูกมัดชะตากับ build**
+ */
+describe("PLATFORM_ROUTES ต้องครบตามที่มีอยู่บนดิสก์", () => {
+  it("route ใหม่ใต้ app/trip/[tripId] ต้องถูกเพิ่มเข้า PLATFORM_ROUTES ด้วย", () => {
+    const base = join(ROOT, "app", "trip", "[tripId]");
+    const found: string[] = [];
+    const walk = (dir: string, route: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory()) walk(join(dir, e.name), `${route}/${e.name}`);
+        else if (e.name === "page.tsx") found.push(route);
+      }
+    };
+    walk(base, "trip/[tripId]");
+    // 🔴 ควบคุมฝั่งบวก: วัด *คลังที่ assertion กิน* ไม่ใช่ค่าคงที่ข้างนอก — โฟลเดอร์ถูกย้าย/เปลี่ยนชื่อ
+    //    เมื่อไหร่ `found` จะว่างแล้วเคสล่างจะแดงด้วยเหตุผลที่อ่านไม่ออก ถ้าไม่มีบรรทัดนี้
+    expect(found.length, "ไม่เจอ page.tsx ใต้ app/trip/[tripId] เลย — โฟลเดอร์ถูกย้าย ไม่ใช่ 'ไม่มี route'").toBeGreaterThan(0);
+    expect(
+      found.sort(),
+      "route บนดิสก์ไม่ตรงกับ PLATFORM_ROUTES — เพิ่ม route แล้วต้องเพิ่มในลิสต์ ไม่งั้นมันจะไม่ถูกสแกนและไม่มีอะไรฟ้อง"
+    ).toEqual([...PLATFORM_ROUTES].sort());
+  });
+});
