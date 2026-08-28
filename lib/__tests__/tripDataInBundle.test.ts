@@ -38,7 +38,7 @@ const LEGACY_ROUTES = ["today", "summary"];
  * · ใช้หลายตัวเพราะ **ตัวเดียวนับได้ไม่ครบ** — วัดจริงแล้วได้ไม่เท่ากัน (`hanoi-hoan-kiem` เจอ 5 chunk ·
  *   `Hoan Kiem Lake` เจอ 1) minifier เก็บบางสตริงไว้ไม่เหมือนกัน → **ใช้ union ไม่ใช่ตัวแทนตัวเดียว**
  */
-function markersFromSource(): string[] {
+function markersFromSource(): { place: string[]; trip: string[] } {
   const places = readFileSync(join(ROOT, "data/places.ts"), "utf8");
   /**
    * 🔴 **อ่าน `data/koreaTrip.ts` ไม่ใช่ `data/itinerary.ts`** — payload ย้ายไปที่นั่นแล้ว (28 ส.ค. 2026)
@@ -51,10 +51,26 @@ function markersFromSource(): string[] {
   const itinerary = readFileSync(join(ROOT, "data/koreaTrip.ts"), "utf8");
   const take = (src: string, re: RegExp, n: number) =>
     [...src.matchAll(re)].map((m) => m[1]).filter((v) => v.length >= 8).slice(0, n);
-  return [
-    ...take(places, /\bid:\s*"([^"]+)"/g, 5),
-    ...take(itinerary, /\bdate:\s*"([^"]+)"/g, 5),
-  ];
+  return {
+    place: take(places, /\bid:\s*"([^"]+)"/g, 5),
+    trip: take(itinerary, /\bdate:\s*"([^"]+)"/g, 5),
+  };
+}
+
+/**
+ * 🔴 **ต้องนับ *แยกสองฝั่ง* ห้ามนับผลรวม** (P4 ชี้ · 28 ส.ค. 2026 · โซน P3 เขาไม่แก้เอง)
+ * ของเดิมคืนอาเรย์เดียวแล้วควบคุมเช็ค `markers.length > 3` — **คลังใดคลังหนึ่งหายทั้งใบ ยังผ่านสบาย**
+ * ```
+ * place 5 + trip 0 = 5  →  5 > 3  →  ผ่าน   ← ด่านเลิกตรวจ ITINERARY ครึ่งหนึ่ง เงียบสนิท
+ * ```
+ * 🎯 **ผมเจอมันรอบนี้เพราะผมเป็นคนย้ายไฟล์เอง — ครั้งหน้าไม่มีใครยืนอยู่ตรงนั้น**
+ * (เปลี่ยน `id:` → `slug:` · `date:` → `dayDate:` ให้ผลเดียวกันเป๊ะ และไม่มีใครกำลังคิดถึงด่านนี้อยู่)
+ * · ⚠️ **นี่คือ *คุณสมบัติ* ของการรวมคลัง ไม่ใช่ *เหตุการณ์* ของการย้ายไฟล์** — ผมเขียนมันเป็นเหตุการณ์
+ *   ในคอมเมนต์ข้างบน P4 อ่านแล้วชี้ว่ามันถาวร · **ควบคุมที่วัดผลรวม ตรวจ "คลังหนึ่งว่าง" ไม่ได้ตามนิยาม**
+ */
+function assertBothCorporaAlive(m: { place: string[]; trip: string[] }) {
+  expect(m.place.length, "ดึง marker จาก data/places.ts ไม่ได้เลย — regex พังหรือรูปไฟล์เปลี่ยน").toBeGreaterThan(0);
+  expect(m.trip.length, "ดึง marker จากไฟล์ payload ทริปไม่ได้เลย — payload ถูกย้าย/เปลี่ยนรูป").toBeGreaterThan(0);
 }
 
 /** chunk ที่มีข้อมูลทริปเกาหลีอยู่จริง — union ของทุก marker */
@@ -135,8 +151,11 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
    * (`touch` ซอร์สให้ build เก่า · **แต่ `.next/` ยังอยู่**) · *"build เก่า"* กับ *"ไม่มี build เลย"*
    * **อ่านเหมือนกันจากที่นั่ง แต่โค้ดเดินคนละทาง** — เคสล่างครอบทั้งสองสภาพจริง ไม่ใช่สภาพเดียว
    */
-  let cache: { markers: string[]; tainted: string[] } | null = null;
-  const measured = () => (cache ??= { markers: markersFromSource(), tainted: taintedChunks(markersFromSource()) });
+  let cache: { markers: { place: string[]; trip: string[] }; tainted: string[] } | null = null;
+  const measured = () => (cache ??= (() => {
+    const m = markersFromSource();
+    return { markers: m, tainted: taintedChunks([...m.place, ...m.trip]) };
+  })());
 
   /**
    * 🔴 เคสควบคุมฝั่งบวกชุดที่ 1 — **วิธีวัดยังทำงานอยู่ไหม**
@@ -144,8 +163,8 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
    */
   it("ดึง marker จากไฟล์ต้นทางได้จริง และเจอในบันเดิลจริง", () => {
     const { markers, tainted } = measured();
-    expect(markers.length, "ดึง marker จาก data/*.ts ไม่ได้เลย — regex พังหรือรูปไฟล์เปลี่ยน").toBeGreaterThan(3);
-    expect(tainted.length, `marker ${markers.slice(0, 3).join(" · ")} ไม่เจอในบันเดิลเลย`).toBeGreaterThan(0);
+    assertBothCorporaAlive(markers);
+    expect(tainted.length, `marker ${[...markers.place, ...markers.trip].slice(0, 3).join(" · ")} ไม่เจอในบันเดิลเลย`).toBeGreaterThan(0);
   });
 
   /**
@@ -194,7 +213,7 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
        *    ด้วย `examined > 50` — **คนละไฟล์ คนละคน รูปเดียวกัน**
        */
       const { markers, tainted } = measured();
-      expect(markers.length, "คลัง marker ว่าง — ยังไม่ได้หา ไม่ใช่หาไม่เจอ").toBeGreaterThan(3);
+      assertBothCorporaAlive(markers);
       expect(tainted.length, "ไม่มี chunk ไหนมีข้อมูลเกาหลีเลย — CHUNK_DIR ผิดที่ หรือ build เก่า").toBeGreaterThan(0);
       const found = taintedChunksOfRoute(route, tainted);
       expect(found, `/${route} ยังลาก chunk ที่มีข้อมูลเกาหลี: ${found.join(" · ")}`).toEqual([]);
