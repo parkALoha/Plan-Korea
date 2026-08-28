@@ -81,9 +81,16 @@ export function buildDayBridge(
   const matchedDbIds = new Set(dbToLegacy.keys());
   const unmatchedDb = dbDays.filter((d) => !matchedDbIds.has(d.id)).map((d) => d.id);
 
-  // แมปครบ = คู่ที่จับได้ + วันของแพลตฟอร์มที่แมปหาตัวเอง
+  // แมปครบ = คู่ที่จับได้ + **ทุกวันในฐาน** ที่แมปหาตัวเอง
+  // 🔴 **ต้องเป็น `dbDays` ไม่ใช่ `unmatchedDb`** (P2 · P4 เจออิสระกัน · P1 ยิงซ้ำ · 28 ส.ค. 2026)
+  //    ฉบับแรกเติมเฉพาะ `unmatchedDb` → **วันที่วันที่ตรงกับ `ITINERARY` จะไม่มีคีย์ `uuid → uuid`**
+  //    → `toDbId(uuid)` คืน `null` ทั้งที่วันนั้นมีอยู่จริงในฐาน → hook เด้งออกเงียบ ๆ
+  //    🎯 **ช่องนี้เปิดเฉพาะทริปที่วันที่ทับ `11–21 ต.ค. 2026`** — คือช่วงของทริปจริงพอดี
+  //      เทสต์ที่ใช้วันที่อื่นเขียวหมด · ทริปทดสอบเดือน ส.ค. ก็เขียว · **ต้องตั้งใจไปยิงถึงจะเจอ**
+  //    ⚠️ และมันขัดกับย่อหน้าที่อธิบายฟิลด์นี้เอง ซึ่งเขียนในคอมมิตเดียวกัน — **โค้ดกับคำอธิบายมาจากคนเดียวกัน
+  //      และไม่ตรงกัน เพราะคนเขียนไม่ได้รันมัน**
   const dayKeyToDbId = new Map(legacyToDb);
-  for (const id of unmatchedDb) dayKeyToDbId.set(id, id);
+  for (const d of dbDays) dayKeyToDbId.set(d.id, d.id);
 
   return {
     // รับได้ทั้ง `"d0"` และ `uuid` — `uuid` ของวันที่มีจริงในทริปนี้คืนตัวมันเอง
