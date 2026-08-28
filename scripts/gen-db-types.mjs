@@ -20,6 +20,19 @@
  */
 import { writeFileSync } from "node:fs";
 
+// 🔴 **เลิกใช้ 28 ส.ค. 2026 — `npm run gen:types` ชี้ `supabase gen types` แล้ว**
+//    เหตุผล: OpenAPI ของ PostgREST **ไม่ให้ความสัมพันธ์เลย** (`Relationships` ว่างทุกตาราง)
+//    และ **ตัด FK หลายคอลัมน์ทิ้งทั้งหมด** → การฝัง (`table(col)`) ไม่ถูกตรวจชนิด
+//    · ตัวนี้จึงเขียนทับไฟล์ชนิดแล้ว **ลบความสัมพันธ์ 55 เส้นทิ้งเงียบ ๆ** ถ้ามีใครเผลอรัน
+//    🎯 เก็บไฟล์ไว้เพราะมันเป็นทางที่ **ไม่ต้องใช้ access token** — ถ้าวันหน้า CLI ใช้ไม่ได้
+//      ให้รันด้วย `--force` แล้ว **จดไว้ว่าชนิดจะไม่มีความสัมพันธ์ในช่วงนั้น**
+if (!process.argv.includes("--force")) {
+  console.error("🔴 สคริปต์นี้เลิกใช้แล้ว — ใช้ `npm run gen:types` (supabase gen types) แทน");
+  console.error("   ตัวนี้สร้างชนิดที่ **ไม่มีความสัมพันธ์** → เขียนทับแล้วจะทำให้ embed ไม่ถูกตรวจ");
+  console.error("   ถ้าจำเป็นจริง (เช่น CLI ใช้ไม่ได้) รันด้วย: node scripts/gen-db-types.mjs --force");
+  process.exit(1);
+}
+
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!URL_ || !KEY) {

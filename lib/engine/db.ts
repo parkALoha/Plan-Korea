@@ -367,7 +367,7 @@ export function searchPlaceNames(db: Db, opts: {
     p_trip_id: opts.tripId,
     p_query: opts.query,
     p_intent: opts.intent,
-    p_city_id: opts.cityId ?? null,
+    p_city_id: opts.cityId ?? undefined,
     p_limit: opts.limit ?? 20,
   });
 }
@@ -415,7 +415,7 @@ export function createTrip(
     p_title: args.title,
     p_start_date: args.startDate,
     p_end_date: args.endDate,
-    p_base_timezone: args.baseTimezone ?? null,
+    p_base_timezone: args.baseTimezone ?? undefined,
   });
 }
 
@@ -564,11 +564,11 @@ export function createCustomPlace(
     p_lng: input.lng,
     p_maps_query: input.mapsQuery,
     p_name_th: input.nameTh,
-    p_name_en: input.nameEn ?? null,
-    p_name_ko: input.nameKo ?? null,
-    p_description: input.description ?? null,
-    p_google_place_id: input.googlePlaceId ?? null,
-    p_legacy_added_by: input.legacyAddedBy ?? null,
+    p_name_en: input.nameEn ?? undefined,
+    p_name_ko: input.nameKo ?? undefined,
+    p_description: input.description ?? undefined,
+    p_google_place_id: input.googlePlaceId ?? undefined,
+    p_legacy_added_by: input.legacyAddedBy ?? undefined,
   });
 }
 
