@@ -117,14 +117,25 @@ if (!hasBuild) {
 }
 
 describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกาหลีในบันเดิลของ route แพลตฟอร์ม", () => {
-  const markers = markersFromSource();
-  const tainted = taintedChunks(markers);
+  /**
+   * 🔴 **อ่านดิสก์ต้องเป็น lazy — `describe.skipIf` ข้ามการ *รัน* เคส แต่ callback ของ describe
+   * ยังถูกเรียกเสมอเพื่อเก็บรายชื่อเคส** (P3 · 28 ส.ค. 2026 · ทำชุดเต็มของทีมล้มมาแล้วหนึ่งรอบ)
+   * ของเดิมเรียก `taintedChunks()` ตรงนี้ → ไม่มี `.next/` เมื่อไหร่ `readdirSync` โยน `ENOENT`
+   * → **suite ล้มทั้งชุด ไม่ใช่ถูกข้าม** · และ `verify` job รัน `npm test` **ก่อน** build จึงเจอเคสนี้เสมอ
+   *
+   * ⚠️ **บทเรียนที่แพงกว่าตัวบั๊ก:** ผมเคยรายงานว่า "ทดสอบทั้งสองทางแล้ว" — ของจริงทดสอบทางเดียว
+   * (`touch` ซอร์สให้ build เก่า · **แต่ `.next/` ยังอยู่**) · *"build เก่า"* กับ *"ไม่มี build เลย"*
+   * **อ่านเหมือนกันจากที่นั่ง แต่โค้ดเดินคนละทาง** — เคสล่างครอบทั้งสองสภาพจริง ไม่ใช่สภาพเดียว
+   */
+  let cache: { markers: string[]; tainted: string[] } | null = null;
+  const measured = () => (cache ??= { markers: markersFromSource(), tainted: taintedChunks(markersFromSource()) });
 
   /**
    * 🔴 เคสควบคุมฝั่งบวกชุดที่ 1 — **วิธีวัดยังทำงานอยู่ไหม**
    * ถ้า marker ถูกดึงผิด/regex พัง `tainted` จะว่าง แล้ว **ทุกเคสข้างล่างจะเขียวโดยไม่ได้พิสูจน์อะไร**
    */
   it("ดึง marker จากไฟล์ต้นทางได้จริง และเจอในบันเดิลจริง", () => {
+    const { markers, tainted } = measured();
     expect(markers.length, "ดึง marker จาก data/*.ts ไม่ได้เลย — regex พังหรือรูปไฟล์เปลี่ยน").toBeGreaterThan(3);
     expect(tainted.length, `marker ${markers.slice(0, 3).join(" · ")} ไม่เจอในบันเดิลเลย`).toBeGreaterThan(0);
   });
@@ -136,7 +147,7 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
    */
   for (const route of LEGACY_ROUTES) {
     it(`positive control: /${route} (เว็บทริปเกาหลีเดิม) ต้องมีข้อมูลนั้นอยู่จริง`, () => {
-      const found = taintedChunksOfRoute(route, tainted);
+      const found = taintedChunksOfRoute(route, measured().tainted);
       expect(found.length, `/${route} ไม่อ้างถึง chunk ที่มีข้อมูลเกาหลีเลย — วิธีจับคู่ route→chunk น่าจะพัง`).toBeGreaterThan(0);
     });
   }
@@ -150,7 +161,7 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
    */
   for (const route of PLATFORM_ROUTES) {
     it.fails(`xfail · /${route} ต้องไม่มีข้อมูลทริปเกาหลี (บั๊กเปิดอยู่ · พลิกแดงเมื่อตัด 4 รากสำเร็จ)`, () => {
-      const found = taintedChunksOfRoute(route, tainted);
+      const found = taintedChunksOfRoute(route, measured().tainted);
       expect(found, `/${route} ยังลาก chunk ที่มีข้อมูลเกาหลี: ${found.join(" · ")}`).toEqual([]);
     });
   }
@@ -161,7 +172,7 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
    * route ใหม่ (หรือ `/login`) มันจะไม่ฟ้องเลย · เคสนี้ปักจำนวน route ที่เปื้อนไว้
    */
   it("ratchet: มี route แพลตฟอร์มเปื้อนอยู่ 3 route เท่านั้น — เพิ่มขึ้น = ถอยหลัง", () => {
-    const dirty = PLATFORM_ROUTES.filter((r) => taintedChunksOfRoute(r, tainted).length > 0);
+    const dirty = PLATFORM_ROUTES.filter((r) => taintedChunksOfRoute(r, measured().tainted).length > 0);
     expect(dirty.sort()).toEqual([...PLATFORM_ROUTES].sort());
   });
 });
