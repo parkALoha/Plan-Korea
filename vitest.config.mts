@@ -151,6 +151,12 @@ export default defineConfig({
     // 🔴 ①b (a) · P4/P1 27 ส.ค. — จับ fixture lock **ครั้งเดียวต่อรอบ** ที่นี่ แทนที่จะจับต่อไฟล์ใน beforeAll
     //    R11 เป็น cross-session · ล็อกต่อไฟล์ serialize ไฟล์ในรอบเดียวโดยไม่จำเป็น → รอ > hookTimeout 30s = skip เงียบ
     //    ห้ามมีไฟล์ไหนเรียก acquireFixtureLock ใน beforeAll อีก — ด่าน source ใน schemaPins บังคับ (ดู fixtureLockGlobal.ts)
-    globalSetup: ["./lib/__tests__/fixtureLockGlobal.ts"],
+    //
+    // 🔴 wire `fixtureReaper.ts` แล้ว (P6 · P1 อนุมัติ 28 ส.ค. 2026) — **no-op สำหรับทุกรอบปกติ**
+    //    `fixtureReaperSetup()` self-gate ด้วย `process.env.FIXTURE_REAPER` เอง (ดูหัวไฟล์นั้น)
+    //    → การเพิ่มบรรทัดนี้ทำให้มัน *พร้อมใช้* ไม่ได้ทำให้มัน *ทำงานเอง* — ต้องตั้ง `FIXTURE_REAPER=1`
+    //    ด้วยมือถึงจะกวาดจริง (+ creds) · ตรงกับข้อเท็จจริงที่วัดแล้วว่า **รอบปกติเก็บกวาดครบ**
+    //    reaper จึงมีไว้กวาดหลัง process ถูกฆ่ากลางทาง ไม่ใช่ของที่ควรรันทุกรอบ
+    globalSetup: ["./lib/__tests__/fixtureLockGlobal.ts", "./lib/__tests__/fixtureReaper.ts"],
   },
 });
