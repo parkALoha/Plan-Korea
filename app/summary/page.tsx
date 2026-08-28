@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { CITY_META, CITY_NAME_EN, CITY_NAME_TH } from "@/data/itinerary";
-import { ITINERARY } from "@/data/koreaTrip";
+import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import { countryOfCity, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";

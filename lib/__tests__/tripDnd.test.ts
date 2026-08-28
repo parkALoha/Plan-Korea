@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { ITINERARY } from "@/data/koreaTrip";
+import { ITINERARY } from "@/data/itinerary";
 import type { TripStop } from "@/lib/supabase";
 import { useTripDnd } from "@/hooks/useTripDnd";
 

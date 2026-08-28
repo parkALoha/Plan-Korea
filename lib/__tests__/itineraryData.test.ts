@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ITINERARY } from "@/data/koreaTrip";
+import { ITINERARY } from "@/data/itinerary";
 
 /**
  * `E5-AC3a` (data · precondition) — โครงวันใน `data/itinerary.ts` ครบ 11 วันของทริปจริง · เจ้าของ: P4 (27 ส.ค. 2026)
