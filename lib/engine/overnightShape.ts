@@ -22,9 +22,14 @@ import type { DayBridge } from "./dayBridge";
 export type DayOvernightRow = {
   id: string;
   date: string;
+  /** เมืองที่วันนั้น *อยู่* — คนละคำถามกับ `overnight_city_id` (นอนที่ไหน) · `null` = ผู้ใช้ยังไม่เลือก */
+  city_id: string | null;
   overnight_kind: "city" | "none" | null;
   overnight_city_id: string | null;
+  /** ⚠️ คีย์นี้คือเมืองที่ **นอน** — ชื่อไม่มี prefix เพราะ UI ที่ใช้อยู่อ่านชื่อนี้ เปลี่ยนแล้วพัง */
   catalog_cities: { legacy_slug: string | null } | null;
+  /** เมืองที่วันนั้นอยู่ (ฝังจาก `city_id`) — `null` = ยังไม่เลือก หรือ RLS ของคลังปฏิเสธ */
+  city: { id: string; legacy_slug: string | null; name_th: string; name_en: string | null } | null;
 };
 
 export type OvernightOverrides = Record<string, string>;

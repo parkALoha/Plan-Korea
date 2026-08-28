@@ -584,7 +584,12 @@ export function createCustomPlace(
  */
 export function tripDaysOfTrip(db: Db, tripId: string) {
   return engineTable(db, "trip_days")
-    .select("id, date, overnight_kind, overnight_city_id, catalog_cities!trip_days_overnight_city_id_fkey(legacy_slug)")
+    // 🔴 ฝัง `catalog_cities` **สองเส้น** — `city_id` (วันนั้นอยู่เมืองไหน) กับ `overnight_city_id` (นอนที่ไหน)
+    //    เป็นคนละคำถาม และ `E5` ต้องใช้ทั้งคู่ · ไม่ระบุเส้น = `PGRST201` (ยิงยืนยันแล้ว 28 ส.ค.)
+    // ⚠️ ระบุด้วยชื่อ **คอลัมน์** ตามกติกาที่ตั้งไว้ที่ `membersOfTrip` — ทนต่อการเปลี่ยนชื่อ constraint
+    //    · คีย์ `catalog_cities` (ไม่ใส่ alias) คือของ *overnight* เพราะ `DayOvernightRow` เดิมอ่านชื่อนั้น
+    //      **เปลี่ยนชื่อคีย์ = ทำ UI ที่ใช้อยู่พัง** ของใหม่จึงเป็น alias `city` ล้วน ๆ
+    .select("id, date, city_id, overnight_kind, overnight_city_id, city:catalog_cities!city_id(id, legacy_slug, name_th, name_en), catalog_cities!overnight_city_id(legacy_slug)")
     .eq("trip_id", tripId)
     .order("date");
 }
@@ -596,11 +601,14 @@ export function tripDaysOfTrip(db: Db, tripId: string) {
  * `trip_days_overnight_consistent` บังคับให้ทั้งคู่สอดคล้องกัน → เขียนทีละตัวจะชน `check`
  * · `null` = **ยังไม่ตัดสิน** ซึ่งต่างจาก `'none'` (ตั้งใจไม่นอนโรงแรม) — `D80` ห้ามยุบสองอันนี้
  */
-export function setOvernightIntent(
-  db: Db,
-  dayId: string,
-  intent: { kind: "city"; cityId: string } | { kind: "none" } | { kind: "undecided" }
-) {
+/** สามสถานะของ "ที่นอน" — `D80` · แยกชนิดออกมาเพื่อให้ผู้เรียกอ้างได้โดย**ไม่ผูกกับตำแหน่งพารามิเตอร์**
+ *  (เดิมใช้ `Parameters<typeof setOvernightIntent>[2]` แล้วพังทันทีที่แทรกพารามิเตอร์ — `tsc` จับได้ 28 ส.ค.) */
+export type OvernightIntent =
+  | { kind: "city"; cityId: string }
+  | { kind: "none" }
+  | { kind: "undecided" };
+
+export function setOvernightIntent(db: Db, tripId: string, dayId: string, intent: OvernightIntent) {
   const patch =
     intent.kind === "city"
       ? { overnight_kind: "city", overnight_city_id: intent.cityId }
@@ -608,12 +616,28 @@ export function setOvernightIntent(
         ? { overnight_kind: "none", overnight_city_id: null }
         : { overnight_kind: null, overnight_city_id: null };
   // `.select()` เพื่อให้ `writeGuard` เห็นว่าแตะกี่แถว — 0 แถว = RLS กรองออก ไม่ใช่สำเร็จ
-  return engineTable(db, "trip_days").update(patch).eq("id", dayId).select("id");
+  return engineTable(db, "trip_days").update(patch).eq("trip_id", tripId).eq("id", dayId).select("id");
 }
 
 /** หา `city_id` จาก slug เดิม — `null` = ไม่รู้จักเมืองนั้น
  *  🔴 รวม `country_id` มาด้วยเสมอ (`E5` — P1 ขอให้ P3 ส่ง `country` กลับหลังเขียนที่พัก) — เพิ่ม
  *  แบบ additive ล้วน ผู้เรียกเดิม 2 จุด (`hotels`/`days` route) ยังอ่านแค่ `.id` เหมือนเดิมได้ */
+/**
+ * ตั้ง *เมืองที่วันนั้นอยู่* — คนละเรื่องกับ "นอนที่ไหน" (`setOvernightIntent`)
+ *
+ * 🔴 **`null` = ล้างค่า ไม่ใช่ "ไม่เปลี่ยน"** — ผู้ใช้ตัดสิน 28 ส.ค. 2026 ว่า
+ *    **ไม่ให้ระบบเดาเมืองให้วันตอนสร้างทริป** (`create_trip` จึงยังใส่ `null` เหมือนเดิม ไม่ถูกแตะ)
+ *    → เส้นนี้เป็น **ทางเดียว** ที่ `trip_days.city_id` จะมีค่า · ล้างกลับเป็นว่างต้องทำได้ด้วย
+ * · `.select("id")` เพื่อให้แยก "RLS กรองออก" (0 แถว) ออกจาก "สำเร็จ" — แบบเดียวกับ `setOvernightIntent`
+ */
+export function setDayCity(db: Db, tripId: string, dayId: string, cityId: string | null) {
+  return engineTable(db, "trip_days")
+    .update({ city_id: cityId })
+    .eq("trip_id", tripId)
+    .eq("id", dayId)
+    .select("id");
+}
+
 export function cityIdBySlug(db: Db, slug: string) {
   return engineTable(db, "catalog_cities").select("id, country_id").eq("legacy_slug", slug).maybeSingle();
 }

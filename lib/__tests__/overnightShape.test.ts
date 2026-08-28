@@ -7,9 +7,11 @@ const bridge = buildDayBridge(
   [{ id: "d0", date: "2026-10-11" }, { id: "d1", date: "2026-10-12" }],
   [{ id: "u0", date: "2026-10-11" }, { id: "u1", date: "2026-10-12" }]
 );
+// 🔴 คงคีย์ให้ครบตามชนิดจริง **ไม่ทำให้เป็น `?:` เพื่อเลี่ยงแก้ helper** — `city_id` มีเสมอ (nullable)
+//    ทำให้ optional = ทำชนิดให้ผิดเพื่อความสะดวก แล้วเคสจะเลิกสะท้อนแถวจริง (P1 ตัดสิน · 28 ส.ค. 2026)
 const row = (o: Partial<DayOvernightRow>): DayOvernightRow => ({
-  id: "u0", date: "2026-10-11", overnight_kind: null, overnight_city_id: null,
-  catalog_cities: null, ...o,
+  id: "u0", date: "2026-10-11", city_id: null, overnight_kind: null, overnight_city_id: null,
+  catalog_cities: null, city: null, ...o,
 });
 
 describe("toOvernightOverrides", () => {

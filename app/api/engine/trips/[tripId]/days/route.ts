@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
-import { cityIdBySlug, setOvernightIntent, tripDaysOfTrip } from "@/lib/engine/db";
+import { catalogCityExists, cityIdBySlug, setDayCity, setOvernightIntent, tripDaysOfTrip } from "@/lib/engine/db";
+import type { OvernightIntent } from "@/lib/engine/db";
 import type { DayOvernightRow } from "@/lib/engine/overnightShape";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
@@ -39,29 +40,75 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ trip
 }
 
 /**
- * ตั้งความตั้งใจเรื่องที่นอนของวันหนึ่ง
+ * แก้ฟิลด์ระดับ *วัน* — สองเรื่องที่แยกกันจริง
  *
- * body: `{ dayId: uuid, city: slug }` · `{ dayId, kind: "none" }` · `{ dayId, kind: "undecided" }`
+ * **ที่นอน** · body: `{ dayId, city: slug }` · `{ dayId, kind: "none" }` · `{ dayId, kind: "undecided" }`
  * 🔴 **สามสถานะแยกกันจริง (`D80`)** — `undecided` ไม่ใช่ `none` · ห้ามยุบ
+ *
+ * **เมืองของวัน** · body: `{ dayId, cityId: uuid }` หรือ `{ dayId, cityId: null }` (ล้างค่า)
+ * 🔴 อยู่ route เดียวกันเพราะเป็น**ฟิลด์ระดับวันเหมือนกัน** ไม่ใช่เพราะสะดวก — แยกเส้นแล้วไคลเอนต์
+ *    ต้องรู้ว่าฟิลด์ไหนอยู่เส้นไหน ซึ่งเป็นความรู้ที่ไม่มีใครได้ประโยชน์
+ * ⚠️ **`cityId: null` (ล้าง) ต่างจาก *ไม่ส่ง `cityId`* (ไม่แตะ)** — แยกด้วย `"cityId" in body`
+ *    ไม่ใช่ `!body.cityId` ซึ่งกลืนสองกรณีนี้เข้าด้วยกัน
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params;
   const stop = await guard(req, tripId);
   if (stop) return stop;
 
-  let body: { dayId?: string; city?: string; kind?: string };
+  let body: { dayId?: string; city?: string; kind?: string; cityId?: string | null };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "อ่าน body ไม่ได้" }, { status: 400 });
   }
+  // 🔴 `try/catch` กัน **parse ล้ม** ไม่ได้กัน **รูปผิด** — `JSON.parse("null")` *สำเร็จ*
+  //    แล้ว `body.dayId` โยน TypeError → unhandled → **500 ทั้งที่ควรเป็น 400** (P4 เจอ 28 ส.ค. 2026)
+  //    · `5` / `"x"` / `[]` ไม่พัง เพราะอ่านพร็อพเพอร์ตี้ที่ไม่มีได้ · **`null` ตัวเดียวที่โยน**
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return NextResponse.json({ error: "body ต้องเป็นอ็อบเจกต์" }, { status: 400 });
+  }
   if (!body.dayId || !UUID.test(body.dayId)) {
     return NextResponse.json({ error: "dayId ไม่ถูกต้อง" }, { status: 400 });
+  }
+  // 🔴 (ข) ส่ง `cityId` มาพร้อม `city`/`kind` = **สองคำสั่งในคำขอเดียว** — ปฏิเสธ ไม่ใช่เลือกทำอันหนึ่ง
+  //    ทางที่ปฏิเสธ: *ให้ `cityId` ชนะ* → คำสั่ง overnight หายเงียบ แต่ตอบ `ok:true`
+  //    ไคลเอนต์จะเชื่อว่าทำครบทั้งสอง **และไม่มีอะไรบอกว่ามันไม่ได้ทำ** (P4 ชี้)
+  if ("cityId" in body && (body.city !== undefined || body.kind !== undefined)) {
+    return NextResponse.json(
+      { error: "ส่ง cityId พร้อม city/kind ไม่ได้ — เป็นคนละคำสั่ง แยกคำขอ" },
+      { status: 400 }
+    );
   }
 
   const db = await createServerSupabase();
 
-  let intent: Parameters<typeof setOvernightIntent>[2];
+  // ── เมืองของวัน ── แยกออกมาก่อน เพราะเป็นคนละฟิลด์กับที่นอน และไม่ควรผ่านตรรกะ `intent`
+  if ("cityId" in body) {
+    const cityId = body.cityId;
+    if (cityId !== null) {
+      if (typeof cityId !== "string" || !UUID.test(cityId)) {
+        return NextResponse.json({ error: "cityId ไม่ถูกต้อง" }, { status: 400 });
+      }
+      // 🔴 ตรวจว่าเมืองมีจริงก่อน — ปล่อยให้ไปชน FK จะได้ข้อความของ Postgres ที่ผู้ใช้อ่านไม่รู้เรื่อง
+      //    และวันจะชี้เมืองที่ไม่มี → ไซด์บาร์เงียบแบบหาสาเหตุยาก (P2 ขอข้อนี้)
+      // ⚠️ **ไม่บังคับว่าต้องอยู่ใน `trip_destinations`** — ผู้ใช้แวะเมืองที่ไม่ได้ตั้งเป็นจุดหมายได้
+      const { data: city, error } = await catalogCityExists(db, cityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+      if (!city) return NextResponse.json({ error: "ไม่รู้จักเมืองนี้ในคลัง" }, { status: 400 });
+    }
+    const { data, error } = await setDayCity(db, tripId, body.dayId, cityId);
+    if (error) {
+      const status = error.code === "42501" ? 403 : 502;
+      return NextResponse.json({ error: error.message, code: error.code }, { status });
+    }
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: "ไม่มีสิทธิ์แก้วันนี้", code: "42501" }, { status: 403 });
+    }
+    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
+  }
+
+  let intent: OvernightIntent;
   if (body.city) {
     const { data: city, error } = await cityIdBySlug(db, body.city);
     if (error) return NextResponse.json({ error: error.message }, { status: 502 });
@@ -77,7 +124,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
     return NextResponse.json({ error: "ต้องระบุ city หรือ kind" }, { status: 400 });
   }
 
-  const { data, error } = await setOvernightIntent(db, body.dayId, intent);
+  const { data, error } = await setOvernightIntent(db, tripId, body.dayId, intent);
   if (error) {
     const status = error.code === "42501" ? 403 : 502;
     return NextResponse.json({ error: error.message, code: error.code }, { status });
