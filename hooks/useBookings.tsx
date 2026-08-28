@@ -83,10 +83,13 @@ function useBookingsStore(tripId: string | null) {
       const { ITINERARY } = await import("@/data/itinerary");
       const bridge = buildDayBridge(ITINERARY, dbDays);
       reportDayBridgeWarningIfAny(bridge);
-      dayToUuid.current = new Map(
-        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter((e): e is [string, string] => e[1] !== null)
-      );
-      uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
+      // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
+      dayToUuid.current = new Map(bridge.dayKeyToDbId);
+      // 🔴 **ห้ามกลับด้าน `dayKeyToDbId` เพื่อทำแมปย้อน** — มันมีสองคีย์ชี้ `uuid` เดียวกัน
+      //    (`"d0"` และ `uuid` เอง) → ตัวท้ายชนะ → ได้ `uuid → uuid` เสมอ แล้ว **ทริปเกาหลีจะได้
+      //    `day_id` เป็น `uuid` ที่ `ITINERARY` ไม่รู้จัก → ตั๋วหลุดจากวันทั้งหมด**
+      //    (เกิดจริงกับ `useStops` 28 ส.ค. 2026 · จุดแวะ 12 จุดหลุดจากวันโดยที่ตัวเลขรวมยังถูก)
+      uuidToDay.current = new Map(dbDays.map((d) => [d.id, bridge.toLegacyId(d.id) ?? d.id]));
 
       const rows = await fetchReadJson<(TripBooking & { trip_day_id: string | null })[]>(
         `/api/engine/trips/${tripId}/bookings`

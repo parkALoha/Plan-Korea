@@ -66,11 +66,13 @@ export function useOvernightOverrides(tripId: string | null) {
       if (warn) console.warn(`[overnight] ${warn}`);
       reportDayBridgeWarningIfAny(bridge);
 
-      dayIdRef.current = new Map(
-        ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)]).filter(
-          (e): e is [string, string] => e[1] !== null
-        )
-      );
+      // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
+      // 🔴 เหตุผลอยู่ที่หัว `dayBridge.ts`: *"ถ้าแต่ละตัวแปลงเอง มันจะแปลงไม่เหมือนกันสักวัน"*
+      //    วันนั้นมาถึงแล้วจริง ๆ — `useStops` กับ `useDaySettings` เคยแปลงกันคนละแบบอยู่พักหนึ่ง
+      // ⚠️ **ตัวนี้ยังไม่มีทางเข้าจาก UI สำหรับทริปแพลตฟอร์ม** (`onOvernightCityChange` ถูกส่งเฉพาะ
+      //    วันที่มี `day.overnightOptions` ซึ่งวันจากฐานไม่มี) → **ยังยิงยืนยันจากหน้าจอไม่ได้**
+      //    แก้ล่วงหน้าเพราะเป็นบรรทัดเดียวกับอีกสองฮุคที่วัดแล้วว่าพัง ไม่ใช่เพราะเห็นอาการ
+      dayIdRef.current = new Map(bridge.dayKeyToDbId);
 
       const next = toOvernightOverrides(rows, bridge) as Overrides;
       setOverrides(next);
