@@ -50,24 +50,30 @@ function stripComments(s: string): string {
  * · `engineTable(db, STOPS_TABLE)` ผ่านตัวแปร → ตัวกรองสตริงตรงตัวมองไม่เห็น
  * **ทั้งสองทางหายไปเงียบ · ไล่ที่ตัว `.order()` เองแทน ไม่มีทางหลบด้วยรูปการประกาศ**
  */
-function rankOrderSites(): { idx: number; stmt: string }[] {
+const PAIR =
+  /^\.order\("rank",\s*\{\s*ascending:\s*true\s*\}\)\s*\.order\("id",\s*\{\s*ascending:\s*true\s*\}\)/;
+
+/**
+ * 🔴 **ไม่ถามว่า statement จบตรงไหน — ถามว่าข้อความที่ *ติดกัน* ถูกไหม**
+ *
+ * เหตุ (P4 หัก 3 รอบ · 29 ส.ค. 2026): ฉบับก่อน ๆ ตอบคำถาม *"statement นี้จบตรงไหน"*
+ * ด้วยการ **แจงนับ** แล้วถูกหักทุกรอบด้วยกลไกเดียวกัน คนละเลข:
+ * · `B5` หน้าต่าง 200 ตัวอักษร → รอดเพราะระยะจริง 232 · ชื่อตัวแปรสั้นลงตัวเดียวก็พลิก
+ * · `B7` รายการขอบ 4 โทเคน (`;` `\n}` `\n\n` `\nexport`) → รอดเพราะเพื่อนบ้านเป็น `const` ที่ไม่ export
+ * 🎯 **คำถาม "จบตรงไหน" ต้อง parse ถึงจะตอบถูก — แจงนับกี่รอบก็มีเคสที่ห้าเสมอ**
+ *    (P4 เจอเคสที่ห้าในการลองครั้งแรก ไม่ได้ไล่หลายรอบ)
+ *
+ * ⚠️ **ข้อบังคับที่เพิ่มขึ้นจากท่านี้ — ประกาศไว้ ไม่ให้คนมาเจอเอง (P4 ชี้):**
+ * `.order("id")` ต้อง **ติดกับ** `.order("rank")` · แทรก `.limit()` ระหว่างกลางแล้วจะแดงทั้งที่ไม่ผิด
+ * รับได้เพราะสัญญาคือ `order by rank, id` — **แต่เป็นการเพิ่มข้อบังคับ ไม่ใช่แค่เปลี่ยนวิธีตรวจ**
+ */
+function rankOrderSites(): { idx: number; snippet: string; ok: boolean }[] {
   const code = stripComments(SRC);
-  const out: { idx: number; stmt: string }[] = [];
+  const out: { idx: number; snippet: string; ok: boolean }[] = [];
   let i = code.indexOf('.order("rank"');
   while (i !== -1) {
-    // 🔴 หยุดที่ *ขอบ statement จริง* ไม่ใช่ที่จำนวนตัวอักษร (P4 หักด้วย B5 · 29 ส.ค. 2026)
-    //    ฉบับก่อนใช้หน้าต่าง 200 ตัวอักษร + [^;] → arrow ที่ไม่มี `;` ปิด chain (ASI)
-    //    ทำให้ regex วิ่งข้ามขอบฟังก์ชันไปยืม .order("id") ของ *ก้อนถัดไป* มาเป็นหลักฐาน
-    //    รอดครั้งนั้นเพราะระยะ 232 > 200 เท่านั้น — **ชื่อตัวแปรสั้นลงตัวเดียวก็พลิกเป็น false pass**
-    //    🎯 false pass ตัวนั้นร้ายกว่า B2: มันรายงานว่า site *นี้* ผ่าน ด้วยหลักฐานของ site *อื่น*
-    // ขอบ = `;` ตัวแรก **หรือ** ปีกกาที่ขึ้นต้นบรรทัด (ปิดฟังก์ชัน)
-    // 🔴 ห้ามหยุดที่ `}` ตัวแรก — มันคือ `{ ascending: true }` ของตัวเอง
     const rest = code.slice(i);
-    // 🔴 ต้องมี `\n\s*\n` และ `\nexport ` ด้วย — ฉบับที่หยุดแค่ `;`/`}` **ยังไม่ปิด B5**
-    //    (P4 ยิงซ้ำแล้วได้ 11 passed · arrow ที่ไม่มี `;` ทำให้ `;` ตัวแรกไปอยู่ใน *ฟังก์ชันถัดไป*
-    //     ตัวสแกนจึงยืม .order("id") ของก้อนนั้นมาเป็นหลักฐานให้ตัวละเมิด)
-    const m2 = /;|\n\s*}|\n\s*\n|\nexport /.exec(rest);
-    out.push({ idx: i, stmt: rest.slice(0, m2 ? m2.index : rest.length) });
+    out.push({ idx: i, snippet: code.slice(Math.max(0, i - 60), i + 60), ok: PAIR.test(rest) });
     i = code.indexOf('.order("rank"', i + 1);
   }
   return out;
@@ -113,16 +119,12 @@ describe("E2-AC8 — DAL ต้องคืน trip_stops เรียง (rank,
   });
 
   // ── ① แดงเมื่อละเมิด ──────────────────────────────────────────────────
-  it("① ทุก .order(\"rank\") ต้องตามด้วย .order(\"id\") ใน statement เดียวกัน และ ascending: true", () => {
+  it("① ทุก .order(\"rank\") ต้องตามด้วย .order(\"id\") ติดกัน และ ascending: true ทั้งคู่", () => {
     const sites = rankOrderSites();
     expect(sites.length).toBeGreaterThanOrEqual(5); // ③④ จักรวาลจากดิสก์ + sentinel ข้างบน
-    for (const { stmt } of sites) {
-      const rankAsc = /^\.order\("rank",\s*\{\s*ascending:\s*true\s*\}\)/.test(stmt);
-      const thenId = /\.order\("id",\s*\{\s*ascending:\s*true\s*\}\)/.test(stmt);
-      expect({ site: stmt.slice(0, 60), rankAsc, thenId }).toEqual({
-        site: stmt.slice(0, 60), rankAsc: true, thenId: true,
-      });
-    }
+    // 🔴 พ่น *ที่อยู่* ไม่ใช่แค่จำนวน — "แดงที่ไม่มีที่อยู่" ทำให้คนไปไล่ทั้งไฟล์ (P4 ชี้)
+    const bad = sites.filter((x) => !x.ok).map((x) => x.snippet.replace(/\s+/g, " ").trim());
+    expect(bad).toEqual([]);
   });
 
   it.each(stopQueryBlocks())("① $name — deleted_at is null เว้นตัวที่ตั้งชื่อว่าคืน tombstone", ({ name, body }) => {
