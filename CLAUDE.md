@@ -1,3 +1,3 @@
 @AGENTS.md
 
-@TEAM.md
+@/Users/park/plan-korea/TEAM.md
