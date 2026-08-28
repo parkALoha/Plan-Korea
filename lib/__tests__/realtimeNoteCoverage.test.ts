@@ -25,7 +25,16 @@ import { readFileSync } from "node:fs";
 
 const files = execFileSync("git", ["ls-files"], { encoding: "utf8" })
   .split("\n")
-  .filter((f) => /^(hooks|components|app|lib)\/.*\.tsx?$/.test(f));
+  .filter((f) => /^(hooks|components|app|lib)\/.*\.tsx?$/.test(f))
+  // 🔴 **ตัดไฟล์เทสต์ออก — ด่านที่ *ค้นหา* แพตเทิร์น ย่อมมีแพตเทิร์นนั้นอยู่ในตัวเอง** (P4 · 28 ส.ค. 2026)
+  //    `layoutImportGraph.test.ts` มี `.subscribe()` สองที่: ในคอมเมนต์ และใน `src.includes(".subscribe()")`
+  //    → ถูกจับเป็น "ไฟล์ที่ subscribe แต่ไม่ประกาศ" **ทั้งที่มันไม่ได้ subscribe อะไรเลย**
+  //    🎯 รูปเดียวกับที่ `_helpers.ts` เตือนไว้เรื่อง strip comment ก่อนสแกน — **สแกนข้อความโดยไม่ดูบริบท**
+  //    · ที่นี่ตัดทั้งไฟล์แทนการ strip เพราะแพตเทิร์นอยู่ใน *string literal* ด้วย ไม่ใช่แค่คอมเมนต์
+  // ⚠️ **ขอบเขตที่ยอมรับ:** ถ้าวันหนึ่งมีเทสต์ที่ subscribe จริง (เช่นเมทริกซ์ RLS-บน-WebSocket)
+  //    ด่านนี้จะไม่บังคับให้มันประกาศ — **ยอมรับได้** เพราะเทสต์แบบนั้นตั้งใจทดสอบ realtime อยู่แล้ว
+  //    ไม่ใช่โค้ดแอปที่เผลอเปิด channel ทิ้งไว้ ซึ่งเป็นสิ่งที่ด่านนี้มีไว้จับ
+  .filter((f) => !/\.test\.tsx?$/.test(f));
 
 describe("ทุกไฟล์ที่ subscribe realtime ต้องเรียก noteRealtimeSubscribed", () => {
   it("ไล่จากดิสก์ ไม่ใช่จากรายการที่พิมพ์มือ — รายการที่พิมพ์มือคือสิ่งที่ขาดไปครั้งก่อน", () => {
@@ -43,5 +52,14 @@ describe("ทุกไฟล์ที่ subscribe realtime ต้องเร�
     // 🔴 ถ้าเลขนี้เป็น 0 แปลว่าด่านไม่ได้ตรวจอะไรเลย — เขียวเพราะไม่มีอะไรให้ดู ไม่ใช่เพราะผ่าน
     expect(subscribers, "หาไฟล์ที่เรียก .subscribe() ไม่เจอสักไฟล์ — ด่านนี้กำลังตรวจความว่าง").toBeGreaterThan(0);
     expect(offenders, `ไฟล์ที่ subscribe แต่ไม่บอกความจริงเรื่อง publication ว่าง`).toEqual([]);
+  });
+
+  it("🔴 ด่านที่ *ค้นหา* `.subscribe()` ต้องไม่ถูกจับเป็นไฟล์ที่ subscribe", () => {
+    // เคสนี้มีไว้กันการเผลอถอด filter ออก — ไม่ใช่กันแค่ไฟล์ใดไฟล์หนึ่ง
+    const scanners = files.filter((f) => /\.test\.tsx?$/.test(f));
+    expect(scanners, "ไฟล์เทสต์ต้องถูกตัดออกจากรายการที่ด่านนี้ไล่").toEqual([]);
+    // ยืนยันว่าไฟล์ที่เคยเป็น false positive ยังมีแพตเทิร์นอยู่จริง — ไม่งั้นเคสนี้เลิกยิงอะไร
+    const src = readFileSync("lib/__tests__/layoutImportGraph.test.ts", "utf8");
+    expect(/\.subscribe\(\)/.test(src), "ถ้าไฟล์นั้นเลิกมีแพตเทิร์น เคสนี้ก็เลิกพิสูจน์อะไร").toBe(true);
   });
 });
