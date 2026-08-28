@@ -16,7 +16,23 @@ function toPhotoUrls(names: string[]): string[] {
 
 /** หา "ชื่อรูป" ของสถานที่หลายที่พร้อมกัน — อ่าน place_photo_cache ทีเดียวด้วย `.in()`
  *  แล้วยิง Google เฉพาะที่ยังไม่เคยแคช (ขนานกัน) */
-async function resolveMany(queries: string[]): Promise<Record<string, string[]>> {
+/**
+ * 🔴 **เหตุผลที่ค้นไม่ได้ ต้องเดินทางถึงเบราว์เซอร์ด้วย ไม่ใช่แค่คืนอาเรย์ว่าง** (P2 เจอ · 28 ส.ค. 2026)
+ *
+ * ก่อนหน้านี้บรรทัด `if (error) return [query, []]` **ทิ้ง `error` ตรงนั้นเลย**
+ * → เบราว์เซอร์เห็น `200` + `0 รูป` ซึ่ง **แยกไม่ออกจาก "ค้นแล้วไม่เจอรูปจริง ๆ"**
+ * · เกิดจริง: ทรีแพลตฟอร์มไม่มี `GOOGLE_MAPS_API_KEY` → ทุกคีย์คืน 0 รูป **เงียบสนิท**
+ *   → P2 สรุปว่า *"คลังไม่มี `googlePlaceId`"* ซึ่งเข้ากับหลักฐานที่มีพอดี **แต่ผิด**
+ *   และกว่าจะรู้ต้องไปยิง control บนทริปเกาหลีเทียบ
+ *
+ * ## ทำไม *ไม่* เปลี่ยนเป็น non-2xx (P2 เสนอ · รับ)
+ * ไคลเอนต์อ่าน `d.results ?? {}` — เปลี่ยนเป็น `4xx/5xx` จะไปโดน `.catch()` กลืนอีกแบบหนึ่ง
+ * 🎯 **การแก้ที่ทำให้ความเงียบย้ายที่ ไม่ใช่การแก้** → คืน `200` เหมือนเดิม เพิ่มฟิลด์ `errors` ต่างหาก
+ * · ไคลเอนต์เดิมที่ไม่รู้จักฟิลด์นี้ทำงานเหมือนเดิมทุกประการ
+ */
+async function resolveMany(
+  queries: string[]
+): Promise<{ results: Record<string, string[]>; errors: Record<string, string> }> {
   const cachedNames = new Map<string, string[]>();
   if (supabaseConfigured) {
     const { data, error: cacheReadErr } = await supabase
@@ -29,13 +45,17 @@ async function resolveMany(queries: string[]): Promise<Record<string, string[]>>
     }
   }
 
+  const failures = new Map<string, string>();
   const entries = await Promise.all(
     queries.map(async (query): Promise<[string, string[]]> => {
       const hit = cachedNames.get(query);
       if (hit) return [query, toPhotoUrls(hit)];
 
       const { place, error } = await lookupPlace(query, "places.photos");
-      if (error) return [query, []];
+      if (error) {
+        failures.set(query, error);
+        return [query, []];
+      }
 
       const photoNames: string[] = place?.photos?.slice(0, 6).map((p) => p.name) ?? [];
       if (supabaseConfigured && photoNames.length > 0) {
@@ -50,7 +70,7 @@ async function resolveMany(queries: string[]): Promise<Record<string, string[]>>
     })
   );
 
-  return Object.fromEntries(entries);
+  return { results: Object.fromEntries(entries), errors: Object.fromEntries(failures) };
 }
 
 // ค้นหาสถานที่ด้วย Places API (New) แล้วคืน "ชื่อรูป" (ไม่ใช่ URL จริง)
@@ -72,7 +92,11 @@ export async function GET(req: NextRequest) {
     if (queries.length === 0) {
       return NextResponse.json({ error: "missing queries" }, { status: 400 });
     }
-    return NextResponse.json({ results: await resolveMany(queries) });
+    const { results, errors } = await resolveMany(queries);
+    // ส่ง `errors` เฉพาะตอนมีจริง — ไม่งั้นทุกคำขอปกติจะพกฟิลด์ว่างไปด้วย
+    return NextResponse.json(
+      Object.keys(errors).length > 0 ? { results, errors } : { results }
+    );
   }
 
   const query = req.nextUrl.searchParams.get("query");
@@ -80,6 +104,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "missing query" }, { status: 400 });
   }
 
-  const results = await resolveMany([query]);
-  return NextResponse.json({ photos: results[query] ?? [] });
+  const { results, errors } = await resolveMany([query]);
+  const reason = errors[query];
+  return NextResponse.json(
+    reason ? { photos: results[query] ?? [], error: reason } : { photos: results[query] ?? [] }
+  );
 }

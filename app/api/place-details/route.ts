@@ -24,6 +24,15 @@ type PlaceDetailsResponse = {
   /** ชื่อ/ที่อยู่ภาษาท้องถิ่น (เฟส 14) — มีค่าเมื่อขอด้วย ?locale=ko|vi
    *  ที่คัดไว้ใน data/places.ts ฝัง nameLocal มาแล้วไม่ต้องพึ่งเส้นนี้ · เส้นนี้ไว้ให้สถานที่ที่ผู้ใช้เพิ่มเอง */
   nameLocal?: string | null;
+  /**
+   * 🔴 **เหตุผลที่หาไม่ได้ — มีค่าเฉพาะตอนล้มจริง** (`/api/place-photos` แก้รูปเดียวกัน 28 ส.ค. 2026)
+   *
+   * ก่อนหน้านี้ `if (error)` คืนอ็อบเจกต์ `null` ทั้งใบ **แล้วทิ้ง `error` ไป**
+   * → เบราว์เซอร์เห็น *"ไม่มีเรตติ้ง/เวลาเปิด-ปิด"* ซึ่ง **แยกไม่ออกจาก "Google ไม่มีข้อมูลของที่นี่"**
+   * · เกิดจริง: ทรี dev ไม่มี `GOOGLE_MAPS_API_KEY` → ทุกที่คืน `null` หมด **เงียบสนิท**
+   * ⚠️ **ฟิลด์นี้ไม่เปลี่ยน status และไม่เปลี่ยนรูปของฟิลด์เดิมสักตัว** — ไคลเอนต์ที่ไม่รู้จักมันทำงานเหมือนเดิม
+   */
+  error?: string;
   addressLocal?: string | null;
 };
 
@@ -123,6 +132,7 @@ async function resolveFromGoogle(
       userRatingCount: null,
       primaryType: null,
       reviews: null,
+      error,
     };
   }
 
