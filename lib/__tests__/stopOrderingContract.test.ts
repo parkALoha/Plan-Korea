@@ -50,8 +50,11 @@ function stripComments(s: string): string {
  * · `engineTable(db, STOPS_TABLE)` ผ่านตัวแปร → ตัวกรองสตริงตรงตัวมองไม่เห็น
  * **ทั้งสองทางหายไปเงียบ · ไล่ที่ตัว `.order()` เองแทน ไม่มีทางหลบด้วยรูปการประกาศ**
  */
-const PAIR =
-  /^\.order\("rank",\s*\{\s*ascending:\s*true\s*\}\)\s*\.order\("id",\s*\{\s*ascending:\s*true\s*\}\)/;
+const OPTS = String.raw`\{[^{}]*ascending:\s*true[^{}]*\}`;
+const SITE = /\.order\(\s*['"]rank['"]/g;
+const PAIR = new RegExp(
+  String.raw`^\.order\(\s*['"]rank['"]\s*,\s*${OPTS}\s*\)\s*\.order\(\s*['"]id['"]\s*,\s*${OPTS}\s*\)`
+);
 
 /**
  * 🔴 **ไม่ถามว่า statement จบตรงไหน — ถามว่าข้อความที่ *ติดกัน* ถูกไหม**
@@ -63,6 +66,13 @@ const PAIR =
  * 🎯 **คำถาม "จบตรงไหน" ต้อง parse ถึงจะตอบถูก — แจงนับกี่รอบก็มีเคสที่ห้าเสมอ**
  *    (P4 เจอเคสที่ห้าในการลองครั้งแรก ไม่ได้ไล่หลายรอบ)
  *
+ * 🔴 **ชั้นที่สามที่ถูกเอาออก — "การสะกดที่ต้องตรงเป๊ะ"** (P4 หักรอบ 4 · `B10`/`B11`)
+ * · `B10` `.order('rank'` single quote → **ไม่เข้าจักรวาลด้วยซ้ำ** (ชนิดเดียวกับ `B3` แค่เป็นชื่อคอลัมน์)
+ * · `B11` `{ ascending: true, nullsFirst: false }` → **แดงใส่โค้ดที่ถูกต้อง** ซึ่งเป็นชนิดที่ทำให้คนถอดด่านทิ้ง
+ * → รับทั้งสอง quote · และขอแค่ **มี** `ascending: true` อยู่ในออปชัน ไม่ใช่ทั้งก้อนตรงเป๊ะ
+ * ⚠️ **ข้อจำกัดที่เหลือ (P4 เขียนเอง):** ออปชัน**ซ้อนชั้น** (`{ ascending: true, foreignTable: { … } }`)
+ *   ไม่รองรับ — วันนี้ไม่มีรูปนั้นในไฟล์ **แต่ไม่ได้พิสูจน์ว่า PostgREST ไม่มี**
+ *
  * ⚠️ **ข้อบังคับที่เพิ่มขึ้นจากท่านี้ — ประกาศไว้ ไม่ให้คนมาเจอเอง (P4 ชี้):**
  * `.order("id")` ต้อง **ติดกับ** `.order("rank")` · แทรก `.limit()` ระหว่างกลางแล้วจะแดงทั้งที่ไม่ผิด
  * รับได้เพราะสัญญาคือ `order by rank, id` — **แต่เป็นการเพิ่มข้อบังคับ ไม่ใช่แค่เปลี่ยนวิธีตรวจ**
@@ -70,11 +80,15 @@ const PAIR =
 function rankOrderSites(): { idx: number; snippet: string; ok: boolean }[] {
   const code = stripComments(SRC);
   const out: { idx: number; snippet: string; ok: boolean }[] = [];
-  let i = code.indexOf('.order("rank"');
-  while (i !== -1) {
-    const rest = code.slice(i);
-    out.push({ idx: i, snippet: code.slice(Math.max(0, i - 60), i + 60), ok: PAIR.test(rest) });
-    i = code.indexOf('.order("rank"', i + 1);
+  SITE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SITE.exec(code)) !== null) {
+    const i = m.index;
+    out.push({
+      idx: i,
+      snippet: code.slice(Math.max(0, i - 60), i + 90),
+      ok: PAIR.test(code.slice(i)),
+    });
   }
   return out;
 }
