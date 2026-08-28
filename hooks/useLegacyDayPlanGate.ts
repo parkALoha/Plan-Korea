@@ -54,8 +54,17 @@ export function useLegacyDayPlanGate(tripId: string | null): LegacyDayPlanState 
         `/api/engine/trips/${activeTripId}/days`
       );
       if (cancelled) return;
-      // 🔴 อ่านไม่ได้ → **ห้าม fail-open เป็น "แสดงได้"** · นั่นคือทางที่ทำให้ออฟไลน์เห็นแผนเกาหลี
-      if (!rows || rows.length === 0) return void setState(classifyLegacyDayPlan(rows, 0, 0));
+      // 🔴 **ตั้งสถานะตรง ๆ ไม่เรียก `classifyLegacyDayPlan` ที่นี่** (P1 จับได้ · 28 ส.ค. 2026)
+      // ของเดิมส่ง `classifyLegacyDayPlan(rows, 0, 0)` — **`legacyDayCount = 0` เป็นคำที่ไม่จริง**
+      // (`ITINERARY` มี 11 วันเสมอ ไม่ว่า `rows` จะเป็นอะไร) มันปลอดภัย *เพราะลำดับของ early return
+      // ในตัวฟังก์ชัน* ไม่ใช่เพราะค่าที่ส่งถูก → วันที่มีคนสลับลำดับหรือเพิ่มกิ่งข้างบน
+      // `matched === rows.length && rows.length === legacyDayCount` จะกลายเป็น `0 === 0 && 0 === 0`
+      // → **`legacy`** = fail-open ตัวเดิมกลับมาทางประตูหลัง
+      // 🎯 **ทางแก้คือไม่สร้างอาร์กิวเมนต์ที่เป็นเท็จตั้งแต่แรก** ไม่ใช่เขียนคอมเมนต์เตือนว่ามันปลอดภัยอยู่
+      //    · ที่นี่ยังไม่มี `ITINERARY` (ตั้งใจ — ไม่โหลดไฟล์ทริปเกาหลีถ้าไม่จำเป็น) จึงส่งค่าจริงไม่ได้
+      //    → เคสที่ยังไม่ต้องใช้ `legacyDayCount` ก็ไม่ควรต้องกรอกมัน
+      if (!rows) return void setState("unreadable");
+      if (rows.length === 0) return void setState("no-days");
 
       // `import()` ไม่ใช่ static — ตัวด่านเองไม่ควรลาก `data/itinerary.ts` เข้าบันเดิลของทุกคนที่ import มัน
       const { ITINERARY } = await import("@/data/itinerary");

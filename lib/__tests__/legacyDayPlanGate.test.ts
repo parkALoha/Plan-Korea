@@ -49,6 +49,21 @@ describe("classifyLegacyDayPlan", () => {
     expect(classifyLegacyDayPlan(new Array(8).fill({}), 8, LEGACY_DAYS)).toBe("foreign");
   });
 
+  /**
+   * 🔴 **ปักลำดับของ early return** (P1 จับได้ · 28 ส.ค. 2026)
+   * กิ่งสุดท้ายคือ `matched === rows.length && rows.length === legacyDayCount` — ถ้ามีใครสลับลำดับ
+   * หรือเพิ่มกิ่งข้างบน **`(0, 0, 0)` จะกลายเป็น `0 === 0 && 0 === 0` → `legacy`** = fail-open
+   * · ตัว hook ไม่ส่งทริปเปิลนี้แล้ว (ตั้งสถานะตรง ๆ) **แต่ฟังก์ชันนี้เป็น API สาธารณะ** — เคสสองตัว
+   *   ข้างล่างจึงปักไว้ว่า *"ไม่มีแถว" ต้องชนะการเทียบเลขเสมอ* ไม่ว่าใครจะเรียกด้วยอะไร
+   */
+  it("🔴 `(null, 0, 0)` → `unreadable` — ห้ามตกไปที่ `0 === 0` แล้วกลายเป็น legacy", () => {
+    expect(classifyLegacyDayPlan(null, 0, 0)).toBe("unreadable");
+  });
+
+  it("🔴 `([], 0, 0)` → `no-days` — ห้ามตกไปที่ `0 === 0` แล้วกลายเป็น legacy", () => {
+    expect(classifyLegacyDayPlan([], 0, 0)).toBe("no-days");
+  });
+
   it("ตรงครบทั้งชุด → `legacy` — ทริปเกาหลีต้องยังแสดงได้ตามปกติ", () => {
     // 🔴 เคสด้านบวกที่ขาดไม่ได้: ถ้าด่านนี้บล็อกทริปเกาหลีด้วย แปลว่าเราแลกบั๊กหนึ่งกับอีกบั๊กหนึ่ง
     expect(classifyLegacyDayPlan(new Array(11).fill({}), 11, LEGACY_DAYS)).toBe("legacy");
