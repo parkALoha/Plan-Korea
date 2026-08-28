@@ -9,6 +9,8 @@ import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { useCatalogPlaces } from "@/hooks/useCatalogPlaces";
+import type { CatalogCity } from "@/hooks/useTripCatalogCities";
 import { useDismissable } from "@/hooks/useDismissable";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { PlaceCard } from "./PlaceCard";
@@ -91,6 +93,14 @@ type SidebarProps = {
   hiddenPlaceIds: Set<string>;
   onHidePlace: (placeId: string) => void;
   onUnhidePlace: (placeId: string) => void;
+  /**
+   * เมืองปลายทางของทริปจากคลังในฐาน (`trip_destinations`) — `B6` เฟส 1
+   *
+   * 🔴 **ไม่ส่ง/ว่าง = ทริปเกาหลีเดิม → เดินทางเดิมทุกบรรทัด ไม่มีอะไรเปลี่ยน**
+   * มีค่า = ทริปที่สร้างบนแพลตฟอร์ม → แท็บเมืองและคลังสถานที่มาจากฐาน ไม่ใช่ `data/places.ts`
+   * · แยกด้วย *ข้อมูลของทริปเอง* ไม่ใช่เทียบวันที่กับไฟล์เดิม (เหตุผลอยู่ใน `useTripCatalogCities`)
+   */
+  catalogCities?: CatalogCity[];
   /** เมือง/วันที่โฟกัสอยู่ตอนนี้ — คุมจาก app/page.tsx เพื่อให้ปุ่ม "+" ในแต่ละวันสั่งโฟกัสมาที่ sidebar ได้ */
   activeCity: Day["city"];
   onActiveCityChange: (city: Day["city"]) => void;
@@ -114,6 +124,7 @@ function PlaceSidebarContent({
   hiddenPlaceIds,
   onHidePlace,
   onUnhidePlace,
+  catalogCities,
   activeCity,
   onActiveCityChange,
   focusedDayId,
@@ -143,12 +154,37 @@ function PlaceSidebarContent({
     if (firstDay) onFocusedDayIdChange(firstDay.id);
   }
 
-  const allCardsForCity: { place: Place; isCustom: boolean }[] = [
-    ...placesByCity(activeCity).map((p) => ({ place: p, isCustom: false })),
-    ...customPlaces
-      .filter((p) => p.city === activeCity)
-      .map((p) => ({ place: customPlaceToPlace(p), isCustom: true })),
-  ];
+  // ── `B6` เฟส 1 · โหมดคลังจากฐาน (เฉพาะทริปที่มีเมืองปลายทาง) ─────────────────────────
+  // 🔴 โหมดนี้ **ไม่แตะ state เดิมของทริปเกาหลีเลย** — เก็บเมืองที่เลือกไว้ใน state ของตัวเอง
+  //    เพราะ `activeCity` ข้างนอกเป็น union 6 ค่า ใส่ uuid ของเมืองในคลังลงไปไม่ได้
+  const catalogMode = (catalogCities?.length ?? 0) > 0;
+  const [activeCatalogCityId, setActiveCatalogCityId] = useState<string | null>(null);
+  const currentCatalogCityId = catalogMode
+    ? (activeCatalogCityId ?? catalogCities![0].id)
+    : null;
+  const catalogPlaces = useCatalogPlaces(currentCatalogCityId);
+  /** ชื่อเมืองที่กำลังดูอยู่ — ต้องผ่านตัวนี้เสมอ ไม่ใช่ `CITY_NAME_TH[activeCity]` ตรง ๆ
+   *  ไม่งั้นโหมดคลังจะโชว์ชื่อเมืองเกาหลีค้างอยู่ ทั้งที่การ์ดข้างล่างเป็นของอีกเมือง */
+  const displayCityNameTh = catalogMode
+    ? (catalogCities!.find((c) => c.id === currentCatalogCityId)?.nameTh ?? "")
+    : CITY_NAME_TH[activeCity];
+
+  // ห่อ useMemo เพราะค่ากลายเป็นเงื่อนไข — ถ้าปล่อยเป็นนิพจน์ลอย React Compiler จะรักษา memo ของ
+  // `groupedVisibleCards` ที่ต่อจากมันไม่ได้ แล้วทั้งคอมโพเนนต์จะหลุดการ optimize (eslint จับให้)
+  const allCardsForCity: { place: Place; isCustom: boolean }[] = useMemo(
+    () =>
+      catalogMode
+        ? catalogPlaces.status === "ready"
+          ? catalogPlaces.places.map((p) => ({ place: p, isCustom: false }))
+          : []
+        : [
+            ...placesByCity(activeCity).map((p) => ({ place: p, isCustom: false })),
+            ...customPlaces
+              .filter((p) => p.city === activeCity)
+              .map((p) => ({ place: customPlaceToPlace(p), isCustom: true })),
+          ],
+    [catalogMode, catalogPlaces, activeCity, customPlaces]
+  );
 
   const selectedIds = selectedPlaceIdsForCity(activeCity);
   const visibleCards = allCardsForCity.filter(
@@ -201,7 +237,24 @@ function PlaceSidebarContent({
     // ก้อนนี้จะสูงตามเนื้อหา (3000px+) ทะลุออกนอกชีตแล้วโดน overflow-hidden ตัดทิ้ง = เลื่อนดูไม่ได้
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-line p-3">
-        {cities.map((city) => {
+        {/* 🔴 โหมดคลังจากฐาน: ไม่มี CITY_META/CITY_NAME_TH ให้ใช้ (ตารางพวกนั้นคีย์ด้วย union 6 ค่า)
+            → ใช้ชื่อไทยจากฐานตรง ๆ + สีแบรนด์กลาง แทนสีประจำเมืองที่ยังไม่มีในคลัง */}
+        {catalogMode
+          ? catalogCities!.map((c) => {
+              const active = c.id === currentCatalogCityId;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCatalogCityId(c.id)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                    active ? "bg-maple text-white" : "bg-surface-soft text-content-soft hover:bg-maple-soft"
+                  }`}
+                >
+                  {c.nameTh}
+                </button>
+              );
+            })
+          : cities.map((city) => {
           const meta = CITY_META[city];
           const active = city === activeCity;
           return (
@@ -248,7 +301,7 @@ function PlaceSidebarContent({
             onClick={() => setNearbyKind("attraction")}
             className="w-full rounded-xl border border-dashed border-maple/50 py-2 text-sm font-medium text-maple hover:bg-maple-soft/40"
           >
-            🎡 ที่เที่ยวยอดนิยมใน{CITY_NAME_TH[activeCity]}
+            🎡 ที่เที่ยวยอดนิยมใน{displayCityNameTh}
           </button>
           <div className="flex gap-2">
             <button
@@ -426,7 +479,13 @@ export function PlaceSidebar({
 }: SidebarProps & { mobileOpen: boolean; onMobileOpenChange: (open: boolean) => void }) {
   const focusedDay = props.itinerary.find((d) => d.id === props.focusedDayId);
   const cityMeta = CITY_META[props.activeCity];
-  const sheetTitle = `${cityMeta.icon} ${CITY_NAME_TH[props.activeCity]}`;
+  // โหมดคลังจากฐาน: หัวชีตมือถือใช้ชื่อเมืองแรกของทริป — ไม่ใช่ `activeCity` ซึ่งยังเป็นเมืองเกาหลีเสมอ
+  // (เมืองที่กำลังดูจริงอยู่ใน state ข้างใน `PlaceSidebarContent` ซึ่งชั้นนี้มองไม่เห็น — ยอมรับความหยาบ
+  //  ตรงนี้ในเฟส 1 ดีกว่าดันสถานะขึ้นมาข้างบนแล้วไปแตะทางเดินของทริปเกาหลี)
+  const sheetTitle =
+    (props.catalogCities?.length ?? 0) > 0
+      ? props.catalogCities![0].nameTh
+      : `${cityMeta.icon} ${CITY_NAME_TH[props.activeCity]}`;
   const sheetSubtitle = focusedDay
     ? `กำลังเพิ่มให้วันที่ ${new Date(focusedDay.date).toLocaleDateString("th-TH", {
         day: "numeric",

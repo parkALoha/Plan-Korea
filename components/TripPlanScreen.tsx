@@ -42,6 +42,7 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
 import { useTripDaysGate } from "@/hooks/useTripDaysGate";
+import { useTripCatalogCities } from "@/hooks/useTripCatalogCities";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 import { HotelsFlatList } from "@/components/HotelsFlatList";
 
@@ -381,6 +382,8 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   // 🔴 gate เฉพาะโครงวัน (ITINERARY + DayJumpBar/PlaceSidebar ที่ผูกกับมัน) — ไม่แตะ TripPrepPanel
   // (ที่พัก/booking/checklist) เพราะไม่มีตัวไหนพึ่ง trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22)
   const dayPlanGate = useTripDaysGate(tripId);
+  // `B6` เฟส 1 — เมืองปลายทางของทริปนี้จากคลังในฐาน · ว่าง = ทริปเกาหลีเดิม → ไซด์บาร์เดินทางเดิม
+  const tripCatalogCities = useTripCatalogCities(tripId);
   const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading";
   const dayPlanReady = overallLoaded && dayPlanGate === "ready";
   const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
@@ -535,6 +538,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
 
           {dayPlanReady && (
             <PlaceSidebar
+              catalogCities={tripCatalogCities.status === "ready" ? tripCatalogCities.cities : undefined}
               itinerary={itinerary}
               customPlaces={customPlaces}
               who={who || undefined}
