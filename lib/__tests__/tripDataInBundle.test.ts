@@ -40,7 +40,15 @@ const LEGACY_ROUTES = ["today", "summary"];
  */
 function markersFromSource(): string[] {
   const places = readFileSync(join(ROOT, "data/places.ts"), "utf8");
-  const itinerary = readFileSync(join(ROOT, "data/itinerary.ts"), "utf8");
+  /**
+   * 🔴 **อ่าน `data/koreaTrip.ts` ไม่ใช่ `data/itinerary.ts`** — payload ย้ายไปที่นั่นแล้ว (28 ส.ค. 2026)
+   * ⚠️ **ถ้าไม่แก้บรรทัดนี้พร้อมกับการย้าย ด่านจะยังเขียวและ *ดูปกติทุกอย่าง*** — `date:` ไม่เหลือ
+   * ใน `itinerary.ts` เลยสักตัว (วัดแล้ว = 0) → marker ฝั่งทริปกลายเป็นศูนย์เงียบ ๆ
+   * เหลือแต่ฝั่ง `PLACES` 5 ตัว ซึ่ง **ยังผ่านควบคุม `> 3` อยู่** → ไม่มีเคสไหนแดง
+   * 🎯 **ด่านจะเลิกตรวจ `ITINERARY` ทั้งก้อนโดยไม่มีสัญญาณอะไรเลย** — ความครอบคลุมหายครึ่ง
+   *    ขณะที่ผลรันบอกว่าทุกอย่างปกติ · **นี่คือเหตุผลที่การย้ายไฟล์กับการแก้ด่านต้องอยู่ commit เดียวกัน**
+   */
+  const itinerary = readFileSync(join(ROOT, "data/koreaTrip.ts"), "utf8");
   const take = (src: string, re: RegExp, n: number) =>
     [...src.matchAll(re)].map((m) => m[1]).filter((v) => v.length >= 8).slice(0, n);
   return [

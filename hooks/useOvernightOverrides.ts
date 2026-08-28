@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ITINERARY, type City } from "@/data/itinerary";
+import type { City } from "@/data/itinerary";
 import { supabaseConfigured } from "@/lib/supabase";
-import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
+import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
 import { readTripCache, writeTripCache } from "@/lib/localCache";
@@ -69,11 +69,24 @@ export function useOvernightOverrides(tripId: string | null) {
       if (cancelled) return;
       if (!rows) return void setLoaded(true);
 
-      const bridge = buildDayBridge(ITINERARY, rows);
+            /**
+       * 🔴 **สะพานไม่มีฝั่ง `ITINERARY` อีกแล้ว — ส่ง `[]` โดยเจตนา** (P1 ตัดสิน 28 ส.ค. 2026)
+       *
+       * เดิมโหลดไฟล์ทริปเกาหลีมาจับคู่ด้วย **วันที่ปฏิทินล้วน ไม่ผูก `tripId` เลย** → ทริปใดก็ตามที่วัน
+       * ทับช่วง 11–21 ต.ค. จะได้คีย์ `"d*"` ปนเข้ามา · P4 วัดเจอสภาพครึ่ง ๆ: ทริปที่ทับ **5 จาก 11 วัน**
+       * → `d0..d4` เขียนได้ · `d5..d10` แปลงเป็น `null` → `insertAt` **`return` เงียบ ไม่มี error ไม่มี toast**
+       * 🎯 **ผู้ใช้กดเพิ่มของในวันที่ 6–11 แล้วไม่มีอะไรเกิดขึ้น และไม่มีอะไรบอกว่าทำไม**
+       *
+       * ✅ ส่ง `[]` **กำจัดสภาพ "วันที่แสดงได้แต่เขียนไม่ได้" ทิ้งทั้งชั้น** ไม่ใช่เพิ่มเงื่อนไขมากันทีละเคส
+       * · ทำได้ตอนนี้เพราะไม่มีหน้าไหนเรนเดอร์วันจากไฟล์นั้นอีกแล้ว → **คีย์ `d*` ไม่มีผู้บริโภคเหลือ**
+       * ⚠️ **ถอดแค่ฝั่ง `ITINERARY` ไม่ใช่ถอดสะพาน** — `dayKeyToDbId` ยังให้ `uuid → uuid`
+       *   ซึ่งเป็นสิ่งที่ทริปแพลตฟอร์มใช้จริงทุกวันนี้
+       */
+      const bridge = buildDayBridge([], rows);
       // 🔴 **สะพานว่าง ≠ ไม่มีใครตั้งค่าที่นอน** — ถ้าไม่บอก หน้าจอจะเงียบเหมือนไม่มีข้อมูล
       //    ทั้งที่จริงคือ `E7` ยังไม่ได้ย้ายวันมาสักวัน (`P-21` ในรูปที่จะกัดตอน cutover)
-      const warn = dayBridgeWarning(bridge, ITINERARY.length);
-      if (warn) console.warn(`[overnight] ${warn}`);
+      // `dayBridgeWarning` ถูกถอด: ทุกกิ่งของมันอิง `ITINERARY` ทั้งหมด → ส่ง `[]` แล้ว
+      // **มันคืน `null` เสมอตามนิยาม** · ด่านที่ทริกเกอร์ไม่ได้ ไม่ใช่ด่าน (`P-50`)
       reportDayBridgeWarningIfAny(bridge);
 
       // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่

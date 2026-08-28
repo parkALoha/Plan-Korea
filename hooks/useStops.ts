@@ -98,9 +98,20 @@ export function useStops(tripId: string | null, planId: string | null) {
       if (cancelled) return;
       if (!dbDays) return void setLoaded(true);
       // 🔴 `import()` ไม่ใช่ static — `useStops` ถูกเรียกจากหลายหน้า และเราไม่อยาก
-      //    ให้ `data/itinerary.ts` ติดไปกับบันเดิลที่ไม่ต้องใช้ (บทเรียนจาก `useBookings`)
-      const { ITINERARY } = await import("@/data/itinerary");
-      const bridge = buildDayBridge(ITINERARY, dbDays);
+            /**
+       * 🔴 **สะพานไม่มีฝั่ง `ITINERARY` อีกแล้ว — ส่ง `[]` โดยเจตนา** (P1 ตัดสิน 28 ส.ค. 2026)
+       *
+       * เดิมโหลดไฟล์ทริปเกาหลีมาจับคู่ด้วย **วันที่ปฏิทินล้วน ไม่ผูก `tripId` เลย** → ทริปใดก็ตามที่วัน
+       * ทับช่วง 11–21 ต.ค. จะได้คีย์ `"d*"` ปนเข้ามา · P4 วัดเจอสภาพครึ่ง ๆ: ทริปที่ทับ **5 จาก 11 วัน**
+       * → `d0..d4` เขียนได้ · `d5..d10` แปลงเป็น `null` → `insertAt` **`return` เงียบ ไม่มี error ไม่มี toast**
+       * 🎯 **ผู้ใช้กดเพิ่มของในวันที่ 6–11 แล้วไม่มีอะไรเกิดขึ้น และไม่มีอะไรบอกว่าทำไม**
+       *
+       * ✅ ส่ง `[]` **กำจัดสภาพ "วันที่แสดงได้แต่เขียนไม่ได้" ทิ้งทั้งชั้น** ไม่ใช่เพิ่มเงื่อนไขมากันทีละเคส
+       * · ทำได้ตอนนี้เพราะไม่มีหน้าไหนเรนเดอร์วันจากไฟล์นั้นอีกแล้ว → **คีย์ `d*` ไม่มีผู้บริโภคเหลือ**
+       * ⚠️ **ถอดแค่ฝั่ง `ITINERARY` ไม่ใช่ถอดสะพาน** — `dayKeyToDbId` ยังให้ `uuid → uuid`
+       *   ซึ่งเป็นสิ่งที่ทริปแพลตฟอร์มใช้จริงทุกวันนี้
+       */
+      const bridge = buildDayBridge([], dbDays);
       reportDayBridgeWarningIfAny(bridge);
       // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
       // 🔴 เคยประกอบเองอยู่พักหนึ่ง แล้ว `useDaySettings`/`useOvernightOverrides` ก็ประกอบของตัวเอง

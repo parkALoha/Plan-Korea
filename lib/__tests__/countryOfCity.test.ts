@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COUNTRY_OF_CITY, countryOfCity, countryOfCitySlug } from "@/data/emergency";
-import { ITINERARY } from "@/data/itinerary";
+import { ITINERARY } from "@/data/koreaTrip";
 import { CITY_LOCALE } from "@/data/places";
 import { capabilitiesOf, shouldSkipTravelApi } from "@/lib/engine/countries";
 

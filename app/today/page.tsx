@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CATEGORY_EMOJI } from "@/data/places";
 import type { Place } from "@/data/places";
-import { ITINERARY } from "@/data/itinerary";
+import { ITINERARY } from "@/data/koreaTrip";
 import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
