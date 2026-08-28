@@ -16,10 +16,8 @@ import { TripHeader } from "@/components/TripHeader";
 import { TripPrepPanel } from "@/components/TripPrepPanel";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
-import { ITINERARY } from "@/data/itinerary";
-import { countryOfCity } from "@/data/emergency";
 import type { City, Day } from "@/data/itinerary";
-import { applyOvernightOverrides, hotelAnchorId } from "@/lib/hotelLegs";
+import { hotelAnchorId } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
 import { haversineKm } from "@/lib/geo";
 import { showUndoToast } from "@/lib/toast";
@@ -125,70 +123,78 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     hidePlace,
     unhidePlace,
   } = useHiddenPlaces(tripId);
-  const {
-    overnightOverrides,
-    loaded: overnightLoaded,
-    setOvernightCity,
-  } = useOvernightOverrides(tripId);
+  // 🔴 `overnightOverrides` ไม่ถูกอ่านแล้ว — มันมีไว้ทับคืนที่เลือกเมืองนอนเองลงบน `ITINERARY`
+  //    ซึ่งเส้นทางนั้นถูกตัดออกจากหน้านี้แล้ว · **ยังเรียกฮุคอยู่** เพราะ `setOvernightCity` ยังใช้
+  //    และ `overnightLoaded` ยังนับรวมใน `overallLoaded` · `B6` จะกลับมาใช้ค่านี้กับวันจากฐาน
+  const { loaded: overnightLoaded, setOvernightCity } = useOvernightOverrides(tripId);
 
-  // `B6` เฟส 1 — เมืองปลายทางของทริปนี้จากคลังในฐาน · ว่าง = ทริปเกาหลีเดิม → เดินทางเดิมทั้งหน้า
+  // `B6` เฟส 1 — เมืองปลายทางของทริปนี้จากคลังในฐาน
   const tripCatalogCities = useTripCatalogCities(tripId);
-
-  // แผนทริปจริงที่ใช้ทั้งหน้า = ITINERARY + คืนที่เลือกเมืองนอนเองไว้ (เช่น คืน 16 ต.ค. คังนึง/ซกโช)
-  const legacyItinerary = useMemo(
-    () => applyOvernightOverrides(ITINERARY, overnightOverrides),
-    [overnightOverrides]
-  );
-
-  /**
-   * 🔴 **ทางแยก ไม่ใช่การแทนที่** (`B6` เฟส 2) — ทริปที่มีเมืองปลายทางใช้วันจากฐาน · ทริปเกาหลีเดิมใช้
-   * `ITINERARY` ต่อทุกบรรทัด เพราะไฟล์นั้นถือตารางบิน/โน้ต/เวลาตายตัวที่**ยังไม่มีที่อยู่ในฐาน** (`P-57`)
-   * · แทนทั้งก้อน = ทริปที่บิน 11 ต.ค. เสียข้อมูลจริง — ผู้ใช้เลือกเส้นแบ่งนี้เอง 28 ส.ค. 2026
-   * · สัญญาณ = *"ทริปนี้มีเมืองปลายทางไหม"* ไม่ใช่เทียบวันที่กับไฟล์เดิม (เหตุผลใน `useTripCatalogCities`)
-   */
+  /** ทริปที่ตั้งจุดหมายไว้แล้ว = ทริปที่วันของมันมาจากฐานได้ */
   const isPlatformTrip =
     tripCatalogCities.status === "ready" && tripCatalogCities.cities.length > 0;
-  /**
-   * 🔴 **"รู้ว่าเป็นทริปเกาหลี" ต้องเป็นสถานะของตัวเอง ห้ามอนุมานจาก `!isPlatformTrip`**
-   * `isPlatformTrip` เป็น `false` ได้จาก **สองสาเหตุที่ต่างกันสิ้นเชิง**:
-   * · `ready` + ไม่มีเมือง = *ทริปเกาหลีจริง ๆ*        ← ตกไป `ITINERARY` ถูกต้อง
-   * · `error` (ออฟไลน์/เน็ตสะดุด) = *ถามไม่ได้*        ← **ห้ามตกไป `ITINERARY`**
-   * 🎯 หลักเดียวกับ `overnight_kind` (`null` vs `'none'` · `D80`) — **ห้ามซ่อน "ยังไม่รู้" ใต้ค่าเริ่มต้น**
-   */
-  const isLegacyTrip =
-    tripCatalogCities.status === "ready" && tripCatalogCities.cities.length === 0;
   const { state: platformItinerary, reload: reloadPlatformItinerary } = usePlatformItinerary(
     tripId,
     isPlatformTrip
   );
-  /** true = การ์ดวันที่เห็นอยู่มาจากฐานจริง ๆ → เลือกเมืองรายวันได้ · ทริปเกาหลีเดิมเป็น false เสมอ
-   *  ⚠️ **ไม่เช็ค `days.length > 0` แล้ว** — ทริปแพลตฟอร์มที่ฐานคืน 0 วัน **ต้องแสดงว่าง ไม่ใช่ตกไป
-   *  `ITINERARY`** · เดิมเช็คไว้ แล้วมันกลายเป็นทางลับเส้นที่สองที่พาไปหาตารางของทริปอื่น */
-  const usePlatformDays = isPlatformTrip && platformItinerary.status === "ready";
 
   /**
-   * 🔴 **ระหว่างที่ยังไม่รู้ว่าทริปนี้เดินทางไหน `itinerary` ต้องเป็น `[]` ไม่ใช่รายการของทริปเกาหลี**
+   * แหล่งของ "วัน" ที่หน้านี้แสดง — **สี่สถานะ แยกจากกันชัด ไม่มีอันไหนเป็นค่าเริ่มต้นของอีกอัน**
    *
-   * ⚠️ **ก่อนหน้านี้ผมกันไว้ที่ *ด่านแสดงผล* อย่างเดียว (`dayPlanLoaded`) แล้วรายงานว่าแก้แล้ว — ไม่ครบ**
-   * ด่านแสดงผลกัน *สิ่งที่ผู้ใช้เห็น* ได้จริง แต่ **ฮุคที่มีผลข้างเคียงรันก่อนถึงด่านนั้น**
-   * · วัดจริง 28 ส.ค. 2026: เปิดทริปเดือน ส.ค. แล้วเบราว์เซอร์ยิง
-   *   `GET /api/weather?…&start=2026-10-11&end=2026-10-21` **6 คำขอ — วันของทริปเกาหลี** ทุกครั้งที่โหลด
-   *   (`useTripWeather(itinerary)` ที่บรรทัด ~221 อ่านค่าตอนที่มันยังตกไปทางเดิมอยู่)
-   * 🎯 **บทเรียน: "ผู้ใช้ไม่เห็น" ไม่เท่ากับ "ไม่เกิดขึ้น"** — และตัวที่ฟ้องคือ network ไม่ใช่หน้าจอ
-   * 🔴 **แก้ 28 ส.ค. 2026 (P7 เจอ · P1 ยืนยันในโค้ด) — เดิมเขียนเป็น `status !== "loading"`
-   * ซึ่งทำให้ `error` นับเป็น "รู้แล้ว"** → ออฟไลน์บนทริปญี่ปุ่นแล้ว **หน้าจอแสดงตาราง 11 วันของ
-   * ทริปเกาหลี พร้อมชื่อเมืองเกาหลีครบ** · ไม่ใช่ว่างเปล่า — **เป็นข้อมูลของทริปอื่นที่ดูเหมือนของจริง**
-   * · วัดจริง: แคชมีวันของทริปนั้น 4 วัน · หน้าจอโชว์ 11 วัน · `hasTokyo` = false · คำขอ `/days` = 0
-   * 🎯 **แย่กว่าว่างเปล่า** — ว่างเปล่าผู้ใช้เห็นว่าผิด · ตารางของทริปอื่นผู้ใช้เชื่อว่าถูก
-   * → ตอนนี้ต้อง **รู้จริง** ทั้งสองฝั่ง: รู้ว่าเป็นทริปเกาหลี **หรือ** ได้วันจากฐานมาแล้ว
+   * ## 🔴 บน branch `platform` **ไม่มีทริปใบไหนที่ `data/itinerary.ts` เป็นคำตอบที่ถูก** (P1 ตัดสิน 28 ส.ค. 2026)
+   * ทริปเกาหลีจริงอยู่บน production/`main` · `E7` ยังไม่ย้ายข้อมูลมา → ทุกครั้งที่เส้นทาง legacy ทำงานที่นี่
+   * **มันผิดโดยโครงสร้าง ไม่ใช่ผิดบางกรณี**
+   *
+   * ⚠️ **เดิมผมมี `isLegacyTrip = ready && cities.length === 0` — และมันยุบสองอย่างเข้าด้วยกัน** (P3 ชี้)
+   * ```
+   * "ทริปเกาหลีเดิม ที่เมืองไม่ได้อยู่ในคลัง"      ← ตอนเขียน ตั้งใจให้เข้าเงื่อนไขนี้
+   * "ทริปแพลตฟอร์มที่เจ้าของยังไม่ได้เลือกเมือง"   ← ไม่ได้ตั้งใจ แต่เข้าเงื่อนไขเดียวกันเป๊ะ
+   * ```
+   * 🎯 **ตอนเขียน เงื่อนไขนี้แยกได้จริง เพราะทริปแพลตฟอร์มยังไม่มี** — โลกเปลี่ยน ความหมายของเงื่อนไข
+   * เลยเปลี่ยนตาม โดยที่ตัวเงื่อนไขไม่ได้ขยับสักตัวอักษร · **นี่คือเหตุผลที่ต้องเขียนสถานะให้ครบ
+   * แทนที่จะพึ่ง "ที่เหลือทั้งหมด"**
+   *
+   * 📌 หลักฐานที่ P1 ยิงบนจอ: ทริป `9d26d2ba` (ของผู้ใช้จริง · 17 จุดในฐาน) เปิด `/trip/<id>` แล้วเห็น
+   * **VN610 · ปูซาน · ซกโช · โซล ที่เจ้าของไม่ได้ใส่** ขณะที่ `/today` กับ `/summary` บอกว่ายังไม่รองรับ
+   * — **ทริปใบเดียวกัน เรนเดอร์เป็นคนละทริป ขึ้นกับว่าอยู่หน้าไหน**
+   *
+   * 🔴 **และ control ที่ผมเขียนไว้เองใน `b49fb22` ("ทริปเกาหลีออฟไลน์ยังขึ้นครบ 11 วัน + VN610")
+   * กำลังปกป้องพฤติกรรมนี้อยู่** — มันเขียวทุกครั้ง และมันยืนยันสิ่งที่ไม่ควรมีบน branch นี้
+   * · ผมเขียนมันเพราะกลัวทริปจริงหายตอนออฟไลน์ ซึ่ง **เป็นความกลัวที่ถูกสำหรับ `main` และผิดที่สำหรับ `platform`**
+   *
+   * ⚠️ **JSX ที่เรนเดอร์จาก `itinerary` ต้องไม่ถูกลบ** — `B6` จะกลับมาใช้เส้นทางเดิมโดยเปลี่ยนแค่
+   * *แหล่งของวัน* · ลบตอนนี้ = เขียนใหม่ทั้งหมดตอนนั้น
    */
-  const itinerarySourceResolved =
-    isLegacyTrip || (isPlatformTrip && platformItinerary.status === "ready");
-  const itinerary = !itinerarySourceResolved
-    ? EMPTY_DAYS
-    : usePlatformDays && platformItinerary.status === "ready"
-      ? platformItinerary.days
-      : legacyItinerary;
+  type DayPlanSource =
+    | { kind: "loading" }
+    | { kind: "platform"; days: Day[] }
+    /** อ่านได้ และรู้ว่าไม่ใช่ทริปแพลตฟอร์ม — **ยังไม่รองรับ ไม่ใช่ "ไม่มีข้อมูล"**
+     *  ผู้ใช้ที่มีจุดแวะอยู่ในฐานแล้วเห็นคำว่า "ไม่มีข้อมูล" จะคิดว่าข้อมูลของเขาหาย */
+    | { kind: "unsupported" }
+    /** ถามไม่ได้ (ออฟไลน์/เน็ตสะดุด) — **คนละเรื่องกับ `unsupported`** */
+    | { kind: "unreadable" };
+
+  const dayPlanSource: DayPlanSource = useMemo(() =>
+    tripCatalogCities.status === "error" ||
+    (isPlatformTrip && platformItinerary.status === "error")
+      ? { kind: "unreadable" }
+      : tripCatalogCities.status === "loading" ||
+          (isPlatformTrip && platformItinerary.status === "loading")
+        ? { kind: "loading" }
+        : isPlatformTrip && platformItinerary.status === "ready"
+          ? { kind: "platform", days: platformItinerary.days }
+          : { kind: "unsupported" },
+  [tripCatalogCities, isPlatformTrip, platformItinerary]);
+
+  // ห่อ `useMemo` เพราะค่าเป็นเงื่อนไข — ปล่อยลอยแล้ว React Compiler รักษา memo ที่ต่อจากมันไม่ได้
+  // (แบบเดียวกับ `platformCityIdByDayId` · `allCardsForCity` ใน `PlaceSidebar`)
+  const itinerary = useMemo(
+    () => (dayPlanSource.kind === "platform" ? dayPlanSource.days : EMPTY_DAYS),
+    [dayPlanSource]
+  );
+  /** true = การ์ดวันมาจากฐานจริง → เลือกเมืองรายวันได้ */
+  const usePlatformDays = dayPlanSource.kind === "platform";
+
   // ห่อ `useMemo` เพราะค่าเป็นเงื่อนไข — ปล่อยเป็นนิพจน์ลอยแล้วอ็อบเจกต์ใหม่ทุก render จะทำให้
   // `selectedPlaceIdsByCatalogCityId` ที่พึ่งมันคำนวณใหม่ทุกครั้ง (eslint จับให้ · แบบเดียวกับ
   // `allCardsForCity` ใน `PlaceSidebar`)
@@ -235,10 +241,10 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   // สมมติฐาน "ไม่ใช่ฮานอย = เกาหลี" ไว้ในโค้ด ใช้ได้เฉพาะทริปนี้ทริปเดียว เปลี่ยนเป็นเทียบประเทศของวันนั้น
   // กับประเทศของวันแรกผ่าน registry (`countryOfCity`) แทน — ผลลัพธ์เดิมทุกประการสำหรับทริปนี้
   // (วันแรก = ฮานอย = "vn" ทุกวันอื่น = "kr") แต่ไม่ต้องแก้จุดนี้อีกถ้าวันหนึ่งจุดแวะขาไปเปลี่ยนประเทศ
-  const startCountry = countryOfCity(ITINERARY[0].city);
-  const firstDestinationDay = ITINERARY.find((d) => countryOfCity(d.city) !== startCountry) ?? ITINERARY[0];
-  const [activeCity, setActiveCity] = useState<Day["city"]>(firstDestinationDay.city);
-  const [focusedDayId, setFocusedDayId] = useState<string>(firstDestinationDay.id);
+  // 🔴 **ไม่ seed จาก `ITINERARY` อีกแล้ว** — ค่าตั้งต้นที่มาจากทริปอื่นคือรากของบั๊ก "เล็งวันที่ไม่มีอยู่จริง"
+  //    ที่แก้ไปใน `0f0715c` · ตอนนี้ปล่อยว่าง แล้ว derive จาก `itinerary` ที่แสดงอยู่จริง (ดูข้างล่าง)
+  const [activeCity, setActiveCity] = useState<Day["city"]>("" as Day["city"]);
+  const [focusedDayId, setFocusedDayId] = useState<string>("");
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
   /**
@@ -517,17 +523,22 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   // 🔴 gate เฉพาะโครงวัน (ITINERARY + DayJumpBar/PlaceSidebar ที่ผูกกับมัน) — ไม่แตะ TripPrepPanel
   // (ที่พัก/booking/checklist) เพราะไม่มีตัวไหนพึ่ง trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22)
   const dayPlanGate = useTripDaysGate(tripId);
-  const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading" && itinerarySourceResolved;
-  const dayPlanReady = overallLoaded && dayPlanGate === "ready" && itinerarySourceResolved;
+  const dayPlanLoaded =
+    overallLoaded && dayPlanGate !== "loading" && dayPlanSource.kind !== "loading";
+  const dayPlanReady =
+    overallLoaded && dayPlanGate === "ready" && dayPlanSource.kind === "platform";
   const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
   /**
    * 🔴 **อ่านแหล่งที่มาของวันไม่ได้** — ต่างจาก `dayPlanEmpty` (ฐานตอบว่าไม่มีวัน) คนละเหตุคนละข้อความ
    * ถ้าไม่มีสถานะนี้ ออฟไลน์จะได้ **โครงร่างค้างตลอดไป** ซึ่งอ่านว่า "กำลังโหลด" ทั้งที่ไม่มีอะไรกำลังโหลด
    */
-  const dayPlanUnreadable =
-    overallLoaded &&
-    !itinerarySourceResolved &&
-    (tripCatalogCities.status === "error" || platformItinerary.status === "error");
+  const dayPlanUnreadable = overallLoaded && dayPlanSource.kind === "unreadable";
+  /**
+   * อ่านได้ · รู้ว่าไม่ใช่ทริปแพลตฟอร์ม → **ยังไม่รองรับ** · ใช้ข้อความ `no-days` ที่เขียนไว้ว่า
+   * *"ระบบกำลังรองรับทริปหลายใบอยู่"* — บอกว่า **ยังไม่รองรับ ไม่ใช่ "ไม่มีข้อมูล"**
+   * 🔴 ผู้ใช้ที่มีจุดแวะอยู่ในฐานแล้วเห็นคำว่า "ไม่มีข้อมูล" จะคิดว่าข้อมูลของเขาหาย (P1 ย้ำ)
+   */
+  const dayPlanUnsupported = overallLoaded && dayPlanSource.kind === "unsupported";
 
   return (
     // MapsApiProvider ครอบเฉพาะหน้านี้ ไม่ได้อยู่ใน layout อีกแล้ว — หน้าแผนเป็นหน้าเดียวที่มี `<Map>`
@@ -566,7 +577,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
               ไม่มีแล้วคอลัมน์นี้จะกว้าง 1129px ทั้งที่มีที่ให้ 904px แล้วดัน <aside> คลังสถานที่
               หลุดออกนอกจอไป 209px บนจอ 1280 (วัดจริง: scrollWidth 1489 vs clientWidth 1280) */}
           <div className="mx-auto min-w-0 max-w-2xl flex-1 lg:mx-0 lg:max-w-none">
-            {!dayPlanLoaded && !dayPlanUnreadable && (
+            {!dayPlanLoaded && !dayPlanUnreadable && !dayPlanUnsupported && (
               <>
                 <DayCardSkeleton />
                 <DayCardSkeleton />
@@ -575,7 +586,8 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
             )}
 
             {dayPlanUnreadable && <DayPlanUnavailableNotice reason="unreadable" />}
-            {dayPlanEmpty && <DayPlanUnavailableNotice />}
+            {dayPlanUnsupported && !dayPlanUnreadable && <DayPlanUnavailableNotice />}
+            {dayPlanEmpty && !dayPlanUnsupported && !dayPlanUnreadable && <DayPlanUnavailableNotice />}
 
             {/* แถบวัน sticky — กระโดดข้ามวันได้โดยไม่ต้องสกรอลล์ผ่านทั้ง 11 วัน (เฟส 17)
                 เฟส 20.3 ย้ายขึ้นมาไว้บนสุด: เดิมอยู่ใต้แผงเตรียมทริปทั้งสาม จึงต้องเลื่อนผ่าน
