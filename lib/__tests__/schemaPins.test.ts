@@ -1245,3 +1245,75 @@ describe("🔴 E5 — `create_trip` · default ที่ `db.ts` พึ่งพ
     ).toBe(true);
   });
 });
+
+/**
+ * 🔴 **`E5` — ตัวเขียนใน DAL ต้องผูกกับทริปที่ URL อนุญาต ไม่ใช่แค่ id ของแถว** (P4 · P1 ตัดสิน · 28 ส.ค. 2026)
+ *
+ * รูปที่ด่านนี้กัน — **confused deputy**:
+ * ```
+ * route:  guard(req, tripId)            ← อนุญาตจาก tripId ใน *URL*
+ * DAL:    .update(...).eq("id", id)     ← เลือกแถวจาก id ใน *body* ที่ผู้ใช้ส่งมา
+ * ```
+ * สองอย่างนี้ผูกกันด้วย **RLS อย่างเดียว** · เติม `.eq("trip_id", tripId)` = ชั้นที่สอง
+ *
+ * 🔴 **รายชื่อยกเว้นข้างล่าง *ไม่ใช่* รายการช่องโหว่ — ห้ามอ่านแบบนั้น** (P1 สั่งให้เขียนข้อนี้ไว้)
+ * · **RLS กันทุกตัวอยู่จริง** และไม่มีตัวไหนถูกยิงพิสูจน์ว่าทะลุ
+ * · สิ่งที่ขาดคือ **ชั้นที่สอง + ความถูกต้องของสัญญา** (`PATCH /trips/A/…` ต้องแตะได้แค่ทริป A)
+ *   **ไม่ใช่เรื่องสิทธิ์** · เป็น *หนี้ที่รู้ตัว* ไม่ใช่ *การออกแบบ*
+ *
+ * 🎯 **ค่าของด่านไม่ได้อยู่ที่ 14 ชื่อนี้ — อยู่ที่ตัวที่ 19 ที่ใครเขียนพรุ่งนี้**
+ * มันจะ *ต้องเลือกอย่างจงใจ* ว่าใส่ scope หรือมาขอเพิ่มชื่อ · และรายการนี้ **นับได้ หดได้ เห็นได้**
+ *
+ * ⚠️ **สแกนหลัง `stripComments` เสมอ** — คอมเมนต์ของฟังก์ชันถัดไปพูดถึง `.upsert()` อยู่จริง
+ * ถ้าสแกนข้อความดิบ **ตัวอ่านจะถูกนับเป็นตัวเขียน** (P4 พลาดข้อนี้ตอนนับรอบแรก: ได้ 6 ที่จริง 4)
+ */
+describe("🔴 E5 — ตัวเขียนใน `lib/engine/db.ts` ต้องมี `.eq(\"trip_id\", …)`", () => {
+  /** ยังไม่มีชั้นที่สอง ณ 28 ส.ค. 2026 — **ลดได้ ห้ามเพิ่มโดยไม่คุยกับ P1** */
+  const KNOWN_UNSCOPED = new Set([
+    // ทับกับ `WRITE_UNCHECKED` ที่รอผู้ใช้ตัดสินรูป API — แก้พร้อมกันรอบเดียว
+    "updateBooking", "updateStop", "updateChecklistItem",
+    "renamePlan", "deletePlan", "upsertDaySettings", "upsertPlaceNote",
+    "insertBooking", "insertStop", "insertTripHotel", "insertChecklistItem",
+    "insertPlan", "insertTripDestinations", "hidePlaceBySlug",
+  ]);
+
+  /** ตัวเขียนใน DAL → ชื่อ + มี trip scope ไหม (สแกนหลังตัดคอมเมนต์) */
+  function dalWriters(): Map<string, boolean> {
+    const src = stripComments(
+      readFileSync(new URL("../engine/db.ts", import.meta.url), "utf8"),
+    );
+    const out = new Map<string, boolean>();
+    const parts = src.split(/\nexport (?:async )?function /);
+    for (const part of parts.slice(1)) {
+      const name = part.slice(0, part.indexOf("(")).trim();
+      const body = part.split("\nexport ")[0];
+      if (!/\.(update|insert|upsert|delete)\s*\(/.test(body)) continue;
+      out.set(name, /\.eq\(\s*"trip_id"/.test(body));
+    }
+    return out;
+  }
+
+  it("🔴 ตัวเขียนใหม่ต้องมี trip scope — หรือมาขึ้นทะเบียนยกเว้นอย่างจงใจ", () => {
+    const writers = dalWriters();
+    // ควบคุมฝั่งบวก — ตัวสกัดพังต้องไม่กลายเป็น "ผ่านหมด"
+    expect(writers.size, "หาตัวเขียนใน db.ts ไม่เจอเลย = ตัวสกัดพัง ไม่ใช่ด่านผ่าน").toBeGreaterThan(10);
+
+    const offenders = [...writers].filter(([n, scoped]) => !scoped && !KNOWN_UNSCOPED.has(n)).map(([n]) => n);
+    expect(
+      offenders.sort(),
+      "ตัวเขียนพวกนี้เลือกแถวด้วย id จาก body แต่ไม่ผูกกับ tripId ของ URL\n" +
+        "  → เติม `.eq(\"trip_id\", tripId)` (ชั้นที่สอง · RLS ยังเป็นชั้นแรก)\n" +
+        "  → ถ้าตั้งใจไม่ใส่ ต้องคุยกับ P1 แล้วเพิ่มชื่อเข้า KNOWN_UNSCOPED พร้อมเหตุผล",
+    ).toEqual([]);
+  });
+
+  it("🔴 ทะเบียนยกเว้นต้องเป็น *คำกล่าวอ้างที่ผิดได้* — ชื่อที่แก้แล้ว/ไม่มีแล้ว ต้องหลุดออก", () => {
+    const writers = dalWriters();
+    const gone = [...KNOWN_UNSCOPED].filter((n) => !writers.has(n));
+    const fixed = [...KNOWN_UNSCOPED].filter((n) => writers.get(n) === true);
+    expect(gone.sort(), "ชื่อพวกนี้ไม่ใช่ตัวเขียนใน db.ts แล้ว — ลบออกจาก KNOWN_UNSCOPED").toEqual([]);
+    // 🎯 ครึ่งที่ทำให้ทะเบียนไม่กลายเป็นคำโกหก: แก้แล้วต้องถูกบังคับให้เอาชื่อออก
+    //    ไม่งั้นรายการจะค้างอยู่เท่าเดิมตลอดกาล และ "14" จะเลิกเป็นตัวเลขที่มีความหมาย
+    expect(fixed.sort(), "ชื่อพวกนี้มี `.eq(\"trip_id\")` แล้ว — ลบออกจาก KNOWN_UNSCOPED เพื่อให้ตัวเลขหด").toEqual([]);
+  });
+});
