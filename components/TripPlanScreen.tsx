@@ -43,6 +43,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
 import { useTripDaysGate } from "@/hooks/useTripDaysGate";
 import { useTripCatalogCities } from "@/hooks/useTripCatalogCities";
+import { usePlatformItinerary } from "@/hooks/usePlatformItinerary";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 import { HotelsFlatList } from "@/components/HotelsFlatList";
 
@@ -126,11 +127,28 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     setOvernightCity,
   } = useOvernightOverrides(tripId);
 
+  // `B6` เฟส 1 — เมืองปลายทางของทริปนี้จากคลังในฐาน · ว่าง = ทริปเกาหลีเดิม → เดินทางเดิมทั้งหน้า
+  const tripCatalogCities = useTripCatalogCities(tripId);
+
   // แผนทริปจริงที่ใช้ทั้งหน้า = ITINERARY + คืนที่เลือกเมืองนอนเองไว้ (เช่น คืน 16 ต.ค. คังนึง/ซกโช)
-  const itinerary = useMemo(
+  const legacyItinerary = useMemo(
     () => applyOvernightOverrides(ITINERARY, overnightOverrides),
     [overnightOverrides]
   );
+
+  /**
+   * 🔴 **ทางแยก ไม่ใช่การแทนที่** (`B6` เฟส 2) — ทริปที่มีเมืองปลายทางใช้วันจากฐาน · ทริปเกาหลีเดิมใช้
+   * `ITINERARY` ต่อทุกบรรทัด เพราะไฟล์นั้นถือตารางบิน/โน้ต/เวลาตายตัวที่**ยังไม่มีที่อยู่ในฐาน** (`P-57`)
+   * · แทนทั้งก้อน = ทริปที่บิน 11 ต.ค. เสียข้อมูลจริง — ผู้ใช้เลือกเส้นแบ่งนี้เอง 28 ส.ค. 2026
+   * · สัญญาณ = *"ทริปนี้มีเมืองปลายทางไหม"* ไม่ใช่เทียบวันที่กับไฟล์เดิม (เหตุผลใน `useTripCatalogCities`)
+   */
+  const isPlatformTrip =
+    tripCatalogCities.status === "ready" && tripCatalogCities.cities.length > 0;
+  const platformItinerary = usePlatformItinerary(tripId, isPlatformTrip);
+  const itinerary =
+    isPlatformTrip && platformItinerary.status === "ready" && platformItinerary.days.length > 0
+      ? platformItinerary.days
+      : legacyItinerary;
 
   const [who, setWho] = useState(() =>
     typeof window !== "undefined" ? window.localStorage.getItem("trip-who") ?? "" : ""
@@ -382,10 +400,18 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   // 🔴 gate เฉพาะโครงวัน (ITINERARY + DayJumpBar/PlaceSidebar ที่ผูกกับมัน) — ไม่แตะ TripPrepPanel
   // (ที่พัก/booking/checklist) เพราะไม่มีตัวไหนพึ่ง trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22)
   const dayPlanGate = useTripDaysGate(tripId);
-  // `B6` เฟส 1 — เมืองปลายทางของทริปนี้จากคลังในฐาน · ว่าง = ทริปเกาหลีเดิม → ไซด์บาร์เดินทางเดิม
-  const tripCatalogCities = useTripCatalogCities(tripId);
-  const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading";
-  const dayPlanReady = overallLoaded && dayPlanGate === "ready";
+  /**
+   * 🔴 **ต้องรอให้รู้ก่อนว่า `itinerary` มาจากทางไหน ไม่งั้นทริปแพลตฟอร์มจะโชว์วันของทริปเกาหลีแวบหนึ่ง**
+   * (วัดเจอจริง 28 ส.ค. 2026: ระหว่างรอ `useTripCatalogCities` → `isPlatformTrip` ยังเป็น `false`
+   *  → `itinerary` ตกไปที่ `legacyItinerary` → หน้าโชว์ 11–21 ต.ค. ของทริปเกาหลี **บนทริปเดือน ส.ค.**)
+   * 🎯 ไม่ใช่แค่กะพริบ — เป็นวันของ *ทริปอื่น* ที่กดได้จริงในจังหวะนั้น
+   * · แก้ที่ *ด่านโหลด* ไม่ใช่ให้ `itinerary` เป็น `[]` เพราะมีที่อ่าน `itinerary[0]` อยู่ (บรรทัด ~634)
+   */
+  const itinerarySourceResolved =
+    tripCatalogCities.status !== "loading" &&
+    (!isPlatformTrip || platformItinerary.status !== "loading");
+  const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading" && itinerarySourceResolved;
+  const dayPlanReady = overallLoaded && dayPlanGate === "ready" && itinerarySourceResolved;
   const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
 
   return (

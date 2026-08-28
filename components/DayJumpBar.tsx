@@ -1,8 +1,8 @@
 "use client";
 
+import { cityMetaOf } from "@/components/cityMeta";
 import { useEffect, useRef, useState } from "react";
 import type { Day } from "@/data/itinerary";
-import { CITY_META } from "@/data/itinerary";
 
 /** id ของ <section> การ์ดวัน — ใช้ร่วมกันระหว่างแถบนี้กับ DayStopsSection */
 export function dayCardElementId(dayId: string) {
@@ -102,7 +102,7 @@ export function DayJumpBar({ itinerary }: { itinerary: Day[] }) {
                   : "bg-surface-soft text-content-soft hover:bg-maple-soft"
               }`}
             >
-              {CITY_META[day.city].icon} {label}
+              {cityMetaOf(day.city).icon} {label}
             </button>
           );
         })}

@@ -1,7 +1,7 @@
 "use client";
 
+import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import { useEffect, useMemo, useState } from "react";
-import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
 import {
   buildDayCitySegments,
   stopCountIn,
@@ -174,8 +174,8 @@ function SegmentChips({
   return (
     <div className="mb-1.5 flex flex-wrap items-center gap-1">
       {segments.map((segment, i) => {
-        const meta = segment.city ? CITY_META[segment.city] : null;
-        const name = segment.city ? CITY_NAME_TH[segment.city] : `ช่วงที่ ${i + 1}`;
+        const meta = segment.city ? cityMetaOf(segment.city) : null;
+        const name = segment.city ? cityNameThOf(segment.city) : `ช่วงที่ ${i + 1}`;
         const stops = stopCountIn(segment);
         const active = selectedIndex === i;
         // ไอคอนพาหนะของ hop ที่พามาถึงช่วงนี้ — เอาจากจุดแวะแรกของช่วง ถ้าไม่มีแถวข้ามเมืองก็ใช้ →
@@ -402,7 +402,7 @@ function DayMapContent({
           <Polyline
             key={`hop-${i}`}
             path={[path[path.length - 1], next[0]]}
-            strokeColor={toCity ? CITY_META[toCity].colorDark : PINE}
+            strokeColor={toCity ? cityMetaOf(toCity).colorDark : PINE}
             {...dotted}
           />
         );

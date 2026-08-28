@@ -13,6 +13,23 @@ export const MONTHS_TH_FULL = [
 export const WEEKDAYS_TH_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 /**
+ * ชื่อวันเต็ม — ป้อนให้ `Day["weekdayTh"]` เรียงตาม `Date.getDay()` เหมือนกัน
+ *
+ * 🔴 **ไม่มีคำว่า "วัน" นำหน้า และห้ามใส่** — ผู้เรียกทุกตัวเติมเอง
+ * (`DayStopsSection.tsx:254` · `app/today/page.tsx:525` · `app/summary/page.tsx:192` เขียน `วัน{day.weekdayTh}`)
+ * ตรงกับ `ITINERARY` ที่เก็บ `weekdayTh: "อาทิตย์"` เปล่า ๆ · ใส่ "วัน" ที่นี่ = **"วันวันเสาร์"** บนหน้าจอ
+ * (เกิดจริง 28 ส.ค. 2026 · `tsc` จับไม่ได้เพราะทั้งคู่เป็น `string`)
+ */
+export const WEEKDAYS_TH_FULL = [
+  "อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์",
+];
+
+/** ชื่อวันเต็มภาษาอังกฤษ — คู่กับ `weekdayEn` ที่ `/summary?lang=en` ใช้ */
+export const WEEKDAYS_EN_FULL = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
+
+/**
  * วันเดียวแบบสั้น เช่น "10 ม.ค. 2027" — ใช้โชว์ค่าที่เลือกไว้บนปุ่มของ `DateField`
  * 🔴 ปี ค.ศ. เหมือน `tripDateRangeLabel` (เหตุผลเดียวกันเป๊ะ — ดูคำเตือนเรื่อง `th-TH` ด้านล่าง)
  */

@@ -5,7 +5,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cityCenter, Place } from "@/data/places";
 import type { City, Day } from "@/data/itinerary";
-import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
+import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
 import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
@@ -119,16 +119,25 @@ export function DayStopsSection({
     day: "numeric",
     month: "short",
   });
-  const meta = CITY_META[day.city];
+  /**
+   * 🔴 **วันที่ยังไม่ระบุเมือง หรือเมืองที่ไม่ได้อยู่ในไฟล์เดิม — ต้องไม่พังหน้าจอ**
+   * `CITY_META` เป็น `Record<Day["city"], …>` ที่มีแค่ 6 เมืองเกาหลี · ทริปที่สร้างบนแพลตฟอร์มมี
+   * **วันที่ไม่มีเมืองเป็นสภาพตั้งต้น** (ผู้ใช้สั่งเอง 28 ส.ค. 2026: *"ไม่ต้องเดา ให้ว่างไว้แล้วผมเลือกเอง"*)
+   * และอาจเป็นเมืองนอกไฟล์เดิม (โตเกียว ฯลฯ) → `CITY_META[...]` เป็น `undefined` แล้วอ่าน `.icon` ต่อ = จอขาว
+   * · ทริปเกาหลีเดิมไม่กระทบเลย เพราะทุกวันมีเมืองที่อยู่ใน `CITY_META` อยู่แล้ว → เข้าทางซ้ายเสมอ
+   */
+  const meta = cityMetaOf(day.city);
 
   // ศูนย์กลางค้นหาตอนแทรกร้านก่อนจุดแรกของวัน (ยังไม่มี "จุดก่อนหน้า" ให้อิง) — ที่พักคืนนั้นก่อน ไม่งั้นใช้กลางเมือง
+  // ⚠️ เมืองที่ไม่มีใน `PLACES` จะได้ `NaN` (หารด้วยศูนย์) — ไม่ทำให้พัง แต่ทำให้ลำดับ "ร้านใกล้ ๆ" เพี้ยน
+  //    ตอนแทรกจุดแรกของวันที่ยังไม่มีที่พัก · ยอมรับในเฟสนี้ · แก้จริงต้องให้ศูนย์กลางเมืองมาจากคลังในฐาน
   const centerBeforeFirstStop = hotel ? { lat: hotel.lat, lng: hotel.lng } : cityCenter(day.city);
 
   // ค่า default จาก/ไปของแถวเดินทางข้ามเมือง — เดาจาก city ของวันนี้ ไปเมืองที่นอนคืนนี้ (ถ้าต่างจากเมืองที่เที่ยว)
   const intercityFromCity = day.city;
   const intercityToCity = day.overnightCity ?? day.city;
-  const intercityFromDefault = CITY_NAME_TH[intercityFromCity];
-  const intercityToDefault = CITY_NAME_TH[intercityToCity];
+  const intercityFromDefault = cityNameThOf(intercityFromCity);
+  const intercityToDefault = cityNameThOf(intercityToCity);
 
   const {
     mealCount,
@@ -275,7 +284,7 @@ export function DayStopsSection({
                       : "border border-white/30 bg-white/10 text-cream hover:bg-white/20"
                   }`}
                 >
-                  {CITY_META[city].icon} {CITY_NAME_TH[city]}
+                  {cityMetaOf(city).icon} {cityNameThOf(city)}
                   {city === day.overnightOptions?.[0] ? " (จองไว้)" : ""}
                 </button>
               );

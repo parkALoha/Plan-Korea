@@ -1,7 +1,7 @@
 "use client";
 
+import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import { useState } from "react";
-import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
 import { hotelRangeKey, type HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel } from "@/lib/supabase";
 import type { HotelInput } from "@/hooks/useHotels";
@@ -42,7 +42,7 @@ export function HotelLegsPanel({
           // D51: ไม่มี leg_id ในฐานแล้ว คีย์ด้วยช่วงวันที่แทน (hotelRangeKey — ฟังก์ชันเดียวใช้ทั้ง
           // ฝั่งอ่าน/เขียน กันเขียนคีย์เองสองที่แล้วต่างกันสักวัน)
           const hotel = hotels[hotelRangeKey(leg)];
-          const meta = CITY_META[leg.city];
+          const meta = cityMetaOf(leg.city);
           return (
             <button
               key={leg.id}
@@ -57,7 +57,7 @@ export function HotelLegsPanel({
               </span>
               <div className="min-w-0">
                 <div className="text-xs text-content-soft">
-                  {CITY_NAME_TH[leg.city]} · {dateRangeLabel(leg)}
+                  {cityNameThOf(leg.city)} · {dateRangeLabel(leg)}
                 </div>
                 <div className="truncate text-sm font-medium text-content">
                   {hotel ? hotel.hotel_name : "ยังไม่ได้ตั้ง"}
