@@ -85,12 +85,7 @@ function useBookingsStore(tripId: string | null) {
       );
       if (cancelled) return;
       if (!dbDays) return void setLoaded(true);
-      // 🔴 **`import()` ไม่ใช่ static import โดยตั้งใจ** — เดิม `TripDataProvider` (ที่ห่อ hook นี้) อยู่ใน
-      //    root layout จริง ทำให้ static import ลาก `data/itinerary.ts` (2,290 บรรทัด) เข้าบันเดิลทุกหน้า
-      //    รวม `/login`/404 ที่ไม่ต้องล็อกอิน (`layoutImportGraph` เป็นคนจับ) ⚠️ **แก้ตาม `E5-AC1`
-      //    (27 ส.ค. 2026): `TripDataProvider` ย้ายออกจาก root layout แล้ว** เหตุผลเดิมจึงหมดอายุแล้ว
-      //    แต่ dynamic import ยังไม่มีเหตุผลให้เปลี่ยนกลับเป็น static (ไม่มีประโยชน์เพิ่ม แค่ไม่มีโทษ) จึง
-            /**
+      /**
        * 🔴 **สะพานไม่มีฝั่ง `ITINERARY` อีกแล้ว — ส่ง `[]` โดยเจตนา** (P1 ตัดสิน 28 ส.ค. 2026)
        *
        * เดิมโหลดไฟล์ทริปเกาหลีมาจับคู่ด้วย **วันที่ปฏิทินล้วน ไม่ผูก `tripId` เลย** → ทริปใดก็ตามที่วัน
@@ -105,7 +100,9 @@ function useBookingsStore(tripId: string | null) {
        */
       const bridge = buildDayBridge([], dbDays);
       reportDayBridgeWarningIfAny(bridge);
-      // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
+      // สะพานเป็นคนถือแมปวัน — ห้ามประกอบเองซ้ำที่นี่
+      // ⚠️ เดิมคอมเมนต์นี้เขียนว่าแมปมี `"d0"→uuid` **และ** `uuid→uuid` — **หมดอายุตั้งแต่ส่ง `[]`**
+      //    ตอนนี้เหลือ `uuid→uuid` ล้วน · ฝั่ง `"d0"` ไม่มีผู้ผลิตและไม่มีผู้บริโภคแล้ว
       dayToUuid.current = new Map(bridge.dayKeyToDbId);
       // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
       uuidToDay.current = buildUuidToDayKey(dbDays, bridge);

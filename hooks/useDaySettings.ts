@@ -85,7 +85,9 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       // `dayBridgeWarning` ถูกถอด: ทุกกิ่งของมันอิง `ITINERARY` ทั้งหมด → ส่ง `[]` แล้ว
       // **มันคืน `null` เสมอตามนิยาม** · ด่านที่ทริกเกอร์ไม่ได้ ไม่ใช่ด่าน (`P-50`)
       reportDayBridgeWarningIfAny(bridge);
-      // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
+      // สะพานเป็นคนถือแมปวัน — ห้ามประกอบเองซ้ำที่นี่
+      // ⚠️ เดิมคอมเมนต์นี้เขียนว่าแมปมี `"d0"→uuid` **และ** `uuid→uuid` — **หมดอายุตั้งแต่ส่ง `[]`**
+      //    ตอนนี้เหลือ `uuid→uuid` ล้วน · ฝั่ง `"d0"` ไม่มีผู้ผลิตและไม่มีผู้บริโภคแล้ว
       // 🔴 เคยประกอบเองอยู่พักหนึ่ง แล้ว `useDaySettings`/`useOvernightOverrides` ก็ประกอบของตัวเอง
       //    ซึ่งเป็นสิ่งที่ `dayBridge` เตือนไว้ตั้งแต่หัวไฟล์ว่า *"มันจะแปลงไม่เหมือนกันสักวัน"*
       dayIdRef.current = new Map(bridge.dayKeyToDbId);
