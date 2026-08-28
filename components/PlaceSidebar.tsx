@@ -90,6 +90,8 @@ type SidebarProps = {
   placeNotes: Record<string, PlaceNote>;
   /** id ของสถานที่ที่ถูกเพิ่มลงวันไหนก็ได้ในเมืองนี้แล้ว (ไม่ต้องโชว์ให้เลือกซ้ำ) */
   selectedPlaceIdsForCity: (city: Day["city"]) => Set<string>;
+  /** เวอร์ชันคีย์ด้วย `catalog_cities.id` — ใช้เฉพาะโหมดคลัง · เหตุผลอยู่ที่ตัวสร้างใน `TripPlanScreen` */
+  selectedPlaceIdsForCatalogCity?: (cityId: string) => Set<string>;
   hiddenPlaceIds: Set<string>;
   onHidePlace: (placeId: string) => void;
   onUnhidePlace: (placeId: string) => void;
@@ -121,6 +123,7 @@ function PlaceSidebarContent({
   onAddStopToDay,
   placeNotes,
   selectedPlaceIdsForCity,
+  selectedPlaceIdsForCatalogCity,
   hiddenPlaceIds,
   onHidePlace,
   onUnhidePlace,
@@ -186,7 +189,12 @@ function PlaceSidebarContent({
     [catalogMode, catalogPlaces, activeCity, customPlaces]
   );
 
-  const selectedIds = selectedPlaceIdsForCity(activeCity);
+  // 🔴 โหมดคลังต้องถามด้วย **id ของเมืองในคลัง** ไม่ใช่ `activeCity` ซึ่งยังเป็นเมืองเกาหลีค้างอยู่เสมอ
+  //    (ถามผิดใบ = สถานที่ที่เพิ่มไปแล้วยังโผล่ให้เลือกซ้ำ โดยไม่มีอะไรฟ้อง)
+  const selectedIds =
+    catalogMode && currentCatalogCityId && selectedPlaceIdsForCatalogCity
+      ? selectedPlaceIdsForCatalogCity(currentCatalogCityId)
+      : selectedPlaceIdsForCity(activeCity);
   const visibleCards = allCardsForCity.filter(
     ({ place }) => !selectedIds.has(place.id) && !hiddenPlaceIds.has(place.id)
   );

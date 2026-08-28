@@ -70,6 +70,9 @@ function defaultTravelModeFor(
  * import ตัวนี้ข้ามมาจาก `@/app/page`) ชื่อเปลี่ยนเป็น `TripPlanScreen` เพื่อไม่ให้ปนกับความหมายใหม่ของ
  * "Home" — เนื้อโค้ดข้างในเหมือนเดิมทุกบรรทัด (`E5-AC3`: ทริปเกาหลี 11 วันต้องแสดงครบเท่าเดิม)
  */
+/** `[]` ตัวเดียวใช้ซ้ำ — ถ้าเขียน `[]` ลอย ๆ จะได้อ็อบเจกต์ใหม่ทุก render แล้ว `useMemo` ที่พึ่งมันพังหมด */
+const EMPTY_DAYS: Day[] = [];
+
 export function TripPlanScreen({ tripId }: { tripId: string }) {
   const { hotels, setHotel, clearHotel } = useHotels();
   const {
@@ -151,9 +154,32 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   /** true = การ์ดวันที่เห็นอยู่มาจากฐานจริง ๆ → เลือกเมืองรายวันได้ · ทริปเกาหลีเดิมเป็น false เสมอ */
   const usePlatformDays =
     isPlatformTrip && platformItinerary.status === "ready" && platformItinerary.days.length > 0;
-  const itinerary = usePlatformDays ? platformItinerary.days : legacyItinerary;
-  const platformCityIdByDayId =
-    platformItinerary.status === "ready" ? platformItinerary.cityIdByDayId : {};
+
+  /**
+   * 🔴 **ระหว่างที่ยังไม่รู้ว่าทริปนี้เดินทางไหน `itinerary` ต้องเป็น `[]` ไม่ใช่รายการของทริปเกาหลี**
+   *
+   * ⚠️ **ก่อนหน้านี้ผมกันไว้ที่ *ด่านแสดงผล* อย่างเดียว (`dayPlanLoaded`) แล้วรายงานว่าแก้แล้ว — ไม่ครบ**
+   * ด่านแสดงผลกัน *สิ่งที่ผู้ใช้เห็น* ได้จริง แต่ **ฮุคที่มีผลข้างเคียงรันก่อนถึงด่านนั้น**
+   * · วัดจริง 28 ส.ค. 2026: เปิดทริปเดือน ส.ค. แล้วเบราว์เซอร์ยิง
+   *   `GET /api/weather?…&start=2026-10-11&end=2026-10-21` **6 คำขอ — วันของทริปเกาหลี** ทุกครั้งที่โหลด
+   *   (`useTripWeather(itinerary)` ที่บรรทัด ~221 อ่านค่าตอนที่มันยังตกไปทางเดิมอยู่)
+   * 🎯 **บทเรียน: "ผู้ใช้ไม่เห็น" ไม่เท่ากับ "ไม่เกิดขึ้น"** — และตัวที่ฟ้องคือ network ไม่ใช่หน้าจอ
+   */
+  const itinerarySourceResolved =
+    tripCatalogCities.status !== "loading" &&
+    (!isPlatformTrip || platformItinerary.status !== "loading");
+  const itinerary = !itinerarySourceResolved
+    ? EMPTY_DAYS
+    : usePlatformDays
+      ? platformItinerary.days
+      : legacyItinerary;
+  // ห่อ `useMemo` เพราะค่าเป็นเงื่อนไข — ปล่อยเป็นนิพจน์ลอยแล้วอ็อบเจกต์ใหม่ทุก render จะทำให้
+  // `selectedPlaceIdsByCatalogCityId` ที่พึ่งมันคำนวณใหม่ทุกครั้ง (eslint จับให้ · แบบเดียวกับ
+  // `allCardsForCity` ใน `PlaceSidebar`)
+  const platformCityIdByDayId = useMemo(
+    () => (platformItinerary.status === "ready" ? platformItinerary.cityIdByDayId : {}),
+    [platformItinerary]
+  );
   const platformCityOptions =
     tripCatalogCities.status === "ready" ? tripCatalogCities.cities : [];
 
@@ -235,6 +261,34 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   const selectedPlaceIdsForCity = useCallback(
     (city: string) => selectedPlaceIdsByCity[city] ?? new Set<string>(),
     [selectedPlaceIdsByCity]
+  );
+
+  /**
+   * เวอร์ชันเดียวกัน **แต่คีย์ด้วย `catalog_cities.id`** — สำหรับไซด์บาร์โหมดคลัง (`B6`)
+   *
+   * 🔴 **ทำไมคีย์เดิมใช้ไม่ได้:** `selectedPlaceIdsByCity` คีย์ด้วย `day.city` ซึ่งเป็น `legacy_slug`
+   * · เมืองในคลังส่วนใหญ่ **ไม่มี `legacy_slug`** (มีแค่ 6 เมืองเกาหลี) → ได้ `""`
+   * · และ **วันที่ยังไม่ระบุเมืองก็ได้ `""` เหมือนกัน** → โตเกียว · โอซากา · วันที่ยังว่าง **ตกลงถังเดียวกันหมด**
+   * 🎯 อาการ: สถานที่ที่เพิ่มลงวันแล้ว **ยังโผล่ในคลังให้เลือกซ้ำ** (หรือหายทั้งที่ยังไม่ได้เพิ่ม ถ้าชนถังกัน)
+   *    — ไม่มี error ไม่มีอะไรฟ้อง · เป็นชนิดเดียวกับที่ `useTripCatalogCities` เตือนเรื่องเทียบวันที่
+   *
+   * ⚠️ **ยังไม่ได้ยิงยืนยันสด** (28 ส.ค. 2026 · ผู้ใช้กำลังลากจุดแวะบนฐาน dev อยู่ ผมเลยไม่เขียนฐาน)
+   *    ที่ยืนยันแล้วคือ *เส้นทางโค้ด* เท่านั้น · เคสที่จะพิสูจน์: เพิ่มสถานที่ลงวันที่เมือง = โตเกียว
+   *    แล้วดูว่าการ์ดนั้นหายจากคลังของโตเกียว **และยังอยู่** ในคลังของอีกเมืองที่ `legacy_slug` เป็น null เหมือนกัน
+   */
+  const selectedPlaceIdsByCatalogCityId = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    for (const day of itinerary) {
+      const cityId = platformCityIdByDayId[day.id];
+      if (!cityId) continue; // วันที่ยังไม่ระบุเมือง — ไม่มีถังของตัวเอง และไม่ควรไปปนถังใคร
+      const set = (map[cityId] ??= new Set());
+      for (const stop of stopsByDay[day.id] ?? []) set.add(stop.place_id);
+    }
+    return map;
+  }, [itinerary, stopsByDay, platformCityIdByDayId]);
+  const selectedPlaceIdsForCatalogCity = useCallback(
+    (cityId: string) => selectedPlaceIdsByCatalogCityId[cityId] ?? new Set<string>(),
+    [selectedPlaceIdsByCatalogCityId]
   );
 
   const lastStopPlaceForDay = useCallback(
@@ -428,16 +482,6 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   // 🔴 gate เฉพาะโครงวัน (ITINERARY + DayJumpBar/PlaceSidebar ที่ผูกกับมัน) — ไม่แตะ TripPrepPanel
   // (ที่พัก/booking/checklist) เพราะไม่มีตัวไหนพึ่ง trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22)
   const dayPlanGate = useTripDaysGate(tripId);
-  /**
-   * 🔴 **ต้องรอให้รู้ก่อนว่า `itinerary` มาจากทางไหน ไม่งั้นทริปแพลตฟอร์มจะโชว์วันของทริปเกาหลีแวบหนึ่ง**
-   * (วัดเจอจริง 28 ส.ค. 2026: ระหว่างรอ `useTripCatalogCities` → `isPlatformTrip` ยังเป็น `false`
-   *  → `itinerary` ตกไปที่ `legacyItinerary` → หน้าโชว์ 11–21 ต.ค. ของทริปเกาหลี **บนทริปเดือน ส.ค.**)
-   * 🎯 ไม่ใช่แค่กะพริบ — เป็นวันของ *ทริปอื่น* ที่กดได้จริงในจังหวะนั้น
-   * · แก้ที่ *ด่านโหลด* ไม่ใช่ให้ `itinerary` เป็น `[]` เพราะมีที่อ่าน `itinerary[0]` อยู่ (บรรทัด ~634)
-   */
-  const itinerarySourceResolved =
-    tripCatalogCities.status !== "loading" &&
-    (!isPlatformTrip || platformItinerary.status !== "loading");
   const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading" && itinerarySourceResolved;
   const dayPlanReady = overallLoaded && dayPlanGate === "ready" && itinerarySourceResolved;
   const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
@@ -619,6 +663,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
               }}
               placeNotes={placeNotes}
               selectedPlaceIdsForCity={selectedPlaceIdsForCity}
+              selectedPlaceIdsForCatalogCity={selectedPlaceIdsForCatalogCity}
               hiddenPlaceIds={hiddenPlaceIds}
               onHidePlace={(placeId) => hidePlace(placeId, who || undefined)}
               onUnhidePlace={unhidePlace}
@@ -674,7 +719,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
         />
       )}
 
-      {transferContext && (
+      {transferContext && itinerary.length > 0 && (
         <TransferEditModal
           day={itinerary.find((d) => d.id === transferContext.dayId) ?? itinerary[0]}
           onClose={() => setTransferContext(null)}

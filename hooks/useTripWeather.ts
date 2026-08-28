@@ -26,6 +26,21 @@ async function fetchCityWeather(
   if (pending) return pending;
 
   const center = cityCenter(city);
+  /**
+   * 🔴 **เมืองที่ไม่มีใน `data/places.ts` ให้ `NaN` — ต้องไม่ยิง** (P2 · 28 ส.ค. 2026)
+   * `cityCenter` เฉลี่ยพิกัดของสถานที่ในเมืองนั้น · ทริปแพลตฟอร์มมีเมืองจากคลัง 42 เมือง และ
+   * **วันที่ยังไม่ระบุเมืองเป็นสภาพปกติ** → หารด้วยศูนย์ → `lat=NaN&lng=NaN` → **400 ทุกใบ**
+   * · วัดจากของจริง: ทริปเดือน ส.ค. ยิง `GET /api/weather?lat=NaN&lng=NaN…` แล้วได้ 400
+   * 🎯 **ผมเคยเขียนคอมเมนต์ไว้เองว่า "`NaN` ไม่ทำให้พัง แค่ลำดับร้านใกล้ ๆ เพี้ยน" — ผิด**
+   *    มันไม่พังใน `DayStopsSection` จริง แต่ค่าเดียวกันไหลมาถึงตรงนี้แล้วกลายเป็นคำขอเสีย
+   *    · *"ไม่พังตรงที่ผมดู"* กับ *"ไม่พัง"* เป็นคนละประโยค
+   * ⚠️ **นี่คือการยอมไม่มีพยากรณ์อากาศ ไม่ใช่การแก้** — ทางแก้จริงคือเอาพิกัดจาก `catalog_cities`
+   *    (มี `lat`/`lng` อยู่แล้วในฐาน) แทน `cityCenter` ซึ่งอ่านจากไฟล์สถิต · ยังไม่ทำในรอบนี้
+   */
+  if (!Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
+    cache.set(key, []);
+    return [];
+  }
   const promise = (async () => {
     try {
       const res = await fetch(
