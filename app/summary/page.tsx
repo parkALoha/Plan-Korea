@@ -634,11 +634,13 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   //    "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง · เหตุผลเต็มอยู่ในไฟล์ของด่าน
   //    🎯 P1 ยิงจริงบน `/trip/647ed2c2/summary` (ทริปญี่ปุ่น) แล้วได้แผนเกาหลีทั้งฉบับ — หน้านี้เอง
   const dayPlanGate = useLegacyDayPlanGate(tripId);
-  const dayPlanReady = overallLoaded && dayPlanGate === "legacy";
-  // `no-days` (ไม่มีวัน) กับ `foreign` (มีวันแต่เป็นทริปแพลตฟอร์ม) ใช้ข้อความเดียวกัน — ทั้งคู่แปลว่า
-  // หน้านี้ยังแสดงทริปนี้ไม่ได้ และเป็นเรื่องที่ผู้ใช้ต้องรอระบบ ไม่ใช่สิ่งที่เขาแก้เองได้
-  const dayPlanEmpty = overallLoaded && (dayPlanGate === "no-days" || dayPlanGate === "foreign");
-  // 🔴 อ่านแหล่งวันไม่ได้ (ออฟไลน์/500) — แยกข้อความ เพราะผู้ใช้ **ต่อเน็ตแล้วลองใหม่ได้เอง**
+  // 🔴 **`dayPlanReady` เป็นเท็จเสมอตั้งแต่ 28 ส.ค. 2026** — `useLegacyDayPlanGate` ไม่มีสถานะที่ทำให้
+  //    เรนเดอร์ `ITINERARY` ได้อีกแล้ว (`"legacy"` ถูกถอดออกจาก type) · หน้านี้จึง **ปฏิเสธทุกทริป**
+  //    จนกว่า `B6` จะต่อเข้ามา — เหตุผลเต็มอยู่ที่ `lib/engine/legacyDayPlan.ts`
+  //    ⚠️ JSX ที่เรนเดอร์จาก `itinerary` ยังอยู่โดยตั้งใจ — `B6` จะกลับมาใช้เส้นทางเดิมโดยเปลี่ยนแค่
+  //      *แหล่งของวัน* · ลบทิ้งตอนนี้ = ต้องเขียนใหม่ทั้งหมดตอนนั้น
+  const dayPlanReady = false as boolean;
+  const dayPlanEmpty = overallLoaded && dayPlanGate === "unsupported";
   const dayPlanUnreadable = overallLoaded && dayPlanGate === "unreadable";
 
   function handleExportJson() {

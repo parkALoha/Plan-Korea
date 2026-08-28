@@ -479,7 +479,8 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
 
   // `no-days` (ฐานไม่มีวัน) กับ `foreign` (มีวันแต่เป็นทริปแพลตฟอร์ม) ใช้ข้อความเดียวกัน — ทั้งคู่แปลว่า
   // **หน้านี้ยังแสดงทริปนี้ไม่ได้ และผู้ใช้ต้องรอระบบ** ไม่ใช่สิ่งที่เขาแก้เองได้
-  if (dayPlanGate === "no-days" || dayPlanGate === "foreign") {
+  // 🔴 ทุกทริปที่อ่านได้ → `unsupported` (ปฏิเสธทั้งหมดจนกว่า `B6` · ดู lib/engine/legacyDayPlan.ts)
+  if (dayPlanGate === "unsupported") {
     return (
       <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
         <header className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream">
