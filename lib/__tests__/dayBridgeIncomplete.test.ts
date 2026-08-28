@@ -27,6 +27,10 @@ function bridge(over: Partial<DayBridge> = {}): DayBridge {
     unmatchedLegacy: [],
     unmatchedDb: [],
     matched: 0,
+    // 🔴 แมปว่าง **โดยตั้งใจ** — `dayBridgeIncomplete` ไม่อ่านฟิลด์นี้เลยสักบรรทัด
+    //    ใส่คู่ปลอมให้ดู "สมจริง" = ตกแต่งของที่ไม่มีเคสไหนยิง แล้วคนอ่านจะเชื่อว่ามันถูกตรวจ
+    //    · เคสที่ต้องการแมปจริงให้ override ผ่าน `over` (เคสของ buildDayBridge อยู่ dayBridge.test.ts)
+    dayKeyToDbId: new Map<string, string>(),
     ...over,
   };
 }
