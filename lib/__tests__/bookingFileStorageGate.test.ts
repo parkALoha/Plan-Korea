@@ -23,8 +23,9 @@ const ALLOWED_FILES = ["lib/engine/guardedStorage.ts"];
 
 const WRITE_METHOD = /\.storage\.from\([^)]*\)\s*\.\s*(upload|remove|update|move|copy)\s*\(/;
 
-function scan(): string[] {
+function scan(): { offenders: string[]; examined: number } {
   const offenders: string[] = [];
+  let examined = 0;
   const root = resolve(process.cwd());
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -36,6 +37,7 @@ function scan(): string[] {
       if (!/\.(ts|tsx)$/.test(e.name)) continue;
       const rel = full.slice(root.length + 1);
       if (ALLOWED_FILES.includes(rel)) continue;
+      examined++;
       const src = readFileSync(full, "utf8");
       if (WRITE_METHOD.test(src)) offenders.push(rel);
     }
@@ -47,7 +49,7 @@ function scan(): string[] {
       /* ไม่มีโฟลเดอร์ก็ข้าม */
     }
   }
-  return offenders;
+  return { offenders, examined };
 }
 
 describe("E3-AC4 — ห้ามมีจุดเขียน Supabase Storage นอก choke point ที่กำหนด", () => {
@@ -63,8 +65,20 @@ describe("E3-AC4 — ห้ามมีจุดเขียน Supabase Storage
     ).toBe(true);
   });
 
+  it("🔴 ตัวเดินไฟล์ต้องเดินถึงไฟล์จริง — ควบคุมข้างบนพิสูจน์ *regex* ไม่ได้พิสูจน์ *ตัวเดิน*", () => {
+    /**
+     * 🔴 **ควบคุมฝั่งบวกข้างบนอ่าน `guardedStorage.ts` ด้วย `readFileSync` ตรง ๆ — ไม่ผ่าน `walk()`**
+     * → ถ้า `walk()` เดินไม่ถึงไฟล์เลยสักไฟล์ (เช่นมีคนเปลี่ยนชื่อโฟลเดอร์ · `try/catch` กลืน `ENOENT`)
+     *   `offenders` จะเป็น `[]` **แล้วทั้งไฟล์เขียว 2/2 โดยไม่ได้ตรวจอะไรเลย**
+     * · ยิงจริงแล้ว (P4 · 28 ส.ค. 2026): เปลี่ยนรายชื่อโฟลเดอร์เป็นชื่อที่ไม่มีอยู่ → **ยังเขียว 2/2**
+     * 🎯 **"ไม่เจอ" กับ "ไม่ได้หา" หน้าตาเหมือนกัน — และควบคุมที่ *ข้ามตัวเดิน* ให้ความมั่นใจปลอม ๆ**
+     *   (P3 เจอรูปเดียวกันที่ `E6-AC10`: เขียวเพราะ marker เหลือศูนย์ ไม่ใช่เพราะบันเดิลสะอาด)
+     */
+    expect(scan().examined, "ตัวเดินไฟล์ไม่เจอไฟล์เลย — โฟลเดอร์ถูกย้าย/เปลี่ยนชื่อ ไม่ใช่ 'ไม่มีผู้ละเมิด'").toBeGreaterThan(50);
+  });
+
   it("ไม่มีไฟล์ไหนนอกรายการที่อนุญาตเรียก storage.from(...).upload/remove/update/move/copy ตรงๆ", () => {
-    const offenders = scan();
+    const { offenders } = scan();
     expect(
       offenders,
       "พบการเขียน Supabase Storage ตรงจากไฟล์นอก choke point — เรียกผ่าน guardedUpload/guardedRemove\n" +
