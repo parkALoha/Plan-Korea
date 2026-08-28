@@ -55,7 +55,9 @@ export function useStops(tripId: string | null, planId: string | null) {
       rows
         .map((r) => {
           const dayId = uuidToDay.current.get(r.trip_day_id);
-          // ⚠️ วันที่ไม่มีในไฟล์เดิม → **ข้าม** ไม่ใช่ใส่ uuid ที่ UI หาไม่เจอ
+          // ⚠️ **เดิมเขียนว่า "วันที่ไม่มีในไฟล์เดิม → ข้าม ไม่ใช่ใส่ uuid ที่ UI หาไม่เจอ" — หมดอายุ**
+          //    ตอนนี้ UI *หา `uuid` เจอ* สำหรับทริปแพลตฟอร์ม (`Day.id` เป็น `uuid`) · ที่ยังต้องข้ามคือ
+          //    วันที่ **ไม่มีในฐานเลย** ซึ่ง `uuidToDay` ไม่มีคีย์ให้อยู่แล้ว
           if (!dayId) return null;
           return { ...r, plan_id: planId ?? "", day_id: dayId } as TripStop;
         })
@@ -106,21 +108,20 @@ export function useStops(tripId: string | null, planId: string | null) {
       const { ITINERARY } = await import("@/data/itinerary");
       const bridge = buildDayBridge(ITINERARY, dbDays);
       reportDayBridgeWarningIfAny(bridge);
-      // 🔴 **วันที่เกิดบนแพลตฟอร์มอ้างด้วย `uuid` ของตัวเอง ไม่มีคู่ใน `ITINERARY` เลย** (`B6` · P2 · 28 ส.ค. 2026)
-      //    สะพานแปลง `"d0"` → `uuid` ได้อย่างเดียว · ทริปที่สร้างบนแพลตฟอร์มไม่มี `"d0"` สักตัว
-      //    → แมปว่างสำหรับทริปพวกนั้น → `insertAt` เด้งออกทุกครั้ง
-      //    🎯 **อาการที่หลอกที่สุดคือ *ข้อความ* ไม่ใช่ความเงียบ**: มันขึ้น
-      //       *"วันนี้ยังไม่มีในระบบของทริปนี้"* + `console.error("… E7 อาจยังไม่ได้ย้ายข้อมูล")`
-      //       **ทั้งที่วันนั้นอยู่ในฐานเรียบร้อยแล้ว** — ชี้ไปที่ `E7` ซึ่งไม่เกี่ยวอะไรเลย
-      //       (วัดจริง: กด "+ เพิ่มลงวันนี้" บนทริปแพลตฟอร์ม ได้ id `8f959fd1…` ซึ่ง `GET …/days` คืนมาเอง)
-      //    · วันจากฐานจึงต้องแมปเข้าตัวเอง — `uuid → uuid` · ไม่กระทบทริปเกาหลีเพราะคีย์คนละชุด
-      dayToUuid.current = new Map([
-        ...ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)] as const).filter(
-          (e): e is readonly [string, string] => e[1] !== null
-        ),
-        ...dbDays.map((d) => [d.id, d.id] as const),
-      ]);
-      uuidToDay.current = new Map([...dayToUuid.current].map(([k, v]) => [v, k]));
+      // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
+      // 🔴 เคยประกอบเองอยู่พักหนึ่ง แล้ว `useDaySettings`/`useOvernightOverrides` ก็ประกอบของตัวเอง
+      //    ซึ่งเป็นสิ่งที่ `dayBridge` เตือนไว้ตั้งแต่หัวไฟล์ว่า *"มันจะแปลงไม่เหมือนกันสักวัน"*
+      dayToUuid.current = new Map(bridge.dayKeyToDbId);
+      /**
+       * 🔴 **กลับด้านเองไม่ได้ — `dayKeyToDbId` มีสองคีย์ที่ชี้ `uuid` เดียวกัน** (`"d0"` และ `uuid` เอง)
+       * `new Map([...dayKeyToDbId].map(([k,v]) => [v,k]))` จะให้ตัว *ท้าย* ชนะ = `uuid → uuid` เสมอ
+       * → **ทริปเกาหลีจะได้ `day_id` เป็น `uuid` ที่ `ITINERARY` ไม่รู้จัก → จุดแวะหลุดจากวันทั้งหมด**
+       * · วัดจริง 28 ส.ค. 2026: หัวการ์ดบอก `🗺️ 12 จุดในแผนนี้` แต่ **ทั้ง 11 วันขึ้น "ยังไม่มีจุดแวะ"**
+       * 🎯 ตัวเลขรวมมาจากอีกทาง จึงยังถูก — **"นับได้" กับ "ผูกกับวันถูก" เป็นคนละคำถาม**
+       *   และหน้าจอจะดูเหมือนแค่ *"ยังไม่ได้ใส่จุดแวะ"* ซึ่งเป็นสภาพที่ปกติมากจนไม่มีใครสงสัย
+       * → ถามสะพานตรง ๆ ว่าวันนี้มีชื่อในไฟล์เดิมไหม · ไม่มีก็ใช้ `uuid` (ทริปแพลตฟอร์มใช้ `uuid` เป็น `Day.id`)
+       */
+      uuidToDay.current = new Map(dbDays.map((d) => [d.id, bridge.toLegacyId(d.id) ?? d.id]));
 
       await refetchRef.current?.();
       if (cancelled) return;

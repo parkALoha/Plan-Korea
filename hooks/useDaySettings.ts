@@ -73,15 +73,10 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       const warn = dayBridgeWarning(bridge, ITINERARY.length);
       if (warn) console.warn(`[daySettings] ${warn}`);
       reportDayBridgeWarningIfAny(bridge);
-      // 🔴 วันของทริปแพลตฟอร์มอ้างด้วย `uuid` ของตัวเอง — ไม่มีคู่ใน `ITINERARY` เลย
-      //    (รูปเดียวกับ `useStops` · เหตุผลเต็มอยู่ที่นั่น) · ถ้าไม่เติม แมปจะว่างสำหรับทริปพวกนั้น
-      //    แล้วทุกการตั้งค่าจะเด้งออกพร้อมข้อความที่โทษ `E7` ทั้งที่วันอยู่ในฐานเรียบร้อย
-      dayIdRef.current = new Map([
-        ...ITINERARY.map((d) => [d.id, bridge.toDbId(d.id)] as const).filter(
-          (e): e is readonly [string, string] => e[1] !== null
-        ),
-        ...dbDays.map((d) => [d.id, d.id] as const),
-      ]);
+      // สะพานเป็นคนถือแมปที่ครบ (`"d0"→uuid` **และ** `uuid→uuid`) — ห้ามประกอบเองซ้ำที่นี่
+      // 🔴 เคยประกอบเองอยู่พักหนึ่ง แล้ว `useDaySettings`/`useOvernightOverrides` ก็ประกอบของตัวเอง
+      //    ซึ่งเป็นสิ่งที่ `dayBridge` เตือนไว้ตั้งแต่หัวไฟล์ว่า *"มันจะแปลงไม่เหมือนกันสักวัน"*
+      dayIdRef.current = new Map(bridge.dayKeyToDbId);
 
       const rows = await fetchReadJson<
         { trip_day_id: string; start_time: string; return_travel_mode: string | null; is_locked: boolean }[]
