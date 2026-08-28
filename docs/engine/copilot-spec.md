@@ -2730,3 +2730,65 @@ lib/googlePlaces.ts     ← เหมือนกัน
 | 3 | **`E8-AC6`** ตั้งค่าโมเดลตาม `D9` | ทำได้ทันที |
 | 4 | `E8-AC4` · `E8-AC3` · `E8-AC1` | `E3` DAL + `E5` หน้าจอ พร้อมแล้ว → **`D36` ที่เคยบล็อกไว้ ปลดแล้ว** |
 | 5 | `E8-AC5` เพดานค่าใช้จ่าย | ต้องมีก่อนปล่อยใช้จริง คู่กับ `Q3` |
+
+---
+
+## 35. `E8-AC2` ฝั่งเข้า — **ประกาศ response schema ทั้ง 11 tool เป็น allowlist** (28 ส.ค. 2026)
+
+> `26.3` ตัดสินว่า `AC2` ต้องผูกสองขอบ: **ฝั่งเข้า = ด่าน static · ฝั่งออก = eval**
+> ฝั่งเข้าต้องมี **สิ่งที่มันตรวจ** ก่อน — และวันนี้ `2.2` บรรยาย output เป็นร้อยแก้ว **เครื่องอ่านไม่ได้**
+> หัวข้อนี้คือของชิ้นนั้น
+
+### 35.1 กติกาของ allowlist
+
+> **ฟิลด์ที่ไม่อยู่ในตารางข้างล่าง = ละเมิด** ไม่ว่าจะชื่ออะไร
+> · ไม่ใช่ denylist ของคำว่าเงิน (`price` `฿` `KRW`) — **`amount` · `total` · `fee` เลี่ยงคำได้หมด**
+> · **ผลพลอยได้ที่ denylist ให้ไม่ได้: จับฟิลด์อะไรก็ตามที่หลุดเข้าบริบทโมเดลโดยไม่ตั้งใจ ไม่ใช่แค่ราคา**
+
+### 35.2 ประกาศ — tool อ่าน 11 ตัว
+
+| tool | ฟิลด์ที่อนุญาต (ระดับบน) |
+|---|---|
+| `get_day_schedule` | `stops[]` · `departFrom` · `arriveBackAt` · `endOfDayMinutes` · `unknownLegCount` · `dayBounds` |
+| ↳ `stops[]` | `stopId` · `placeRef` · `name` · `arrival` · `departure` · `arrivalMinutes` · `departureMinutes` · `resolvedDwellMinutes` · `travelMinutesFromPrev` · `source` · `estimateReason` · `kind` |
+| `check_opening_hours` | `perStop[]` = `stopId` · `isOpen` · `minutesUntilClose` · `hoursLabel` · `asOf` |
+| `estimate_reorder` | `suggestedOrder[]` · `currentKm` · `suggestedKm` · `changed` · `lockedStopIds[]` |
+| `get_departure_advice` | `mustArriveBy` · `shouldLeaveBy` · `plannedArrival` · `lateByMinutes` · `slackMinutes` · `source` |
+| `get_day_city_segments` | `segments[]` = `city` · `cityId` · `stopCount` · `items[]` |
+| `get_travel_time` | `minutes` · `distanceMeters` · `source` · `estimateReason` · `asOf` |
+| `find_places` | `ok` · `candidates[]` · `reason` |
+| ↳ `candidates[]` | `placeId` · `name` · `address` · `lat` · `lng` · `rating` · `openingHours` · `primaryType` |
+| `get_place_details` | `ok` · `name` · `nameLocal` · `addressLocal` · `regularOpeningHours` · `primaryType` · `asOf` · `reason` |
+| `get_bookings` | `bookings[]` = `title` · `category` · `status` · `date` · `time` · `bookByDaysBefore` |
+| `get_capabilities` | `status` · `cityId` · `countryCode` · `realTravelModes[]` · `mapProviders[]` |
+| `get_now` | `todayDayId` · `todayStatus` · `todayDate` · `nowMinutes` · `timeZone` · `clockSuspect` · `travelTimesUnavailable` |
+
+**tool เขียน 6 ตัว** คืนเหมือนกันหมด: `proposalId` · `summary` · `preview` · `expiresAt`
+
+#### 🔴 2 ฟิลด์ที่ผมจงใจ **ไม่** ใส่ และเหตุผลต้องอยู่ตรงนี้ ไม่ใช่ในหัวใคร
+
+| ไม่ใส่ | ทำไม |
+|---|---|
+| **`rating` ใน `get_day_schedule.stops[]`** | คลังไม่เก็บเรตติ้ง (`9.4` ข้อ 2) · **ถ้าโผล่มาแปลว่ามีคน join แคชเข้ามา** ซึ่งคือ view ที่ `17.1` ห้ามไว้ |
+| **`userRatingCount` ใน `candidates[]`** | มาจาก Google ได้จริง **แต่ `rating` พอแล้วสำหรับการเลือก** · จำนวนรีวิวชวนให้โมเดลจัดอันดับด้วยความนิยม ซึ่ง `9.4` ปฏิเสธไว้ |
+
+#### ⚠️ `get_bookings` เป็นตัวที่ต้องเฝ้าที่สุด
+`TripBooking` ในโค้ดจริงมี **15 ฟิลด์** · ตารางข้างบนอนุญาต **6**
+· ที่ตัดออกรวม `confirmation_number` · `file_url` · `link` · `note` · `added_by`
+· 🔴 **ไม่ใช่เพราะเป็นราคา — เพราะโมเดลไม่ต้องใช้** · เลขที่จองกับไฟล์ตั๋วเป็นข้อมูลส่วนตัวที่ไม่ช่วยตอบคำถามไหนใน `4`
+· 🎯 **allowlist จึงทำงานเกินหน้าที่ที่ `AC2` ขอตั้งแต่แรก — และนั่นคือเหตุผลที่เลือกมันแทน denylist**
+
+### 35.3 🔴 ด่านนี้ยัง **ไม่ผูกอะไรเลย** วันนี้ — และผมจะไม่เขียนให้มันดูเหมือนผูก
+
+**ยังไม่มีโค้ด tool สักตัว** → ด่านที่เขียนวันนี้จะตรวจ *ตารางข้างบน* เทียบกับ *ตัวมันเอง*
+· **นั่นคือ `P-30` เป๊ะ: ของที่ถูกตรวจสร้างเงื่อนไขของมันเอง**
+
+> ✅ **ด่านนี้ผูกจริงเมื่อมีโค้ดให้ผูก** — ตรวจว่า *response ที่ tool คืนจริง* มีเฉพาะฟิลด์ในตารางนี้
+> 🔴 **จนถึงตอนนั้น สถานะคือ `ประกาศแล้ว · ยังไม่มีอะไรบังคับ`** — เหมือน `copilot-evals.md` ที่เป็น *เขียนแล้ว ยังไม่เคยรัน*
+
+### 35.4 📌 คำถามคร่อมโซนถึง P1 — **`E8` เขียนโค้ดที่ไหน**
+
+`lib/engine/` มี 20 ไฟล์และเป็นโซน DAL ของ P1 · **ผมไม่วางไฟล์ลงไปเองโดยไม่ถาม**
+· เสนอ **`lib/copilot/`** แยกออกมา — tool wrapper เรียก `lib/engine/db.ts` เหมือนผู้เรียกคนอื่น **ไม่ใช่แก้ DAL**
+· 🔴 **และผมอยากให้ `authNoServiceRole.test.ts` ครอบ `lib/copilot/` ตั้งแต่ไฟล์แรก ไม่ใช่ตามทีหลัง**
+  — `17.2` ชี้ไว้แล้วว่า `SCANNED = ["lib/auth", "app"]` **ไม่ครอบ `lib/` ทั้งก้อน** · ถ้าไม่เติม โซนใหม่ของผมจะไม่ถูกตรวจเลย
