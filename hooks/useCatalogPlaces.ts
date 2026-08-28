@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readCache, writeCache } from "@/lib/localCache";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
+import { get as storeGet, set as storeSet } from "@/lib/engine/offlineStore";
 import type { Category, Place } from "@/data/places";
 
 /** รูปที่ `GET /api/engine/places` คืนมา (P1 28 ส.ค. 2026, `25723c0`) */
@@ -101,22 +102,32 @@ export function useCatalogPlaces(cityId: string | null): CatalogPlacesState {
     const key = `catalog:places:${id}`;
 
     // `async function` ครอบ — เหตุผลเดียวกับ `usePlatformItinerary`
+    /** 🔴 async store = ของสดอาจมาก่อนแคช → ใส่แคชเฉพาะตอนของสดยังไม่มา (เหตุผลเต็มใน `usePlatformItinerary`) */
     async function load() {
-      const cached = readCache<CatalogPlaceRow[]>(key);
-      if (cached && !cancelled) {
+      let fresh = false;
+
+      const net = (async (): Promise<"ok" | "fail" | "cancelled"> => {
+        try {
+          const r = await fetch(`/api/engine/places?cityId=${encodeURIComponent(id)}&limit=100`);
+          if (!r.ok) throw new Error(`places ${r.status}`);
+          const rows = (await r.json()) as CatalogPlaceRow[];
+          if (cancelled) return "cancelled";
+          fresh = true;
+          setResult({ forCityId: id, state: { status: "ready", places: rows.map(toPlace) } });
+          // เก็บ *แถวดิบ* ไม่ใช่ผลของ `toPlace()` — แปลงตอนอ่าน ให้โค้ดรุ่นหน้าอ่านของเดิมได้
+          if (!(await storeSet(key, rows))) noteCacheFailure("offlineStore/places/write", { code: "idb" });
+          return "ok";
+        } catch {
+          return "fail";
+        }
+      })();
+
+      const cached = await storeGet<CatalogPlaceRow[]>(key);
+      if (cached && !cancelled && !fresh) {
         setResult({ forCityId: id, state: { status: "ready", places: cached.map(toPlace) } });
       }
-      try {
-        const r = await fetch(`/api/engine/places?cityId=${encodeURIComponent(id)}&limit=100`);
-        if (!r.ok) throw new Error(`places ${r.status}`);
-        const rows = (await r.json()) as CatalogPlaceRow[];
-        if (cancelled) return;
-        // เก็บ *แถวดิบ* ไม่ใช่ผลของ `toPlace()` — แปลงตอนอ่าน ให้โค้ดรุ่นหน้าอ่านของเดิมได้
-        writeCache(key, rows);
-        setResult({ forCityId: id, state: { status: "ready", places: rows.map(toPlace) } });
-      } catch {
-        // ล้มแล้วมีของในเครื่อง = ใช้ของนั้นต่อ ไม่ขึ้น error ทับของที่อ่านได้อยู่
-        if (cancelled || cached) return;
+      // ล้มแล้วมีของในเครื่อง = ใช้ของนั้นต่อ ไม่ขึ้น error ทับของที่อ่านได้อยู่
+      if ((await net) === "fail" && !cancelled && !cached) {
         setResult({ forCityId: id, state: { status: "error" } });
       }
     }

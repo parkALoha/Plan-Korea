@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
+import { get as storeGet, set as storeSet, tripKey } from "@/lib/engine/offlineStore";
 
 export type CatalogCity = {
   /** `catalog_cities.id` (uuid) — คีย์ที่ `/api/engine/places?cityId=` ใช้ */
@@ -65,28 +66,39 @@ export function useTripCatalogCities(tripId: string): TripCitiesState {
     let cancelled = false;
 
     // `async function` ครอบ — `setState` ตรง ๆ ในตัว effect ผิด `react-hooks/set-state-in-effect`
+    /** 🔴 async store = ของสดอาจมาก่อนแคช → ใส่แคชเฉพาะตอนของสดยังไม่มา (เหตุผลเต็มใน `usePlatformItinerary`) */
     async function load() {
-      const cached = readTripCache<CatalogCity[]>(tripId, "catalogCities");
-      if (cached && !cancelled) {
+      const key = tripKey(tripId, "catalogCities");
+      let fresh = false;
+
+      const net = (async (): Promise<"ok" | "fail" | "cancelled"> => {
+        try {
+          const r = await fetch("/api/engine/trips");
+          if (!r.ok) throw new Error(`trips ${r.status}`);
+          const rows = (await r.json()) as TripRow[];
+          if (cancelled) return "cancelled";
+          const trip = rows.find((t) => t.id === tripId);
+          const cities = (trip?.destinations ?? []).map((d) => ({
+            id: d.cityId,
+            nameTh: d.nameTh,
+            slug: d.slug ?? null,
+          }));
+          fresh = true;
+          setResult({ forTripId: tripId, state: { status: "ready", cities } });
+          // 🔴 เก็บ *เมืองที่ derive แล้ว* ไม่ใช่ `rows` ทั้งก้อน — `rows` คือรายการทริป **ทุกใบของผู้ใช้**
+          //    เก็บทั้งก้อนใต้คีย์ของทริปเดียว = ข้อมูลทริปอื่นถูกคัดลอกไปทุกคีย์
+          if (!(await storeSet(key, cities))) noteCacheFailure("offlineStore/catalogCities/write", { code: "idb" });
+          return "ok";
+        } catch {
+          return "fail";
+        }
+      })();
+
+      const cached = await storeGet<CatalogCity[]>(key);
+      if (cached && !cancelled && !fresh) {
         setResult({ forTripId: tripId, state: { status: "ready", cities: cached } });
       }
-      try {
-        const r = await fetch("/api/engine/trips");
-        if (!r.ok) throw new Error(`trips ${r.status}`);
-        const rows = (await r.json()) as TripRow[];
-        if (cancelled) return;
-        const trip = rows.find((t) => t.id === tripId);
-        const cities = (trip?.destinations ?? []).map((d) => ({
-          id: d.cityId,
-          nameTh: d.nameTh,
-          slug: d.slug ?? null,
-        }));
-        // 🔴 เก็บ *เมืองที่ derive แล้ว* ไม่ใช่ `rows` ทั้งก้อน — `rows` คือรายการทริป **ทุกใบของผู้ใช้**
-        //    เก็บทั้งก้อนใต้คีย์ของทริปเดียว = ข้อมูลทริปอื่นถูกคัดลอกไปทุกคีย์ · คนละเรื่องกับที่ hook นี้ต้องการ
-        writeTripCache(tripId, "catalogCities", cities);
-        setResult({ forTripId: tripId, state: { status: "ready", cities } });
-      } catch {
-        if (cancelled || cached) return;
+      if ((await net) === "fail" && !cancelled && !cached) {
         setResult({ forTripId: tripId, state: { status: "error" } });
       }
     }

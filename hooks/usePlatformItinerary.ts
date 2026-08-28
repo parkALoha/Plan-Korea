@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Day } from "@/data/itinerary";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
+import { get as storeGet, set as storeSet, tripKey } from "@/lib/engine/offlineStore";
 import { WEEKDAYS_EN_FULL, WEEKDAYS_TH_FULL } from "@/lib/tripDateRange";
 
 /** แถวที่ `GET /api/engine/trips/<id>/days` คืนมาหลัง P1 เพิ่ม `city_id` (28 ส.ค. 2026)
@@ -99,20 +100,38 @@ export function usePlatformItinerary(
 
     // `async function` ครอบ — ท่าเดียวกับ `useStops.ts:84` · `setState` ตรง ๆ ในตัว effect
     // ผิดกฎ `react-hooks/set-state-in-effect` (และ CI รัน `--max-warnings=0`)
+    /**
+     * 🔴 **IndexedDB อ่านแบบ async — และนั่นสร้างการแข่งกันที่ `localStorage` ไม่มี** (`E6-AC7`)
+     * ของสดอาจมาถึง *ก่อน* การอ่านแคชเสร็จ → ถ้าเอาแคชทับทีหลัง **จะทับของใหม่ด้วยของเก่า**
+     * → ยิงของสดทันทีโดยไม่รอแคช · แล้ว **ใส่แคชก็ต่อเมื่อของสดยังไม่มา** (`fresh`)
+     */
     async function load() {
-      const cached = readTripCache<DbDayRow[]>(tripId, "days");
-      if (cached && !cancelled) setResult({ forTripId: tripId, state: readyFrom(cached, true) });
-      try {
-        const r = await fetch(`/api/engine/trips/${tripId}/days`);
-        if (!r.ok) throw new Error(`days ${r.status}`);
-        const rows = (await r.json()) as DbDayRow[];
-        if (cancelled) return;
-        writeTripCache(tripId, "days", rows);
-        setResult({ forTripId: tripId, state: readyFrom(rows, false) });
-      } catch {
-        // 🔴 ล้มแล้วมีของในเครื่อง = ใช้ของนั้นต่อ **ไม่ใช่ขึ้น error ทับของที่อ่านได้อยู่**
-        //    "ออฟไลน์" คือ *ผลของคำขอที่ล้ม* ไม่ใช่สถานะที่แอปติดตามเอง (`navigator.onLine` โกหก)
-        if (cancelled || cached) return;
+      const key = tripKey(tripId, "days");
+      let fresh = false;
+
+      const net = (async (): Promise<"ok" | "fail" | "cancelled"> => {
+        try {
+          const r = await fetch(`/api/engine/trips/${tripId}/days`);
+          if (!r.ok) throw new Error(`days ${r.status}`);
+          const rows = (await r.json()) as DbDayRow[];
+          if (cancelled) return "cancelled";
+          fresh = true;
+          setResult({ forTripId: tripId, state: readyFrom(rows, false) });
+          // 🔴 ดูค่าที่ `set()` คืน — ไม่งั้นได้พฤติกรรมเดียวกับ `writeCache` ที่กลืนเงียบ
+          if (!(await storeSet(key, rows))) noteCacheFailure("offlineStore/days/write", { code: "idb" });
+          return "ok";
+        } catch {
+          return "fail";
+        }
+      })();
+
+      const cached = await storeGet<DbDayRow[]>(key);
+      if (cached && !cancelled && !fresh) {
+        setResult({ forTripId: tripId, state: readyFrom(cached, true) });
+      }
+      // 🔴 ล้มแล้วมีของในเครื่อง = ใช้ของนั้นต่อ **ไม่ใช่ขึ้น error ทับของที่อ่านได้อยู่**
+      //    "ออฟไลน์" คือ *ผลของคำขอที่ล้ม* ไม่ใช่สถานะที่แอปติดตามเอง (`navigator.onLine` โกหก)
+      if ((await net) === "fail" && !cancelled && !cached) {
         setResult({ forTripId: tripId, state: { status: "error" } });
       }
     }

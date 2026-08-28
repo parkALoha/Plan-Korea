@@ -158,5 +158,13 @@ export async function assertBackend(backendId: string): Promise<void> {
   await set(BACKEND_ID_KEY, backendId);
 }
 
+/**
+ * คีย์ของข้อมูลรายทริป — รูปเดียวกับ `localCache.tripCacheKey` โดยตั้งใจ
+ * 🔴 **ระหว่างย้ายจะมีข้อมูลอยู่สองที่ชั่วคราว** · ใช้รูปคีย์เดียวกันทำให้เทียบกันได้ตอนไล่ปัญหา
+ */
+export function tripKey(tripId: string, name: string): string {
+  return `trip:${tripId}:${name}`;
+}
+
 /** 🔴 เปิดให้เทสต์เท่านั้น — ด่านที่ไม่มีเคสด้านบวก คือด่านที่ไม่มีใครรู้ว่ายังทำงานอยู่ไหม */
 export const __dbNameForTests = DB_NAME;
