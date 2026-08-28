@@ -16,6 +16,21 @@
  * ไม่ใช่เพราะเป็นราคา **แต่เพราะไม่มีเคสไหนใน `copilot-spec §4` ต้องใช้มัน**
  */
 
+/**
+ * 🔴 **ทุก tool ห่อด้วยซองเดียวกัน** — เพิ่ม 28 ส.ค. 2026 ตอนเขียน wrapper ตัวแรก
+ * ```
+ * { ok: true,  …ฟิลด์ของ tool }   |   { ok: false, reason }
+ * ```
+ * ## ทำไมต้องมีทุกตัว ไม่ใช่เฉพาะตัวที่ยิง Google
+ * ฉบับแรกของไฟล์นี้ให้ `ok`/`reason` เฉพาะ `find_places`/`get_place_details`
+ * **เพราะผมคิดถึงแต่ความล้มเหลวของ Google** · แต่ tool ที่อ่านฐานล้มได้เหมือนกัน
+ * · `bookingsOfTrip()` ล้ม → wrapper คืน `{ bookings: [] }` → โมเดลพูดว่า **"ยังไม่มีการจองเลย"**
+ *   ให้คนที่จองไว้ 10 รายการ · **"ว่าง" กับ "ล้ม" หน้าตาเหมือนกันเป๊ะ**
+ * 🎯 **เป็นรูปเดียวกับ `copilot-spec §30.3` ที่ผมเพิ่งเขียนเองเรื่อง `find_places` —
+ * ผมแก้มันตรงที่เจอ แล้วไม่ได้ถามว่ามันอยู่ที่อื่นอีกไหม**
+ */
+const COMMON_FIELDS = ["ok", "reason"] as const;
+
 /** ฟิลด์ระดับบน + ฟิลด์ของ object/array ที่ประกาศไว้ */
 export type ToolShape = {
   readonly self: readonly string[];
@@ -58,13 +73,13 @@ export const TOOL_RESPONSE_FIELDS = {
     self: ["minutes", "distanceMeters", "source", "estimateReason", "asOf"],
   },
   find_places: {
-    self: ["ok", "candidates", "reason"],
+    self: ["candidates"],
     nested: {
       candidates: ["placeId", "name", "address", "lat", "lng", "rating", "openingHours", "primaryType"],
     },
   },
   get_place_details: {
-    self: ["ok", "name", "nameLocal", "addressLocal", "regularOpeningHours", "primaryType", "asOf", "reason"],
+    self: ["name", "nameLocal", "addressLocal", "regularOpeningHours", "primaryType", "asOf"],
   },
   get_bookings: {
     self: ["bookings"],
@@ -113,7 +128,7 @@ export function unknownFields(tool: string, value: unknown): string[] {
   if (value === null || typeof value !== "object") return [];
 
   const found: string[] = [];
-  const allowed = new Set<string>(shape.self);
+  const allowed = new Set<string>([...COMMON_FIELDS, ...shape.self]);
 
   for (const key of Object.keys(value as Record<string, unknown>)) {
     if (!allowed.has(key)) {
