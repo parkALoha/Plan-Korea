@@ -34,6 +34,16 @@ export type DayBridge = {
   unmatchedDb: string[];
   /** จำนวนคู่ที่จับได้จริง — **`0` กับ "ไม่มีวันเลย" ต้องแยกออกจากกันที่ผู้เรียก** */
   matched: number;
+  /**
+   * 🔴 **แมปที่ *ครบ* สำหรับ hook ที่คีย์ด้วยวัน — `"d0" → uuid` **และ** `uuid → uuid`**
+   *
+   * เพิ่ม 28 ส.ค. 2026 หลัง `B6` เจอของจริง: hook ทั้งสามปั้นแมปเองจาก `ITINERARY` เท่านั้น
+   * → **ทริปที่สร้างบนแพลตฟอร์มได้แมปว่าง** → กด "เพิ่มลงวันนี้" แล้วไม่มีอะไรเกิดขึ้น
+   * 🎯 **คอมเมนต์หัวไฟล์นี้ทำนายไว้เองตั้งแต่แรกว่า *"ถ้าแต่ละตัวแปลงเอง มันจะแปลงไม่เหมือนกันสักวัน"* — วันนั้นมาถึงแล้ว**
+   * · วันที่เกิดบนแพลตฟอร์มอ้างด้วย `uuid` ของตัวเอง **จึงแมปหาตัวเอง** ไม่ใช่ไม่มีในแมป
+   * · ⚠️ ชนกันไม่ได้: `"d0"` กับ `uuid` คนละรูปแบบโดยสิ้นเชิง
+   */
+  dayKeyToDbId: ReadonlyMap<string, string>;
 };
 
 /**
@@ -71,12 +81,18 @@ export function buildDayBridge(
   const matchedDbIds = new Set(dbToLegacy.keys());
   const unmatchedDb = dbDays.filter((d) => !matchedDbIds.has(d.id)).map((d) => d.id);
 
+  // แมปครบ = คู่ที่จับได้ + วันของแพลตฟอร์มที่แมปหาตัวเอง
+  const dayKeyToDbId = new Map(legacyToDb);
+  for (const id of unmatchedDb) dayKeyToDbId.set(id, id);
+
   return {
-    toDbId: (legacyId) => legacyToDb.get(legacyId) ?? null,
+    // รับได้ทั้ง `"d0"` และ `uuid` — `uuid` ของวันที่มีจริงในทริปนี้คืนตัวมันเอง
+    toDbId: (legacyId) => dayKeyToDbId.get(legacyId) ?? null,
     toLegacyId: (dbId) => dbToLegacy.get(dbId) ?? null,
     unmatchedLegacy,
     unmatchedDb,
     matched: legacyToDb.size,
+    dayKeyToDbId,
   };
 }
 
@@ -87,6 +103,11 @@ export function buildDayBridge(
  * คนละสาเหตุและคนละทางแก้ · **และถ้ายุบรวมเป็น "ไม่เจอ" เฉย ๆ จะไม่มีใครรู้ว่าต้องทำอะไร**
  */
 export function dayBridgeWarning(b: DayBridge, totalLegacyDays: number): string | null {
+  // 🔴 **ทริปที่สร้างบนแพลตฟอร์มมี `matched === 0` เป็นเรื่องปกติ ไม่ใช่ `E7` ยังไม่ได้ย้าย**
+  //    วันของมันไม่มีคู่ใน `ITINERARY` ตามนิยาม · ก่อนแก้ข้อนี้ ผู้ใช้เห็นข้อความชี้ไปที่ `E7`
+  //    ซึ่ง **ส่งคนไปไล่ที่ที่ไม่มีอะไรผิด** (P2 เจอ 28 ส.ค. 2026)
+  // 🎯 **ข้อความที่ชี้ผิดที่ แพงกว่าความเงียบ**
+  if (b.unmatchedDb.length > 0 && b.matched === 0) return null;
   if (totalLegacyDays > 0 && b.matched === 0) {
     return `ยังไม่มีวันของทริปนี้ในฐานเลยสักวัน (${totalLegacyDays} วันในไฟล์) — E7 ยังไม่ได้ย้ายข้อมูล`;
   }
