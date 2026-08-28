@@ -6,7 +6,6 @@ import type { NewBooking } from "@/hooks/useBookings";
 import { useBookingFile } from "@/hooks/useBookingFile";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { Modal } from "./Modal";
-import { ITINERARY } from "@/data/itinerary";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { bookByDate } from "@/lib/bookingDeadline";
@@ -30,14 +29,21 @@ const STATUSES: { value: BookingStatus; label: string }[] = [
 // การเขียน Storage จริง (upload/remove) ย้ายไป hooks/useBookingFile.ts ทั้งหมดแล้ว (E3-AC4) —
 // component นี้ไม่เรียก supabase.storage ตรงอีกต่อไป เหมือนกับตารางอีก 10 hook ที่ผ่าน writeGuard
 
+/** วันหนึ่งของทริปเท่าที่ตัวเลือกนี้ต้องรู้ — ไม่ผูกกับรูป `Day` ของไฟล์ทริปเกาหลี */
+export type DayOption = { id: string; date: string; cityTh: string };
+
 export function BookingEditModal({
   existing,
+  days,
   who,
   onClose,
   onSave,
   onDelete,
 }: {
   existing: TripBooking | null;
+  /** 🔴 วันของ **ทริปนี้** — เดิมคอมโพเนนต์นี้อ่าน `ITINERARY` เอง จึงเสนอวันของทริปเกาหลี
+   *  ให้ทุกทริป (ทริปญี่ปุ่น 4 วัน เห็นตัวเลือก 11 วัน) · ว่าง = ทริปนี้ยังไม่มีวันให้ผูก */
+  days: DayOption[];
   who?: string;
   onClose: () => void;
   onSave: (input: NewBooking) => void;
@@ -170,7 +176,7 @@ export function BookingEditModal({
 
   function handleDayChange(value: string) {
     setDayId(value);
-    const day = ITINERARY.find((d) => d.id === value);
+    const day = days.find((d) => d.id === value);
     if (day) setDate(day.date);
   }
 
@@ -302,7 +308,7 @@ export function BookingEditModal({
           className="w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         >
           <option value="">— ไม่ผูกวันไหน —</option>
-          {ITINERARY.map((day) => (
+          {days.map((day) => (
             <option key={day.id} value={day.id}>
               {day.date} · {day.cityTh}
             </option>

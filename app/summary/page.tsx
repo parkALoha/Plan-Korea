@@ -805,6 +805,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
         dayPlanReady ? (
           <ImmigrationSheet
             country={IMMIGRATION_DOCUMENT_COUNTRY}
+            days={itinerary}
             hotelLegs={hotelLegs}
             hotels={hotels}
             stopsByDay={stopsByDay}

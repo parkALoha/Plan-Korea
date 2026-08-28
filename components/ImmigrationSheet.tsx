@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CITY_NAME_EN, ITINERARY, type Day, type DayEvent } from "@/data/itinerary";
+import { CITY_NAME_EN, type Day, type DayEvent } from "@/data/itinerary";
 import type { Place } from "@/data/places";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel, TripStop } from "@/lib/supabase";
@@ -34,10 +34,10 @@ export function formatDateEn(iso: string, plusDays = 0): string {
 type FlightRow = { day: Day; event: DayEvent };
 
 /** เที่ยวบินทั้งทริปเรียงตามเวลาจริง — ตัดตัวซ้ำ (VN428 ปรากฏทั้งวันออกและวันถึง) ด้วยเลขเที่ยวบิน */
-function allFlights(): FlightRow[] {
+function allFlights(days: Day[]): FlightRow[] {
   const seen = new Set<string>();
   const rows: FlightRow[] = [];
-  for (const day of ITINERARY) {
+  for (const day of days) {
     for (const event of day.events ?? []) {
       if (event.kind !== "flight" || !event.flight) continue;
       if (seen.has(event.flight.no)) continue;
@@ -74,12 +74,20 @@ export type ImmigrationCountry = { code: string; nameEn: string; nameTh: string 
 
 export function ImmigrationSheet({
   country,
+  days,
   hotelLegs,
   hotels,
   stopsByDay,
   customPlaces,
 }: {
   country: ImmigrationCountry;
+  /**
+   * 🔴 วันของ **ทริปนี้** — เดิมคอมโพเนนต์นี้อ่าน `ITINERARY` เองทั้ง 4 จุด จึงแสดงช่วงวัน
+   * **11–21 ต.ค. (ทริปเกาหลี) ให้ทุกทริป** รวมทั้งเที่ยวบินและตาราง Daily outline (P1 เจอ 28 ส.ค. 2026)
+   * ⚠️ **การรับเป็น prop แก้ *การพึ่งพาที่ซ่อนอยู่* ไม่ได้แก้ *แหล่งของวัน*** — ผู้เรียก
+   * (`app/summary/page.tsx` · โซน P3) ยังสร้าง `itinerary` จาก `ITINERARY` อยู่ · แจ้งแล้ว
+   */
+  days: Day[];
   hotelLegs: HotelLeg[];
   hotels: Record<string, TripHotel>;
   stopsByDay: Record<string, TripStop[]>;
@@ -97,20 +105,20 @@ export function ImmigrationSheet({
     writePersonalValue(NAMES_CACHE_KEY, value);
   }
 
-  const flights = allFlights();
+  const flights = allFlights(days);
   const nameLines = names.split("\n").map((n) => n.trim()).filter(Boolean);
 
   // สถานที่ทั้งทริปเรียงตามวัน — คำนวณครั้งเดียวแล้วใช้ทั้งการหาชื่ออังกฤษและตาราง Daily outline
   const placesByDay = useMemo(() => {
     const map: Record<string, Place[]> = {};
-    for (const day of ITINERARY) {
+    for (const day of days) {
       map[day.id] = (stopsByDay[day.id] ?? [])
         .filter((s) => s.kind !== "intercity")
         .map((s) => resolvePlace(s.place_id, customPlaces))
         .filter((p): p is Place => p != null);
     }
     return map;
-  }, [stopsByDay, customPlaces]);
+  }, [days, stopsByDay, customPlaces]);
 
   // สถานที่ที่เพิ่มเองระหว่างทางเก็บชื่อที่ Google คืนมาเป็นภาษาไทย (custom_places.name_en เป็น null
   // ดู NearbyPlacesModal) — เอกสารที่ยื่นเจ้าหน้าที่เลยมี "ตลาดปลาจากัลชิ" ปนอยู่ · ขอชื่ออังกฤษของ
@@ -141,7 +149,8 @@ export function ImmigrationSheet({
       <header className="border-b-2 border-content pb-2">
         <h1 className="text-xl font-bold">Travel Itinerary — {country.nameEn}</h1>
         <p className="text-sm text-content-soft">
-          {formatDateEn(ITINERARY[0].date)} – {formatDateEn(ITINERARY[ITINERARY.length - 1].date)} ·
+          {days.length > 0 ? formatDateEn(days[0].date) : "—"} –{" "}
+          {days.length > 0 ? formatDateEn(days[days.length - 1].date) : "—"} ·
           Tourism · Round trip from Bangkok, Thailand
         </p>
       </header>
@@ -247,7 +256,7 @@ export function ImmigrationSheet({
 
       <Section title="Daily outline">
         <Table head={["Date", "Day", "City", "Places"]}>
-          {ITINERARY.map((day) => {
+          {days.map((day) => {
             const places = placesByDay[day.id].map(documentName);
             return (
               <tr key={day.id} className="border-b border-content-soft/50 last:border-0">

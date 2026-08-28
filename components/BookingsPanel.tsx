@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BookingCategory, TripBooking } from "@/lib/supabase";
 import type { NewBooking } from "@/hooks/useBookings";
 import { BookingEditModal } from "./BookingEditModal";
+import type { DayOption } from "@/components/BookingEditModal";
 import { ConfirmModal } from "./Modal";
 import {
   BOOKING_BADGE_CLASS,
@@ -52,12 +53,16 @@ function dateLabel(booking: TripBooking) {
 
 export function BookingsPanel({
   bookings,
+  days,
   onAdd,
   onUpdate,
   onRemove,
   who,
 }: {
   bookings: TripBooking[];
+  /** วันของ **ทริปนี้** — ส่งลงไปให้ตัวเลือก "ผูกกับวัน" ในฟอร์มตั๋ว
+   *  🔴 เดิมฟอร์มอ่าน `ITINERARY` เอง = ทริปทุกใบเห็นวันของทริปเกาหลี (P1 เจอ 28 ส.ค. 2026) */
+  days: DayOption[];
   onAdd: (input: NewBooking) => void;
   onUpdate: (bookingId: string, patch: NewBooking) => void;
   onRemove: (bookingId: string) => void;
@@ -212,6 +217,7 @@ export function BookingsPanel({
 
       {editing && (
         <BookingEditModal
+          days={days}
           existing={editing === "new" ? null : editing}
           who={who}
           onClose={() => setEditing(null)}

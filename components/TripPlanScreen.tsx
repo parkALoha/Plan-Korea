@@ -616,6 +616,9 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
 
                 <BookingsPanel
                   bookings={bookings}
+                  // วันของทริปนี้เท่านั้น — `itinerary` เป็น `[]` เมื่อยังไม่รู้/ไม่รองรับ
+                  // จึงได้ตัวเลือกว่างแทนวันของทริปอื่น ซึ่งเป็นสิ่งที่ถูก
+                  days={itinerary.map((d) => ({ id: d.id, date: d.date, cityTh: d.cityTh }))}
                   onAdd={addBooking}
                   onUpdate={updateBooking}
                   onRemove={removeBooking}
