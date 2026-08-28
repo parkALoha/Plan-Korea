@@ -1,5 +1,6 @@
 import { createBrowserSupabase } from "@/lib/auth/browser";
 import { clearAllCaches } from "@/lib/localCache";
+import { clearAll as clearOfflineStore } from "@/lib/engine/offlineStore";
 import { safeNextPath } from "@/lib/auth/nextPath";
 
 /**
@@ -80,6 +81,13 @@ export async function sendMagicLink(email: string, next?: string | null): Promis
  */
 export async function signOut(): Promise<void> {
   clearAllCaches();
+  // 🔴 **ที่เก็บมีสองใบ และ `clearAllCaches()` เห็นใบเดียว** (P7 ชี้ · P1 ลง · 28 ส.ค. 2026)
+  //    `E6-AC7` ย้ายข้อมูลทริปจาก `localStorage` ไป IndexedDB ทีละ hook — **ตัวกวาดต้องมาก่อนผู้ย้าย**
+  //    ไม่งั้น hook แรกที่ย้ายจะสร้างบั๊กชื่อพาสปอร์ต/`trip-who` ขึ้นมาใหม่ในที่เก็บใบใหม่
+  //    (ข้อมูลของคนก่อนค้างให้คนถัดไปบนเครื่องเดียวกันเห็น) · **ใส่ตอนฐานยังว่างก็แค่ล้างของว่าง**
+  //    🎯 ตรงข้ามกับลำดับปกติของงาน: ปกติเราสร้างของก่อนแล้วค่อยกวาด — **ที่นี่กวาดก่อนถึงจะปลอดภัย**
+  //    ⚠️ ต้อง `await` และต้องอยู่ **ก่อน** `auth.signOut()` ด้วยเหตุผลเดียวกับบล็อกข้างบนทุกตัวอักษร
+  await clearOfflineStore();
   const supabase = createBrowserSupabase();
   await supabase.auth.signOut();
 }
