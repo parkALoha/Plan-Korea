@@ -677,6 +677,56 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(after.data, "[days] B แก้ trip_day ของ A สำเร็จ (leak)").toEqual(before.data);
   });
 
+  /**
+   * 🔴 **confused deputy — `tripId` ใน URL อนุญาต · `dayId` ใน body เลือกแถว** (P4 · 28 ส.ค. 2026)
+   *
+   * เคส `B แก้วันของ A ไม่ได้` ข้างบนยิง **คนนอก** · เคสนี้ยิง **คนที่มีสิทธิ์จริง**:
+   * A เป็น *เจ้าของ* `tripA` → `guard(req, tripA)` ผ่านสนิท **แล้วชี้ `dayId` ไปที่ `tripB`**
+   * · ถ้าสองค่านี้ไม่ถูกผูกกัน A จะแก้ทริปของ B ได้ทั้งที่ทุกด่านสิทธิ์บอกว่าถูกต้อง
+   *
+   * ปัจจุบันมีสองชั้น — `.eq("trip_id", tripId)` (`6fc0c9e`) และ RLS · **เคสนี้ยิงผลรวม แยกชั้นไม่ได้**
+   * (ถอดชั้นใดชั้นหนึ่งออกเพื่อพิสูจน์อีกชั้น = แก้โค้ดจริงเพื่อให้เทสต์พูดได้มากขึ้น — ไม่คุ้ม)
+   * 🎯 `daysPatchRoute.test.ts` ครอบ *สายไฟ* (route ส่ง tripId ของ URL ต่อ) · **เคสนี้ครอบ *ผลจริงที่ฐาน***
+   */
+  it("🔴 days PATCH — A แก้วันของทริป B ไม่ได้ แม้ URL ชี้ทริปที่ A เป็นเจ้าของ", async () => {
+    // admin มี select บน trip_days (ข้อยกเว้นที่ 4) — ใช้หาวันของ B โดยไม่ต้องมี client ของ B
+    const bDayRow = await admin.from("trip_days").select("id").eq("trip_id", tripB).order("date").limit(1).maybeSingle();
+    if (bDayRow.error) throw new Error(`admin read tripB day: ${bDayRow.error.message}`);
+    // 🔴 ไม่มีวันของ B = เคสนี้พิสูจน์อะไรไม่ได้เลย — ต้องล้ม ไม่ใช่ผ่านเงียบ (กับดักเซตว่าง)
+    expect(bDayRow.data, "tripB ต้องมีวันอย่างน้อยหนึ่ง — ไม่มี = เคสนี้ยิงไปที่ว่าง").toBeTruthy();
+    const bDay = bDayRow.data!.id as string;
+    // 🔴 ยืนยันว่าเป้าเป็นวันของ *B จริง* — ถ้าบังเอิญเป็นวันของ A เคสจะเขียวโดยไม่ได้ยิงอะไรข้ามทริปเลย
+    expect(bDay, "เป้าต้องไม่ใช่วันของ A").not.toBe(aDay);
+    const owner = await admin.from("trip_days").select("trip_id").eq("id", bDay).single();
+    if (owner.error) throw new Error(`admin read bDay owner: ${owner.error.message}`);
+    expect(owner.data.trip_id, "เป้าต้องอยู่ใต้ tripB").toBe(tripB);
+
+    // control ฝั่งบวก — A แก้วัน *ของตัวเอง* ได้ (ถ้าอันนี้แดง เคสโจมตีข้างล่างไม่ได้พิสูจน์อะไร)
+    const okRes = await callAs(aCookies, tripA, daysPATCH, "PATCH", { dayId: aDay, kind: "undecided" });
+    expect(okRes.status, `control A ควร 200: ${okRes.status} ${await okRes.clone().text()}`).toBe(200);
+
+    const before = await admin.from("trip_days").select("*").eq("id", bDay).single();
+    if (before.error) throw new Error(`admin read bDay: ${before.error.message}`);
+
+    for (const [label, body] of [
+      ["overnight", { dayId: bDay, kind: "none" }],
+      ["cityId", { dayId: bDay, cityId }],
+      ["ล้าง cityId", { dayId: bDay, cityId: null }],
+    ] as const) {
+      const res = await callAs(aCookies, tripA, daysPATCH, "PATCH", body);
+      const { verdict, detail } = await verdictFor(res);
+      expect(
+        verdict,
+        `[days/${label}] A ยิงวันของ B ผ่าน URL ของ tripA → **${verdict}** (${detail})\n` +
+          `  rejected=ผูก tripId↔dayId ทำงาน · leak=แก้ทริปคนอื่นได้ · server-bug=บั๊กเรา`,
+      ).toBe("rejected");
+    }
+
+    // 🎯 สถานะต้องไม่ขยับ — `rejected` อย่างเดียวยังไม่พอ ถ้าแถวเปลี่ยนแปลว่าเขียนสำเร็จแล้วค่อยตอบ error
+    const after = await admin.from("trip_days").select("*").eq("id", bDay).single();
+    expect(after.data, "[days] แถวของ tripB เปลี่ยน = A เขียนข้ามทริปสำเร็จ (leak)").toEqual(before.data);
+  });
+
   // จับบั๊กที่ owner แก้ไม่ได้ (P4 พบ · P1 แก้ e5e0a42: upsert → update-then-insert · ไม่คืน update บนคีย์)
   // 🔴 daySettingsWrite.test.ts (fake db) พิสูจน์แค่คอลัมน์ที่ *ส่งออก* · ฐานยอมรับจริงไหม probe สดนี้เท่านั้น
   it("day-settings PUT — A แก้ตั้งค่าวันตัวเองได้ · B แก้ของแผน A ไม่ได้", async () => {
