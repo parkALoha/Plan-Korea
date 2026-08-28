@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { bookingsOfTrip, insertBooking, softDeleteBooking, updateBooking } from "@/lib/engine/db";
+import type { InsertRow } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import type { TripBooking } from "@/lib/supabase";
 
@@ -36,17 +37,32 @@ const toDto = (r: Row): TripBooking & { trip_day_id: string | null } => ({
 });
 
 /** ช่องที่ grant เปิดให้เขียน — **ส่งช่องอื่นจะได้ `42501` ที่อ่านไม่ออกว่าช่องไหน** */
-const WRITABLE: Record<string, string> = {
+/** 🔴 ค่าต้องเป็น **ชื่อคอลัมน์จริง** ของ `bookings` — พิมพ์ผิดแดงตอนคอมไพล์ */
+const WRITABLE: Record<string, keyof InsertRow<"bookings">> = {
   tripDayId: "trip_day_id", category: "category", title: "title", date: "date", time: "time",
   confirmationNumber: "confirmation_number", link: "link", note: "note",
   fileUrl: "file_path", fileName: "file_name", status: "status",
   bookByDaysBefore: "book_by_days_before",
 };
 
-function toColumns(body: Record<string, unknown>): Record<string, unknown> {
+/**
+ * คัดเฉพาะคีย์ที่อนุญาต แล้ว**ตรวจชนิดของค่า** ก่อนส่งลงฐาน
+ * · `null` = คืนรายชื่อฟิลด์ที่ผิด (ผู้เรียกตอบ `400` พร้อมชื่อ — ไม่ให้ผู้ใช้เดา)
+ * ⚠️ **ไม่ทำ coercion** — `String(123)` จะได้ `"123"` ลงฐานเงียบ ๆ ซึ่งคือสิ่งที่ข้อนี้มีไว้แก้
+ */
+function toColumns(body: Record<string, unknown>): InsertRow<"bookings"> | { bad: string[] } {
   const out: Record<string, unknown> = {};
-  for (const [k, col] of Object.entries(WRITABLE)) if (k in body) out[col] = body[k];
-  return out;
+  const bad: string[] = [];
+  for (const [k, col] of Object.entries(WRITABLE)) {
+    if (!(k in body)) continue;
+    const v = body[k];
+    if (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+      bad.push(k);
+      continue;
+    }
+    out[col] = v;
+  }
+  return bad.length > 0 ? { bad } : (out as InsertRow<"bookings">);
 }
 
 async function guard(req: NextRequest, tripId: string) {
@@ -87,8 +103,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
   }
 
   const db = await createServerSupabase();
+  const cols = toColumns(b);
+  if ("bad" in cols) {
+    return NextResponse.json(
+      { error: `ฟิลด์เหล่านี้ต้องเป็นข้อความ ตัวเลข หรือ true/false: ${cols.bad.join(", ")}` },
+      { status: 400 },
+    );
+  }
   const { data, error } = await insertBooking(db, {
-    ...toColumns(b), trip_id: tripId, legacy_added_by: b.addedBy ?? null,
+    ...cols, trip_id: tripId, legacy_added_by: typeof b.addedBy === "string" ? b.addedBy : null,
   });
   if (error) {
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "42501" ? 403 : 502 });
@@ -111,6 +134,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
   if (!UUID.test(id)) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
 
   const patch = toColumns(b);
+  if ("bad" in patch) {
+    return NextResponse.json(
+      { error: `ฟิลด์เหล่านี้ต้องเป็นข้อความ ตัวเลข หรือ true/false: ${patch.bad.join(", ")}` },
+      { status: 400 },
+    );
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "ไม่มีอะไรให้แก้" }, { status: 400 });
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { daySettingsOfPlan, upsertDaySettings } from "@/lib/engine/db";
+import type { InsertRow } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
 /**
@@ -75,7 +76,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   }
 
   const rows = b.rows.map((r) => {
-    const row: Record<string, unknown> = { trip_id: tripId, plan_id: b.planId, trip_day_id: r.tripDayId };
+    // ชนิดจากสคีมา ไม่ใช่ `Record<string, unknown>` — พิมพ์ชื่อคอลัมน์ผิดจะแดงตอนคอมไพล์
+    const row: InsertRow<"trip_day_plan_settings"> = {
+      trip_id: tripId,
+      plan_id: String(b.planId),
+      trip_day_id: String(r.tripDayId),
+    };
     if (typeof r.startTime === "string") row.start_time = r.startTime;
     if (r.returnTravelMode !== undefined) row.return_travel_mode = r.returnTravelMode;
     if (typeof r.isLocked === "boolean") row.is_locked = r.isLocked;

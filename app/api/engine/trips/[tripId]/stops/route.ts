@@ -3,6 +3,7 @@ import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/au
 import {
   catalogPlaceIdBySlug, insertStop, ranksInDay, softDeleteStop, stopsOfPlan, updateStop, updateStopInDay,
 } from "@/lib/engine/db";
+import type { InsertRow } from "@/lib/engine/db";
 import { rankBetween, rankForInsert } from "@/lib/engine/rank";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
@@ -56,7 +57,9 @@ function toDto(r: Row, orderIndex: number): StopDto {
   };
 }
 
-const WRITABLE: Record<string, string> = {
+/** 🔴 ค่าต้องเป็น **ชื่อคอลัมน์จริง** ของ `trip_stops` — พิมพ์ผิดจะแดงตอนคอมไพล์
+ *  (เดิม `Record<string, string>` → ชื่อคอลัมน์ผิดผ่านไปตายที่ฐาน · ตระกูลเดียวกับ 502 เมื่อ 27 ส.ค.) */
+const WRITABLE: Record<string, keyof InsertRow<"trip_stops">> = {
   dwellMinutes: "dwell_minutes", travelMode: "travel_mode", note: "note",
   photoUrl: "photo_path", visitedAt: "visited_at", kind: "kind",
   intercityFrom: "intercity_from", intercityTo: "intercity_to", intercityMode: "intercity_mode",
@@ -130,12 +133,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
   }
 
   const kind = typeof b.kind === "string" ? b.kind : "place";
-  const row: Record<string, unknown> = {
+  const row: InsertRow<"trip_stops"> = {
     trip_id: tripId, plan_id: planId, trip_day_id: tripDayId, kind, rank,
-    legacy_added_by: b.addedBy ?? null,
+    legacy_added_by: typeof b.addedBy === "string" ? b.addedBy : null,
   };
-  for (const [k, col] of Object.entries(WRITABLE)) if (k in b) row[col] = b[k];
-  delete row.kind_;
+  // ⚠️ คัดลอกแบบไดนามิก: **ชื่อคอลัมน์**ถูกตรวจด้วยชนิดของ `WRITABLE` แล้ว
+  //    ส่วน **ค่า** มาจาก body จึงเป็น `unknown` → ตรวจชนิดตรงนี้ **ไม่ใช่ปล่อยไปให้ฐานตัดสิน**
+  for (const [k, col] of Object.entries(WRITABLE)) {
+    if (!(k in b)) continue;
+    const v = b[k];
+    if (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+      return NextResponse.json(
+        { error: `ฟิลด์ ${k} ต้องเป็นข้อความ ตัวเลข หรือ true/false` },
+        { status: 400 },
+      );
+    }
+    (row as Record<string, unknown>)[col] = v;
+  }
 
   // สถานที่: คลังกลาง (slug) หรือของทริป (id) — **ถามฐาน ไม่เดาจากรูปแบบสตริง**
   const placeId = typeof b.placeId === "string" ? b.placeId : null;

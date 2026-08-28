@@ -4,6 +4,7 @@ import {
   cityIdBySlug, insertTripHotel, softDeleteTripHotel, tripHotelByRange, tripHotelsOfTrip,
 } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { badFieldsMessage, stringFields } from "@/lib/engine/bodyTypes";
 
 /**
  * ที่พัก — `E3` · `D51` · เจ้าของ: P1-Lead · 26 ส.ค. 2026
@@ -97,11 +98,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   if (!b.city || !b.hotelName || typeof b.lat !== "number" || typeof b.lng !== "number") {
     return NextResponse.json({ error: "ต้องมี city · hotelName · lat · lng" }, { status: 400 });
   }
+  // 🔴 ด่านข้างบนตรวจแค่ *มีค่า* สำหรับ `city`/`hotelName` — `hotelName: { a: 1 }` เคยผ่านลงฐานได้
+  //    ส่วน `lat`/`lng` ตรวจชนิดจริงมาตลอด · **ครึ่ง ๆ แบบนั้นแย่กว่าไม่ตรวจ เพราะมันดูเหมือนตรวจแล้ว**
+  const f = stringFields(b, [
+    "city", "hotelName", "formattedAddress", "nameLocal",
+    "addressLocal", "nameEn", "addressEn", "phone", "addedBy",
+  ] as const);
+  if (!f.ok) return NextResponse.json({ error: badFieldsMessage(f.bad) }, { status: 400 });
+  if (!f.values.city || !f.values.hotelName) {
+    return NextResponse.json({ error: "ต้องมี city · hotelName" }, { status: 400 });
+  }
 
   const db = await createServerSupabase();
-  const { data: city, error: cityErr } = await cityIdBySlug(db, String(b.city));
+  const { data: city, error: cityErr } = await cityIdBySlug(db, f.values.city);
   if (cityErr) return NextResponse.json({ error: cityErr.message }, { status: 502 });
-  if (!city) return NextResponse.json({ error: `ไม่รู้จักเมือง ${b.city}` }, { status: 400 });
+  if (!city) return NextResponse.json({ error: `ไม่รู้จักเมือง ${f.values.city}` }, { status: 400 });
 
   // 🔴 **`upsert` ใช้ไม่ได้** — ของที่กันการซ้อนคือ *exclusion constraint* ไม่ใช่ `unique`
   //    และ `on conflict` รองรับแต่ `unique`/`exclusion` ที่ระบุชื่อได้ ซึ่ง PostgREST ไม่เปิดให้
@@ -117,12 +128,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ trip
   }
 
   const { data, error } = await insertTripHotel(db, {
-    trip_id: tripId, city_id: city.id, hotel_name: b.hotelName,
-    formatted_address: b.formattedAddress ?? null,
-    name_local: b.nameLocal ?? null, address_local: b.addressLocal ?? null,
-    name_en: b.nameEn ?? null, address_en: b.addressEn ?? null, phone: b.phone ?? null,
+    trip_id: tripId, city_id: city.id, hotel_name: f.values.hotelName,
+    formatted_address: f.values.formattedAddress,
+    name_local: f.values.nameLocal, address_local: f.values.addressLocal,
+    name_en: f.values.nameEn, address_en: f.values.addressEn, phone: f.values.phone,
     lat: b.lat, lng: b.lng, check_in: checkIn, check_out: checkOut,
-    legacy_added_by: b.addedBy ?? null,
+    legacy_added_by: f.values.addedBy,
   });
   if (error) {
     // `23P01` = ชนกับช่วงของที่พักอื่น — ข้อความของตัวเองดีกว่ารหัสดิบ
