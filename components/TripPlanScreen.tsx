@@ -147,13 +147,23 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
    */
   const isPlatformTrip =
     tripCatalogCities.status === "ready" && tripCatalogCities.cities.length > 0;
+  /**
+   * 🔴 **"รู้ว่าเป็นทริปเกาหลี" ต้องเป็นสถานะของตัวเอง ห้ามอนุมานจาก `!isPlatformTrip`**
+   * `isPlatformTrip` เป็น `false` ได้จาก **สองสาเหตุที่ต่างกันสิ้นเชิง**:
+   * · `ready` + ไม่มีเมือง = *ทริปเกาหลีจริง ๆ*        ← ตกไป `ITINERARY` ถูกต้อง
+   * · `error` (ออฟไลน์/เน็ตสะดุด) = *ถามไม่ได้*        ← **ห้ามตกไป `ITINERARY`**
+   * 🎯 หลักเดียวกับ `overnight_kind` (`null` vs `'none'` · `D80`) — **ห้ามซ่อน "ยังไม่รู้" ใต้ค่าเริ่มต้น**
+   */
+  const isLegacyTrip =
+    tripCatalogCities.status === "ready" && tripCatalogCities.cities.length === 0;
   const { state: platformItinerary, reload: reloadPlatformItinerary } = usePlatformItinerary(
     tripId,
     isPlatformTrip
   );
-  /** true = การ์ดวันที่เห็นอยู่มาจากฐานจริง ๆ → เลือกเมืองรายวันได้ · ทริปเกาหลีเดิมเป็น false เสมอ */
-  const usePlatformDays =
-    isPlatformTrip && platformItinerary.status === "ready" && platformItinerary.days.length > 0;
+  /** true = การ์ดวันที่เห็นอยู่มาจากฐานจริง ๆ → เลือกเมืองรายวันได้ · ทริปเกาหลีเดิมเป็น false เสมอ
+   *  ⚠️ **ไม่เช็ค `days.length > 0` แล้ว** — ทริปแพลตฟอร์มที่ฐานคืน 0 วัน **ต้องแสดงว่าง ไม่ใช่ตกไป
+   *  `ITINERARY`** · เดิมเช็คไว้ แล้วมันกลายเป็นทางลับเส้นที่สองที่พาไปหาตารางของทริปอื่น */
+  const usePlatformDays = isPlatformTrip && platformItinerary.status === "ready";
 
   /**
    * 🔴 **ระหว่างที่ยังไม่รู้ว่าทริปนี้เดินทางไหน `itinerary` ต้องเป็น `[]` ไม่ใช่รายการของทริปเกาหลี**
@@ -164,13 +174,18 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
    *   `GET /api/weather?…&start=2026-10-11&end=2026-10-21` **6 คำขอ — วันของทริปเกาหลี** ทุกครั้งที่โหลด
    *   (`useTripWeather(itinerary)` ที่บรรทัด ~221 อ่านค่าตอนที่มันยังตกไปทางเดิมอยู่)
    * 🎯 **บทเรียน: "ผู้ใช้ไม่เห็น" ไม่เท่ากับ "ไม่เกิดขึ้น"** — และตัวที่ฟ้องคือ network ไม่ใช่หน้าจอ
+   * 🔴 **แก้ 28 ส.ค. 2026 (P7 เจอ · P1 ยืนยันในโค้ด) — เดิมเขียนเป็น `status !== "loading"`
+   * ซึ่งทำให้ `error` นับเป็น "รู้แล้ว"** → ออฟไลน์บนทริปญี่ปุ่นแล้ว **หน้าจอแสดงตาราง 11 วันของ
+   * ทริปเกาหลี พร้อมชื่อเมืองเกาหลีครบ** · ไม่ใช่ว่างเปล่า — **เป็นข้อมูลของทริปอื่นที่ดูเหมือนของจริง**
+   * · วัดจริง: แคชมีวันของทริปนั้น 4 วัน · หน้าจอโชว์ 11 วัน · `hasTokyo` = false · คำขอ `/days` = 0
+   * 🎯 **แย่กว่าว่างเปล่า** — ว่างเปล่าผู้ใช้เห็นว่าผิด · ตารางของทริปอื่นผู้ใช้เชื่อว่าถูก
+   * → ตอนนี้ต้อง **รู้จริง** ทั้งสองฝั่ง: รู้ว่าเป็นทริปเกาหลี **หรือ** ได้วันจากฐานมาแล้ว
    */
   const itinerarySourceResolved =
-    tripCatalogCities.status !== "loading" &&
-    (!isPlatformTrip || platformItinerary.status !== "loading");
+    isLegacyTrip || (isPlatformTrip && platformItinerary.status === "ready");
   const itinerary = !itinerarySourceResolved
     ? EMPTY_DAYS
-    : usePlatformDays
+    : usePlatformDays && platformItinerary.status === "ready"
       ? platformItinerary.days
       : legacyItinerary;
   // ห่อ `useMemo` เพราะค่าเป็นเงื่อนไข — ปล่อยเป็นนิพจน์ลอยแล้วอ็อบเจกต์ใหม่ทุก render จะทำให้
@@ -504,6 +519,14 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   const dayPlanLoaded = overallLoaded && dayPlanGate !== "loading" && itinerarySourceResolved;
   const dayPlanReady = overallLoaded && dayPlanGate === "ready" && itinerarySourceResolved;
   const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
+  /**
+   * 🔴 **อ่านแหล่งที่มาของวันไม่ได้** — ต่างจาก `dayPlanEmpty` (ฐานตอบว่าไม่มีวัน) คนละเหตุคนละข้อความ
+   * ถ้าไม่มีสถานะนี้ ออฟไลน์จะได้ **โครงร่างค้างตลอดไป** ซึ่งอ่านว่า "กำลังโหลด" ทั้งที่ไม่มีอะไรกำลังโหลด
+   */
+  const dayPlanUnreadable =
+    overallLoaded &&
+    !itinerarySourceResolved &&
+    (tripCatalogCities.status === "error" || platformItinerary.status === "error");
 
   return (
     // MapsApiProvider ครอบเฉพาะหน้านี้ ไม่ได้อยู่ใน layout อีกแล้ว — หน้าแผนเป็นหน้าเดียวที่มี `<Map>`
@@ -542,7 +565,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
               ไม่มีแล้วคอลัมน์นี้จะกว้าง 1129px ทั้งที่มีที่ให้ 904px แล้วดัน <aside> คลังสถานที่
               หลุดออกนอกจอไป 209px บนจอ 1280 (วัดจริง: scrollWidth 1489 vs clientWidth 1280) */}
           <div className="mx-auto min-w-0 max-w-2xl flex-1 lg:mx-0 lg:max-w-none">
-            {!dayPlanLoaded && (
+            {!dayPlanLoaded && !dayPlanUnreadable && (
               <>
                 <DayCardSkeleton />
                 <DayCardSkeleton />
@@ -550,6 +573,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
               </>
             )}
 
+            {dayPlanUnreadable && <DayPlanUnavailableNotice reason="unreadable" />}
             {dayPlanEmpty && <DayPlanUnavailableNotice />}
 
             {/* แถบวัน sticky — กระโดดข้ามวันได้โดยไม่ต้องสกรอลล์ผ่านทั้ง 11 วัน (เฟส 17)
