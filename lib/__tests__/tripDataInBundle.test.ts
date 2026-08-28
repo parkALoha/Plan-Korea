@@ -161,7 +161,34 @@ describe.skipIf(!hasBuild)("E6-AC10 — ข้อมูลทริปเกา�
    */
   for (const route of PLATFORM_ROUTES) {
     it.fails(`xfail · /${route} ต้องไม่มีข้อมูลทริปเกาหลี (บั๊กเปิดอยู่ · พลิกแดงเมื่อตัด 4 รากสำเร็จ)`, () => {
-      const found = taintedChunksOfRoute(route, measured().tainted);
+      /**
+       * 🔴 **กันคลังว่างก่อนถึง assertion — ทั้งสามใบ** (P4 ชี้ครบ · P3 ยืนยันจากซอร์ส · 28 ส.ค. 2026)
+       * `found = []` แปลได้ **สี่อย่าง** และบรรทัดผลลัพธ์แยกไม่ออกสักอย่าง:
+       * ```
+       * ตัดสำเร็จจริง        ← อันเดียวที่เราอยากรู้
+       * ① ไม่มี marker       markersFromSource() ว่าง (data/*.ts เปลี่ยนรูป · regex พัง)
+       * ② ไม่มี chunk        CHUNK_DIR ผิดที่ · build เก่า
+       * ③ ไม่มี manifest     taintedChunksOfRoute():65 `if (!existsSync) return []` ← กลืนเงียบ
+       * ```
+       * ✅ **③ ถูก `hasBuild` กันไว้ก่อนแล้ว จึงไม่ต้องเช็คซ้ำที่นี่ — ยืนยันด้วยการรัน ไม่ใช่ด้วยการอ่าน**
+       * ลองย้าย `page_client-reference-manifest.js` ของ `/trip/[tripId]/today` ออก → ได้
+       * `BUNDLE_GUARD_REQUIRED=1 แต่ไม่มี production build ที่ใช้ตรวจได้` · **`Tests no tests`** — หยุดตั้งแต่
+       * ตอน collect ไม่ถึงเคสสักเคส · route ที่ถูกย้าย/เปลี่ยนชื่อจึง **ข้ามดัง ๆ ไม่ใช่รายงานว่าสะอาด**
+       * 🔴 **เคยใส่ `expect(existsSync(manifest)).toBe(true)` ตรงนี้แล้วถอดออก** (P4 เสนอ · P3 วัดแล้วถอด)
+       * — มันถูกโดยเหตุผล **แต่ยิงไม่ออกตามนิยาม** · บรรทัดที่ *ดูเหมือน* ป้องกันแต่ไม่เคยทำงาน
+       * **แย่กว่าไม่มี** เพราะคนถัดไปจะเชื่อว่าตรงนี้ถูกตรวจแล้ว (`P-50` · "ธงที่อ่านไม่ได้ ไม่ใช่ธง")
+       * 🎯 **`it.fails` กลับด้านสี** → บรรทัดนี้ "ผ่าน" คือข่าวดีที่ทั้งทีมรอดู · คนอ่านจึงสแกนหามันก่อน
+       * และมันพลิกได้ด้วยเหตุที่ *ไม่ใช่* ความสำเร็จถึงสามทาง · **เคสควบคุมข้างบนจับได้ก็จริง
+       * แต่มันอยู่คนละบรรทัด — ใครอ่านเฉพาะบรรทัด xfail จะไม่เห็นมันเลย**
+       * ✅ วางไว้ *ในตัว* xfail แล้วคลังว่างจะ throw → `it.fails` พอใจ → รายงานว่า **บั๊กยังเปิดอยู่**
+       *    = ค่าตั้งต้นที่ปลอดภัย **และซื่อสัตย์** (เราไม่รู้จริง ๆ) · ส่วนควบคุมจะแดงบอกว่าวิธีวัดพัง
+       * 📌 `:65` เป็นรูปเดียวกับ `try/catch` ที่กลืน `ENOENT` ใน `bookingFileStorageGate` ที่ P4 เพิ่งแก้
+       *    ด้วย `examined > 50` — **คนละไฟล์ คนละคน รูปเดียวกัน**
+       */
+      const { markers, tainted } = measured();
+      expect(markers.length, "คลัง marker ว่าง — ยังไม่ได้หา ไม่ใช่หาไม่เจอ").toBeGreaterThan(3);
+      expect(tainted.length, "ไม่มี chunk ไหนมีข้อมูลเกาหลีเลย — CHUNK_DIR ผิดที่ หรือ build เก่า").toBeGreaterThan(0);
+      const found = taintedChunksOfRoute(route, tainted);
       expect(found, `/${route} ยังลาก chunk ที่มีข้อมูลเกาหลี: ${found.join(" · ")}`).toEqual([]);
     });
   }
