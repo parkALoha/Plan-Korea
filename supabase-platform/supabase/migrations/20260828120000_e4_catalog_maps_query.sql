@@ -22,6 +22,40 @@
 
 begin;
 
+-- 🔴 **บล็อกนี้หายไปในฉบับแรก และ CI จับได้ (P6 รายงาน · 28 ส.ค. 2026)**
+--    ผมยืนยันครบ *สี่* ตัวที่ CI รัน (lint · tsc · build · vitest) แล้ว push
+--    **แต่ `guards.sh` เป็นด่านที่ห้า และไม่มีใครรันมันก่อน push รอบนั้น**
+--    🎯 รูปเดียวกับที่ผมเขียนเป็นบทเรียนไว้เองเมื่อ 27 ส.ค. (`npx eslint .` ≠ `npm run lint`):
+--       **หลักฐานทุกชิ้นถูกต้อง แต่ไม่ครอบสิ่งที่ด่านตรวจ** — คราวนี้ผมนับด่านขาดไปหนึ่ง
+
+-- ── ด่านกันรันผิดโปรเจกต์ · ต้องเป็นบล็อกแรกเสมอ ก่อน DDL ทุกบรรทัด ──────────
+-- ทำงานตอนคนพลาด ไม่ใช่ตอนคนอ่านเอกสารล่วงหน้า · raise exception = rollback ทั้ง transaction
+--
+-- 🔴 คัดลอกบล็อกนี้ไป **ทั้งก้อน ไม่ต้องแก้อะไร** — มันถามว่า "ฐานนี้ใช่ engine-dev ไหม"
+--    ไม่ใช่ "ฐานนี้ใช่ฐานที่ห้ามแตะไหม" · ความต่างนี้คือ `D48` ทั้งข้อ
+do $guard$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'app' and table_name = 'project_identity'
+  ) then
+    raise exception 'ผิดโปรเจกต์: ไม่มี app.project_identity → ฐานนี้ไม่ใช่ engine-dev ของแพลตฟอร์ม';
+  end if;
+
+  -- 🔴 `P-31`: ต้องเช็ค `ref` + `environment` ด้วย · `name` อย่างเดียวแยก dev ออกจาก prod ไม่ได้
+  --    วันที่มี prod มันจะชื่อ `plan-korea-platform` เหมือนกันเป๊ะ
+  --    ⚠️ **เปลี่ยน ref ตรงนี้ = เจตนาเล็งไปฐานอื่น** ต้องเป็นการตัดสินใจ ไม่ใช่การคัดลอก
+  if not exists (
+    select 1 from app.project_identity
+     where name = 'plan-korea-platform'
+       and ref  = 'pmvxwcimjebogjfimzqy'
+       and environment = 'dev'
+  ) then
+    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ใช่ engine-dev (ตรวจ name+ref+environment)';
+  end if;
+end $guard$;
+
+
 do $$
 declare
   n_before int;
