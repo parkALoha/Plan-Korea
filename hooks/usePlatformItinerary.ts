@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Day } from "@/data/itinerary";
 import { WEEKDAYS_EN_FULL, WEEKDAYS_TH_FULL } from "@/lib/tripDateRange";
 
@@ -16,7 +16,12 @@ type DbDayRow = {
 
 export type PlatformItineraryState =
   | { status: "loading" }
-  | { status: "ready"; days: Day[] }
+  /**
+   * `cityIdByDayId` แยกออกมาแทนที่จะยัดลง `Day` — **`Day` เป็นชนิดของไฟล์ทริปเกาหลีเดิม**
+   * ที่มีผู้อ่านทั่วแอป การเพิ่มฟิลด์ที่มีค่าเฉพาะทริปแพลตฟอร์มจะกลายเป็น `undefined` เงียบ ๆ ทุกที่
+   * ที่เหลือ · ตัวเลือกเมืองต้องการ **id** (ไม่ใช่ชื่อ) เพราะ `PATCH` รับ `cityId` และชื่อซ้ำกันได้
+   */
+  | { status: "ready"; days: Day[]; cityIdByDayId: Record<string, string | null> }
   | { status: "error" };
 
 /** ป้ายของวันที่ผู้ใช้ยังไม่ได้เลือกเมือง — **สภาพตั้งต้นของทุกวันในทริปใหม่** ไม่ใช่เคสขอบ
@@ -43,10 +48,20 @@ const UNSET_CITY_EN = "No city yet";
  * จะถูก cast ลงไปตรง ๆ → `CITY_META[...]` เป็น `undefined` → **`DayStopsSection` ต้องมี fallback**
  * (ใส่ไว้แล้ว: `UNSET_CITY_META`) · ทางแก้จริงคือเลิกใช้ union ซึ่งลาก 10 ไฟล์ 37 จุด — **เฟสถัดไป**
  */
-export function usePlatformItinerary(tripId: string, enabled: boolean): PlatformItineraryState {
+export function usePlatformItinerary(
+  tripId: string,
+  enabled: boolean
+): { state: PlatformItineraryState; reload: () => void } {
   const [result, setResult] = useState<{ forTripId: string; state: PlatformItineraryState } | null>(
     null
   );
+  /**
+   * 🔴 **หลังบันทึกเมืองของวัน ต้องอ่านใหม่จากฐาน ไม่ใช่เดาค่าใหม่ลง state เอง**
+   * `PATCH …/days` ตอบแค่ `{ok:true}` — **ไม่ส่งแถวที่แก้แล้วกลับมา** → ถ้าจะอัปเดตในมือเองต้อง
+   * **ปั้น `cityEn` ขึ้นเอง** ทั้งที่ `useTripCatalogCities` มีแต่ชื่อไทย · ค่าที่ปั้นเองจะดูถูกบนจอ
+   * แต่ไม่ตรงกับฐาน และไม่มีอะไรฟ้องจนกว่าจะมีคนเปิด `/summary?lang=en`
+   */
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -59,7 +74,8 @@ export function usePlatformItinerary(tripId: string, enabled: boolean): Platform
       .then((rows) => {
         if (cancelled) return;
         const days = rows.map(toDay);
-        setResult({ forTripId: tripId, state: { status: "ready", days } });
+        const cityIdByDayId = Object.fromEntries(rows.map((r) => [r.id, r.city_id]));
+        setResult({ forTripId: tripId, state: { status: "ready", days, cityIdByDayId } });
       })
       .catch(() => {
         if (!cancelled) setResult({ forTripId: tripId, state: { status: "error" } });
@@ -67,10 +83,15 @@ export function usePlatformItinerary(tripId: string, enabled: boolean): Platform
     return () => {
       cancelled = true;
     };
-  }, [tripId, enabled]);
+  }, [tripId, enabled, nonce]);
 
-  if (!enabled) return { status: "ready", days: [] };
-  return result?.forTripId === tripId ? result.state : { status: "loading" };
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const state: PlatformItineraryState = !enabled
+    ? { status: "ready", days: [], cityIdByDayId: {} }
+    : result?.forTripId === tripId
+      ? result.state
+      : { status: "loading" };
+  return { state, reload };
 }
 
 function toDay(row: DbDayRow): Day {

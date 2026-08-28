@@ -144,11 +144,39 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
    */
   const isPlatformTrip =
     tripCatalogCities.status === "ready" && tripCatalogCities.cities.length > 0;
-  const platformItinerary = usePlatformItinerary(tripId, isPlatformTrip);
-  const itinerary =
-    isPlatformTrip && platformItinerary.status === "ready" && platformItinerary.days.length > 0
-      ? platformItinerary.days
-      : legacyItinerary;
+  const { state: platformItinerary, reload: reloadPlatformItinerary } = usePlatformItinerary(
+    tripId,
+    isPlatformTrip
+  );
+  /** true = การ์ดวันที่เห็นอยู่มาจากฐานจริง ๆ → เลือกเมืองรายวันได้ · ทริปเกาหลีเดิมเป็น false เสมอ */
+  const usePlatformDays =
+    isPlatformTrip && platformItinerary.status === "ready" && platformItinerary.days.length > 0;
+  const itinerary = usePlatformDays ? platformItinerary.days : legacyItinerary;
+  const platformCityIdByDayId =
+    platformItinerary.status === "ready" ? platformItinerary.cityIdByDayId : {};
+  const platformCityOptions =
+    tripCatalogCities.status === "ready" ? tripCatalogCities.cities : [];
+
+  /**
+   * เลือกเมืองให้วันหนึ่ง — `B6` เฟส 3 · ผู้ใช้สั่งเอง 28 ส.ค. 2026 (*"ไม่ต้องเดา ให้ว่างไว้แล้วผมเลือกเอง"*)
+   * 🔴 อ่านใหม่จากฐานหลังบันทึกสำเร็จ ไม่ใช่แก้ในมือ (เหตุผลอยู่ใน `usePlatformItinerary`)
+   * · โยน `Error` ต่อเมื่อ API ตอบไม่ ok เพื่อให้ปุ่มฝั่ง UI รู้ว่า **ยังไม่สำเร็จ** ไม่ใช่เงียบแล้วดูเหมือนสำเร็จ
+   */
+  const setDayCity = useCallback(
+    async (dayId: string, cityId: string | null) => {
+      const res = await fetch(`/api/engine/trips/${tripId}/days`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dayId, cityId }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `บันทึกเมืองไม่สำเร็จ (${res.status})`);
+      }
+      reloadPlatformItinerary();
+    },
+    [tripId, reloadPlatformItinerary]
+  );
 
   const [who, setWho] = useState(() =>
     typeof window !== "undefined" ? window.localStorage.getItem("trip-who") ?? "" : ""
@@ -530,6 +558,13 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                     setDaysLocked([day.id], !isDayLockedInDb(day.id))
                   }
                   onReorder={(orderedStopIds) => reorderStops(day.id, orderedStopIds)}
+                  {...(usePlatformDays
+                    ? {
+                        cityOptions: platformCityOptions,
+                        currentCityId: platformCityIdByDayId[day.id] ?? null,
+                        onChangeDayCity: (cityId: string | null) => setDayCity(day.id, cityId),
+                      }
+                    : null)}
                   onOvernightCityChange={
                     day.overnightOptions
                       ? (city) => setOvernightCity(day.id, city)

@@ -226,4 +226,12 @@ export const E5_COPY = {
     prevMonth: "เดือนก่อนหน้า",
     nextMonth: "เดือนถัดไป",
   },
+  /** ตัวเลือกเมืองบนหัวการ์ดวัน (`DayCityPicker`) — `B6` เฟส 3 */
+  dayCityPicker: {
+    ariaLabel: "เมืองของวัน",
+    placeholder: "เลือกเมือง",
+    unset: "ยังไม่ระบุเมือง",
+    noDestinations: "(ยังไม่ได้ตั้งจุดหมายของทริปนี้)",
+    saveFailed: "บันทึกเมืองไม่สำเร็จ",
+  },
 } as const;

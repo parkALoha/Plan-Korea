@@ -6,6 +6,8 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { cityCenter, Place } from "@/data/places";
 import type { City, Day } from "@/data/itinerary";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
+import { DayCityPicker } from "@/components/DayCityPicker";
+import type { CatalogCity } from "@/hooks/useTripCatalogCities";
 import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
 import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
@@ -55,6 +57,9 @@ export function DayStopsSection({
   onOvernightCityChange,
   locked,
   onToggleLock,
+  cityOptions,
+  currentCityId = null,
+  onChangeDayCity,
 }: {
   day: Day;
   /** stops for this day only, already sorted by order_index */
@@ -101,6 +106,16 @@ export function DayStopsSection({
   /** true = วันนี้ลงตัวแล้ว ล็อกไว้กันเผลอลาก/แก้ตอนเลื่อนดู */
   locked: boolean;
   onToggleLock: () => void;
+  /**
+   * เมืองที่เลือกให้วันนี้ได้ = จุดหมายของทริปนี้ — **มีเฉพาะทริปที่สร้างบนแพลตฟอร์ม**
+   * 🔴 `undefined` (ทริปเกาหลีเดิม) ต่างจาก `[]` (ทริปแพลตฟอร์มที่ยังไม่ตั้งจุดหมาย) — ตัวแรกโชว์ชื่อเมือง
+   *    เฉย ๆ เหมือนเดิมทุกบรรทัด ตัวหลังโชว์ตัวเลือกที่ว่าง พร้อมบอกว่าต้องไปตั้งจุดหมายก่อน
+   */
+  cityOptions?: CatalogCity[];
+  /** `catalog_cities.id` ของเมืองวันนี้ · `null` = ยังไม่ระบุ — **id ไม่ใช่ชื่อ** เพราะชื่อซ้ำกันได้ */
+  currentCityId?: string | null;
+  /** บันทึกเมืองของวันนี้ · `null` = ล้างกลับเป็น "ยังไม่ระบุเมือง" · **โยน error เมื่อไม่สำเร็จ** */
+  onChangeDayCity?: (cityId: string | null) => Promise<void>;
 }) {
   // เซ็น signed URL ของรูปจุดแวะทั้งวันครั้งเดียว (E2-AC13 ②) — ไม่ใช่ให้ SortableStopRow เซ็นเอง
   // ทีละแถว เพราะที่นี่มี stops ทั้งวันอยู่ในมือแล้วโดยธรรมชาติของโครงเดิม ไม่ต้องรื้อ prop chain
@@ -245,9 +260,21 @@ export function DayStopsSection({
             <div className="text-xs opacity-80">
               {dateLabel} · วัน{day.weekdayTh}
             </div>
-            <div className="text-lg font-bold">
-              {meta.icon} {day.cityTh}
-            </div>
+            {cityOptions && onChangeDayCity ? (
+              <DayCityPicker
+                dayId={day.id}
+                dateLabel={dateLabel}
+                currentCityId={currentCityId}
+                currentCityTh={day.cityTh}
+                icon={meta.icon}
+                options={cityOptions}
+                onChange={onChangeDayCity}
+              />
+            ) : (
+              <div className="text-lg font-bold">
+                {meta.icon} {day.cityTh}
+              </div>
+            )}
           </div>
           {/* ล็อกวันที่ลงตัวแล้ว — กันเผลอลากจุดแวะหลุดตอนเลื่อนดูบนมือถือ */}
           <button
