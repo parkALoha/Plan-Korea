@@ -15,7 +15,11 @@ import { resolve } from "node:path";
  * อาการเวลาพัง: `rank` ไม่ unique โดยตั้งใจ (`D6`) → ขาด tie-break แล้ว
  * **สองเครื่องได้ลำดับจุดแวะคนละแบบเมื่อ rank ชนกัน** · เห็นด้วยตายาก และโทษเน็ตได้ง่าย
  *
- * ⚠️ **ขอบของด่านนี้ — ห้ามอ่านเกิน:** สแกน *ข้อความ* ใน `db.ts` เท่านั้น
+ * ⚠️ **ขอบของด่านนี้ — ห้ามอ่านเกิน:**
+ * · ครึ่ง **ลำดับ** ไล่ทุก `.order("rank"` ในไฟล์ → ไม่หลบด้วยรูปการประกาศ (arrow / ชื่อตารางผ่านตัวแปร)
+ * · 🔴 ครึ่ง **`deleted_at`** ยังไล่ทีละ `export function` → **arrow function ที่ลืม `deleted_at` ยังหลุด**
+ *   (ปิดครึ่งแรกแล้วเพราะ P4 หักได้จริง · ครึ่งนี้ยังไม่มีใครหัก **แต่ช่องเดียวกันอยู่ตรงนั้น**)
+ * · สแกน *ข้อความ* ใน `db.ts` เท่านั้น
  * ไม่ได้พิสูจน์ว่าฐานคืนแถวตามลำดับนั้นจริง และไม่เห็นคิวรีที่เขียนนอกไฟล์นี้
  * · `scheduleBounds.test.ts` **ทดสอบผู้ใช้ของสัญญา ไม่ได้ทดสอบว่าใครทำสัญญาให้**
  *   (คอมเมนต์ในไฟล์นั้นเขียนเองว่า *"ไม่เรียงซ้ำโดยตั้งใจ"*) — จึงพึ่ง DAL 100%
@@ -35,7 +39,25 @@ function stripComments(s: string): string {
   return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-/** บล็อกของทุกฟังก์ชันที่ query `trip_stops` — จักรวาลมาจาก *ไฟล์บนดิสก์* */
+/**
+ * 🔴 **ครึ่ง "ลำดับ" ไม่ไล่ทีละฟังก์ชัน — ไล่ทุก `.order("rank"` ในไฟล์**
+ * เหตุ (P4 หักด่านฉบับแรกได้ 3 ทาง · 29 ส.ค. 2026):
+ * · `export const f = (…) =>` ไม่เข้า regex `export function` → **ไม่เข้าจักรวาลเลย**
+ * · `engineTable(db, STOPS_TABLE)` ผ่านตัวแปร → ตัวกรองสตริงตรงตัวมองไม่เห็น
+ * **ทั้งสองทางหายไปเงียบ · ไล่ที่ตัว `.order()` เองแทน ไม่มีทางหลบด้วยรูปการประกาศ**
+ */
+function rankOrderSites(): { idx: number; tail: string }[] {
+  const code = stripComments(SRC);
+  const out: { idx: number; tail: string }[] = [];
+  let i = code.indexOf('.order("rank"');
+  while (i !== -1) {
+    out.push({ idx: i, tail: code.slice(i, i + 200) });
+    i = code.indexOf('.order("rank"', i + 1);
+  }
+  return out;
+}
+
+/** บล็อกของทุกฟังก์ชันที่ query `trip_stops` — ใช้กับครึ่ง `deleted_at` เท่านั้น */
 function stopQueryBlocks(): { name: string; body: string }[] {
   const code = stripComments(SRC);
   const out: { name: string; body: string }[] = [];
@@ -75,11 +97,19 @@ describe("E2-AC8 — DAL ต้องคืน trip_stops เรียง (rank,
   });
 
   // ── ① แดงเมื่อละเมิด ──────────────────────────────────────────────────
-  it.each(stopQueryBlocks())("① $name — order by rank แล้วต่อด้วย id", ({ body }) => {
-    const rank = body.indexOf('.order("rank"');
-    const id = body.indexOf('.order("id"');
-    expect(rank).toBeGreaterThan(-1);
-    expect(id).toBeGreaterThan(rank); // tie-break ต้องมา *หลัง* rank ไม่ใช่แค่มีอยู่
+  it("① ทุก .order(\"rank\") ต้องตามด้วย .order(\"id\") และทั้งคู่ ascending: true", () => {
+    const sites = rankOrderSites();
+    // ③④ จักรวาลมาจากไฟล์บนดิสก์ · sentinel กันกรณีสแกนความว่างเปล่า
+    expect(sites.length).toBeGreaterThanOrEqual(5);
+    for (const { tail } of sites) {
+      // 🔴 B2 ของ P4: ฉบับแรกเทียบแค่ *ตำแหน่ง* → ascending:false ผ่านฉลุยแล้วคืนแถวย้อนลำดับทั้งวัน
+      //    และ it.each พิมพ์ ✓ ออกมาเป็นหลักฐานว่าฟังก์ชันนั้นถูกตรวจแล้ว — แย่กว่าไม่มีด่าน
+      const rankAsc = /^\.order\("rank",\s*\{\s*ascending:\s*true\s*\}\)/.test(tail);
+      const thenId = /\.order\("rank"[^;]*?\.order\("id",\s*\{\s*ascending:\s*true\s*\}\)/s.test(tail);
+      expect({ site: tail.slice(0, 70), rankAsc, thenId }).toEqual({
+        site: tail.slice(0, 70), rankAsc: true, thenId: true,
+      });
+    }
   });
 
   it.each(stopQueryBlocks())("① $name — deleted_at is null เว้นตัวที่ตั้งชื่อว่าคืน tombstone", ({ name, body }) => {
