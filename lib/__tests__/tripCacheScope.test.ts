@@ -1,0 +1,89 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * คีย์แคชที่ผูกกับทริป ต้องผ่าน `readTripCache`/`writeTripCache` เท่านั้น — `D4` / `E6-AC6`
+ * เจ้าของ: P3-FE/Perf · 27 ส.ค. 2026 (API ของคีย์เป็นของ P1 · `a24ce80`)
+ *
+ * ## 🔴 บั๊กที่ด่านนี้กันไม่ให้กลับมา
+ * 5 คีย์ (`hotels` `bookings` `customPlaces` `overnightOverrides` `plans`) เคยเขียนด้วย
+ * `writeCache("hotels", …)` เฉย ๆ **ไม่มี `tripId`** → สลับทริป A→B **ผู้ใช้เห็นของทริป A เป็นของ B**
+ * · ออฟไลน์ = ไม่มี fetch มาทับ = **ค้างถาวร**
+ *
+ * 🎯 **มันรอดสายตามาถึงวันนี้เพราะคีย์ที่ *ลืม* ใส่ scope หน้าตาเหมือนคีย์ที่ *ตั้งใจ* ให้ global เป๊ะ**
+ * (`lastTripId` ตั้งใจข้ามทริป · `hotels` ไม่ได้ตั้งใจ — แต่โค้ดสองบรรทัดนั้นแยกกันไม่ออกด้วยตาเปล่า)
+ * → ด่านนี้ทำให้ความต่างนั้น **มีคนเห็นตอนเพิ่มโค้ด ไม่ใช่ตอนผู้ใช้เจอ**
+ *
+ * ## กติกาสามชนิด (P1 เขียนไว้ที่หัว `lib/localCache.ts`)
+ * ```
+ * ผูกทริป   readTripCache/writeTripCache   ← ด่านนี้บังคับเฉพาะกลุ่มนี้
+ * ผูกแผน    `xxx:{planId}`                  planId เป็น uuid ไม่ซ้ำข้ามทริป จึงปลอดภัยอยู่แล้ว
+ * global    ตั้งใจให้ข้ามทริป               lastTripId · catalog:* (คลังสาธารณะ เนื้อเหมือนกันทุกทริป)
+ * ```
+ */
+
+/** ชื่อที่เป็น "ข้อมูลของทริปหนึ่ง" — ห้ามโผล่ใน `readCache`/`writeCache` แบบไม่มี scope */
+const TRIP_SCOPED_NAMES = ["hotels", "bookings", "customPlaces", "overnightOverrides", "plans", "days"];
+
+/** ดึงคีย์ที่เป็น *สตริงตรง ๆ* ที่ถูกส่งให้ `readCache(`/`writeCache(` — ข้าม template literal (backtick) */
+function bareCacheKeys(source: string): string[] {
+  const found: string[] = [];
+  const re = /\b(?:read|write)Cache\s*(?:<[^>]*>)?\s*\(\s*(["'])([^"']*)\1/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) found.push(m[2]);
+  return found;
+}
+
+function hookSources(): { file: string; source: string }[] {
+  const dir = join(process.cwd(), "hooks");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
+    .map((f) => ({ file: f, source: readFileSync(join(dir, f), "utf8") }));
+}
+
+describe("คีย์แคชที่ผูกกับทริป", () => {
+  it("🔴 ไม่มี hook ไหนเรียก readCache/writeCache ด้วยชื่อที่เป็นข้อมูลของทริป", () => {
+    const offenders: string[] = [];
+    for (const { file, source } of hookSources()) {
+      for (const key of bareCacheKeys(source)) {
+        if (TRIP_SCOPED_NAMES.includes(key)) offenders.push(`${file} → "${key}"`);
+      }
+    }
+    expect(
+      offenders,
+      `คีย์พวกนี้เป็นข้อมูลของทริป ต้องใช้ readTripCache/writeTripCache แทน:\n  ${offenders.join("\n  ")}`
+    ).toEqual([]);
+  });
+
+  it("hook ที่ถือข้อมูลของทริป ต้อง import ตัวที่บังคับ scope จริง ๆ", () => {
+    // 🔴 เคสบนบอกได้แค่ "ไม่มีของผิด" — เคสนี้บอกว่า "มีของถูกอยู่จริง"
+    //    ถ้าใครลบการอ่านแคชทิ้งทั้งก้อน เคสบนจะยังเขียว แต่เคสนี้จะแดง
+    const mustUseTripCache = [
+      "useHotels.tsx",
+      "useBookings.tsx",
+      "useCustomPlaces.tsx",
+      "useOvernightOverrides.ts",
+      "usePlans.ts",
+    ];
+    const missing = mustUseTripCache.filter((f) => {
+      const src = readFileSync(join(process.cwd(), "hooks", f), "utf8");
+      return !src.includes("readTripCache") || !src.includes("writeTripCache");
+    });
+    expect(missing, `ไฟล์พวกนี้ควรใช้ readTripCache/writeTripCache: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("คีย์ที่ผูกกับแผน (`xxx:{planId}`) ต้องไม่ถูกจับผิด — planId ผูกทริปอยู่แล้ว", () => {
+    // เคสควบคุม: ตัวสแกนต้อง **ไม่** เห็น template literal เป็นคีย์ตรง
+    expect(bareCacheKeys("writeCache(`daySettings:${planId}`, x)")).toEqual([]);
+    expect(bareCacheKeys('readCache<T>("lastTripId")')).toEqual(["lastTripId"]);
+  });
+
+  it("🔴 เคสควบคุมฝั่งบวก — ตัวสแกนจับของผิดได้จริง ไม่ใช่คืนอาเรย์ว่างเสมอ", () => {
+    // ถ้าบรรทัดนี้ไม่แดงเวลามีของผิด เคสแรกทั้งเคสก็ไม่ได้พิสูจน์อะไรเลย
+    const violating = 'const c = readCache<TripHotel[]>("hotels");\nwriteCache("bookings", rows);';
+    const keys = bareCacheKeys(violating);
+    expect(keys).toEqual(["hotels", "bookings"]);
+    expect(keys.filter((k) => TRIP_SCOPED_NAMES.includes(k))).toHaveLength(2);
+  });
+});

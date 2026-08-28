@@ -6,7 +6,7 @@ import { supabaseConfigured } from "@/lib/supabase";
 import { buildDayBridge, dayBridgeWarning } from "@/lib/engine/dayBridge";
 import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { showToast } from "@/lib/toast";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
@@ -37,6 +37,15 @@ type Overrides = Record<string, City>;
 export function useOvernightOverrides(tripId: string | null) {
   const [overrides, setOverrides] = useState<Overrides>({});
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+
+  // 🔴 สลับทริปแล้วต้องไม่เห็นเมืองที่นอนของทริปเก่า — ดู `useHotels.tsx` สำหรับเหตุผลเต็ม
+  //    (provider ไม่ถูก remount ตอนสลับทริป · คีย์แคชที่ scope แล้วแก้ได้แค่ครึ่งเดียว)
+  const [shownTripId, setShownTripId] = useState<string | null>(tripId);
+  if (shownTripId !== tripId) {
+    setShownTripId(tripId);
+    setOverrides({});
+    setLoaded(!supabaseConfigured);
+  }
   const tripIdRef = useRef<string | null>(null);
   const dayIdRef = useRef<Map<string, string>>(new Map());
 
@@ -46,10 +55,11 @@ export function useOvernightOverrides(tripId: string | null) {
 
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
     let cancelled = false;
 
     async function init() {
-      const cached = readCache<Overrides>("overnightOverrides");
+      const cached = readTripCache<Overrides>(activeTripId, "overnightOverrides");
       if (cached) {
         setOverrides(cached);
         setLoaded(true);
@@ -79,7 +89,7 @@ export function useOvernightOverrides(tripId: string | null) {
       // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — วัดจากจำนวนวันที่สะพานจับคู่ได้จริง
       // (`bridge.matched`) เทียบกับจำนวนวันที่ฐานมีจริง (`rows.length`) ไม่ใช่ผลลัพธ์ที่ toMap ให้มา
       if (!reportDayBridgeDropIfAny(rows.length, bridge.matched)) {
-        writeCache("overnightOverrides", next);
+        writeTripCache(activeTripId, "overnightOverrides", next);
       }
       setLoaded(true);
     }
@@ -119,7 +129,7 @@ export function useOvernightOverrides(tripId: string | null) {
       if (!ok) {
         setOverrides(before);
       } else {
-        writeCache("overnightOverrides", next);
+        writeTripCache(tripId, "overnightOverrides", next);
       }
     },
     [overrides]

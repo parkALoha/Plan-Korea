@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
@@ -27,6 +27,15 @@ function useCustomPlacesStore(tripId: string | null) {
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
+  // 🔴 สลับทริปแล้วต้องไม่เห็นสถานที่ของทริปเก่า — ดู `useHotels.tsx` สำหรับเหตุผลเต็ม
+  //    (provider ไม่ถูก remount ตอนสลับทริป · คีย์แคชที่ scope แล้วแก้ได้แค่ครึ่งเดียว)
+  const [shownTripId, setShownTripId] = useState<string | null>(tripId);
+  if (shownTripId !== tripId) {
+    setShownTripId(tripId);
+    setCustomPlaces([]);
+    setLoaded(!supabaseConfigured);
+  }
+
   useEffect(() => {
     tripIdRef.current = tripId;
   }, [tripId]);
@@ -48,7 +57,7 @@ function useCustomPlacesStore(tripId: string | null) {
     }
 
     async function init() {
-      const cached = readCache<CustomPlace[]>("customPlaces");
+      const cached = readTripCache<CustomPlace[]>(activeTripId, "customPlaces");
       if (cached) {
         setCustomPlaces(cached);
         setLoaded(true);
@@ -58,7 +67,7 @@ function useCustomPlacesStore(tripId: string | null) {
       if (cancelled) return;
       if (rows) {
         setCustomPlaces(rows);
-        writeCache("customPlaces", rows);
+        writeTripCache(activeTripId, "customPlaces", rows);
       }
       setLoaded(true);
 
@@ -85,7 +94,7 @@ function useCustomPlacesStore(tripId: string | null) {
               const fresh = await fetchPlaces(id);
               if (fresh && !cancelled) {
                 setCustomPlaces(fresh);
-                writeCache("customPlaces", fresh);
+                writeTripCache(id, "customPlaces", fresh);
               }
             }, REFETCH_DEBOUNCE_MS);
           }

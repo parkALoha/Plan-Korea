@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type TripPlan } from "@/lib/supabase";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
@@ -39,6 +39,19 @@ export function usePlans(tripId: string | null) {
   const [plans, setPlans] = useState<TripPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
+
+  // 🔴 สลับทริปแล้วต้องไม่เห็นแผนของทริปเก่า — ดู `useHotels.tsx` สำหรับเหตุผลเต็ม
+  //    (provider ไม่ถูก remount ตอนสลับทริป · คีย์แคชที่ scope แล้วแก้ได้แค่ครึ่งเดียว)
+  // ⚠️ **`activePlanId` ต้องรีเซ็ตด้วย ไม่ใช่แค่ `plans`** — มันถูกส่งต่อเป็น `planId` ให้
+  //    `useStops`/`useDaySettings`/`usePlaceNotes` ซึ่งคีย์แคชด้วย `xxx:{planId}` → ถ้าค้างข้ามทริป
+  //    สามฮุคนั้นจะไปดึงแคชของแผนที่ไม่ได้อยู่ในทริปนี้ **ทั้งที่คีย์ของมันเอง scope ถูกแล้ว**
+  const [shownTripId, setShownTripId] = useState<string | null>(tripId);
+  if (shownTripId !== tripId) {
+    setShownTripId(tripId);
+    setPlans([]);
+    setActivePlanId(null);
+    setLoaded(!supabaseConfigured);
+  }
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
   const tripIdRef = useRef<string | null>(null);
@@ -59,7 +72,7 @@ export function usePlans(tripId: string | null) {
     const rows = await fetchReadJson<PlanRow[]>(`/api/engine/plans?tripId=${encodeURIComponent(id)}`);
     if (!rows) return;
     applyRows(rows);
-    writeCache("plans", { plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })), activePlanId: rows.find((r) => r.is_active)?.id ?? null });
+    writeTripCache(id, "plans", { plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })), activePlanId: rows.find((r) => r.is_active)?.id ?? null });
   }, [applyRows]);
 
   useEffect(() => {
@@ -74,7 +87,7 @@ export function usePlans(tripId: string | null) {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const cached = readCache<{ plans: TripPlan[]; activePlanId: string | null }>("plans");
+      const cached = readTripCache<{ plans: TripPlan[]; activePlanId: string | null }>(activeTripId, "plans");
       if (cached) {
         setPlans(cached.plans);
         setActivePlanId(cached.activePlanId);
@@ -87,7 +100,7 @@ export function usePlans(tripId: string | null) {
       if (cancelled) return;
       if (rows) {
         applyRows(rows);
-        writeCache("plans", {
+        writeTripCache(activeTripId, "plans", {
           plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })),
           activePlanId: rows.find((r) => r.is_active)?.id ?? null,
         });

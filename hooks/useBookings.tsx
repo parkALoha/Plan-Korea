@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { buildUuidToDayKey } from "@/hooks/dayKeyMaps";
 import { buildDayBridge } from "@/lib/engine/dayBridge";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
@@ -50,12 +50,22 @@ function useBookingsStore(tripId: string | null) {
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
+  // 🔴 สลับทริปแล้วต้องไม่เห็นตั๋วของทริปเก่า — ดู `useHotels.tsx` สำหรับเหตุผลเต็ม
+  //    (provider ไม่ถูก remount ตอนสลับทริป · คีย์แคชที่ scope แล้วแก้ได้แค่ครึ่งเดียว)
+  const [shownTripId, setShownTripId] = useState<string | null>(tripId);
+  if (shownTripId !== tripId) {
+    setShownTripId(tripId);
+    setBookings([]);
+    setLoaded(!supabaseConfigured);
+  }
+
   useEffect(() => {
     tripIdRef.current = tripId;
   }, [tripId]);
 
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
 
     const channelName = `bookings_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
@@ -64,7 +74,7 @@ function useBookingsStore(tripId: string | null) {
     async function init() {
       // 🔴 คืนการใช้แคชที่ผมทำหายตอนเขียนใหม่ — `eslint` จับให้ (import ค้างโดยไม่มีใครใช้)
       //    แคชคือสิ่งที่ทำให้หน้าขึ้นทันทีตอนเปิดและยังอ่านได้ตอนเน็ตหลุด (เฟส 18)
-      const cached = readCache<TripBooking[]>("bookings");
+      const cached = readTripCache<TripBooking[]>(activeTripId, "bookings");
       if (cached) {
         setBookings(sortBookings(cached));
         setLoaded(true);
@@ -106,7 +116,7 @@ function useBookingsStore(tripId: string | null) {
           rows.filter((r) => r.trip_day_id !== null).length,
           mapped.filter((r) => r.day_id !== null).length
         );
-        writeCache("bookings", mapped);
+        writeTripCache(activeTripId, "bookings", mapped);
       }
       setLoaded(true);
 
@@ -145,7 +155,7 @@ function useBookingsStore(tripId: string | null) {
       rows.filter((r) => r.trip_day_id !== null).length,
       mapped.filter((r) => r.day_id !== null).length
     );
-    writeCache("bookings", mapped);
+    writeTripCache(tripId, "bookings", mapped);
   }, []);
 
   useEffect(() => {

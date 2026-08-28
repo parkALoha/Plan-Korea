@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { hotelRangeKey } from "@/lib/hotelLegs";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
@@ -60,12 +60,28 @@ function useHotelsStore(tripId: string | null) {
   // ยังไม่ได้ตั้งค่า Supabase — ใช้ state ในเครื่องไปก่อน (ไม่ sync ระหว่างเครื่อง) ถือว่าโหลดเสร็จตั้งแต่แรก
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
+  // 🔴 **ครึ่งที่สองของบั๊กข้ามทริป** — คีย์แคชที่ผูกทริป (`readTripCache`) แก้แค่ครึ่งแรก (P3, 27 ส.ค. 2026)
+  // `TripDataProvider` **ไม่ถูก remount ตอนสลับทริป** (ไม่มี `key` prop ที่ไหนเลย — ตรวจแล้วทั้ง
+  // `app/trip/[tripId]/layout.tsx` และหน้า bare) → state ของ provider อยู่ข้ามการสลับทริป
+  // → ที่พักของทริป A **ค้างบนจอตอนเปิดทริป B** จนกว่า fetch ของ B จะกลับมา · ออฟไลน์ = ค้างถาวร
+  // ⚠️ **และพอคีย์แคชถูก scope แล้ว ครึ่งนี้กลับเด่นขึ้น**: ทริป B ที่ยังไม่มีแคชจะไม่ `setHotels` เลย
+  //    → สิ่งเดียวที่อยู่บนจอคือของ A ล้วน ๆ · **แก้คีย์อย่างเดียวจึงยังไม่ปิดอาการที่ผู้ใช้เห็น**
+  // 🎯 รีเซ็ต **ตอน render ไม่ใช่ในเอฟเฟกต์** — แพตเทิร์น "adjust state on prop change" ของ React เอง
+  //    (เอฟเฟกต์จะโดน `react-hooks/set-state-in-effect` และยังช้าไปหนึ่งเฟรมด้วย = เห็นของผิดแวบหนึ่ง)
+  const [shownTripId, setShownTripId] = useState<string | null>(tripId);
+  if (shownTripId !== tripId) {
+    setShownTripId(tripId);
+    setHotels({});
+    setLoaded(!supabaseConfigured);
+  }
+
   useEffect(() => {
     tripIdRef.current = tripId;
   }, [tripId]);
 
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
 
     // ชื่อ channel ต้องไม่ซ้ำกันต่อการ mount เพราะ React Strict Mode (dev) รัน effect
     // นี้ 2 รอบ — ถ้าใช้ชื่อเดิม supabase-js จะคืน channel เดิมที่ subscribe() ไปแล้ว
@@ -86,17 +102,17 @@ function useHotelsStore(tripId: string | null) {
         return map;
       };
 
-      const cached = readCache<TripHotel[]>("hotels");
+      const cached = readTripCache<TripHotel[]>(activeTripId, "hotels");
       if (cached) {
         setHotels(toMap(cached));
         setLoaded(true);
       }
 
-      const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${tripId}/hotels`);
+      const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${activeTripId}/hotels`);
       if (cancelled) return;
       if (rows) {
         setHotels(toMap(rows));
-        writeCache("hotels", rows);
+        writeTripCache(activeTripId, "hotels", rows);
       }
       setLoaded(true);
 
@@ -111,7 +127,7 @@ function useHotelsStore(tripId: string | null) {
             const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${id}/hotels`);
             if (!rows || cancelled) return;
             setHotels(toMap(rows));
-            writeCache("hotels", rows);
+            writeTripCache(id, "hotels", rows);
           }, 300);
         })
         .subscribe();
@@ -137,7 +153,7 @@ function useHotelsStore(tripId: string | null) {
       map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;
     }
     setHotels(map);
-    writeCache("hotels", rows);
+    writeTripCache(id, "hotels", rows);
   }, []);
 
   /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
