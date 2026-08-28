@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { readCache, writeCache } from "@/lib/localCache";
 import type { Category, Place } from "@/data/places";
 
 /** รูปที่ `GET /api/engine/places` คืนมา (P1 28 ส.ค. 2026, `25723c0`) */
@@ -76,22 +77,50 @@ function toPlace(row: CatalogPlaceRow): Place {
 export function useCatalogPlaces(cityId: string | null): CatalogPlacesState {
   const [result, setResult] = useState<{ forCityId: string; state: CatalogPlacesState } | null>(null);
 
+  /**
+   * ## `E6-AC4` — คลังต้องอ่านได้ตอนไม่มีเน็ต
+   * เดิม hook นี้ไม่แคชอะไรเลย → ทริปแพลตฟอร์มออฟไลน์ = ไม่มีสถานที่ให้เลือกเลย
+   *
+   * ## 🔴 คีย์เป็น `cityId` **ไม่ใช่ `tripId`** — และผมตั้งใจต่างจากที่ P1 สั่ง
+   * P1 บอกว่าให้คีย์ด้วย `tripId` ทั้งสอง hook เพราะกลัวบั๊กแบบที่ P3 เจอ (ทริปหนึ่งเห็นของอีกทริป)
+   * · **บั๊กนั้นต้องการให้ข้อมูล *ต่างกันตามทริป* ถึงจะเกิด** — คลังไม่ต่าง
+   * · `column-map.md:90` แยกไว้เอง: `custom_places` = *"ต่อทริป **ไม่ใช่ catalog กลาง**"*
+   *   → `catalog_places` เป็นข้อมูลอ้างอิงสาธารณะ **เมืองเดียวกันได้ของชุดเดียวกันทุกทริป**
+   * 🎯 **คีย์ควรตรงกับสิ่งที่ข้อมูลแปรตาม** · คีย์ด้วย `tripId` จะเก็บของชุดเดิมซ้ำทุกทริป
+   *   ซึ่งกินโควตาที่ `writeCache` ทิ้งเงียบเมื่อเต็ม (`D17` มีอยู่เพราะเพดาน 5 MB นั้นพอดี)
+   *
+   * ⚠️ `[]` เป็นคำตอบที่ถูกต้องได้จริงที่นี่ (*"เมืองนี้ยังไม่มีสถานที่ในคลัง"* — route แยก `404` กับ `200 []`
+   * ให้แล้วตั้งแต่ต้นทาง) → **แคช `[]` ด้วย ไม่ถือว่าผิดปกติ**
+   */
   useEffect(() => {
     if (!cityId) return;
     let cancelled = false;
-    fetch(`/api/engine/places?cityId=${encodeURIComponent(cityId)}&limit=100`)
-      .then((r) => {
+    // 🔴 ผูกค่าที่แคบแล้วไว้ใน `const` ก่อนสร้าง closure — TS ไม่พา narrowing ของพารามิเตอร์
+    //    ข้ามเข้าไปในฟังก์ชันซ้อน (`string | null` จะกลับมาข้างใน)
+    const id = cityId;
+    const key = `catalog:places:${id}`;
+
+    // `async function` ครอบ — เหตุผลเดียวกับ `usePlatformItinerary`
+    async function load() {
+      const cached = readCache<CatalogPlaceRow[]>(key);
+      if (cached && !cancelled) {
+        setResult({ forCityId: id, state: { status: "ready", places: cached.map(toPlace) } });
+      }
+      try {
+        const r = await fetch(`/api/engine/places?cityId=${encodeURIComponent(id)}&limit=100`);
         if (!r.ok) throw new Error(`places ${r.status}`);
-        return r.json() as Promise<CatalogPlaceRow[]>;
-      })
-      .then((rows) => {
-        if (!cancelled) {
-          setResult({ forCityId: cityId, state: { status: "ready", places: rows.map(toPlace) } });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ forCityId: cityId, state: { status: "error" } });
-      });
+        const rows = (await r.json()) as CatalogPlaceRow[];
+        if (cancelled) return;
+        // เก็บ *แถวดิบ* ไม่ใช่ผลของ `toPlace()` — แปลงตอนอ่าน ให้โค้ดรุ่นหน้าอ่านของเดิมได้
+        writeCache(key, rows);
+        setResult({ forCityId: id, state: { status: "ready", places: rows.map(toPlace) } });
+      } catch {
+        // ล้มแล้วมีของในเครื่อง = ใช้ของนั้นต่อ ไม่ขึ้น error ทับของที่อ่านได้อยู่
+        if (cancelled || cached) return;
+        setResult({ forCityId: id, state: { status: "error" } });
+      }
+    }
+    void load();
     return () => {
       cancelled = true;
     };

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Day } from "@/data/itinerary";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { WEEKDAYS_EN_FULL, WEEKDAYS_TH_FULL } from "@/lib/tripDateRange";
 
 /** แถวที่ `GET /api/engine/trips/<id>/days` คืนมาหลัง P1 เพิ่ม `city_id` (28 ส.ค. 2026)
@@ -21,7 +22,17 @@ export type PlatformItineraryState =
    * ที่มีผู้อ่านทั่วแอป การเพิ่มฟิลด์ที่มีค่าเฉพาะทริปแพลตฟอร์มจะกลายเป็น `undefined` เงียบ ๆ ทุกที่
    * ที่เหลือ · ตัวเลือกเมืองต้องการ **id** (ไม่ใช่ชื่อ) เพราะ `PATCH` รับ `cityId` และชื่อซ้ำกันได้
    */
-  | { status: "ready"; days: Day[]; cityIdByDayId: Record<string, string | null> }
+  | {
+      status: "ready";
+      days: Day[];
+      cityIdByDayId: Record<string, string | null>;
+      /**
+       * 🔴 `true` = ของจากเครื่อง ยังไม่ได้ยืนยันกับฐานรอบนี้ (`E6-AC4`)
+       * ผู้เรียกไม่ต้องอ่านก็ได้ **แต่ต้องอ่านได้** — ไม่งั้น "เห็นข้อมูลตอนออฟไลน์" กับ
+       * "เห็นข้อมูลสด" แยกไม่ออกจากภายนอก ซึ่งเป็นรูปเดียวกับ `P-50` (*ธงที่อ่านไม่ได้ ไม่ใช่ธง*)
+       */
+      fromCache?: boolean;
+    }
   | { status: "error" };
 
 /** ป้ายของวันที่ผู้ใช้ยังไม่ได้เลือกเมือง — **สภาพตั้งต้นของทุกวันในทริปใหม่** ไม่ใช่เคสขอบ
@@ -63,23 +74,49 @@ export function usePlatformItinerary(
    */
   const [nonce, setNonce] = useState(0);
 
+  /**
+   * ## `E6-AC4` — ทริปแพลตฟอร์มต้องอ่านได้ตอนไม่มีเน็ต
+   *
+   * 🔴 **ก่อนหน้านี้ hook นี้ไม่แคชอะไรเลย** · ทริปเกาหลีรอดเพราะ `ITINERARY` ติดมากับบันเดิล
+   * **ทริปแพลตฟอร์มไม่มีอะไรติดมาเลย → เปิดตอนออฟไลน์แล้วว่างเปล่า และว่างโดยไม่มี error**
+   * 🎯 นั่นแปลว่า *"อ่าน offline ได้"* กับ *"ไม่พังเพราะไม่พยายามโหลดอะไร"* แยกไม่ออก — เกณฑ์ที่วัดไม่ได้
+   *
+   * ## ลำดับ: hydrate จากเครื่อง → ยิงของสด → ทับ
+   * ท่าเดียวกับ `useStops` ซึ่งพิสูจน์แล้วว่าเวิร์ก · **hydrate ใน effect ไม่ใช่ใน `useState`**
+   * เพราะค่าเริ่มต้นที่ต่างกันระหว่างเซิร์ฟเวอร์กับเบราว์เซอร์ทำให้ hydration ไม่ตรงกัน
+   *
+   * 🔴 **แคชเก็บ *แถวดิบจากฐาน* ไม่ใช่ `Day[]` ที่แปลงแล้ว** — `toDay()` เปลี่ยนได้ทุกเมื่อ
+   * (คอมเมนต์ข้างบนบอกเองว่า union 6 เมืองจะถูกรื้อเฟสถัดไป) · **เก็บผลของการแปลง = ผูกแคชกับโค้ดรุ่นนี้**
+   * เก็บสิ่งที่ฐานตอบมา แล้วแปลงตอนอ่าน → รุ่นถัดไปอ่านของเดิมได้โดยไม่ต้องล้าง
+   *
+   * ⚠️ **ไม่มีกฎ "ห้ามทับด้วยผลว่าง" ที่นี่ และนั่นตั้งใจ** — `[]` เป็นคำตอบที่ถูกต้องได้จริง
+   * (ทริปที่ยังไม่มีวัน — `useTripDaysGate` มีอยู่เพื่อสถานะนั้นโดยเฉพาะ) · กฎนั้นมีไว้กับ *การหดที่อธิบายไม่ได้*
+   * เช่น `mapRows` ของ `useStops` ที่ทิ้งแถวเงียบ ๆ · **ที่นี่ไม่มีตัวแปลงที่ทำแถวหายได้**
+   */
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    fetch(`/api/engine/trips/${tripId}/days`)
-      .then((r) => {
+
+    // `async function` ครอบ — ท่าเดียวกับ `useStops.ts:84` · `setState` ตรง ๆ ในตัว effect
+    // ผิดกฎ `react-hooks/set-state-in-effect` (และ CI รัน `--max-warnings=0`)
+    async function load() {
+      const cached = readTripCache<DbDayRow[]>(tripId, "days");
+      if (cached && !cancelled) setResult({ forTripId: tripId, state: readyFrom(cached, true) });
+      try {
+        const r = await fetch(`/api/engine/trips/${tripId}/days`);
         if (!r.ok) throw new Error(`days ${r.status}`);
-        return r.json() as Promise<DbDayRow[]>;
-      })
-      .then((rows) => {
+        const rows = (await r.json()) as DbDayRow[];
         if (cancelled) return;
-        const days = rows.map(toDay);
-        const cityIdByDayId = Object.fromEntries(rows.map((r) => [r.id, r.city_id]));
-        setResult({ forTripId: tripId, state: { status: "ready", days, cityIdByDayId } });
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ forTripId: tripId, state: { status: "error" } });
-      });
+        writeTripCache(tripId, "days", rows);
+        setResult({ forTripId: tripId, state: readyFrom(rows, false) });
+      } catch {
+        // 🔴 ล้มแล้วมีของในเครื่อง = ใช้ของนั้นต่อ **ไม่ใช่ขึ้น error ทับของที่อ่านได้อยู่**
+        //    "ออฟไลน์" คือ *ผลของคำขอที่ล้ม* ไม่ใช่สถานะที่แอปติดตามเอง (`navigator.onLine` โกหก)
+        if (cancelled || cached) return;
+        setResult({ forTripId: tripId, state: { status: "error" } });
+      }
+    }
+    void load();
     return () => {
       cancelled = true;
     };
@@ -92,6 +129,15 @@ export function usePlatformItinerary(
       ? result.state
       : { status: "loading" };
   return { state, reload };
+}
+
+function readyFrom(rows: DbDayRow[], fromCache: boolean): PlatformItineraryState {
+  return {
+    status: "ready",
+    days: rows.map(toDay),
+    cityIdByDayId: Object.fromEntries(rows.map((r) => [r.id, r.city_id])),
+    fromCache,
+  };
 }
 
 function toDay(row: DbDayRow): Day {
