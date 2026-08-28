@@ -113,12 +113,20 @@ describe("เส้นทางที่ถูกต้อง", () => {
     });
   });
 
-  it("ไม่ส่ง `baseTimezone` → `null` ไม่ใช่สตริงว่าง", async () => {
+  it("ไม่ส่ง `baseTimezone` → ต้องไม่ส่ง *สตริง* เข้า RPC", async () => {
+    // 🔴 สิ่งที่เคสนี้กันคือ **สตริงว่าง/ช่องว่างล้วนหลุดเข้า RPC** ไม่ใช่ตัวแทนของ "ไม่มีค่า"
+    //    `null` (ส่งตรง ๆ) กับ `undefined` (ละพารามิเตอร์) เดินเส้นเดียวกันเป๊ะที่ฐาน:
+    //    `20260827080000:48` `p_base_timezone text default null`
+    //    `20260827080000:76` `coalesce(nullif(trim(p_base_timezone), ''), 'Asia/Bangkok')`
+    //    → ผูกเคสกับ *ตัวแทน* ตัวใดตัวหนึ่ง = แดงตอนเปลี่ยนชนิด ทั้งที่พฤติกรรมไม่ขยับ (เกิดจริง 28 ส.ค.)
+    // ⚠️ ขอบเขต: เคสนี้ดู **อาร์กิวเมนต์ที่ส่งเข้า `rpc()`** ไม่ใช่ body ที่ออกไปจริง
+    //    (`JSON.stringify` ตัดคีย์ที่เป็น `undefined` ทิ้ง — เคสนี้พิสูจน์เรื่องนั้นให้ไม่ได้)
+    const tzOf = () => rpcSpy.mock.calls[0][1].p_base_timezone as unknown;
     await post(OK);
-    expect(rpcSpy.mock.calls[0][1].p_base_timezone).toBeNull();
+    expect(tzOf() == null, `ละค่า → ต้องไม่เป็นสตริง · ได้ ${JSON.stringify(tzOf())}`).toBe(true);
     rpcSpy.mockClear();
     await post({ ...OK, baseTimezone: "   " });
-    expect(rpcSpy.mock.calls[0][1].p_base_timezone).toBeNull();
+    expect(tzOf() == null, `ช่องว่างล้วน → ต้องไม่เป็นสตริง · ได้ ${JSON.stringify(tzOf())}`).toBe(true);
   });
 
   it("สำเร็จ → `201` พร้อมแถวที่สร้าง", async () => {
