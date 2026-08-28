@@ -49,7 +49,7 @@ import { useMounted } from "@/hooks/useMounted";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
-import { useTripDaysGate } from "@/hooks/useTripDaysGate";
+import { useLegacyDayPlanGate } from "@/hooks/useLegacyDayPlanGate";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 
 
@@ -276,7 +276,10 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   // 🔴 หน้านี้ไม่มีส่วนไหนที่ไม่ผูกกับวัน (P1/P3, 27 ส.ค. 2026 — ดู §21/§22) ต่างจาก `page.tsx`/
   // `summary/page.tsx` ที่แยกที่พัก/booking/checklist ออกจากโครงวันได้ — ที่นี่แม้แต่ header (ชื่อเมือง/
   // วันที่/พยากรณ์อากาศ) ก็เป็น `day` (จาก `itinerary[dayIndex]`) ทั้งหมด จึง gate ทั้งหน้าแทนที่จะแยกส่วน
-  const dayPlanGate = useTripDaysGate(tripId);
+  // 🔴 `useLegacyDayPlanGate` ไม่ใช่ `useTripDaysGate` — ตัวหลังถามแค่ "มีวันไหม" ซึ่งเลิกเป็นตัวแทน
+  //    ของ "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง (ทริปแพลตฟอร์มมีวันจริงแล้ว
+  //    → `"ready"` → หน้านี้เคยเรนเดอร์แผนเกาหลีทับทริปอื่น) · เหตุผลเต็มอยู่ในไฟล์ของด่าน
+  const dayPlanGate = useLegacyDayPlanGate(tripId);
 
   const nextIndex = dayStops.findIndex((s) => !s.visited_at);
   const nextStop = nextIndex >= 0 ? dayStops[nextIndex] : null;
@@ -456,7 +459,27 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
     );
   }
 
-  if (dayPlanGate === "empty") {
+  // 🔴 อ่านแหล่งวันไม่ได้ (ออฟไลน์/500) — คนละเหตุกับ "ไม่มีวัน"/"คนละทริป" ผู้ใช้ทำคนละอย่าง
+  if (dayPlanGate === "unreadable") {
+    return (
+      <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
+        <header className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream">
+          <div className="flex items-center gap-3">
+            <Link href={`/trip/${tripId}`} className="text-sm text-cream/80 hover:text-cream hover:underline">
+              ← หน้าแผน
+            </Link>
+          </div>
+        </header>
+        <div className="px-4 pt-5">
+          <DayPlanUnavailableNotice reason="unreadable" />
+        </div>
+      </main>
+    );
+  }
+
+  // `no-days` (ฐานไม่มีวัน) กับ `foreign` (มีวันแต่เป็นทริปแพลตฟอร์ม) ใช้ข้อความเดียวกัน — ทั้งคู่แปลว่า
+  // **หน้านี้ยังแสดงทริปนี้ไม่ได้ และผู้ใช้ต้องรอระบบ** ไม่ใช่สิ่งที่เขาแก้เองได้
+  if (dayPlanGate === "no-days" || dayPlanGate === "foreign") {
     return (
       <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
         <header className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream">

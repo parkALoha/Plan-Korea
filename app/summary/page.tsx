@@ -55,7 +55,7 @@ import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useSignedFiles } from "@/hooks/useSignedFiles";
-import { useTripDaysGate } from "@/hooks/useTripDaysGate";
+import { useLegacyDayPlanGate } from "@/hooks/useLegacyDayPlanGate";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 import { HotelsFlatList } from "@/components/HotelsFlatList";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
@@ -630,9 +630,16 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   // 🔴 gate เฉพาะโครงวัน + hotelLegs/immigration ที่ผูกกับ itinerary — ไม่แตะ bookings/checklist ที่ไม่พึ่ง
   // trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22) hotelLegs ใช้ itinerary คำนวณช่วงวันของที่พัก จึงนับเป็น
   // itinerary-dependent ด้วยแม้ hotels เองจะเป็น day-independent
-  const dayPlanGate = useTripDaysGate(tripId);
-  const dayPlanReady = overallLoaded && dayPlanGate === "ready";
-  const dayPlanEmpty = overallLoaded && dayPlanGate === "empty";
+  // 🔴 `useLegacyDayPlanGate` ไม่ใช่ `useTripDaysGate` — ตัวหลังถามแค่ "มีวันไหม" ซึ่งเลิกเป็นตัวแทนของ
+  //    "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง · เหตุผลเต็มอยู่ในไฟล์ของด่าน
+  //    🎯 P1 ยิงจริงบน `/trip/647ed2c2/summary` (ทริปญี่ปุ่น) แล้วได้แผนเกาหลีทั้งฉบับ — หน้านี้เอง
+  const dayPlanGate = useLegacyDayPlanGate(tripId);
+  const dayPlanReady = overallLoaded && dayPlanGate === "legacy";
+  // `no-days` (ไม่มีวัน) กับ `foreign` (มีวันแต่เป็นทริปแพลตฟอร์ม) ใช้ข้อความเดียวกัน — ทั้งคู่แปลว่า
+  // หน้านี้ยังแสดงทริปนี้ไม่ได้ และเป็นเรื่องที่ผู้ใช้ต้องรอระบบ ไม่ใช่สิ่งที่เขาแก้เองได้
+  const dayPlanEmpty = overallLoaded && (dayPlanGate === "no-days" || dayPlanGate === "foreign");
+  // 🔴 อ่านแหล่งวันไม่ได้ (ออฟไลน์/500) — แยกข้อความ เพราะผู้ใช้ **ต่อเน็ตแล้วลองใหม่ได้เอง**
+  const dayPlanUnreadable = overallLoaded && dayPlanGate === "unreadable";
 
   function handleExportJson() {
     const payload = {
@@ -801,6 +808,10 @@ export function SummaryContent({ tripId }: { tripId: string }) {
             stopsByDay={stopsByDay}
             customPlaces={customPlaces}
           />
+        ) : dayPlanUnreadable ? (
+          <div className="mx-auto max-w-2xl px-4 pt-5">
+            <DayPlanUnavailableNotice reason="unreadable" />
+          </div>
         ) : dayPlanEmpty ? (
           <div className="mx-auto max-w-2xl px-4 pt-5">
             <DayPlanUnavailableNotice />
@@ -818,6 +829,9 @@ export function SummaryContent({ tripId }: { tripId: string }) {
               {daysWithoutStops.map((d) => dateLabelOf(d.date, lang)).join(", ")}
             </div>
           )}
+
+          {/* 🔴 อ่านแหล่งวันไม่ได้ — ที่พัก/ตั๋ว/checklist ข้างล่างยังแสดงได้ตามปกติ (ไม่พึ่ง trip_days) */}
+          {dayPlanUnreadable && <DayPlanUnavailableNotice reason="unreadable" />}
 
           {dayPlanEmpty && (
             <>
