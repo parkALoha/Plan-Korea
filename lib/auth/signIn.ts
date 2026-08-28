@@ -1,4 +1,5 @@
 import { createBrowserSupabase } from "@/lib/auth/browser";
+import { clearAllCaches } from "@/lib/localCache";
 import { safeNextPath } from "@/lib/auth/nextPath";
 
 /**
@@ -68,8 +69,17 @@ export async function sendMagicLink(email: string, next?: string | null): Promis
   }
 }
 
-/** ออกจากระบบ แล้วให้ผู้เรียกพาไปหน้าไหนต่อเอง */
+/**
+ * ออกจากระบบ แล้วให้ผู้เรียกพาไปหน้าไหนต่อเอง
+ *
+ * 🔴 **ล้างแคชท้องถิ่น *ก่อน* `auth.signOut()` ไม่ใช่หลัง** (P2 ชี้ · 28 ส.ค. 2026)
+ * `auth.signOut()` ยิงเน็ต → **ออฟไลน์แล้วมันโยน** → ถ้าล้างทีหลัง การล้างจะไม่เกิดเลย
+ * · **การล้างแคชท้องถิ่นไม่ต้องพึ่งเน็ต จึงควรทำให้สำเร็จก่อนเสมอ**
+ * 🎯 ราคาของลำดับที่ผิด: ผู้ใช้กด "ออกจากระบบ" ตอนเน็ตไม่ดี → เห็นว่าออกแล้ว
+ *   **แต่ข้อมูลของเขายังอยู่บนเครื่องให้คนถัดไปเห็น**
+ */
 export async function signOut(): Promise<void> {
+  clearAllCaches();
   const supabase = createBrowserSupabase();
   await supabase.auth.signOut();
 }

@@ -127,5 +127,35 @@ export function clearTripCache(tripId: string, name: string): void {
   clearCache(tripCacheKey(tripId, name));
 }
 
+/**
+ * 🔴 **กวาดแคชทั้งหมดของแอป — ใช้ตอน *ออกจากระบบ* เท่านั้น** (P2 เจอ · P1 ลง · 28 ส.ค. 2026)
+ *
+ * ## ช่องที่มีไว้ปิด
+ * `signOut()` เดิมเรียกแค่ `auth.signOut()` → **แคชของผู้ใช้คนก่อนยังอยู่บนเครื่องทุกคีย์**
+ * และแอป **hydrate จากแคชก่อน fetch เสมอ** (`useStops.ts` เขียนไว้เอง)
+ * → **คนถัดไปที่เปิดเครื่องนั้นเห็นเฟรมแรกเป็นข้อมูลของคนก่อน** · ออฟไลน์จะเห็นค้างไปเลย
+ * · ของที่ค้าง: `hotels` `bookings` `customPlaces` `overnightOverrides` `plans` `days`
+ *   `catalogCities` `daySettings:*` `stops:*` `placeNotes:*` `lastTripId`
+ *
+ * ## ⚠️ ต่างจาก `sweepLegacyCaches()` ตรงที่อันนั้นกวาดเฉพาะ **คีย์รุ่นเก่า**
+ * (`trip-cache:` ที่ไม่ใช่ `v2`) — **คีย์ปัจจุบันไม่เคยถูกกวาดเลย** จนถึงวันนี้
+ *
+ * 🔴 **กวาด `LEGACY_PREFIX` ด้วย ไม่ใช่แค่ `PREFIX`** — ถ้ากวาดแค่รุ่นปัจจุบัน
+ *    ของรุ่นเก่าที่ `sweepLegacyCaches` ยังไม่ได้เก็บ (เพราะยังไม่มีใครเรียก `readCache`) จะรอดข้ามบัญชี
+ */
+export function clearAllCaches(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(LEGACY_PREFIX)) doomed.push(k);
+    }
+    for (const k of doomed) window.localStorage.removeItem(k);
+  } catch {
+    // localStorage ถูกปิด — ไม่มีอะไรให้กวาด
+  }
+}
+
 /** 🔴 เปิดให้เทสต์เท่านั้น — ด่านที่ไม่มีเคสด้านบวก คือด่านที่ไม่มีใครรู้ว่ายังทำงานอยู่ไหม */
 export const __cachePrefixForTests = PREFIX;
