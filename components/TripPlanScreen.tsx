@@ -44,6 +44,7 @@ import { DayJumpBar } from "@/components/DayJumpBar";
 import { useTripDaysGate } from "@/hooks/useTripDaysGate";
 import { useTripCatalogCities } from "@/hooks/useTripCatalogCities";
 import { usePlatformItinerary } from "@/hooks/usePlatformItinerary";
+import { readPersonalValue, writePersonalValue } from "@/hooks/personalLocalValue";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 import { HotelsFlatList } from "@/components/HotelsFlatList";
 
@@ -219,12 +220,12 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     [tripId, reloadPlatformItinerary]
   );
 
-  const [who, setWho] = useState(() =>
-    typeof window !== "undefined" ? window.localStorage.getItem("trip-who") ?? "" : ""
-  );
+  // 🔴 ชื่อผู้ใช้ — ข้อมูลส่วนบุคคล ต้องถูกล้างตอน `signOut` (ดู `hooks/personalLocalValue.ts`)
+  //    เดิมเขียนคีย์ดิบ `"trip-who"` ซึ่งอยู่นอก `trip-cache:` → `clearAllCaches()` กวาดไม่ถึง
+  const [who, setWho] = useState(() => readPersonalValue("who", "trip-who"));
 
   useEffect(() => {
-    if (who) window.localStorage.setItem("trip-who", who);
+    if (who) writePersonalValue("who", who);
   }, [who]);
 
   // เมือง/วันที่โฟกัสอยู่ใน sidebar เลือกสถานที่ — คุมจากที่นี่แทนที่จะให้ sidebar เก็บ state เอง

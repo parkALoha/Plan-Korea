@@ -9,9 +9,14 @@ import { resolvePlace } from "@/lib/resolvePlace";
 import { looksLatin } from "@/lib/latinScript";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { usePlaceNamesEn } from "@/hooks/usePlaceNamesEn";
+import { readPersonalValue, writePersonalValue } from "@/hooks/personalLocalValue";
 import type { CustomPlace } from "@/lib/supabase";
 
-const NAMES_STORAGE_KEY = "trip-passport-names";
+/** 🔴 **ชื่อในพาสปอร์ต — ต้องถูกล้างตอน `signOut`** · เหตุผลเต็มอยู่ใน `hooks/personalLocalValue.ts`
+ *  เดิมเขียนด้วย `localStorage.setItem("trip-passport-names")` ตรง ๆ → อยู่นอก `trip-cache:`
+ *  → `clearAllCaches()` กวาดไม่ถึง → **คนถัดไปบนเครื่องเดียวกันเปิดหน้า ตม. เห็นชื่อพาสปอร์ตของคนก่อน** */
+const NAMES_CACHE_KEY = "passportNames";
+const NAMES_LEGACY_RAW_KEY = "trip-passport-names";
 
 /** วันที่แบบอังกฤษสั้นๆ ที่เจ้าหน้าที่อ่านออกทันที ("11 Oct 2026") — ไม่ใช้ toLocaleDateString
  *  เพื่อไม่ให้ผลลัพธ์เปลี่ยนตามข้อมูล locale ของเครื่อง/เบราว์เซอร์ที่เปิดเอกสารนี้ */
@@ -83,13 +88,13 @@ export function ImmigrationSheet({
   // อ่าน localStorage ตอน initial state ได้ตรงๆ เพราะคอมโพเนนต์นี้อยู่ใต้ Suspense ของ /summary
   // ที่ใช้ useSearchParams = subtree ทั้งก้อนเรนเดอร์ฝั่ง client ล้วน ไม่มี HTML จากเซิร์ฟเวอร์ให้ mismatch
   const [names, setNames] = useState(() =>
-    typeof window === "undefined" ? "" : window.localStorage.getItem(NAMES_STORAGE_KEY) ?? ""
+    readPersonalValue(NAMES_CACHE_KEY, NAMES_LEGACY_RAW_KEY)
   );
   const [editingNames, setEditingNames] = useState(false);
 
   function saveNames(value: string) {
     setNames(value);
-    window.localStorage.setItem(NAMES_STORAGE_KEY, value);
+    writePersonalValue(NAMES_CACHE_KEY, value);
   }
 
   const flights = allFlights();
