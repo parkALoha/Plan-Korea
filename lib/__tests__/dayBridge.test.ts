@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { buildDayBridge, dayBridgeWarning } from "../engine/dayBridge";
+import { stripTsComments } from "./_helpers";
 
 /**
  * `E3` — สะพาน `"d0"` ⇄ `date` ⇄ `uuid` (`P-72`)
@@ -124,6 +127,49 @@ describe("buildDayBridge", () => {
     expect(correct.get("p9"), "วันแพลตฟอร์ม → uuid ของตัวเอง").toBe("p9");
   });
 
+  /**
+   * 🔴 **สะพานจับคู่ด้วย `date` อย่างเดียว — ไม่มีตัวตนของทริปในสมการเลย** (P4 วัด · P1 ตัดสิน · 28 ส.ค. 2026)
+   *
+   * เคสนี้เป็น **characterization** — ปัก *พฤติกรรมที่เป็นอยู่* ไม่ใช่พฤติกรรมที่เราอยากได้
+   * `9d26d2ba` เป็นทริปของ **ผู้ใช้จริง** (เจ้าของ `@gmail.com` ไม่ใช่ `.test`) ที่ตั้งวัน 11–21 ต.ค. 2026
+   * ตรงกับ `ITINERARY` พอดี → ได้สะพานเต็ม → หน้าจอ render แผนเกาหลี (VN610 · ปูซาน) ทับทริปเขา
+   *
+   * 🎯 **ทางแก้อยู่ที่ *ผู้เรียก* ไม่ใช่ที่นี่** — `dayBridge` ควรจับคู่ตามวันที่ต่อไป เพราะมันไม่รู้จัก
+   * (และตั้งใจไม่รู้จัก) ว่าทริปไหนคือทริปที่แผนอยู่ในไฟล์ · **ผู้เรียกต้องเป็นคนตัดสินว่าจะส่ง
+   * `ITINERARY` เข้ามาหรือส่ง `[]`** · ดูทะเบียนผู้เรียกข้างล่าง
+   * · ⚠️ ถ้าวันหนึ่งเคสนี้แดง แปลว่ามีคนทำให้สะพานรู้จักทริป — **ต้องกลับมาอ่านย่อหน้านี้ก่อนแก้เคส**
+   */
+  it("🔴 characterization — ทริป *คนละใบ* ที่วันที่ตรงกัน **ถูกจับคู่เต็ม** (นี่คือเหตุผลที่ผู้เรียกต้องกัน)", () => {
+    const other = legacy.map((d, i) => ({ id: `ทริปอื่น-${i}`, date: d.date }));
+    const b = buildDayBridge(legacy, other);
+    expect(b.matched, "วันที่ตรงกัน → จับคู่หมด แม้เป็นคนละทริป").toBe(legacy.length);
+    expect(b.unmatchedDb, "ไม่มีวันไหนถูกมองว่า 'ของแพลตฟอร์ม'").toEqual([]);
+    expect(b.toDbId("d0"), "`d0` ของไฟล์เดิม ชี้ไปที่วันของทริปอื่น").toBe("ทริปอื่น-0");
+  });
+
+  it("🔴 ด้านบวกคู่กัน — ทริปที่แผนอยู่ในไฟล์จริง ต้องยัง **จับคู่ได้ครบ**", () => {
+    // 🎯 ถ้าไม่มีเคสนี้ เคสข้างบนผ่านได้ด้วยการทำให้สะพานพังทั้งระบบ (P1 ขอข้อนี้ และถูก)
+    const b = buildDayBridge(legacy, db);
+    expect(b.matched).toBe(legacy.length);
+    expect(b.unmatchedLegacy).toEqual([]);
+    expect(b.toDbId("d1")).toBe("u1");
+  });
+
+  it("🔴 pin — `buildDayBridge` ต้อง **ไม่รู้จัก `tripId`**", () => {
+    /**
+     * หัวไฟล์ `dayBridge.ts:50-51` เขียนเจตนาไว้เอง: ผู้เรียกส่งข้อมูลเข้ามา **เพื่อไม่ให้ชั้น engine
+     * ผูกกับทริปใดทริปหนึ่ง และเพื่อให้ทดสอบได้โดยไม่ต้องมีไฟล์นั้น**
+     * 🔴 วันที่มีคนเติม `trip_id` เข้าไปเพื่อ "แก้บั๊กข้างบน" คุณสมบัตินั้นหายทันที **โดยไม่มีอะไรฟ้อง**
+     */
+    expect(buildDayBridge.length, "รับ 2 อาร์กิวเมนต์ — เพิ่มตัวที่สามต้องเป็นการตัดสินใจ").toBe(2);
+    const code = stripTsComments(readFileSync(new URL("../engine/dayBridge.ts", import.meta.url), "utf8"));
+    expect(
+      /trip_?[Ii]d/.test(code),
+      "โค้ด (ตัดคอมเมนต์แล้ว) อ้างถึง tripId — ชั้น engine ผูกกับทริปแล้ว\n" +
+        "  → ทางที่ตกลงกันคือ **ผู้เรียกส่ง `ITINERARY` เฉพาะทริปที่แผนอยู่ในไฟล์** ไม่ใช่ให้สะพานรู้จักทริป",
+    ).toBe(false);
+  });
+
   it("🔴 วันที่ซ้ำในไฟล์ → ตัวหลังไปอยู่ `unmatchedLegacy` **ไม่ใช่ทับตัวแรกเงียบ ๆ**", () => {
     const b = buildDayBridge([L("d0", "2026-10-11"), L("dX", "2026-10-11")], [db[0]]);
     expect(b.toDbId("d0")).toBe("u0");
@@ -132,5 +178,58 @@ describe("buildDayBridge", () => {
 
   it("ไม่มีวันในไฟล์เลย → ไม่เตือน (ไม่มีอะไรให้แปลง จึงไม่มีอะไรผิด)", () => {
     expect(dayBridgeWarning(buildDayBridge([], db), 0)).toBeNull();
+  });
+});
+
+/**
+ * 🔴 **ทะเบียนผู้เรียก — ใครส่ง `ITINERARY` เข้าสะพานบ้าง** (P4 · P1 ตัดสิน · 28 ส.ค. 2026)
+ *
+ * สะพานจับคู่ด้วย `date` อย่างเดียว (ดู characterization ข้างบน) → **ทริปคนละใบที่วันที่ตรงกันจะถูก
+ * จับคู่เต็ม** · ตัวที่ตัดสินว่าถูกหรือผิดคือ **ผู้เรียก**: ส่ง `ITINERARY` เข้ามา = อ้างว่า
+ * *"แผนของทริปนี้อยู่ในไฟล์นั้น"* · ทริปที่ไม่ใช่ต้องส่ง `[]`
+ *
+ * 🎯 **ทะเบียนนี้ไม่ได้บอกว่าผู้เรียกทำถูก — มันบอกว่ามีใครบ้าง** · ด่านที่พยายามอ่านว่า
+ * "ผู้เรียกกันเงื่อนไขไว้ถูกไหม" ต้องรู้หน้าตาของโค้ด = **ด่านที่ต้องเดา** (รูปที่เราปฏิเสธมาตลอด)
+ * · สิ่งที่ทะเบียนทำได้จริง: **ผู้เรียกรายที่ 6 ต้องเป็นการตัดสินใจ ไม่ใช่การเพิ่มเงียบ ๆ**
+ *
+ * ⚠️ `git ls-files` เห็นเฉพาะไฟล์ที่ติดตามแล้ว — ไฟล์ใหม่ที่ยังไม่ `git add` จะไม่ถูกนับ
+ *    (ถูกจับตอน commit ซึ่งยังก่อน merge · เจอข้อนี้มาแล้วตอนทำด่าน `localStorage`)
+ */
+describe("ทะเบียนผู้เรียก buildDayBridge", () => {
+  const CALLERS: Record<string, string> = {
+    "hooks/useStops.ts": "จุดแวะ — แปลง trip_day_id เป็นคีย์ที่ UI ใช้",
+    "hooks/useDaySettings.ts": "ตั้งค่ารายวัน",
+    "hooks/useOvernightOverrides.ts": "ความตั้งใจเรื่องที่นอน",
+    "hooks/useBookings.tsx": "การจอง",
+  };
+  /** ไฟล์ที่ *นิยาม* ฟังก์ชัน — ไม่ใช่ผู้เรียก (ตัวสแกนเห็น `export function buildDayBridge(`) */
+  const DEFINITION = "lib/engine/dayBridge.ts";
+
+  function callers(): string[] {
+    return execFileSync("git", ["ls-files"], { encoding: "utf8" })
+      .split("\n")
+      .filter((f) => /^(app|components|hooks|lib)\/.*\.tsx?$/.test(f))
+      .filter((f) => !/\.test\.tsx?$/.test(f))
+      .filter((f) => f !== DEFINITION)
+      .filter((f) => /buildDayBridge\s*\(/.test(stripTsComments(readFileSync(f, "utf8"))));
+  }
+
+  it("🔴 ควบคุมฝั่งบวก — ต้องหาผู้เรียกเจอจริง ไม่งั้น `0 offender` แปลว่าตัวสแกนพัง", () => {
+    expect(callers().length, "หาผู้เรียก buildDayBridge ไม่เจอสักไฟล์ — ตัวสแกนพัง").toBeGreaterThan(3);
+  });
+
+  it("🔴 ผู้เรียกรายใหม่ต้องมาขึ้นทะเบียน — ส่ง `ITINERARY` = อ้างว่าแผนของทริปนั้นอยู่ในไฟล์", () => {
+    const unknown = callers().filter((f) => !(f in CALLERS));
+    expect(
+      unknown.sort(),
+      "ไฟล์พวกนี้เรียก buildDayBridge โดยไม่ขึ้นทะเบียน\n" +
+        "  🔴 ถ้าส่ง `ITINERARY` เข้าไปโดยไม่ดูว่าเป็นทริปไหน **ทริปของผู้ใช้ที่วันที่ตรงกันจะได้แผนเกาหลีทับ**\n" +
+        "     (เกิดจริงกับทริปของผู้ใช้จริง 28 ส.ค. 2026 — ไม่ใช่ fixture)",
+    ).toEqual([]);
+  });
+
+  it("🔴 ทะเบียนต้อง *ผิดได้* — ชื่อที่เลิกเรียกแล้วต้องหลุดออก", () => {
+    const stale = Object.keys(CALLERS).filter((f) => !callers().includes(f));
+    expect(stale.sort(), "ชื่อพวกนี้ไม่ได้เรียก buildDayBridge แล้ว — ลบออกจากทะเบียน").toEqual([]);
   });
 });
