@@ -9,6 +9,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
+import { clearCache, readCache, writeCache } from "@/lib/localCache";
 
 type TripDestination = {
   cityId: string;
@@ -122,6 +123,19 @@ function TripCard({ trip }: { trip: TripListItem }) {
  * รูปแบบเดียวกับ `useActiveTripId`'s `"error"` state (`hooks/useActiveTripId.ts`) แต่ไม่แยกออฟไลน์/502
  * เป็นข้อความคนละแบบ (ตามที่ P1 บอกว่า "ถ้าแยกยากเกินไป รวมเป็นอันเดียวก็ยังดีกว่าปัจจุบันมาก")
  */
+/**
+ * 🔴 **คีย์ระดับ global โดยเจตนา — ไม่ใช่ลืมใส่ scope**
+ * รายการทริปเป็นข้อมูลของ **บัญชี** ไม่ใช่ของทริปใดทริปหนึ่ง จึงใช้ `readCache`/`writeCache` ตรง ๆ
+ * แทน `readTripCache` (ซึ่งบังคับ `tripId`) · **ชนิดที่สามในรูปคีย์ของ `lib/localCache.ts`** —
+ * P1 ยืนยันรูปนี้ 28 ส.ค. 2026 พร้อมกติกาว่า **global ต้องเขียนเหตุผลกำกับทุกครั้ง**
+ * 🎯 เหตุผลของกติกานั้นคือเรื่องนี้เป๊ะ: ถ้าไม่เขียน คีย์ที่ *ลืม* ใส่ scope จะแยกไม่ออกจากคีย์ที่ *ตั้งใจ* ไม่มี
+ * · `"tripList"` ไม่อยู่ใน `TRIP_SCOPED_NAMES` ของด่าน `tripCacheScope` จึงผ่านโดยไม่ต้องยกเว้น
+ */
+const TRIP_LIST_CACHE_KEY = "tripList";
+
+/** `ownerId: null` = เขียนตอนที่ยังไม่รู้ว่าใครล็อกอิน — เติมทีหลังเมื่อ `useCurrentUser` พร้อม */
+type CachedTripList = { ownerId: string | null; trips: TripListItem[] };
+
 type TripsState =
   | { status: "loading" }
   | { status: "ready"; trips: TripListItem[] }
@@ -138,27 +152,67 @@ export function HomeScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    // ไม่ setState({status:"loading"}) ตรงนี้ (จะชน react-hooks/set-state-in-effect) — ตอนกดลองใหม่
-    // จอจะค้างข้อความ "อ่านไม่ได้" ต่อจนกว่า fetch จะตอบ แทนที่จะกะพริบกลับไป skeleton สั้นๆ ยอมรับได้
-    fetch("/api/engine/trips")
-      .then((r) => {
+
+    // 🔴 ห่อ `async function` — `setState` แบบ *synchronous* ในเอฟเฟกต์ผิดกฎ React Compiler
+    //    (แพทเทิร์นเดียวกับ `useCatalogPlaces` · `usePlatformItinerary`)
+    async function load() {
+      // อ่านแคชขึ้นจอก่อน แล้วค่อยให้ของสดทับ — ออฟไลน์แล้วยังเข้าหน้าทริปได้
+      // (ก่อนหน้านี้ทำไม่ได้เลยถ้าไม่จำ URL) · ไม่มีแคช = ไม่มีอะไรเกิดขึ้น ไม่ใช่ error
+      const cached = readCache<CachedTripList>(TRIP_LIST_CACHE_KEY);
+      if (cached && Array.isArray(cached.trips) && cached.trips.length > 0 && !cancelled) {
+        setState({ status: "ready", trips: cached.trips });
+      }
+
+      // ไม่ setState({status:"loading"}) ตรงนี้ — ตอนกดลองใหม่ จอจะค้างข้อความ "อ่านไม่ได้"
+      // ต่อจนกว่า fetch จะตอบ แทนที่จะกะพริบกลับไป skeleton สั้นๆ ยอมรับได้
+      try {
+        const r = await fetch("/api/engine/trips");
         if (!r.ok) throw new Error(`เปิดรายการทริปไม่ได้ (${r.status})`);
-        return r.json() as Promise<TripListItem[]>;
-      })
-      .then((rows) => {
+        const rows = (await r.json()) as TripListItem[];
         if (cancelled) return;
-        setState({
-          status: "ready",
-          trips: [...rows].sort((a, b) => a.start_date.localeCompare(b.start_date)),
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: "error" });
-      });
+        const trips = [...rows].sort((a, b) => a.start_date.localeCompare(b.start_date));
+        setState({ status: "ready", trips });
+        // 🔴 อ่าน `ownerId` **ใหม่ตอนเขียน** ไม่ใช่ใช้ `cached` ที่จับไว้ก่อน `fetch`
+        //    เอฟเฟกต์เติมเจ้าของทำงานคู่ขนานกับตัวนี้ · ใช้ค่าที่จับไว้ = ทับของที่มันเพิ่งเติมกลับเป็น `null`
+        //    (วัดเจอจริง: เขียนสำเร็จแต่ `ownerId` เป็น `null` ตลอด → ด่านกันข้ามบัญชีไม่เคยทำงาน)
+        writeCache(TRIP_LIST_CACHE_KEY, {
+          ownerId: readCache<CachedTripList>(TRIP_LIST_CACHE_KEY)?.ownerId ?? null,
+          trips,
+        } satisfies CachedTripList);
+      } catch {
+        // 🔴 มีแคชอยู่แล้ว **ห้ามทับด้วย `error`** — ผู้ใช้กำลังดูรายการอยู่ การเปลี่ยนเป็นหน้าเปล่า
+        //    เพราะ refresh เบื้องหลังล้ม คือทำให้แย่ลงกว่าไม่แคชเลย
+        if (!cancelled && !cached) setState({ status: "error" });
+      }
+    }
+    void load();
     return () => {
       cancelled = true;
     };
   }, [retryKey]);
+
+  /**
+   * 🔴 **แคชนี้เป็นของ *บัญชี* → ต้องไม่ข้ามผู้ใช้** (P1 ชี้พร้อมกับตอนอนุมัติรูปคีย์)
+   * เขียนตอนล็อกอินอยู่จึงรู้ว่าเป็นใคร · **แต่ตอนออฟไลน์ `useCurrentUser` คืน `"anon"`**
+   * (มันเรียก `supabase.auth.getUser()` ซึ่งยิงเน็ต) → *"ออกจากระบบ"* กับ *"ถามไม่ได้"* แยกไม่ออกตรงนั้น
+   * 🎯 จึงล้างเฉพาะตอน **รู้แน่** ว่าเป็นคนละคน — ไม่ล้างตอน `"anon"` เพราะนั่นอาจแค่เน็ตหลุด
+   *    (ล้างตอนนั้น = ลบแคชของเจ้าของเครื่องทิ้งทุกครั้งที่เน็ตสะดุด ซึ่งคือสิ่งที่แคชมีไว้กัน)
+   * ⚠️ **นี่ไม่ใช่ตัวแทนของการล้างตอน `signOut`** — ตัวนี้ปิดเคส *"ล็อกอินบัญชีใหม่บนเครื่องเดิม"*
+   *    ส่วน *"ออกจากระบบแล้วเดินจากไป"* เป็นหน้าที่ของ `signOut()` ซึ่งเรียก `clearAllCaches()` แล้ว
+   *    (`3922389` · ผมรายงานช่องนี้ตอนกำลังจะทำแคชนี้พอดี — เดิม `signOut()` ไม่ล้างอะไรเลยสักคีย์)
+   * 🎯 **สองชั้นนี้กันคนละเคส ห้ามถอดอันใดอันหนึ่งเพราะ "อีกอันทำแล้ว"** — `signOut()` ทำงานเฉพาะตอน
+   *    ผู้ใช้กดออกเอง · เคสสลับบัญชีโดยไม่ผ่านปุ่มนั้น (session หมดอายุ · ล็อกอินคนละแท็บ) ไม่ผ่านมันเลย
+   */
+  useEffect(() => {
+    if (user.status !== "ready") return;
+    const cached = readCache<CachedTripList>(TRIP_LIST_CACHE_KEY);
+    if (!cached) return;
+    if (cached.ownerId === null) {
+      writeCache(TRIP_LIST_CACHE_KEY, { ...cached, ownerId: user.id } satisfies CachedTripList);
+      return;
+    }
+    if (cached.ownerId !== user.id) clearCache(TRIP_LIST_CACHE_KEY);
+  }, [user]);
 
   const trips = state.status === "ready" ? state.trips : null;
 
