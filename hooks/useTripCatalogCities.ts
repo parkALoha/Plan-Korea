@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { readTripCache, writeTripCache } from "@/lib/localCache";
 
 export type CatalogCity = {
   /** `catalog_cities.id` (uuid) — คีย์ที่ `/api/engine/places?cityId=` ใช้ */
@@ -43,14 +44,36 @@ export function useTripCatalogCities(tripId: string): TripCitiesState {
   // และกันเมืองของทริปเก่าโผล่เป็นของทริปใหม่ระหว่างรอโหลด (แพทเทิร์นเดียวกับ `useTripMembers`)
   const [result, setResult] = useState<{ forTripId: string; state: TripCitiesState } | null>(null);
 
+  /**
+   * ## 🔴 `E6-AC4` — hook นี้คือ *ประตู* ของทั้งเส้นทางออฟไลน์ ไม่ใช่แค่ผู้ใช้แคชอีกราย
+   *
+   * `TripPlanScreen:148` ตัดสินว่าเป็นทริปแพลตฟอร์มไหมจาก **`status === "ready" && cities.length > 0`**
+   * → ออฟไลน์ fetch ล้ม → `status: "error"` → `isPlatformTrip = false` →
+   *   ① `usePlatformItinerary(enabled: false)` **ไม่เคยอ่านแคชของตัวเองเลย** (P1 วัดได้: คำขอ `/days` ที่ถูกบล็อก = **0**)
+   *   ② `itinerary` ตกไปที่ `legacyItinerary` = **ตารางของทริปเกาหลี 11 วัน แสดงบนทริปโตเกียว 4 วัน**
+   *
+   * 🎯 **หนักกว่า "ว่างเปล่า" — มันคือ *ไม่ว่าง และหน้าตาเหมือนข้อมูลจริง*** (P1 เดินเทสต์เจอ 28 ส.ค. 2026)
+   * · แคชของ `usePlatformItinerary`/`useCatalogPlaces` ถูกต้องแต่ **เอื้อมไม่ถึง** เพราะประตูปิดก่อน
+   *
+   * ⚠️ **สิ่งที่แคชนี้แก้ และสิ่งที่มันแก้ไม่ได้:**
+   * · แก้: เครื่องที่เคยเปิดทริปนี้ตอนออนไลน์ → ออฟไลน์แล้วยังรู้ว่าเป็นทริปแพลตฟอร์ม → ประตูเปิด แคชอื่นถูกใช้
+   * · 🔴 **แก้ไม่ได้: เปิดทริปนี้ครั้งแรกตอนออฟไลน์** — ไม่มีอะไรในเครื่องให้ตอบ · `status` จะเป็น `error`
+   *   และ `TripPlanScreen` **ยังตกไปที่ `ITINERARY` เหมือนเดิม** เพราะมันยุบ *"ไม่มีเมือง"* กับ *"ถามไม่ได้"*
+   *   เข้าเป็นค่าเดียว → **นั่นเป็นของที่ต้องแก้ที่ `components/` (โซน P2) ไม่ใช่ที่นี่**
+   */
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/engine/trips")
-      .then((r) => {
+
+    // `async function` ครอบ — `setState` ตรง ๆ ในตัว effect ผิด `react-hooks/set-state-in-effect`
+    async function load() {
+      const cached = readTripCache<CatalogCity[]>(tripId, "catalogCities");
+      if (cached && !cancelled) {
+        setResult({ forTripId: tripId, state: { status: "ready", cities: cached } });
+      }
+      try {
+        const r = await fetch("/api/engine/trips");
         if (!r.ok) throw new Error(`trips ${r.status}`);
-        return r.json() as Promise<TripRow[]>;
-      })
-      .then((rows) => {
+        const rows = (await r.json()) as TripRow[];
         if (cancelled) return;
         const trip = rows.find((t) => t.id === tripId);
         const cities = (trip?.destinations ?? []).map((d) => ({
@@ -58,11 +81,17 @@ export function useTripCatalogCities(tripId: string): TripCitiesState {
           nameTh: d.nameTh,
           slug: d.slug ?? null,
         }));
+        // 🔴 เก็บ *เมืองที่ derive แล้ว* ไม่ใช่ `rows` ทั้งก้อน — `rows` คือรายการทริป **ทุกใบของผู้ใช้**
+        //    เก็บทั้งก้อนใต้คีย์ของทริปเดียว = ข้อมูลทริปอื่นถูกคัดลอกไปทุกคีย์ · คนละเรื่องกับที่ hook นี้ต้องการ
+        writeTripCache(tripId, "catalogCities", cities);
         setResult({ forTripId: tripId, state: { status: "ready", cities } });
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ forTripId: tripId, state: { status: "error" } });
-      });
+      } catch {
+        if (cancelled || cached) return;
+        setResult({ forTripId: tripId, state: { status: "error" } });
+      }
+    }
+    void load();
+
     return () => {
       cancelled = true;
     };
