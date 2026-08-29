@@ -48,7 +48,22 @@ export function estimateTravelMinutesBetween(
   return estimateTravelMinutes(haversineKm(from.lat, from.lng, to.lat, to.lng), mode);
 }
 
-export const DEFAULT_DWELL_MINUTES: Record<Category, number> = {
+/**
+ * 🔴 **`Partial<Record<…>>` ไม่ใช่ `Record<…>` โดยตั้งใจ** (P3 · 29 ส.ค. 2026)
+ * `Category` เป็น union ในโค้ด **แต่ฐานไม่มี `CHECK` กันเลย** — `catalog_places.category` /
+ * `custom_places.category` รับสตริงอะไรก็ได้ยาว ≤ 40 (P1 วัด `pg_constraint` จริง 29 ส.ค.)
+ * และ `useCatalogPlaces.ts:61` `cast` มันเข้า union ตรง ๆ → **คีย์ที่ไม่มีในตารางนี้เกิดขึ้นได้จริง**
+ *
+ * 🎯 **ตารางนี้ต่างจาก `CATEGORY_EMOJI` ตรงที่ค่าถูก *ใช้คำนวณ* ไม่ใช่ *แสดง*** — `cursor += undefined`
+ * ให้ `NaN` แล้ว **เวลาทุกจุดแวะที่เหลือของวันนั้นกลายเป็น `NaN` ตามไปทั้งสาย** ไม่ใช่ไอคอนหายหนึ่งตัว
+ * → `Partial` ทำให้ `tsc` **บังคับ** ให้ผู้เรียกมี fallback · เป็นทางที่ *ผิดไม่ได้* ไม่ใช่ทางที่ *ต้องจำ*
+ * ⚠️ ตารางแบบ *แสดง* (`CATEGORY_EMOJI` ฯลฯ) ใช้ท่านี้ไม่ได้ — `string | undefined` เป็น React child
+ *    ที่ถูกต้อง จึงเขียวสนิท · ตารางพวกนั้นต้องใช้ accessor + fallback แทน (รูป `cityMetaOf`)
+ */
+/** ค่าที่ใช้เมื่อไม่รู้หมวด — เท่ากับค่าที่โค้ดเดิมใช้ตอนไม่มี `place` (60) ไม่ได้เปลี่ยนพฤติกรรมเดิม */
+export const DWELL_MINUTES_FALLBACK = 60;
+
+export const DEFAULT_DWELL_MINUTES: Partial<Record<Category, number>> = {
   culture: 75,
   nature: 90,
   beach: 60,
@@ -159,8 +174,12 @@ export function computeSchedule(
 
     const arrivalMinutes = cursor;
     const arrival = minutesToTime(cursor);
+    // 🔴 `?? DWELL_MINUTES_FALLBACK` ปิดท้ายเสมอ — ครอบทั้ง *ไม่มี place* และ *มี place แต่หมวดไม่อยู่ในตาราง*
+    //    (หมวดจากฐานไม่ถูกจำกัดด้วย `CHECK` ดูหัวตาราง) · เดิมเคสหลังให้ `undefined` → `cursor += undefined` → `NaN` ทั้งวัน
     const resolvedDwellMinutes =
-      stop.dwellMinutes ?? (place ? DEFAULT_DWELL_MINUTES[place.category] : 60);
+      stop.dwellMinutes ??
+      (place ? DEFAULT_DWELL_MINUTES[place.category] : undefined) ??
+      DWELL_MINUTES_FALLBACK;
     cursor += resolvedDwellMinutes;
     const departureMinutes = cursor;
     const departure = minutesToTime(cursor);
