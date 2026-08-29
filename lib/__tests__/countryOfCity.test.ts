@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COUNTRY_OF_CITY, countryOfCity, countryOfCitySlug } from "@/data/emergency";
+import { COUNTRY_OF_CITY, countryOfCitySlug } from "@/data/emergency";
 import { ITINERARY } from "@/data/itinerary";
 import { CITY_LOCALE } from "@/data/places";
 import { capabilitiesOf, shouldSkipTravelApi } from "@/lib/engine/countries";
@@ -14,9 +14,13 @@ import { capabilitiesOf, shouldSkipTravelApi } from "@/lib/engine/countries";
  */
 describe("countryOfCity — ข้อมูล ไม่ใช่เงื่อนไข", () => {
   it("ทุกเมืองในตารางแมปถูก", () => {
-    expect(countryOfCity("hanoi")).toBe("vn");
-    expect(countryOfCity("seoul")).toBe("kr");
-    expect(countryOfCity("busan")).toBe("kr");
+    // 🔴 **เขียนใหม่ 29 ส.ค. 2026 ตอนถอด `countryOfCity()` — ห้ามลบเคสนี้ทิ้งพร้อมฟังก์ชัน** (P4 ชี้)
+    //    นี่คือ **เคสเดียวในไฟล์ที่ตรวจว่า *ค่า* ถูกประเทศ** · เคสอื่นตรวจว่า *มีคีย์* (`toBeTruthy`)
+    //    หรือตรวจว่าไม่รู้จักแล้วตอบ `null` — ทั้งสองแบบผ่านได้แม้ตารางแมปผิดประเทศ
+    //    🎯 ถ้าปล่อยให้หายไปพร้อมฟังก์ชัน จะดูเหมือนเสียเคสเดียวจากสิบ **แต่เสียการคุ้มครองทั้งชนิด**
+    expect(countryOfCitySlug("hanoi")).toBe("vn");
+    expect(countryOfCitySlug("seoul")).toBe("kr");
+    expect(countryOfCitySlug("busan")).toBe("kr");
   });
 
   it("🔴 ทุกเมืองที่ `ITINERARY` ใช้จริง ต้องมีในตาราง", () => {

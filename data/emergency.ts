@@ -79,10 +79,13 @@ export const COUNTRY_OF_CITY: Readonly<Record<City, CountryCode>> = {
   suwon: "kr",
 };
 
-/** เมืองไหนอยู่ประเทศไหน — เมืองต้องอยู่ในชนิด `City` (`tsc` ค้ำว่าตารางครบทุกเมือง) */
-export function countryOfCity(city: City): CountryCode {
-  return COUNTRY_OF_CITY[city];
-}
+/**
+ * 🔴 **`countryOfCity(city: City)` ถูกถอดออก 29 ส.ค. 2026 (P3 · P4 รีวิว · P1 อนุมัติ) — อย่าเขียนกลับมา**
+ * มันคือ `return COUNTRY_OF_CITY[city]` เปล่า ๆ = index ตรงบน `Record` ที่คีย์เป็น union
+ * → **`undefined` เงียบ ๆ ทันทีที่คีย์มาจากฐาน** (ซึ่ง `cast` เข้า `City` ได้โดย `tsc` ไม่ทัก)
+ * · 🎯 **ซ่อนการ index ไว้หลังชื่อฟังก์ชัน ทำให้ตัวสแกนที่จับรูป `X[...]` มองไม่เห็นด้วย**
+ * · ตอนถอด มีผู้เรียกในโปรดักชัน **0** (P4 ไล่ยืนยันเอง ไม่ได้เชื่อรายงาน) — ใช้ `countryOfCitySlug()` แทนทั้งหมด
+ */
 
 /**
  * รุ่นที่รับ **สตริงดิบ** — สำหรับข้อมูลที่มาจากฐาน (แพลตฟอร์ม) ซึ่งไม่ผ่านชนิด `City`
