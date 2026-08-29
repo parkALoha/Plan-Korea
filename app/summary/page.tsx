@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
-import { CITY_META, CITY_NAME_EN, CITY_NAME_TH } from "@/data/itinerary";
+import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import { countryOfCity, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
@@ -144,7 +144,8 @@ function SummaryDayCard({
   t: (key: TKey) => string;
 }) {
   const en = lang === "en";
-  const meta = CITY_META[day.city];
+  // 🔴 ห้าม index ตรง — `CITY_META` มี 6 เมืองเกาหลี · `Day` จากฐานมีได้ 42 เมือง (ดู components/cityMeta.ts)
+  const meta = cityMetaOf(day.city);
   // เซ็นรูปจุดแวะทั้งวันครั้งเดียว (E2-AC13 ②) — การ์ดนี้เรนเดอร์ต่อวันอยู่แล้วเหมือน DayStopsSection
   const signedStopPhotos = useSignedFiles(stops.map((s) => s.photo_url));
   // แถวที่กดเปิดดูรายละเอียดอยู่ — หน้านี้ยังอ่านอย่างเดียวเหมือนเดิม โมดัลไม่มีปุ่มแก้อะไรเลย
@@ -857,7 +858,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
                 return (
                   <div key={leg.id} className="px-3 py-2.5 text-sm">
                     <div className="text-xs text-content-soft">
-                      {CITY_META[leg.city].icon} {en ? CITY_NAME_EN[leg.city] : CITY_NAME_TH[leg.city]} ·{" "}
+                      {cityMetaOf(leg.city).icon} {en ? cityNameEnOf(leg.city) : cityNameThOf(leg.city)} ·{" "}
                       {dateLabelOf(leg.startDate, lang)}–{dateLabelOf(leg.endDate, lang)} (
                       {leg.nights.length} {t("nights")})
                     </div>

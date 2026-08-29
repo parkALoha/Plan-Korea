@@ -1,4 +1,4 @@
-import { CITY_META, CITY_NAME_TH, type Day } from "@/data/itinerary";
+import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, type Day } from "@/data/itinerary";
 
 export type CityMeta = { icon: string; color: string; colorDark: string };
 
@@ -32,4 +32,12 @@ export function cityMetaOf(city: Day["city"] | null | undefined): CityMeta {
 /** ชื่อไทยของเมือง — คู่กับ `cityMetaOf` ด้วยเหตุผลเดียวกัน */
 export function cityNameThOf(city: Day["city"] | null | undefined): string {
   return (city && CITY_NAME_TH[city]) || UNSET_CITY_NAME_TH;
+}
+
+/** ชื่ออังกฤษของเมือง — เติม 29 ส.ค. 2026 (P3) ตอนแก้ `app/summary` ให้เลิก index ตรง
+ *  ข้อความ fallback ตรงกับ `UNSET_CITY_EN` ใน `hooks/usePlatformItinerary.ts` โดยตั้งใจ */
+export const UNSET_CITY_NAME_EN = "No city yet";
+
+export function cityNameEnOf(city: Day["city"] | null | undefined): string {
+  return (city && CITY_NAME_EN[city]) || UNSET_CITY_NAME_EN;
 }
