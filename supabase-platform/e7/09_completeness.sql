@@ -67,20 +67,31 @@ begin
       ('place_notes',         'public.place_notes',           'trip_id'),
       ('trip_hotels',         'public.trip_hotels',           'trip_id'),
       ('trip_day_settings',   'public.trip_day_plan_settings','trip_id'),
-      ('place_details_cache', 'public.place_details_cache',   'all'),
-      ('place_photo_cache',   'public.place_photo_cache',     'all'),
-      ('travel_time_cache',   'public.travel_time_cache',     'all')
+      -- 🔴 แคชไม่มี `trip_id` → เทียบยอดรวมไม่ได้ (อาจมีแถวจากรอบซ้อมก่อน/จากแอป)
+      --    ตรวจ *การมีอยู่* แทน: ห้ามมีแถว legacy ใบไหนที่ไม่มีคู่ปลายทาง — ทนต่อแถวส่วนเกิน
+      ('place_details_cache', 'public.place_details_cache',   'missing:maps_query'),
+      ('place_photo_cache',   'public.place_photo_cache',     'missing:maps_query'),
+      ('travel_time_cache',   'public.travel_time_cache',     'missing:from_place_id,to_place_id,travel_mode')
     ) as v(src, dst, scope)
   loop
     execute format('select count(*) from legacy.%I', r.src) into got;
     declare want bigint := got;
     begin
-      execute case r.scope
-        when 'all'          then format('select count(*) from %s', r.dst)
-        when 'kind<>event'  then format('select count(*) from %s where trip_id = %L and kind <> ''event''', r.dst, v_trip)
+      execute case
+        when r.scope like 'missing:%' then format(
+          'select count(*) from legacy.%I s where not exists (select 1 from %s d where %s)',
+          r.src, r.dst,
+          (select string_agg(format('d.%I is not distinct from s.%I', k, k), ' and ')
+             from unnest(string_to_array(substr(r.scope, 9), ',')) k))
+        when r.scope = 'all' then format('select count(*) from %s', r.dst)
+        when r.scope = 'kind<>event' then format('select count(*) from %s where trip_id = %L and kind <> ''event''', r.dst, v_trip)
         else                     format('select count(*) from %s where trip_id = %L', r.dst, v_trip)
       end into got;
-      if got <> want then
+      if r.scope like 'missing:%' then
+        if got <> 0 then
+          raise exception 'legacy.% มี % แถวที่ไม่มีคู่ใน % — ตกหล่น', r.src, got, r.dst;
+        end if;
+      elsif got <> want then
         raise exception 'legacy.% มี % แถว แต่ % ได้ % แถว', r.src, want, r.dst, got;
       end if;
     end;
@@ -94,8 +105,17 @@ begin
   if (select count(*) from public.trip_days where trip_id = v_trip) <> 11 then
     raise exception 'trip_days ต้องได้ 11 วัน (เขียนตายในก้อน 01 · ไม่มีตาราง legacy)';
   end if;
-  if (select count(*) from public.trip_stops where trip_id = v_trip and kind = 'event') <> 36 then
-    raise exception 'events ต้องได้ 36 แถว (18 × 2 แผน · ต้นทางเป็น TypeScript ไม่ใช่ตาราง)';
+  -- 🔴 **เลิกตรึง 36** — ก้อน 08 ได้เลขนั้นจาก `ITINERARY` จริง (generate) · การพิมพ์ซ้ำที่นี่
+  --    สร้างแหล่งความจริงใบที่สองที่ไม่ได้ generate → ทริปมีเหตุการณ์เพิ่มเมื่อไหร่
+  --    ก้อน 08 เขียว · **ก้อน 09 แดงว่า "ต้องได้ 36"** ซึ่งอ่านเหมือนข้อมูลหาย ทั้งที่ทะเบียนล้า (P3)
+  --    ✅ ตรวจ *ความสอดคล้อง* แทนเลขสัมบูรณ์: ทุกแผนต้องได้เท่ากัน และต้องไม่ใช่ศูนย์
+  if (select count(*) from public.trip_stops where trip_id = v_trip and kind = 'event') = 0 then
+    raise exception 'ไม่มี events เลย — รัน 08_events.sql หรือยัง';
+  end if;
+  if (select count(distinct c) from (
+        select count(*) c from public.trip_stops
+         where trip_id = v_trip and kind = 'event' group by plan_id) x) <> 1 then
+    raise exception 'events กระจายไม่เท่ากันระหว่างแผน';
   end if;
   if (select count(*) from public.place_details_local_cache)
      <> (select count(*) from legacy.place_details_cache where locale is not null) then

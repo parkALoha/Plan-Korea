@@ -174,10 +174,12 @@ begin
     into n;
   if n > 0 then raise exception '% แถวเก็บ URL ไว้ในคอลัมน์ path', n; end if;
 
-  raise notice 'E7 · ก้อน 4 · bookings % · checklist % · hidden % (custom 21) · notes %',
+  -- เลข 21 เคยเป็น literal ในข้อความ — วัดสดแทน (ดูเหตุผลในก้อน 03)
+  raise notice 'E7 · ก้อน 4 · bookings % · checklist % · hidden % (custom %) · notes %',
     (select count(*) from public.bookings        where trip_id=v_trip),
     (select count(*) from public.checklist_items where trip_id=v_trip),
     (select count(*) from public.hidden_places   where trip_id=v_trip),
+    (select count(*) from public.hidden_places   where trip_id=v_trip and custom_place_id is not null),
     (select count(*) from public.place_notes     where trip_id=v_trip);
 end $e7$;
 

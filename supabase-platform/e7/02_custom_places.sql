@@ -70,6 +70,19 @@ begin
                       where nm.place_id = p.id and nm.trip_id = v_trip);
   if n > 0 then raise exception '% สถานที่ไม่มีชื่อสักภาษา', n; end if;
 
+  -- 🔴 **จำนวนชื่อไม่เคยถูกตรวจเลย** (P3 รีวิวเจอ 29 ส.ค. 2026)
+  --    เคส "ทุกแถวมีชื่ออย่างน้อยหนึ่งภาษา" ข้างบน **อ่านเหมือนชื่อถูกตรวจแล้ว** แต่มันไม่จับ
+  --    กรณีที่ `en` หรือ `ko` ของสักแถวหายไป → 02 เขียว · 09 เขียว · จบงานว่าสำเร็จ
+  --    🎯 รูปเดียวกับก้อน 6 (ชื่อท้องถิ่นหาย 1 แถว ขณะยอดใบหลักตรงเป๊ะ)
+  --    เลข 38 เคยอยู่ใน RUN.md ที่เดียวในฐานะข้อความให้คนเทียบด้วยตา — **ตอนนี้เครื่องเทียบเอง**
+  --    นับต้นทางด้วย **สูตรเดียวกับตัว insert** จึงเป็นการเทียบต้นทาง↔ปลายทางจริง
+  select count(*) into expected
+    from legacy.custom_places c
+    cross join lateral (values (c.name_th), (c.name_en), (c.name_ko)) as v(nm)
+   where v.nm is not null and trim(v.nm) <> '';
+  select count(*) into n from public.custom_place_names where trip_id = v_trip;
+  if n <> expected then raise exception 'ชื่อต้องได้ % แถว ได้ %', expected, n; end if;
+
   select count(*) into n from public.custom_places where trip_id = v_trip and city_id is null;
   if n > 0 then raise exception '% แถวหาเมืองไม่เจอ — city เดิมไม่ตรง legacy_slug', n; end if;
 

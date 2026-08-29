@@ -26,7 +26,7 @@
 begin;
 
 do $e7$
-declare n int; expected int; n_local int;
+declare n int; expected int; n_local int; b_details int; b_local int; b_photo int; b_travel int;
 begin
   -- 🔴 **ก้อนนี้ต้องรันด้วย role ที่ข้าม RLS ได้** — แคชทั้ง 4 ใบ `revoke all` จาก
   --    `anon`/`authenticated` และ **ไม่มี policy สักตัว โดยตั้งใจ** (`20260825152400_e2_caches.sql`)
@@ -40,6 +40,16 @@ begin
     raise exception 'ก้อน 6 ต้องรันด้วย role ที่ข้าม RLS (postgres หรือ service_role) — ตอนนี้เป็น %', current_user;
   end if;
 
+  -- 🔴 **แคชไม่มี `trip_id`** → นับ `count(*)` ทั้งตารางไม่ได้บอกว่า *สคริปต์นี้* ใส่ไปเท่าไร
+  --    ฉบับแรกนับทั้งตารางแล้วเทียบกับยอด legacy — **ถูกก็ต่อเมื่อตารางว่างสนิทก่อนรัน**
+  --    ซึ่งไม่มีบรรทัดไหนประกาศ · และ `E7-AC6` บังคับให้ซ้อม **2 รอบ** (P3 รีวิวเจอ 29 ส.ค. 2026)
+  --    → รอบสองจะแดงทั้งที่ย้ายสำเร็จ · และถ้าแอปเขียนแคชเองวันหนึ่ง (`Q3` ยังเปิด) จะเพี้ยนเงียบ
+  --    ✅ วัด *เดลตา* แทนยอดรวม — ตอบคำถาม "สคริปต์นี้ใส่ไปกี่แถว" ตรง ๆ
+  select count(*) into b_details from public.place_details_cache;
+  select count(*) into b_local   from public.place_details_local_cache;
+  select count(*) into b_photo   from public.place_photo_cache;
+  select count(*) into b_travel  from public.travel_time_cache;
+
   -- ① place_details_cache — ทิ้ง locale/name_local/address_local ไว้ให้ใบที่สอง
   insert into public.place_details_cache (
     maps_query, google_place_id, opening_hours, rating,
@@ -50,7 +60,7 @@ begin
   from legacy.place_details_cache c;
 
   select count(*) into expected from legacy.place_details_cache;
-  select count(*) into n from public.place_details_cache;
+  select count(*) - b_details into n from public.place_details_cache;
   if n <> expected then raise exception 'place_details_cache ต้องได้ % ได้ %', expected, n; end if;
 
   -- ② place_details_local_cache — **เฉพาะแถวที่มี locale** (`locale` อยู่ใน PK จึง null ไม่ได้)
@@ -60,7 +70,7 @@ begin
   where c.locale is not null;
 
   select count(*) into expected from legacy.place_details_cache where locale is not null;
-  select count(*) into n_local from public.place_details_local_cache;
+  select count(*) - b_local into n_local from public.place_details_local_cache;
   if n_local <> expected then raise exception 'place_details_local_cache ต้องได้ % ได้ %', expected, n_local; end if;
 
   -- 🔴 **ทิศที่ยอดรวมมองไม่เห็น: แถวที่ *มีชื่อท้องถิ่น* แต่ *ไม่มี locale* จะหายทั้งใบ**
@@ -81,7 +91,7 @@ begin
   select p.maps_query, p.photo_names, p.fetched_at from legacy.place_photo_cache p;
 
   select count(*) into expected from legacy.place_photo_cache;
-  select count(*) into n from public.place_photo_cache;
+  select count(*) - b_photo into n from public.place_photo_cache;
   if n <> expected then raise exception 'place_photo_cache ต้องได้ % ได้ %', expected, n; end if;
 
   -- ④ travel_time_cache — คงเดิม · คีย์ยังเป็น text (สแลกเดิม) ตาม `column-map.md:187`
@@ -92,14 +102,14 @@ begin
   from legacy.travel_time_cache t;
 
   select count(*) into expected from legacy.travel_time_cache;
-  select count(*) into n from public.travel_time_cache;
+  select count(*) - b_travel into n from public.travel_time_cache;
   if n <> expected then raise exception 'travel_time_cache ต้องได้ % ได้ %', expected, n; end if;
 
   raise notice 'E7 · แคช · details % (+ท้องถิ่น %) · photo % · travel %',
-    (select count(*) from public.place_details_cache),
+    (select count(*) - b_details from public.place_details_cache),
     n_local,
-    (select count(*) from public.place_photo_cache),
-    (select count(*) from public.travel_time_cache);
+    (select count(*) - b_photo from public.place_photo_cache),
+    (select count(*) - b_travel from public.travel_time_cache);
 end $e7$;
 
 commit;

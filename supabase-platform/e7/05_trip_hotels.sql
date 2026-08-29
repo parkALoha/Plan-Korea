@@ -122,8 +122,9 @@ begin
   where c.legacy_slug <> h.city;
   if n > 0 then raise exception '% แถวเมืองเพี้ยนจากเดิม', n; end if;
 
-  raise notice 'E7 · trip_hotels % แถว · รวม % คืน · check_in ตรงกับ leg_id ทุกแถว',
-    expected,
+  -- พิมพ์ค่าที่วัดสด ไม่ใช่คำคุณศัพท์ (ดูเหตุผลในก้อน 03)
+  raise notice 'E7 · trip_hotels % แถว · รวม % คืน',
+    (select count(*) from public.trip_hotels where trip_id = v_trip),
     (select sum(check_out - check_in) from public.trip_hotels where trip_id = v_trip);
 end $e7$;
 

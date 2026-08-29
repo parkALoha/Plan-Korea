@@ -2,7 +2,9 @@
 -- │ E7 · ก้อนที่ 2: trip_stops — 71 แถว · แมป place_id 4 กลุ่ม                  │
 -- └───────────────────────────────────────────────────────────────────────────┘
 --
--- ต้องรัน `01_trip_skeleton.sql` ก่อน (ต้องมี trip · plans · days อยู่แล้ว)
+-- ต้องรัน `01_trip_skeleton.sql` **และ `02_custom_places.sql`** ก่อน
+--   01 = trip · plans · days · 02 = custom_places ที่ `trip_stops_custom_place_fk` ชี้ไป
+--   ⚠️ หัวไฟล์เดิมเขียนแค่ 01 ขณะที่ `RUN.md` เขียน `01 · 02` ถูกอยู่แล้ว (P3 รีวิวเจอ)
 --
 -- 🔴 การแมป — วัดจากข้อมูลจริงทั้ง 71 แถว ไม่มีเศษเหลือ (29 ส.ค. 2026):
 --   legacy kind   รูปแบบ place_id     n    ปลายทาง
@@ -124,7 +126,18 @@ begin
      and split_part(photo_path, '/', 1) <> v_trip::text;
   if n > 0 then raise exception '% แถว photo_path ขึ้นต้นไม่ใช่ trip_id — policy จะอ่านไม่เจอ', n; end if;
 
-  raise notice 'E7 · trip_stops ย้ายแล้ว % แถว · ลำดับตรงทุกแถว', expected;
+  -- 🔴 path ที่ *รูปร่างถูก* ยังชี้ผิดไฟล์ได้ — `regexp_replace(url,'^.*/','')` เก็บ query string
+  --    และ %-encode ที่ติดมากับ URL ไว้ทั้งดุ้น → รูปหายตอนผู้ใช้เปิด ไม่ใช่ตอนรัน (P3)
+  select count(*) into n from public.trip_stops
+   where trip_id = v_trip and (photo_path like '%?%' or photo_path like '%\%%');
+  if n > 0 then raise exception '% แถว photo_path มี query string หรือ %%-encode ค้างอยู่', n; end if;
+
+  -- 🔴 พิมพ์เฉพาะค่าที่เพิ่งวัด · **ห้ามมีคำคุณศัพท์คงที่** — ฉบับเดิมพิมพ์ "ลำดับตรงทุกแถว"
+  --    ซึ่งเป็นข้อความตายตัวที่ออกเสมอ · ถูกวันนี้เพราะเช็คข้างบน raise ไปแล้ว
+  --    **แต่ความถูกนั้นมาจากตำแหน่งของบรรทัดอื่น ไม่ใช่จากตัวข้อความ** (P3 · เทียบ `echo tsc-clean` ของเขาเอง)
+  raise notice 'E7 · trip_stops ปลายทาง % แถว · ลำดับที่ไม่ตรง % แถว',
+    (select count(*) from public.trip_stops where trip_id = v_trip and kind <> 'event'),
+    n;
 end $e7$;
 
 commit;
