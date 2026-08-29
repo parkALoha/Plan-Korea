@@ -115,7 +115,9 @@ export function useDayBridgeIncomplete(): boolean {
  * 🔴 **กลับคำ 27 ส.ค. 2026 บ่าย (P1 ไล่ต่อจน `reportDayBridgeDropIfAny` ขัดกับข้อนี้เอง)** — เช้าตัดสิน
  * บนสมมติฐานว่า "หน้าเว็บจะจัดการทริปที่ `matched === 0` แต่มีวันจริงถูกทาง" **ซึ่งยังไม่จริง** — gate ของ
  * หน้า (`useTripDaysGate`) เช็คแค่ `dbDaysCount === 0` **ไม่ได้เช็ค `matched`** ทริปแพลตฟอร์มที่มีวันจริง
- * (`E5`/`create_trip_makes_days` ยังไม่ลง) จะยัง render โครงวันจาก `ITINERARY` ทับอยู่ดี (`itinerary.map`
+ * (ณ 27 ส.ค. 2026 `E5`/`create_trip_makes_days` **ยังไม่ลง** — ⚠️ ลงแล้วเมื่อ `20260827080000`
+ *  ยืนยันจาก `pg_proc.prosrc` ของ `create_trip()` · ประโยคนี้บันทึก*สภาพตอนตัดสิน* ไม่ใช่สภาพวันนี้)
+ * จะยัง render โครงวันจาก `ITINERARY` ทับอยู่ดี (`itinerary.map`
  * ใน `page.tsx`/`summary/page.tsx` ไม่เช็ค `matched` เลย) → หน้าจอผิดจริง ไม่ใช่แค่ "ไม่มีอะไรให้เตือน"
  *
  * 🎯 **`matched === 0` กับ `ITINERARY` มี 11 วันคงที่เสมอ แปลว่า `unmatchedLegacy.length === 0` เป็นไป
