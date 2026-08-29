@@ -161,11 +161,20 @@ begin
   --    ยิงพิสูจน์แล้ว: `is distinct from` = **false** · **superset ผ่านเสมอ**
   --    ⚠️ และคอมเมนต์เหนือมันเขียนว่า *"มีคนเติมโหมดใบเดียว เคสนี้แดง"* — **ด่านที่ครอบแคบกว่าถ้อยคำของตัวเอง**
   --    ✅ เทียบ *เซตของค่า* ที่สกัดจาก predicate จริงทั้งสองฝั่ง เรียงแล้วเทียบตรง ๆ
+  --
+  --    🟠 **แก้รอบสอง: ตัวสกัดเคยเป็น `[a-z_]+` ซึ่งแคบกว่าโดเมนของค่าที่เป็นไปได้** (P3 · รอบที่สอง)
+  --       ค่าที่มีตัวพิมพ์ใหญ่ · ตัวเลข · ขีดกลาง (`'KTX'` · `'e-bike'`) **ไม่ถูกสกัดเลย ไม่ใช่สกัดผิด**
+  --       → หายจาก *ทั้งสอง* เซตเงียบ ๆ → เซตยังเท่ากัน → **ผ่าน**
+  --       🎯 *"แคบที่ชื่อ"* (`§3.12`) **ในตัวแก้ของ "ด่านที่ครอบแคบกว่าถ้อยคำของตัวเอง" พอดี**
+  --          รอบแรกยุบเป็นบูลีน · รอบนี้ยุบด้วย character class — **ยุบคนละชั้น อาการเดียวกัน**
+  --       🔴 **ด่านนี้มีไว้จับค่าที่ *ยังไม่มีใครเติม* ซึ่งเราไม่รู้หน้าตาตามนิยาม**
+  --          → สมมติฐานเรื่องรูปแบบของค่า เป็นสมมติฐานที่แพงที่สุดในไฟล์นี้
+  --       ✅ `[^'']*` จับทุกอย่างในเครื่องหมายคำพูด **โดยไม่ต้องเดาว่าค่าหน้าตายังไง**
   declare
     set_stops text[] := (select array(select unnest(x) order by 1)
-      from (select array(select (regexp_matches(dom_stops, '''([a-z_]+)''', 'g'))[1]) x) t);
+      from (select array(select (regexp_matches(dom_stops, '''([^'']*)''', 'g'))[1]) x) t);
     set_cache text[] := (select array(select unnest(x) order by 1)
-      from (select array(select (regexp_matches(dom_cache, '''([a-z_]+)''', 'g'))[1]) x) t);
+      from (select array(select (regexp_matches(dom_cache, '''([^'']*)''', 'g'))[1]) x) t);
   begin
     if set_stops is distinct from set_cache then
       raise exception 'โดเมน travel_mode ไม่ตรงกัน — trip_stops=% · travel_time_cache=%',
