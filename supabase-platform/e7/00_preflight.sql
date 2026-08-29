@@ -128,7 +128,11 @@ checks as (
          then 'มีอยู่แล้ว — ถอนก่อนด้วย delete ใน RUN.md ถ้าจะรันซ้ำ' else 'ว่าง พร้อมรัน' end
 
   -- ④.๕ ยอดแถวต่อตาราง — **ตัวเดียวที่จับ "restore มาแล้วแต่ข้อมูลไม่เข้า" ได้**
-  union all select 6.5, 'จำนวนแถวในสำเนาแช่แข็ง (รวม 670)',
+  -- 🔴 ป้ายอ่าน `sum(want)` เหมือนที่รายละเอียดอ่าน `sum(got)` — **ป้ายกับเนื้อมาจากที่เดียวกัน**
+  --    ฉบับแรกเขียน "(รวม 670)" เป็น literal · ตรงกับ `sum(want)` วันนี้ **แต่แก้ `want` สักตัว
+  --    ป้ายจะค้างที่ 670 เงียบ ๆ ขณะที่ตัวเช็คทำงานถูกต่อไป** (P3 · 29 ส.ค. 2026)
+  --    🎯 เป็นตระกูล `§3.8` (*ข้อความต้องมาจากผล*) **ที่โผล่ในไฟล์ซึ่งเขียนขึ้นเพื่อกันตระกูลนั้นพอดี**
+  union all select 6.5, 'จำนวนแถวในสำเนาแช่แข็ง (รวม ' || (select sum(want)::text from pf_rows) || ')',
     case when not (select v from schema_ok) then '⏸'
          when (select count(*) from pf_rows where got is distinct from want) = 0 then '✅' else '🔴' end,
     case when not (select v from schema_ok) then 'ข้าม — ไม่มี legacy'
