@@ -22,14 +22,27 @@ const onBranch = execSync(`git -C ${MAIN} branch --show-current`, { encoding: "u
 if (onBranch !== "main") {
   throw new Error(`${MAIN} อยู่บน branch '${onBranch}' ไม่ใช่ 'main' — หยุดก่อน`);
 }
-const { ITINERARY } = (await import(`${MAIN}/data/itinerary.ts`)) as { ITINERARY: any[] };
+// ชนิดขั้นต่ำของสิ่งที่ไฟล์นี้ *ใช้จริง* — ไม่ได้พยายามสะท้อน `DayEvent` ทั้งชนิด
+// 🔴 `any` เดิมทำให้ `npm run lint` (--max-warnings=0) แดง 5 จุด · จับได้ตอนยืนยันก่อน push
+type RawFlight = { no: string; fromCode: string; toCode: string; fromEn: string; toEn: string };
+type RawLayover = { baggage: string; immigration: string; leavesAirport: boolean; terminalChange: boolean };
+type RawEvent = {
+  time: string; endTime?: string; anchor?: string; dayOffset?: number;
+  kind?: string; title: string; titleEn?: string; icon: string; detail?: string;
+  alert?: boolean; editable?: boolean; placeId: string;
+  flight?: RawFlight; layover?: RawLayover;
+};
+type RawDay = { id: string; events?: RawEvent[] };
+type Row = RawEvent & { dayId: string; idx: number };
+
+const { ITINERARY } = (await import(`${MAIN}/data/itinerary.ts`)) as { ITINERARY: RawDay[] };
 
 const q = (v: unknown) =>
   v === undefined || v === null ? "null" : `'${String(v).replace(/'/g, "''")}'`;
 const b = (v: unknown) => (v ? "true" : "false");
 
-const rows = ITINERARY.flatMap((d: any) =>
-  (d.events ?? []).map((e: any, i: number) => ({ dayId: d.id, idx: i, ...e }))
+const rows: Row[] = ITINERARY.flatMap((d) =>
+  (d.events ?? []).map((e, i) => ({ dayId: d.id, idx: i, ...e }))
 );
 
 const blob = execSync(`git -C ${MAIN} hash-object data/itinerary.ts`, { encoding: "utf8" }).trim();
@@ -40,12 +53,12 @@ const blob = execSync(`git -C ${MAIN} hash-object data/itinerary.ts`, { encoding
 const root = MAIN;
 const branch = onBranch;
 const kinds = new Map<string, number>();
-rows.forEach((r: any) => kinds.set(String(r.kind), (kinds.get(String(r.kind)) ?? 0) + 1));
+rows.forEach((r) => kinds.set(String(r.kind), (kinds.get(String(r.kind)) ?? 0) + 1));
 
 const tuples = rows
-  .map((r: any) => {
-    const f = r.flight ?? {};
-    const l = r.layover ?? {};
+  .map((r) => {
+    const f: Partial<RawFlight> = r.flight ?? {};
+    const l: Partial<RawLayover> = r.layover ?? {};
     return `  (${q(r.dayId)}, ${r.idx}, ${q(r.kind === "transfer" ? "move" : r.kind)}, ` +
       `${q(r.time)}, ${q(r.endTime)}, ${q(r.anchor)}, ${r.dayOffset ?? 0}, ` +
       `${q(r.title)}, ${q(r.titleEn)}, ${q(r.icon)}, ${q(r.detail)}, ` +
