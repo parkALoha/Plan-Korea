@@ -96,11 +96,19 @@ create or replace function pg_temp.lid(kind text, id text) returns uuid
 
 do $e7$
 declare
-  v_owner uuid := nullif(current_setting('e7.owner_uuid', true), '')::uuid;
+  v_owner uuid;                              -- อ่านจาก trips.created_by (ก้อน 01 เป็นคนตั้ง)
   v_trip  uuid := pg_temp.lid('trip', 'korea-2026-10');
   n int; n_plans int; expected int;
 begin
-  if v_owner is null then raise exception 'ต้องตั้ง e7.owner_uuid ก่อน'; end if;
+  -- 🔴 **เจ้าของอ่านจากฐาน ไม่ใช่จากตัวแปรเซสชัน** — ก้อน 01 เป็นที่เดียวที่รับค่าจากคน
+  --    เหตุ ①: SQL editor ของ Supabase ใช้คอนเนกชันแบบพูล → คำสั่ง set อาจไม่อยู่ข้ามการกด Run
+  --            ถ้าทุกก้อนพึ่ง GUC ผู้ใช้จะเจอ 'ต้องตั้ง e7.owner_uuid' ซ้ำ 7 รอบ
+  --    เหตุ ② **สำคัญกว่า**: ตั้ง uuid ผิดในก้อนหลัง → แถวจะมีเจ้าของคนละคนกับก้อน 01
+  --            **โดยไม่มี error ใด ๆ** · อ่านจากฐานทำให้ค่านั้นเป็นค่าเดียวเสมอตามนิยาม
+  select t.created_by into v_owner from public.trips t where t.id = v_trip;
+  if v_owner is null then
+    raise exception 'ยังไม่มีทริป (หรือทริปไม่มีเจ้าของ) — รัน 01_trip_skeleton.sql ก่อน';
+  end if;
 
   select count(*) into n_plans from public.trip_plans where trip_id = v_trip;
   if n_plans = 0 then raise exception 'ยังไม่มีแผน — รัน 01 ก่อน'; end if;
