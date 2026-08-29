@@ -39,6 +39,29 @@ begin
       ) t(s)
     $q$;
   end if;
+
+  -- 🔴 **ยอดต่อตาราง — ด่านที่อนุมานเกณฑ์จากต้นทาง จะเขียวเสมอเมื่อต้นทางว่าง** (P3 · 29 ส.ค. 2026)
+  --    `req_place` สร้างชุด "สแลกที่ต้องมี" *จาก `legacy.trip_stops` เอง* → legacy ว่าง =
+  --    "0 สแลกที่ต้องมี · ขาด 0" = ✅ · **ยิงทิศแดงพิสูจน์แล้ว: 14 ตาราง 0 แถว → preflight เขียวหมด**
+  --    และทั้ง pipeline ก็เขียวตาม (ก้อน 6 เดลตา 0 = expected 0 · ก้อน 9 missing: 0 ·
+  --    `trip_days`/`events` มาจากค่าคงที่กับ `ITINERARY` ไม่ได้มาจาก legacy)
+  --
+  --    🎯 **นี่คือที่เดียวในชุดนี้ที่ตัวเลขตายตัวเป็นสิ่งที่ *ถูก*** — ทุกที่อื่นเราถอนเลขตายตัวออก
+  --       เพราะมันสร้างแหล่งความจริงใบที่สอง · **แต่คำถาม "ต้นทางครบไหม" ต้องมีค่าที่รู้มาก่อน
+  --       ไม่งั้นถามไม่ได้เลย** · ต้นทางเปลี่ยน = preflight แดง = **ต้องมีคนมาตัดสินใหม่** ซึ่งถูก
+  --       (`E7-AC6` บังคับ restore ใหม่ทุกรอบอยู่แล้ว)
+  drop table if exists pf_rows;
+  create temp table pf_rows (tbl text, want int, got int);
+  insert into pf_rows (tbl, want) values
+    ('bookings',8), ('checklist_items',8), ('custom_places',37), ('hidden_places',39),
+    ('place_details_cache',140), ('place_notes',2), ('place_photo_cache',142),
+    ('travel_time_cache',185), ('trip_day_settings',18), ('trip_hotels',4),
+    ('trip_meta',1), ('trip_plans',2), ('trip_selections',13), ('trip_stops',71);
+  if to_regclass('legacy.trip_stops') is not null then
+    update pf_rows r set got = (
+      select (xpath('/row/c/text()',
+        query_to_xml(format('select count(*) c from legacy.%I', r.tbl), false, true, '')))[1]::text::int);
+  end if;
 end $preflight$;
 
 with
@@ -73,11 +96,15 @@ checks as (
   -- ③ คลังต้องมีสแลกที่ E7 อ้างถึงครบ
   union all select 4, 'สแลกสถานที่ในคลัง',
     -- 🔴 เซตว่างต้องอ่านเป็น "ข้าม" ไม่ใช่ "ขาด 0" — ไม่มี legacy = ไม่มีสแลกให้ตรวจ **ไม่ใช่ผ่าน**
+    -- 🔴 เซตว่างต้องอ่านเป็น "ข้าม" ไม่ใช่ "ขาด 0" — สองทาง: ไม่มี legacy **หรือ legacy ว่าง**
+    --    ทางที่สองคือรูที่ P3 เจอ · แถว "จำนวนแถว" ข้างล่างจับได้แล้ว **แต่แถวนี้ก็ต้องไม่โกหก**
     case when not (select v from schema_ok) then '⏸'
+         when (select count(*) from req_place) = 0 then '⏸'
          when (select count(*) from req_place r
                 where not exists (select 1 from public.catalog_places c where c.legacy_slug = r.slug)) = 0
          then '✅' else '🔴' end,
     case when not (select v from schema_ok) then 'ข้าม — ไม่มี legacy'
+         when (select count(*) from req_place) = 0 then 'ข้าม — legacy ไม่มีแถวให้ตรวจ (ดูแถวจำนวนแถว)'
     else (select count(*)::text from req_place) || ' สแลกที่ต้องมี · ขาด ' ||
          (select count(*)::text from req_place r
            where not exists (select 1 from public.catalog_places c where c.legacy_slug = r.slug)) ||
@@ -99,6 +126,16 @@ checks as (
          then '✅' else '🔴' end,
     case when exists (select 1 from public.trips where id = md5('trip:korea-2026-10')::uuid)
          then 'มีอยู่แล้ว — ถอนก่อนด้วย delete ใน RUN.md ถ้าจะรันซ้ำ' else 'ว่าง พร้อมรัน' end
+
+  -- ④.๕ ยอดแถวต่อตาราง — **ตัวเดียวที่จับ "restore มาแล้วแต่ข้อมูลไม่เข้า" ได้**
+  union all select 6.5, 'จำนวนแถวในสำเนาแช่แข็ง (รวม 670)',
+    case when not (select v from schema_ok) then '⏸'
+         when (select count(*) from pf_rows where got is distinct from want) = 0 then '✅' else '🔴' end,
+    case when not (select v from schema_ok) then 'ข้าม — ไม่มี legacy'
+    else coalesce((select 'ไม่ตรง ' || count(*)::text || ' ตาราง → ' ||
+                     string_agg(tbl || ' ' || coalesce(got::text,'?') || '/' || want::text, ', ' order by tbl)
+                   from pf_rows where got is distinct from want),
+                  'ครบทั้ง 14 ตาราง · รวม ' || (select sum(got)::text from pf_rows)) end
 
   -- ⑤ role ที่รันต้องข้าม RLS ได้ (ก้อน 6 บังคับ)
   union all select 7, 'role ที่รันข้าม RLS ได้ (ก้อน 6)',
