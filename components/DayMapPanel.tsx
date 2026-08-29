@@ -1,6 +1,7 @@
 "use client";
 
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import { useEffect, useMemo, useState } from "react";
 import {
   buildDayCitySegments,
@@ -17,13 +18,7 @@ import {
   useApiIsLoaded,
   useMap,
 } from "@vis.gl/react-google-maps";
-import {
-  CATEGORY_COLOR,
-  CATEGORY_COLOR_DARK,
-  CATEGORY_EMOJI,
-  CATEGORY_LABEL,
-  type Place,
-} from "@/data/places";
+import { type Place } from "@/data/places";
 import type { TripHotel } from "@/lib/supabase";
 import { TRAVEL_MODE_EMOJI, type ScheduledStop, type TravelMode } from "@/lib/schedule";
 import { googleMapsPlaceUrl } from "@/lib/mapLinks";
@@ -188,7 +183,12 @@ function SegmentChips({
           <span key={i} className="flex items-center gap-1">
             {i > 0 && (
               <span aria-hidden className="text-[11px] text-content-soft">
-                {hopIcon ? INTERCITY_MODE_ICON[hopIcon] : "→"}
+                {/* 🔴 `hopIcon ? TABLE[hopIcon] : "→"` เดิม — `?` ตรวจว่า *คีย์มีค่าไหม*
+                    ไม่ได้ตรวจว่า *ตารางมีคีย์นั้นไหม* · `hopIcon` เป็น "เรือ" ก็ผ่าน `?`
+                    แล้วได้ `undefined` ออกไปเรนเดอร์เป็นความว่าง (P3 ไล่รูปนี้เจอ 29 ส.ค. 2026) */}
+                {(hopIcon && Object.hasOwn(INTERCITY_MODE_ICON, hopIcon)
+                  ? INTERCITY_MODE_ICON[hopIcon]
+                  : null) ?? "→"}
               </span>
             )}
             <button
@@ -424,7 +424,10 @@ function DayMapContent({
 
       {resolvedStops.map((s, i) => {
         const isActive = s.id === activeStopId;
-        const color = CATEGORY_COLOR[s.place.category];
+        // 🔴 สีของหมุดถูก **ใช้** ไม่ใช่ถูก **แสดง** — `undefined` ที่นี่ไม่ได้ทำให้ข้อความหาย
+        // แต่ทำให้สัญลักษณ์ของ Google Maps ได้ค่าที่แปลไม่ได้ · ใกล้ตระกูล `NaN` มากกว่าตระกูลไอคอนหาย
+        const catMeta = categoryMetaOf(s.place.category);
+        const color = catMeta.color;
         return (
           <Marker
             key={s.id}
@@ -441,7 +444,7 @@ function DayMapContent({
               scale: isActive ? 15 : 11,
               fillColor: color,
               fillOpacity: 1,
-              strokeColor: isActive ? CATEGORY_COLOR_DARK[s.place.category] : "#fff",
+              strokeColor: isActive ? catMeta.colorDark : "#fff",
               strokeWeight: isActive ? 4 : 2,
             }}
           />
@@ -555,10 +558,10 @@ function StopCard({
     <div className="w-44 text-content">
       <PlaceThumb query={placeQueryKey(place)} category={place.category} className="mb-1.5 h-14 w-full" />
       <div className="text-[10px] text-content-soft">
-        จุดที่ {index + 1} · {CATEGORY_LABEL[place.category]}
+        จุดที่ {index + 1} · {categoryMetaOf(place.category).label}
       </div>
       <div className="text-xs font-semibold leading-snug">
-        {CATEGORY_EMOJI[place.category]} {place.nameTh}
+        {categoryMetaOf(place.category).emoji} {place.nameTh}
       </div>
       <div className="mt-0.5 text-[10px] text-content-soft">
         ⏰ {stop.arrival}–{stop.departure} · อยู่ {stop.resolvedDwellMinutes} น.
