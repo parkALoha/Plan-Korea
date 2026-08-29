@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CITY_NAME_EN, type Day, type DayEvent } from "@/data/itinerary";
+import { type Day, type DayEvent } from "@/data/itinerary";
+import { cityNameEnOf } from "@/components/cityMeta";
 import type { Place } from "@/data/places";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel, TripStop } from "@/lib/supabase";
@@ -235,7 +236,7 @@ export function ImmigrationSheet({
                   <span className="font-medium">
                     {hotel?.name_en || hotel?.hotel_name || "— not booked —"}
                   </span>
-                  <span className="block text-[11px] text-content-soft">{CITY_NAME_EN[leg.city]}</span>
+                  <span className="block text-[11px] text-content-soft">{cityNameEnOf(leg.city)}</span>
                 </Td>
                 <Td className="text-[11px]">
                   {hotel?.address_en || hotel?.formatted_address || "—"}

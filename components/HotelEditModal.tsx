@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { HotelLeg } from "@/lib/hotelLegs";
-import { CITY_NAME_TH } from "@/data/itinerary";
+import { cityNameThOf } from "@/components/cityMeta";
 import { CITY_LOCALE, cityCenter } from "@/data/places";
 import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
@@ -192,7 +192,7 @@ export function HotelEditModal({
   return (
     <Modal
       onClose={onClose}
-      title={`ที่พัก — ${CITY_NAME_TH[leg.city]}`}
+      title={`ที่พัก — ${cityNameThOf(leg.city)}`}
       footer={
         <>
           {existing && (

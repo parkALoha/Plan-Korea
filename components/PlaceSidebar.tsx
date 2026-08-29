@@ -4,7 +4,7 @@ import { type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, Place, cityCenter, placesByCity } from "@/data/places";
-import { CITY_META, CITY_NAME_TH } from "@/data/itinerary";
+import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
@@ -170,7 +170,7 @@ function PlaceSidebarContent({
    *  ไม่งั้นโหมดคลังจะโชว์ชื่อเมืองเกาหลีค้างอยู่ ทั้งที่การ์ดข้างล่างเป็นของอีกเมือง */
   const displayCityNameTh = catalogMode
     ? (catalogCities!.find((c) => c.id === currentCatalogCityId)?.nameTh ?? "")
-    : CITY_NAME_TH[activeCity];
+    : cityNameThOf(activeCity);
 
   // ห่อ useMemo เพราะค่ากลายเป็นเงื่อนไข — ถ้าปล่อยเป็นนิพจน์ลอย React Compiler จะรักษา memo ของ
   // `groupedVisibleCards` ที่ต่อจากมันไม่ได้ แล้วทั้งคอมโพเนนต์จะหลุดการ optimize (eslint จับให้)
@@ -263,7 +263,7 @@ function PlaceSidebarContent({
               );
             })
           : cities.map((city) => {
-          const meta = CITY_META[city];
+          const meta = cityMetaOf(city);
           const active = city === activeCity;
           return (
             <button
@@ -274,7 +274,7 @@ function PlaceSidebarContent({
               }`}
               style={active ? { backgroundColor: meta.color } : undefined}
             >
-              {meta.icon} {CITY_NAME_TH[city]}
+              {meta.icon} {cityNameThOf(city)}
             </button>
           );
         })}
@@ -486,14 +486,14 @@ export function PlaceSidebar({
   ...props
 }: SidebarProps & { mobileOpen: boolean; onMobileOpenChange: (open: boolean) => void }) {
   const focusedDay = props.itinerary.find((d) => d.id === props.focusedDayId);
-  const cityMeta = CITY_META[props.activeCity];
+  const cityMeta = cityMetaOf(props.activeCity);
   // โหมดคลังจากฐาน: หัวชีตมือถือใช้ชื่อเมืองแรกของทริป — ไม่ใช่ `activeCity` ซึ่งยังเป็นเมืองเกาหลีเสมอ
   // (เมืองที่กำลังดูจริงอยู่ใน state ข้างใน `PlaceSidebarContent` ซึ่งชั้นนี้มองไม่เห็น — ยอมรับความหยาบ
   //  ตรงนี้ในเฟส 1 ดีกว่าดันสถานะขึ้นมาข้างบนแล้วไปแตะทางเดินของทริปเกาหลี)
   const sheetTitle =
     (props.catalogCities?.length ?? 0) > 0
       ? props.catalogCities![0].nameTh
-      : `${cityMeta.icon} ${CITY_NAME_TH[props.activeCity]}`;
+      : `${cityMeta.icon} ${cityNameThOf(props.activeCity)}`;
   const sheetSubtitle = focusedDay
     ? `กำลังเพิ่มให้วันที่ ${new Date(focusedDay.date).toLocaleDateString("th-TH", {
         day: "numeric",
