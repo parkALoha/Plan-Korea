@@ -71,7 +71,21 @@ trip_day_plan_settings.return_travel_mode  ❌ ไม่มีเลย
   (แพลตฟอร์มหลายประเทศต้องเพิ่มหมวดได้โดยไม่ migrate) · **ฝั่งที่ผิดคือโค้ด ไม่ใช่ฐาน**
 · ทดสอบในสนามซ้อมแล้ว · ยิงทิศแดง 2 ใบ
 
-### 1.7 🔴 **นำสำเนาแช่แข็ง `legacy.*` ขึ้น `engine-dev` — ยังไม่มีใครเขียนขั้นตอนนี้**
+### 1.7 ✅ **เสร็จแล้ว 29 ส.ค. 2026** — `legacy.*` ขึ้น `engine-dev` แล้ว · **และ `E7` รันครบทั้ง 9 ก้อน**
+
+```
+legacy.*        14 ตาราง · 670 แถว        (pg_dump -n legacy จากสนามซ้อม → psql ผ่าน pooler)
+00_preflight    ✅ ครบ 8 แถว
+01→09           เขียวทั้งชุด · ก้อน 9 (ด่านความครบถ้วน) ผ่าน
+```
+· โฮสต์ `db.<ref>.supabase.co` **มี AAAA อย่างเดียว** → เครื่องที่ไม่มี IPv6 ต่อไม่ได้
+  → ใช้ `aws-0-ap-south-1.pooler.supabase.com:5432` (session mode · **ไม่ใช่ 6543**) ผู้ใช้เป็น `postgres.<ref>`
+· 🔴 **ไฟล์โหลดห้าม commit** — มี `home-base` = ที่อยู่จริงของเจ้าของทริป · commit เฉพาะสคริปต์สร้าง
+· สูตร: `supabase-platform/e7/gen/make-legacy-load.sh` · ขั้นตอน: `supabase-platform/e7/RUN.md`
+
+<details><summary>เนื้อหาเดิมของข้อนี้</summary>
+
+**(เดิม)** นำสำเนาแช่แข็ง `legacy.*` ขึ้น `engine-dev` — ยังไม่มีใครเขียนขั้นตอนนี้
 
 **ก้อน E7 ทั้ง 9 ใบอ่าน `legacy.*`** · ถ้าไม่มี schema นี้ ก้อน 01 จะล้มทันทีด้วย
 `relation "legacy.trip_plans" does not exist`
@@ -88,6 +102,8 @@ trip_day_plan_settings.return_travel_mode  ❌ ไม่มีเลย
 · 🔴 **ผมยังไม่ได้ทดสอบวิธีไหนเลย** จึงไม่เขียนขั้นตอนที่ยังไม่ได้ยิง
 · ทางที่น่าจะได้ (ยังไม่ยืนยัน): แก้ `search_path`/`SET search_path` ใน dump · หรือ restore เข้า DB ชั่วคราวแล้ว `pg_dump --schema` ออกมาใหม่โดยเปลี่ยนชื่อ schema
 · ⚠️ **และมันแตะฐานจริงด้วย credential จริง** → สิทธิ์ของผู้ใช้ ไม่ใช่ของทีม
+
+</details>
 
 **✅ ตรวจได้ว่าพร้อมหรือยังโดยไม่ต้องเดา:** รัน `supabase-platform/e7/00_preflight.sql`
 **อ่านอย่างเดียว ไม่เขียนอะไรเลย** · บอกครบว่าอะไรขาด — schema · migration 2 ใบ · สแลกในคลัง 65+6 · ทริปซ้ำ · role
