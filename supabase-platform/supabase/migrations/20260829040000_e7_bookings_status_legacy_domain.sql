@@ -44,7 +44,18 @@
 begin;
 
 -- ① แถวเดิมที่เป็น `todo` ต้องกลายเป็น `pending` ก่อน ไม่งั้น constraint ใหม่จะล้ม
-update public.bookings set status = 'pending' where status = 'todo';
+-- 🔴 **ไม่มี `where trip_id` → แตะทุกแถวในตาราง ทุกทริป ทุกคน** — ปลอดภัยเพราะ `'todo'`
+--    มีทางเข้าทางเดียวคือ `default` ของสคีมาเดิม (P3 ไล่ครบทั้งทรี: ไม่มีโค้ดแอปเขียนค่านี้เลย)
+--    → แถวที่โดนคือ *"แถวที่ถูกสร้างโดยไม่ระบุ status"* ซึ่ง `todo ≡ pending` ความหมายไม่เปลี่ยน
+-- ✅ **แต่ต้องบอกว่าแตะไปกี่แถว** — ผู้ใช้ต้องแยก *"0 แถว ไม่มีอะไรให้แก้"* ออกจาก *"400 แถวถูกเปลี่ยน"* ได้
+--    ตระกูล `§3.8`: **คำสั่งที่แก้ข้อมูล ควรรายงานรัศมีของมันเอง**
+do $migrate$
+declare n int;
+begin
+  update public.bookings set status = 'pending' where status = 'todo';
+  get diagnostics n = row_count;
+  raise notice 'แปลง status: todo → pending · % แถว', n;
+end $migrate$;
 
 alter table public.bookings alter column status set default 'pending';
 alter table public.bookings drop constraint bookings_status_check;

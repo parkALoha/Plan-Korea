@@ -35,6 +35,39 @@
 
 begin;
 
+-- ── ด่านก่อน `alter` — อ่านอย่างเดียว · ให้ข้อความที่ใช้ทำงานต่อได้ ────────────
+-- 🔴 `add constraint check` **ตรวจแถวที่มีอยู่ทันที** (ไม่ได้ใส่ `not valid`)
+--    ถ้ามีค่านอกโดเมนแม้แถวเดียว → `ALTER` ล้มด้วย constraint error ดิบ ซึ่ง**ไม่บอกว่าค่าไหน**
+--    ✅ บอกชื่อค่าที่ผิดพร้อมจำนวนแถว → ผู้ใช้เห็น *"เจอ walking 3 แถว"* แทน error ที่ต้องไปไล่เอง
+--    (P3 เสนอ 29 ส.ค. 2026 · *"แดงที่มีคำอธิบายผิดจะถูกเชื่อ · แดงที่ไม่มีคำอธิบายจะถูกไล่หาสาเหตุ"*
+--     — อันนี้คือทางที่สาม: **แดงที่บอกสาเหตุจริง**)
+do $precheck$
+declare r record; bad text := '';
+begin
+  for r in
+    select * from (values
+      ('trip_stops',             'travel_mode',        array['walk','transit','drive']),
+      ('trip_stops',             'intercity_mode',     array['bus','ktx','other']),
+      ('trip_day_plan_settings', 'return_travel_mode', array['walk','transit','drive'])
+    ) as v(tbl, col, allowed)
+  loop
+    declare found text;
+    begin
+      execute format(
+        'select string_agg(v || '' ('' || n || '' แถว)'', '', '' order by v) from ('
+        || 'select %I v, count(*) n from public.%I where %I is not null and not (%I = any($1)) group by 1) x',
+        r.col, r.tbl, r.col, r.col) into found using r.allowed;
+      if found is not null then
+        bad := bad || format(E'\n  · %s.%s → %s', r.tbl, r.col, found);
+      end if;
+    end;
+  end loop;
+  if bad <> '' then
+    raise exception 'มีค่านอกโดเมนอยู่ในฐานแล้ว — ต้องแก้ข้อมูลก่อนใส่ constraint:%', bad;
+  end if;
+  raise notice 'ด่านก่อน alter: ไม่มีค่านอกโดเมนในทั้ง 3 คอลัมน์';
+end $precheck$;
+
 alter table public.trip_stops
   add constraint trip_stops_travel_mode_check
   check (travel_mode is null or travel_mode in ('walk', 'transit', 'drive'));
@@ -84,7 +117,9 @@ begin
      where c.conrelid = r.tbl::regclass and c.conname = r.con;
     if predicate is null then raise exception 'ไม่พบ constraint % บน %', r.con, r.tbl; end if;
 
-    execute format('create temp table probe_%s (%I text)', i, colname);
+    -- `on commit drop` — SQL editor ใช้คอนเนกชันแบบพูล · ตารางค้างข้ามการกด Run ได้
+    --    (`00_preflight` ใช้ `drop table if exists` ด้วยเหตุผลเดียวกัน · ใบนี้ควรสม่ำเสมอกับมัน)
+    execute format('create temp table probe_%s (%I text) on commit drop', i, colname);
     execute format('alter table probe_%s add %s', i, predicate);
 
     begin
@@ -120,12 +155,26 @@ begin
   if dom_cache is null then
     raise exception 'ไม่พบ check ของ travel_time_cache.travel_mode — เทียบโดเมนไม่ได้ อย่าเงียบ';
   end if;
-  if (dom_stops like '%walk%' and dom_stops like '%transit%' and dom_stops like '%drive%')
-     is distinct from
-     (dom_cache like '%walk%' and dom_cache like '%transit%' and dom_cache like '%drive%')
-  then
-    raise exception 'โดเมน travel_mode ของ trip_stops กับ travel_time_cache ไม่ตรงกัน';
-  end if;
+  -- 🔴 **ฉบับแรกของบล็อกนี้จับ drift ที่มันมีไว้จับไม่ได้** (P3 รีวิวเจอ 29 ส.ค. 2026)
+  --    เขียนว่า `(A and B and C) is distinct from (A' and B' and C')` — **สองข้างยุบเหลือบูลีนเดียว
+  --    = "มีครบสามค่าไหม"** · เติม `'bike'` ให้ `trip_stops` ใบเดียว → ซ้าย true · ขวา true → ผ่าน
+  --    ยิงพิสูจน์แล้ว: `is distinct from` = **false** · **superset ผ่านเสมอ**
+  --    ⚠️ และคอมเมนต์เหนือมันเขียนว่า *"มีคนเติมโหมดใบเดียว เคสนี้แดง"* — **ด่านที่ครอบแคบกว่าถ้อยคำของตัวเอง**
+  --    ✅ เทียบ *เซตของค่า* ที่สกัดจาก predicate จริงทั้งสองฝั่ง เรียงแล้วเทียบตรง ๆ
+  declare
+    set_stops text[] := (select array(select unnest(x) order by 1)
+      from (select array(select (regexp_matches(dom_stops, '''([a-z_]+)''', 'g'))[1]) x) t);
+    set_cache text[] := (select array(select unnest(x) order by 1)
+      from (select array(select (regexp_matches(dom_cache, '''([a-z_]+)''', 'g'))[1]) x) t);
+  begin
+    if set_stops is distinct from set_cache then
+      raise exception 'โดเมน travel_mode ไม่ตรงกัน — trip_stops=% · travel_time_cache=%',
+        set_stops, set_cache;
+    end if;
+    if array_length(set_stops, 1) is null or array_length(set_stops, 1) = 0 then
+      raise exception 'สกัดค่าจาก predicate ไม่ได้เลย — ตัวเทียบไม่มีอำนาจ อย่าอ่านว่าผ่าน';
+    end if;
+  end;
 
   raise notice 'โดเมนโหมดเดินทาง: 3 ด่าน × (ถูก/มั่ว/null) ผ่าน · ตรงกับ travel_time_cache';
 end $verify$;
