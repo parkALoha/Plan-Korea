@@ -59,7 +59,14 @@ begin
          then (select c.id from public.catalog_places c where c.legacy_slug = s.place_id) end,
     case when s.kind in ('place','transfer') and s.place_id like 'custom-%'
          then pg_temp.lid('custom_place', s.place_id) end,
-    s.dwell_minutes, s.travel_mode, s.note, s.photo_url,
+    s.dwell_minutes, s.travel_mode, s.note,
+    -- 🔴 `photo_url` → `photo_path` **เปลี่ยนทั้งชื่อและความหมาย** (`column-map.md:293` · E2-AC5)
+    --    ค่าเดิมคือผลของ `getPublicUrl()` = URL เต็ม · ปลายทางต้องเป็น *path ของ object*
+    --    และ **segment แรกต้องเป็น trip_id** เพราะ policy อ่าน trip จากตรงนั้น
+    --    (`app.booking_file_trip()` · `20260825152500:89` — คืน null ถ้า segment แรกไม่ใช่ uuid
+    --     ซึ่งคอมเมนต์ของมันเรียกว่า "ไฟล์เก่าที่วางไว้รากบัคเก็ต" = แถวนี้เป๊ะ)
+    case when s.photo_url is not null
+         then v_trip::text || '/' || regexp_replace(s.photo_url, '^.*/', '') end,
     s.intercity_from, s.intercity_to, s.intercity_mode,
     s.visited_at, s.transfer_target_time, s.transfer_target_label,
     -- `E7-AC5` — ทุกชื่อเข้าบัญชีเดียว · สตริงเดิมเก็บครบ ห้ามทิ้ง (`D19`)
@@ -94,6 +101,17 @@ begin
     join public.trip_stops t on t.id = pg_temp.lid('stop', s.id)
   ) x where x.order_index <> x.pos;
   if n > 0 then raise exception 'ลำดับเพี้ยน % แถว — rank ไม่ตรงกับ order_index เดิม', n; end if;
+
+  -- 🔴 `photo_path` **ไม่มี check constraint สักตัว** → ถ้าไม่ยิงเองก็ไม่มีอะไรจับ
+  --    (ฉบับแรกของก้อนนี้ยัด URL เต็มลงไปแล้วผ่านทุกด่าน — เจอตอนไล่ทีละคอลัมน์ ไม่ใช่ตอนรัน)
+  select count(*) into n from public.trip_stops
+   where trip_id = v_trip and photo_path like '%://%';
+  if n > 0 then raise exception '% แถว photo_path ยังเป็น URL — ปลายทางคือ path', n; end if;
+
+  select count(*) into n from public.trip_stops
+   where trip_id = v_trip and photo_path is not null
+     and split_part(photo_path, '/', 1) <> v_trip::text;
+  if n > 0 then raise exception '% แถว photo_path ขึ้นต้นไม่ใช่ trip_id — policy จะอ่านไม่เจอ', n; end if;
 
   raise notice 'E7 · trip_stops ย้ายแล้ว % แถว · ลำดับตรงทุกแถว', expected;
 end $e7$;
