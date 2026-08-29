@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Place } from "@/data/places";
+import type { TravelMode } from "@/lib/schedule";
 import {
   computeSchedule,
   DEFAULT_DWELL_MINUTES,
@@ -84,7 +85,10 @@ describe("🔴 หมวดนอกตาราง ต้องไม่ทำ�
  * 🔴 สองใบในวันเดียว → **นี่เป็นรูปที่ต้องไล่หาต่อ ไม่ใช่บั๊กสองตัวที่บังเอิญคล้ายกัน**
  */
 describe("🔴 โหมดเดินทางนอกตาราง ต้องไม่ทำให้เวลาเป็น NaN", () => {
-  const unknownMode = "ferry-not-in-union" as Parameters<typeof estimateTravelMinutes>[1];
+  // 🔴 `as TravelMode` ตรง ๆ — เลียนแบบสิ่งที่โค้ดจริงทำกับค่าจากฐาน (`stop.travel_mode as TravelMode`)
+  //    ห้ามใช้ `Parameters<typeof …>[1]` เพราะมันกว้างเป็น `TravelMode | null | undefined` (พารามิเตอร์มีค่าเริ่มต้น)
+  //    แล้วไปชนกับ `travelMode: TravelMode | null` ของ `ScheduleStopInput`
+  const unknownMode = "ferry-not-in-union" as TravelMode;
 
   it("โหมดที่รู้จัก — เคสควบคุมฝั่งบวก: ตัวคำนวณทำงานจริงและให้คนละค่ากันตามโหมด", () => {
     const walk = estimateTravelMinutes(10, "walk");
