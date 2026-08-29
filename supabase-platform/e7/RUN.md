@@ -12,11 +12,35 @@
 สำเนาแช่แข็ง legacy.*  ·  migration 2 ใบ  ·  สแลกสถานที่ 65  ·  สแลกเมือง 6  ·  ทริปซ้ำ  ·  role
 ```
 
-## 🔴 ขั้นที่ 0.5 — `legacy.*` ต้องอยู่บน `engine-dev` ก่อน · **ขั้นนี้ยังไม่มีใครเขียน**
+## ขั้นที่ 0.5 — `legacy.*` ต้องอยู่บน `engine-dev` ก่อน ✅ **มีวิธีแล้ว · ทดสอบแล้ว**
 
 ก้อนทั้ง 9 อ่าน `legacy.*` · **ไม่มี = ก้อน 01 ล้มทันที** · ท่าของสนามซ้อม
 (`alter schema public rename to legacy`) **ใช้กับ `engine-dev` ไม่ได้** เพราะ `public` ที่นั่นมีสคีมาแพลตฟอร์มอยู่
-· ยังไม่ทดสอบวิธีไหน จึงไม่เขียนขั้นตอนที่ยังไม่ได้ยิง — ดู [`waiting-on-user.md §1.7`](../../docs/engine/waiting-on-user.md)
+
+**✅ ท่าที่ใช้: `pg_dump -n legacy` จากสนามซ้อม → ได้ไฟล์ที่ namespace เป็น `legacy` มาแต่ต้น**
+```bash
+scripts/e7-local-rehearsal.sh                          # ถ้ายังไม่ได้กาง
+supabase-platform/e7/gen/make-legacy-load.sh           # → /tmp/legacy-load.sql
+```
+· ด่านในหัวไฟล์ **3 ชั้น · ยิงพิสูจน์ครบทั้งสามทิศแล้ว**: ไม่มี `project_identity` → ปฏิเสธ ·
+  `ref` ผิด → ปฏิเสธ · มี `legacy` อยู่แล้ว → ปฏิเสธ (กันโหลดทับ)
+· ทดสอบโหลดลงฐานเปล่าในเครื่องแล้ว → **670 แถว · 14 ตาราง** ตรงกับที่ `00_preflight` คาดหวังเป๊ะ
+· ถอด `SET transaction_timeout` ออกแล้ว (เป็นของ PG17 · Supabase อาจเก่ากว่า)
+
+### 🔴 ไฟล์ผลลัพธ์ **ห้าม commit ขึ้น git เด็ดขาด**
+มันมี `custom_places` ทั้งตาราง ซึ่งรวม **`home-base` = ที่อยู่จริงของเจ้าของทริป**
+`data/transferPoints.ts:21-23` เขียนไว้เองว่าจงใจไม่ให้ที่อยู่นั้นอยู่ในไฟล์ที่ commit
+· **สคริปต์สร้าง commit ได้ (เป็นสูตร) · ผลลัพธ์ออก `/tmp` เท่านั้น**
+· 🎯 เจอตอนกำลังจะ commit ไฟล์ 1.3M — **ถ้าไม่เช็คก็จะเป็นการรั่วที่ตั้งใจกันไว้แล้วแต่พลาดเอง**
+
+### วิธีโหลดขึ้น `engine-dev` — ไฟล์ 1.3M ใหญ่เกินกว่าจะวางใน SQL Editor สบาย ๆ
+```bash
+# ต่อตรงด้วย connection string จาก Dashboard → Settings → Database
+psql "<connection string ของ engine-dev>" -f /tmp/legacy-load.sql
+```
+· ⚠️ **connection string มีรหัสผ่าน — พิมพ์ในเทอร์มินัลของตัวเอง ห้ามวางในแชต**
+· ทางสำรอง: แบ่งวางใน SQL Editor เป็น 4 ก้อน (เนื้อทริป 84K · `travel_time_cache` 20K ·
+  `place_photo_cache` 412K · `place_details_cache` 804K) — ได้ผลเหมือนกันแต่ขั้นตอนเยอะกว่า
 
 ## ก่อนเริ่ม — ด่านสองใบที่ต้องผ่านก่อน
 
