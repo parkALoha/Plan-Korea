@@ -26,7 +26,14 @@ export const TRAVEL_MODE_EMOJI: Record<TravelMode, string> = {
 
 // ความเร็วเฉลี่ยคร่าวๆ ต่อโหมด (กม./ชม.) ใช้ประมาณเวลาเดินทางตอนยังไม่มีเวลาจริงจาก Google ในแคช
 // (ดู app/api/travel-time/route.ts) — เป็นแค่ตัวเลขคร่าวๆ ใน timeline ไม่ใช่ของจริง
-const TRAVEL_MODE_KMH: Record<TravelMode, number> = {
+/**
+ * 🔴 **`Partial<Record<…>>` โดยตั้งใจ — เหตุผลเดียวกับ `DEFAULT_DWELL_MINUTES`** (P3 · 29 ส.ค. 2026)
+ * `trip_stops.travel_mode` · `trip_day_plan_settings.return_travel_mode` **ไม่มี `CHECK` ในฐานเลย**
+ * (P1 วัด `pg_constraint` 29 ส.ค. · น่าสังเกตว่า `travel_time_cache.travel_mode` *มี* — โดเมนเดียวกัน
+ * สองตาราง ใบหนึ่งกัน อีกใบไม่กัน) และโค้ด `cast` มันเข้า union หลายที่ (`as TravelMode`)
+ * → `kmh` เป็น `undefined` ได้จริง → `distanceKm / undefined` = **`NaN` ของเวลาเดินทางทุกคู่จุด**
+ */
+const TRAVEL_MODE_KMH: Partial<Record<TravelMode, number>> = {
   walk: 4.5,
   transit: 20,
   drive: 30,
@@ -36,7 +43,10 @@ const TRAVEL_MODE_KMH: Record<TravelMode, number> = {
 const DEFAULT_KMH = 25;
 
 export function estimateTravelMinutes(distanceKm: number, mode: TravelMode | null = null): number {
-  const kmh = mode ? TRAVEL_MODE_KMH[mode] : DEFAULT_KMH;
+  // 🔴 `?? DEFAULT_KMH` ปิดท้าย — เดิม `DEFAULT_KMH` ครอบแค่ *"ยังไม่เลือกโหมด"* (`mode === null`)
+  //    **ไม่ครอบ "เลือกโหมดที่ไม่มีในตาราง"** ซึ่งเป็นสิ่งที่ฐานส่งมาได้ (ไม่มี `CHECK` · ดูหัวตาราง)
+  //    🎯 รูปเดียวกับ `DEFAULT_DWELL_MINUTES` เป๊ะ: fallback มีอยู่สำหรับ *ไม่มีค่า* แต่ไม่ครอบ *ค่าที่ไม่รู้จัก*
+  const kmh = (mode ? TRAVEL_MODE_KMH[mode] : DEFAULT_KMH) ?? DEFAULT_KMH;
   return Math.round((distanceKm / kmh) * 60);
 }
 

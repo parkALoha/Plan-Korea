@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { Place } from "@/data/places";
-import { computeSchedule, DEFAULT_DWELL_MINUTES, DWELL_MINUTES_FALLBACK } from "@/lib/schedule";
+import {
+  computeSchedule,
+  DEFAULT_DWELL_MINUTES,
+  DWELL_MINUTES_FALLBACK,
+  estimateTravelMinutes,
+  estimateTravelMinutesBetween,
+} from "@/lib/schedule";
 
 /**
  * 🔴 **หมวดที่ไม่อยู่ในตาราง ต้องไม่ทำให้เวลาทั้งวันเป็น `NaN`** — เจ้าของ: P3-FE/Perf · 29 ส.ค. 2026
@@ -65,5 +71,51 @@ describe("🔴 หมวดนอกตาราง ต้องไม่ทำ�
     expect(day.stops.map((s) => Number.isNaN(s.arrivalMinutes))).toEqual([false, false]);
     expect(Number.isNaN(day.endOfDayMinutes)).toBe(false);
     expect(day.stops[1].arrival).toBe("10:00");
+  });
+});
+
+/**
+ * 🔴 **โหมดเดินทางที่ไม่อยู่ในตาราง ต้องไม่ทำให้เวลาเดินทางเป็น `NaN`** — P3 · 29 ส.ค. 2026
+ *
+ * 🎯 **รูปเดียวกับ `DEFAULT_DWELL_MINUTES` ข้างบนเป๊ะ และนั่นคือเหตุผลที่อยู่ไฟล์เดียวกัน:**
+ * ***fallback มีอยู่สำหรับ "ยังไม่มีค่า" แต่ไม่ครอบ "มีค่าที่ไม่รู้จัก"***
+ * · `DEFAULT_KMH = 25` ครอบ `mode === null` · `DWELL_MINUTES_FALLBACK = 60` ครอบ *ไม่มี `place`*
+ * · **ทั้งคู่ไม่ครอบค่าที่ฐานส่งมาแล้วไม่มีในตาราง** — และฐานไม่มี `CHECK` กันสักตาราง (P1 วัด 29 ส.ค.)
+ * 🔴 สองใบในวันเดียว → **นี่เป็นรูปที่ต้องไล่หาต่อ ไม่ใช่บั๊กสองตัวที่บังเอิญคล้ายกัน**
+ */
+describe("🔴 โหมดเดินทางนอกตาราง ต้องไม่ทำให้เวลาเป็น NaN", () => {
+  const unknownMode = "ferry-not-in-union" as Parameters<typeof estimateTravelMinutes>[1];
+
+  it("โหมดที่รู้จัก — เคสควบคุมฝั่งบวก: ตัวคำนวณทำงานจริงและให้คนละค่ากันตามโหมด", () => {
+    const walk = estimateTravelMinutes(10, "walk");
+    const transit = estimateTravelMinutes(10, "transit");
+    expect(Number.isFinite(walk)).toBe(true);
+    expect(walk).not.toBe(transit); // ถ้าเท่ากัน แปลว่าตารางไม่ได้ถูกอ่านจริง
+  });
+
+  it("🔴 โหมดที่ฐานส่งมาแต่ไม่มีในตาราง — ต้องได้ค่าเริ่มต้น ไม่ใช่ NaN", () => {
+    const minutes = estimateTravelMinutes(10, unknownMode);
+    expect(Number.isNaN(minutes)).toBe(false);
+    expect(minutes).toBe(estimateTravelMinutes(10, null)); // ตกไปที่ DEFAULT_KMH เส้นเดียวกับ "ยังไม่เลือก"
+  });
+
+  it("🔴 และมันต้องไม่ลาม — ทั้งวันหลังคู่จุดที่โหมดแปลก ต้องยังมีเวลาจริง", () => {
+    // `cursor` สะสมเวลาเดินทาง → `NaN` หนึ่งครั้งทำให้ทุกจุดหลังจากนั้นเป็น `NaN` ตามทั้งสาย
+    const places = new Map([
+      ["a", place("a", "cafe")],
+      ["b", place("b", "cafe")],
+    ]);
+    places.get("b")!.lat = 37.6;
+    const day = computeSchedule(
+      "09:00",
+      [
+        { id: "s1", placeId: "a", dwellMinutes: 30, travelMode: null },
+        { id: "s2", placeId: "b", dwellMinutes: 30, travelMode: unknownMode },
+      ],
+      places,
+      estimateTravelMinutesBetween,
+    );
+    expect(day.stops.map((s) => Number.isNaN(s.arrivalMinutes))).toEqual([false, false]);
+    expect(Number.isNaN(day.endOfDayMinutes)).toBe(false);
   });
 });
