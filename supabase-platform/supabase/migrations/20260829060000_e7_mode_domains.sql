@@ -35,6 +35,28 @@
 
 begin;
 
+-- ── ด่านตัวตนฐาน (`D48`) — ต้องมีทุก migration · คัดจาก `supabase-platform/migration-template.sql` ──
+-- 🔴 **ไฟล์นี้เคยไม่มีบล็อกนี้ และผู้ใช้รันมันไปแล้วหนึ่งรอบเมื่อ 29 ส.ค. 2026**
+--    รอบนั้นปลอดภัยเพราะยืนยันตัวฐานด้วยคิวรีแยกก่อนรัน (`catalog_places` มี · `trip_meta` ไม่มี)
+--    **แต่นั่นคือคนตรวจ ไม่ใช่ไฟล์ตรวจ** — `guards.sh` จับได้ตอนยืนยันก่อน push · เติมแล้ว
+do $guard$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'app' and table_name = 'project_identity'
+  ) then
+    raise exception 'ผิดโปรเจกต์: ไม่มี app.project_identity → ฐานนี้ไม่ใช่ engine-dev ของแพลตฟอร์ม';
+  end if;
+  if not exists (
+    select 1 from app.project_identity
+     where name = 'plan-korea-platform'
+       and ref  = 'pmvxwcimjebogjfimzqy'
+       and environment = 'dev'
+  ) then
+    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ใช่ engine-dev (ตรวจ name+ref+environment)';
+  end if;
+end $guard$;
+
 -- ── ด่านก่อน `alter` — อ่านอย่างเดียว · ให้ข้อความที่ใช้ทำงานต่อได้ ────────────
 -- 🔴 `add constraint check` **ตรวจแถวที่มีอยู่ทันที** (ไม่ได้ใส่ `not valid`)
 --    ถ้ามีค่านอกโดเมนแม้แถวเดียว → `ALTER` ล้มด้วย constraint error ดิบ ซึ่ง**ไม่บอกว่าค่าไหน**
