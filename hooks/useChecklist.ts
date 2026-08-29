@@ -5,6 +5,9 @@ import { supabase, supabaseConfigured, ChecklistCategory, ChecklistItem } from "
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
+import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
+import { get as storeGet, set as storeSet, tripKey } from "@/lib/engine/offlineStore";
 
 function makeChecklistId() {
   return `cl-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -35,17 +38,56 @@ export function useChecklist(tripId: string | null) {
     tripIdRef.current = tripId;
   }, [tripId]);
 
+  /**
+   * ยิงของสด **และเก็บลงเครื่องเสมอ** — `E6-AC4`
+   *
+   * 🔴 **การเขียนแคชอยู่ที่นี่ ไม่ใช่ที่ผู้เรียก โดยตั้งใจ** · ดึงของสดมี 3 ทาง (โหลดแรก · realtime · `reload()`
+   * ตอนเขียนไม่ผ่าน) — ให้ผู้เรียกเขียนแคชเอง = **สามที่ที่ต้องจำ และที่ที่ลืมจะเงียบสนิท**
+   * 🎯 *ขั้นที่ข้ามได้จะถูกข้ามสักวัน* — เอาออกจากมือผู้เรียก ดีกว่าเขียนคำเตือนไว้ให้อ่าน
+   * · ไม่ `await` การเขียน — ดิสก์ต้องไม่หน่วงจอ · เขียนไม่ลงไม่กลืนเงียบ (`noteCacheFailure`)
+   */
+  const fetchRows = useCallback(async (id: string) => {
+    const rows = await fetchReadJson<ChecklistItem[]>(`/api/engine/trips/${id}/checklist`);
+    if (!rows) return null;
+    const sorted = sortItems(rows);
+    void storeSet(tripKey(id, "checklist"), sorted).then((ok) => {
+      if (!ok) noteCacheFailure("offlineStore/checklist/write", { code: "idb" });
+    });
+    return sorted;
+  }, []);
+
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
 
+    const activeTripId = tripId; // narrow ครั้งเดียว — TS ไม่ narrow ข้าม async function
     const channelName = `checklist_changes_${Math.random().toString(36).slice(2)}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const rows = await fetchReadJson<ChecklistItem[]>(`/api/engine/trips/${tripId}/checklist`);
+      /**
+       * 🔴 **`E6-AC4`** — ก่อน 29 ส.ค. 2026 hook นี้ไม่แคชอะไรเลย **และไม่เคยแคชสักคอมมิตเดียว**
+       * (`git log -S readCache -- hooks/useChecklist.ts` → ว่าง) → ออฟไลน์ได้ `[]` **และเงียบ**
+       * `fetchReadJson` คืน `null` ทุกทางพลาด → `if (rows)` ข้ามไป → `setItems` ไม่เคยถูกเรียก
+       * 🎯 **ของที่ต้องเตรียมก่อนบิน คือของที่คนเปิดดูตอน *ไม่มีเน็ต* พอดี** — พาสปอร์ต ปลั๊ก ยา
+       * ⚠️ และมันหลุดสายตาเพราะ `mobile-arch.md §13.1` เขียนว่ากลุ่มนี้ "แคชแล้ว" โดยไม่ได้ไล่ทีละตัว
+       */
+      await hydrateThenFetch<ChecklistItem[]>({
+        readCache: () => storeGet<ChecklistItem[]>(tripKey(activeTripId, "checklist")),
+        fetchFresh: async () => {
+          const rows = await fetchRows(activeTripId);
+          // `fetchReadJson` กลืน error แล้วคืน `null` · `hydrateThenFetch` ต้องการ **การโยน** เพื่อแยก
+          // "ยิงล้ม" ออกจาก "ยิงได้แต่ว่าง" — `[]` เป็นคำตอบที่ถูกต้อง (ยังไม่มีรายการ) ห้ามยุบเข้ากับ null
+          if (!rows) throw new Error("checklist unreachable");
+          return rows;
+        },
+        // ไม่ส่ง `writeCache` — `fetchRows` เขียนให้แล้วทุกทาง (ดูเหตุผลที่หัวมัน)
+        applyCache: (rows) => setItems(rows),
+        applyFresh: (rows) => setItems(rows),
+        applyError: () => {}, // ไม่มีทั้งของสดและของในเครื่อง → คง `[]` · `fetchReadJson` ยิง toast แล้ว
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      if (rows) setItems(sortItems(rows));
       setLoaded(true);
 
       channel = supabase
@@ -66,16 +108,16 @@ export function useChecklist(tripId: string | null) {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [tripId]);
+  }, [tripId, fetchRows]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
     const id = tripIdRef.current;
     if (!supabaseConfigured || !id) return;
-    const rows = await fetchReadJson<ChecklistItem[]>(`/api/engine/trips/${id}/checklist`);
+    const rows = await fetchRows(id);
     if (!rows) return;
-    setItems(sortItems(rows));
-  }, []);
+    setItems(rows);
+  }, [fetchRows]);
 
 
   // 🔴 realtime เรียกผ่าน ref เพื่อไม่ผูก effect หลักเข้ากับ `reload`

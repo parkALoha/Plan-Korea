@@ -5,6 +5,9 @@ import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
+import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
+import { get as storeGet, set as storeSet, tripKey } from "@/lib/engine/offlineStore";
 
 type HiddenPlaceRow = {
   place_id: string;
@@ -39,11 +42,24 @@ export function useHiddenPlaces(tripId: string | null) {
     tripIdRef.current = tripId;
   }, [tripId]);
 
+  /**
+   * ยิงของสด **และเก็บลงเครื่องเสมอ** — `E6-AC4`
+   *
+   * 🔴 **การเขียนแคชอยู่ที่นี่ ไม่ใช่ที่ผู้เรียก โดยตั้งใจ** · มีทางที่ดึงของสด **4 ทาง**
+   * (โหลดแรก · realtime ยิง · `reload()` · `guard()` ตอนเขียนไม่ผ่าน) — ถ้าให้ผู้เรียกเป็นคนเขียนแคช
+   * **มันคือสี่ที่ที่ต้องจำ และที่ที่ลืมจะเงียบสนิท**: state ใหม่แต่แคชเก่า → ออฟไลน์แล้วของที่เพิ่งซ่อนกลับมา
+   * 🎯 *ขั้นที่ข้ามได้จะถูกข้ามสักวัน* — เอาขั้นนั้นออกจากมือผู้เรียกไปเลย ดีกว่าเขียนคำเตือนไว้ให้อ่าน
+   * · ไม่ `await` — การเขียนดิสก์ต้องไม่หน่วงจอ (เหตุผลเดียวกับที่ `hydrateThenFetch` เรียก `writeCache`
+   *   **หลัง** `applyFresh`) · เขียนไม่ลงก็ไม่กลืนเงียบ ยิง `noteCacheFailure` เหมือนกัน
+   */
   const fetchInto = useCallback(async (tripId: string) => {
     const rows = await fetchReadJson<HiddenPlaceRow[]>(`/api/engine/trips/${tripId}/hidden-places`);
     if (!rows) return null;
     const map: Record<string, HiddenPlaceRow> = {};
     for (const r of rows) map[r.place_id] = r;
+    void storeSet(tripKey(tripId, "hiddenPlaces"), map).then((ok) => {
+      if (!ok) noteCacheFailure("offlineStore/hiddenPlaces/write", { code: "idb" });
+    });
     return map;
   }, []);
 
@@ -51,13 +67,37 @@ export function useHiddenPlaces(tripId: string | null) {
     if (!supabaseConfigured || !tripId) return;
     const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
     const channelName = `hidden_places_changes_${Math.random().toString(36).slice(2)}`;
+    const cacheKey = tripKey(activeTripId, "hiddenPlaces");
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const map = await fetchInto(activeTripId);
+      /**
+       * 🔴 **`E6-AC4`** — ก่อน 29 ส.ค. 2026 hook นี้ไม่แคชอะไรเลย → **ออฟไลน์ได้ `{}` และเงียบ**
+       * `fetchReadJson` คืน `null` ทุกทางพลาด → `if (map)` ข้ามไป → `setHidden` ไม่เคยถูกเรียก
+       * **ไม่มี error ไม่มีสถานะว่าถามไม่ได้** — ผู้ใช้เห็นสถานที่ที่ตัวเองซ่อนไว้ *กลับมาโผล่*
+       * 🎯 และมันหลุดสายตาเพราะ `mobile-arch.md §13.1` เขียนว่ากลุ่มนี้ "แคชแล้ว" โดยไม่ได้ไล่ทีละตัว
+       *
+       * ⚠️ **ที่นี่ทิศของความผิดพลาดไม่สมมาตร** — ซ่อนแล้วเห็น (แคชหาย) แย่กว่า เห็นแล้วซ่อน (แคชเก่า)
+       * เพราะอย่างหลังผู้ใช้กดซ่อนซ้ำได้ · อย่างแรกคือของที่เขาตัดสินใจไปแล้ว **ถูกลบทิ้งเงียบ ๆ**
+       */
+      await hydrateThenFetch<Record<string, HiddenPlaceRow>>({
+        readCache: () => storeGet<Record<string, HiddenPlaceRow>>(cacheKey),
+        fetchFresh: async () => {
+          const map = await fetchInto(activeTripId);
+          // `fetchReadJson` กลืน error แล้วคืน `null` — `hydrateThenFetch` ต้องการ **การโยน** เพื่อแยก
+          // "ยิงล้ม" ออกจาก "ยิงได้แต่ว่าง" · `{}` เป็นคำตอบที่ถูกต้อง (ไม่ได้ซ่อนอะไรเลย) ห้ามยุบเข้ากับ null
+          if (!map) throw new Error("hidden-places unreachable");
+          return map;
+        },
+        // ไม่ส่ง `writeCache` — `fetchInto` เขียนให้แล้วทุกทาง (ดูเหตุผลที่หัวมัน) · ส่งด้วยจะเขียนซ้ำสองรอบ
+        applyCache: (map) => setHidden(map),
+        applyFresh: (map) => setHidden(map),
+        // ไม่มีทั้งของสดและของในเครื่อง → คงค่าเริ่มต้น `{}` · `fetchReadJson` ยิง toast ให้แล้ว
+        applyError: () => {},
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      if (map) setHidden(map);
       setLoaded(true);
 
       channel = supabase
