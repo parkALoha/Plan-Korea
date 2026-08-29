@@ -13,8 +13,6 @@
 -- ⚠️ `city` เดิมเป็น text (`busan` 29 · `hanoi` 7 · `bangkok` 1) → `city_id`
 --    ทั้งสามเมืองมีในคลังแล้ว (ตรวจ 29 ส.ค.)
 
-\set ON_ERROR_STOP on
-
 begin;
 
 create or replace function pg_temp.lid(kind text, id text) returns uuid

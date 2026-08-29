@@ -15,8 +15,6 @@
 --   PK เดิม `(plan_id, day_id)`  →  ใหม่ `(plan_id, trip_day_id)`  — รูปเดียวกัน
 --   18 แถว = 2 แผน × วันที่มีตั้งค่า · `plan-default` 7 · `plan-tewl9a9gd5msprnhqj` 11
 
-\set ON_ERROR_STOP on
-
 begin;
 
 create or replace function pg_temp.lid(kind text, id text) returns uuid

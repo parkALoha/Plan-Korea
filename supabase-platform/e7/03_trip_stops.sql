@@ -22,8 +22,6 @@
 --   · แทรกทีหลังได้ปกติ: `0001V` < `0001V5` < `0002V` (rankBetween ฝั่งแอปยังใช้ได้)
 --   🔴 ไม่ใช่ตัวสร้าง rank ทั่วไป — เป็นการหว่านค่าเริ่มต้นที่รักษาลำดับเท่านั้น
 
-\set ON_ERROR_STOP on
-
 begin;
 
 create or replace function pg_temp.lid(kind text, id text) returns uuid

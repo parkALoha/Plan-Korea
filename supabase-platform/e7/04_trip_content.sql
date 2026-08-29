@@ -21,8 +21,6 @@
 --     — ซึ่งจะ *ล้ม* ไม่ใช่หายเงียบ **ก็ต่อเมื่อมีคนเขียน insert ให้มันพยายามใส่**
 --     ฉบับที่ทิ้ง `where place_id not like 'custom-%'` จะเขียวและหาย 21 แถว)
 
-\set ON_ERROR_STOP on
-
 begin;
 
 create or replace function pg_temp.lid(kind text, id text) returns uuid

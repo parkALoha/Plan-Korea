@@ -89,8 +89,6 @@ ${[...kinds.entries()].sort().map(([k, n]) => `--   ${k === "undefined" ? "(ไ�
 --   · ไม่ชนกับ rank ของจุดแวะ (\`0000V\`…) และเรียงต่อท้ายเสมอ
 --   · **ไม่ผูกกับเวลาโดยตั้งใจ** (\`D81\` ③.๒) — คิวรีที่หาขอบใช้ min/max ของเวลา ไม่ใช่ rank
 
-\\set ON_ERROR_STOP on
-
 begin;
 
 create or replace function pg_temp.lid(kind text, id text) returns uuid
