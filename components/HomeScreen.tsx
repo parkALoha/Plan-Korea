@@ -106,7 +106,7 @@ function TripCard({ trip }: { trip: TripListItem }) {
           {trip.memberCount > 0 ? (
             <>👥 {trip.memberCount}</>
           ) : (
-            <span className="text-maple-dark" title="อ่านจำนวนสมาชิกไม่ได้ — คาดว่ามีอย่างน้อย 1 คนเสมอ">
+            <span className="text-maple-dark" title={COPY.memberCountUnknown}>
               👥 ?
             </span>
           )}

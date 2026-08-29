@@ -6,6 +6,7 @@ import { useSystemMode } from "@/hooks/useSystemMode";
 import { TripDestinationPicker, type CityOption } from "@/components/TripDestinationPicker";
 import { DateField } from "@/components/DateField";
 import { showToast } from "@/lib/toast";
+import { E5_COPY } from "@/lib/i18n";
 
 /**
  * ฟอร์มสร้างทริปแรก — `E5` (P1 พบ 27 ส.ค. 2026: `create_trip` อยู่ในฐานมาตั้งแต่ 25 ส.ค. แต่ไม่มี UI
@@ -16,6 +17,8 @@ import { showToast } from "@/lib/toast";
  * วันที่ ISO · วันจบไม่มาก่อนวันเริ่ม) ที่นี่จึงแค่ส่งค่าไปตรงๆ แล้วอ่านข้อความ error ที่ route คืนมา
  * (เป็นภาษาไทยพร้อมโชว์ตรงๆ อยู่แล้ว)
  */
+const COPY = E5_COPY.createTrip;
+
 export function CreateTripForm() {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -121,7 +124,7 @@ export function CreateTripForm() {
           จึงต้องพึ่งเงื่อนไข disabled ของปุ่ม "สร้างทริป" ด้านล่างแทน (มี !startDate/!endDate อยู่แล้ว) */}
       <div className="flex gap-2">
         <div className="min-w-0 flex-1">
-          <span className="mb-1 block text-xs font-medium text-content-soft">เริ่ม</span>
+          <span className="mb-1 block text-xs font-medium text-content-soft">{COPY.startLabel}</span>
           <DateField
             id="trip-start"
             ariaLabel="วันเริ่มทริป"
@@ -135,7 +138,7 @@ export function CreateTripForm() {
           />
         </div>
         <div className="min-w-0 flex-1">
-          <span className="mb-1 block text-xs font-medium text-content-soft">สิ้นสุด</span>
+          <span className="mb-1 block text-xs font-medium text-content-soft">{COPY.endLabel}</span>
           <DateField
             id="trip-end"
             ariaLabel="วันสิ้นสุดทริป"
