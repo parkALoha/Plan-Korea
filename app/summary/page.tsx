@@ -7,7 +7,7 @@ import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
 import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
-import { countryOfCity, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
+import { countryOfCitySlug, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { resolveEventPlace } from "@/lib/eventPlace";
@@ -74,7 +74,10 @@ import NoteBody from "@/components/NoteBody";
 const IMMIGRATION_DOCUMENT_COUNTRY: { code: CountryCode; nameEn: string; nameTh: string } = (() => {
   const dayCountByCountry = new Map<CountryCode, number>();
   for (const day of ITINERARY) {
-    const country = countryOfCity(day.city);
+    // 🔴 `countryOfCitySlug` คืน `null` เมื่อไม่รู้จัก — ข้ามวันนั้นแทนที่จะนับ `undefined` เป็นประเทศหนึ่ง
+    //    (ตัวเก่า `countryOfCity()` index `Record` ที่คีย์เป็น union ตรง ๆ → `undefined` เงียบ ๆ)
+    const country = countryOfCitySlug(day.city);
+    if (!country) continue;
     dayCountByCountry.set(country, (dayCountByCountry.get(country) ?? 0) + 1);
   }
   let winner: CountryCode = "kr";

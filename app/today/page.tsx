@@ -16,7 +16,7 @@ import type { GoogleOpeningHours } from "@/lib/googlePlaces";
 import { estimateDelayMinutes, shiftTime } from "@/lib/liveDelay";
 import { hotelNavigationName, navigationName, mapActionsFor, type MapAction } from "@/lib/mapLinks";
 import type { MapProvider } from "@/lib/engine/countries";
-import { countryOfCity } from "@/data/emergency";
+import { countryOfCitySlug } from "@/data/emergency";
 import { LocalNameCard } from "@/components/LocalNameCard";
 import { PlaceDetailModal } from "@/components/PlaceDetailModal";
 import { placeDetailsCache } from "@/hooks/usePlaceDetails";
@@ -233,8 +233,11 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   // DTO แล้ว) แต่ hook ที่ส่งค่านั้นเข้า state ยังไม่เสร็จ (P3 กำลังเขียน useHotels/useCustomPlaces ใหม่
   // อยู่พอดี ห้ามแตะสองไฟล์นั้นตอนนี้) — ระดับวันยังถูกกว่าระดับทริปเดิมมาก เพราะเปลี่ยนค่าได้ทุกวันที่
   // day.city เปลี่ยน ไม่ใช่ค่าคงที่ตลอดทริปแบบเดิม สลับไปใช้ place-level ทันทีที่ hook พร้อม
-  // countryOfCity มาจาก data/emergency.ts (ตัวเดียวกับที่ EmergencyCard ใช้อยู่แล้ว) ไม่สร้างแหล่งใหม่ซ้อน
-  const mapCountryCode = countryOfCity(day.city);
+  // 🔴 `countryOfCitySlug` ไม่ใช่ `countryOfCity` — ตัวหลัง index `COUNTRY_OF_CITY[city]` ตรง ๆ
+  //    บน `Record` ที่คีย์เป็น union 6 เมืองเกาหลี → **`undefined` ทันทีที่วันมาจากฐาน (`B6`, 42 เมือง)**
+  //    และ `tsc` จับไม่ได้ตามนิยาม (ดู components/cityMeta.ts) · ตัวใหม่คืน `null` เมื่อไม่รู้จัก
+  //    `mapActionsFor(null, …)` → ผู้ให้บริการแผนที่ = Google อย่างเดียว ซึ่งใช้ได้ทุกที่ (นโยบายเขียนไว้ที่ data/emergency.ts)
+  const mapCountryCode = countryOfCitySlug(day.city);
 
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === day.id).sort((a, b) => a.order_index - b.order_index),

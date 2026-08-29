@@ -22,7 +22,7 @@ import { isOpenDuring } from "@/lib/openingHours";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { hotelAnchorId } from "@/lib/hotelLegs";
 import { shouldSkipTravelApi } from "@/lib/engine/countries";
-import { countryOfCity } from "@/data/emergency";
+import { countryOfCitySlug } from "@/data/emergency";
 
 /**
  * ตรรกะคำนวณตารางเวลาทั้งวัน — ดึงออกมาจาก DayStopsSection (เดิมฝังอยู่ในนั้นล้วนๆ)
@@ -88,7 +88,10 @@ export function useDaySchedule({
   // ซึ่งยังเป็นหน้าที่ของ isTravelTimeReal (ผลจริงที่ยิงมาแล้ว) เหมือนเดิมทุกจุด — สองคำถามคนละคำถามกัน
   // (P1: "ทะเบียนตอบว่า 'อย่ายิง' ไม่ใช่ 'อย่าเชื่อ'") ยังใช้ countryOfCity() ชั่วคราวเหมือน app/today/page.tsx
   // รอ P3 ใส่ country ระดับสถานที่จริงเข้า hook แล้วค่อยสลับ
-  const country = countryOfCity(day.city);
+  // 🔴 `countryOfCitySlug` — ตัวเก่า `countryOfCity()` ซ่อนการ index `COUNTRY_OF_CITY[city]` ไว้ในฟังก์ชัน
+  //    → `undefined` ทันทีที่วันมาจากฐาน · `shouldSkipTravelApi(null, …)` = `false` = **ยิง** ซึ่งถูกแล้ว
+  //    (ทะเบียนไม่รู้จัก → ให้ผลจริงสอนเรา · เขียนไว้ที่ lib/engine/countries.ts เอง)
+  const country = countryOfCitySlug(day.city);
 
   // คู่จุดที่เลือกโหมดเดินทางแล้วเท่านั้นที่ต้องขอเวลาจริง — คู่ที่ยังไม่เลือกโหมดใช้แค่ตัวเลือกในหน้า picker
   const travelPairs = useMemo(() => {
