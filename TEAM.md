@@ -347,6 +347,19 @@ mcp__ccd_session_mgmt__list_sessions
   npx vitest run lib/__tests__/rlsMatrix.test.ts
   ```
   · ⚠️ **`rlsMatrix` รันเปล่า ๆ ในเครื่องจะ self-skip เงียบ** → ต้องมี `RLS_MATRIX_REQUIRED=1` ถึงจะเป็นสัญญาณจริง
+  · 🔴 **ลำดับข้างบนคือลำดับของ CI · ไม่ใช่ลำดับที่ใช้ได้ตอนรันในเครื่อง** (P1 เจอ · P2 เจอซ้ำ · 29 ส.ค. 2026)
+    ```
+    CI:       npm test  (EXPECT_SKIPPED_TESTS=1) … build … BUNDLE_GUARD_REQUIRED=1 vitest tripDataInBundle
+    ในเครื่อง: ทำตามลำดับนั้นตรง ๆ → `npm test` **exit 1** เพราะ 7 เคสถูกข้าม
+    ```
+    `tripDataInBundle` เป็น `describe.skipIf(!hasBuild)` — ไม่มี `.next/` ก็ข้าม · แล้วชุดเทสต์
+    **ตั้ง `exitCode=1` เอง** ตามด่าน *"การข้ามอ่านเป็นเขียวได้"* ซึ่ง CI ปิดปากด้วย `EXPECT_SKIPPED_TESTS=1`
+    · ✅ **ในเครื่องเลือกได้ 2 ทาง — ทั้งคู่ถูก แต่ไม่เท่ากัน:**
+      **(ก) `typegen → tsc → build → npm test`** → ได้ **8/8 ไม่มีข้าม** · **แข็งกว่าที่ CI ตรวจในสเต็ปนั้น**
+      **(ข) `EXPECT_SKIPPED_TESTS=1 npm test`** → เลียนแบบ CI เป๊ะ **แต่ยอมรับการข้ามเหมือนกัน**
+    · 🎯 **ทั้งสองทางครอบเท่ากันเมื่อจบทั้งชุด** เพราะ CI รัน `tripDataInBundle` อีกรอบหลัง build
+      ด้วย `BUNDLE_GUARD_REQUIRED=1` **การข้ามใน step แรกจึงไม่ใช่ช่อง — มันคือการแบ่งงาน**
+    · ⚠️ **อย่าอ่านว่า "CI ยอมรับการข้าม"** — เคยมีคนสรุปแบบนั้นแล้ว และมันทำให้เชื่อว่า CI มีช่องที่มันไม่มี
   · 📌 job `readonly-storage` ไม่นับ — **กดเอง (`workflow_dispatch`) ไม่ได้รันทุก push**
   🎯 **`15c732c` แดงเพราะ `guards` ซึ่งเป็นตัวที่ไม่มีชื่ออยู่ในรายการเลย** — ช่องอยู่ตรงที่ไม่มีใครมอง
 
