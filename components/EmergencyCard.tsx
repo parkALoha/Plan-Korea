@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { City } from "@/data/itinerary";
-import { EMERGENCY_BY_COUNTRY, countryOfCity } from "@/data/emergency";
+import { EMERGENCY_BY_COUNTRY, countryOfCitySlug } from "@/data/emergency";
 import type { TripBooking, TripHotel } from "@/lib/supabase";
 import { googleMapsDirectionsUrl } from "@/lib/mapLinks";
 
@@ -20,13 +19,28 @@ export function EmergencyCard({
   hotel,
   bookings,
 }: {
-  city: City;
+  /**
+   * 🔴 **`string` ไม่ใช่ `City` โดยตั้งใจ** (P2 · 29 ส.ค. 2026)
+   * ค่าที่ส่งเข้ามาจริงมาจากฐาน (คลังมี 42 เมือง) แล้วถูก `cast` ให้เป็น `City` ซึ่งมีแค่ 6 ค่า —
+   * **`tsc` มองไม่เห็นเลย เพราะ index ของ `Record` ที่คีย์เป็น union ถือว่า "มีเสมอ" ตามชนิด**
+   * ประกาศเป็น `string` ทำให้ความไม่แน่นอนนั้น *อยู่ในลายเซ็น* แทนที่จะซ่อนอยู่หลัง cast ของผู้เรียก
+   */
+  city: string;
   hotel: TripHotel | null;
   bookings: TripBooking[];
 }) {
   const [open, setOpen] = useState(false);
   const [hospitals, setHospitals] = useState<Hospital[] | null>(null);
-  const contacts = EMERGENCY_BY_COUNTRY[countryOfCity(city)];
+  /**
+   * 🔴 **เดิมเป็น `EMERGENCY_BY_COUNTRY[countryOfCity(city)]` — index ซ้อน index** (P3 เจอ · P2 แก้ 29 ส.ค. 2026)
+   * `countryOfCity()` คือ `COUNTRY_OF_CITY[city]` ที่ห่อไว้ในฟังก์ชัน **ไม่มี fallback** → เมืองนอก 6 ค่า
+   * ได้ `undefined` แล้ว `EMERGENCY_BY_COUNTRY[undefined]` ก็ `undefined` ต่อ → `contacts.map()` โยนทันที
+   * ⚠️ **ตัวสแกน `cityMetaDirectIndex` มองไม่เห็นเคสนี้** เพราะมันจับรูป `X[...]` ส่วนตัวนี้ซ่อนหลังชื่อฟังก์ชัน
+   * 🔴 **และผลของมันไม่ใช่ "ไอคอนหาย"** — การ์ดนี้คือที่ที่คนเปิดหาตอนมีเรื่องจริง
+   *    แสดงเบอร์ของประเทศอื่นแย่กว่าไม่แสดงเบอร์เลย · นโยบายนี้เขียนไว้แล้วที่ `countryOfCitySlug()`
+   */
+  const country = countryOfCitySlug(city);
+  const contacts = country ? EMERGENCY_BY_COUNTRY[country] : [];
 
   // ยิงหาโรงพยาบาลเฉพาะตอนกางการ์ดจริงๆ — ไม่มีเหตุผลให้เสียโควตา Places ทุกครั้งที่เปิดหน้า
   useEffect(() => {
@@ -74,6 +88,13 @@ export function EmergencyCard({
             <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
               โทรฉุกเฉิน
             </h3>
+            {contacts.length === 0 ? (
+              // ไม่รู้ว่าเมืองนี้อยู่ประเทศไหน → ไม่มีเบอร์ให้แสดง · บอกทางออกที่ใช้ได้จริงแทนการเงียบ
+              <p className="text-xs text-content-soft">
+                ยังไม่มีเบอร์ฉุกเฉินของเมืองนี้ในระบบ — โทร 112 ใช้ได้ในหลายประเทศ
+                และสถานทูตไทยประจำประเทศนั้นเป็นทางที่สองเสมอ
+              </p>
+            ) : (
             <ul className="space-y-1.5">
               {contacts.map((c) => (
                 <li key={c.label} className="text-sm">
@@ -112,6 +133,7 @@ export function EmergencyCard({
                 </li>
               ))}
             </ul>
+            )}
           </div>
 
           <div>
@@ -166,10 +188,12 @@ export function EmergencyCard({
               แล้วอ่านเจอเบอร์เกาหลีในเชิงอรรถ ไม่ตรงกับทริปอื่นเลย (P1 ชี้ 27 ส.ค. 2026)
               แก้โดยไม่พูดถึงตัวเลขซ้ำ (ซึ่งต้องรู้ว่าเบอร์ไหน "มาตรฐาน" ของประเทศไหนอีกชั้นหนึ่ง)
               พูดถึง*หมวด*แทน — ใช้ได้กับทุกประเทศในทะเบียนโดยไม่ต้องเพิ่มข้อมูลใหม่ */}
-          <p className="text-[10px] text-content-soft">
-            เบอร์ตำรวจ/รถพยาบาลด้านบนเป็นเลขมาตรฐานของประเทศนี้ ไม่เปลี่ยน · เบอร์สถานทูตเปลี่ยนได้ —
-            ตรวจซ้ำจากเว็บทางการก่อนเดินทาง
-          </p>
+          {contacts.length > 0 && (
+            <p className="text-[10px] text-content-soft">
+              เบอร์ตำรวจ/รถพยาบาลด้านบนเป็นเลขมาตรฐานของประเทศนี้ ไม่เปลี่ยน · เบอร์สถานทูตเปลี่ยนได้ —
+              ตรวจซ้ำจากเว็บทางการก่อนเดินทาง
+            </p>
+          )}
         </div>
       )}
     </section>
