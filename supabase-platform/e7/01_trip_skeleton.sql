@@ -63,20 +63,33 @@ begin
          case when d.ov_city is null then null
               else (select id from public.catalog_cities where legacy_slug = d.ov_city) end
   from (values
-    ('d0',  date '2026-10-11', 'hanoi',     'none', null),
-    ('d1',  date '2026-10-12', 'busan',     null,   null),
-    ('d2',  date '2026-10-13', 'busan',     null,   null),
-    ('d3',  date '2026-10-14', 'busan',     null,   null),
-    ('d4',  date '2026-10-15', 'sokcho',    null,   null),
-    ('d5',  date '2026-10-16', 'sokcho',    'city', 'gangneung'),
+    -- 🔴 `overnight_kind` — **`null` ที่นี่ไม่ได้แปลว่า "นอนเมืองเดิม"**
+    --    `20260825232458:40` นิยามไว้เอง: `overnight_kind is null` = **"ยังไม่ตัดสิน"**
+    --    ระบบเก่านิยามคนละอย่าง (`lib/hotelLegs.ts:70`): `day.overnightCity ?? day.city`
+    --    → **`null` ฝั่งเก่าแปลว่า "นอนเมืองของวันนั้น" ซึ่งเป็นการตัดสินแล้ว**
+    --    ฉบับแรกของก้อนนี้ยก `null` ข้ามมาตรง ๆ → 7 ใน 11 วันของทริปที่จองโรงแรมครบ 4 ใบ
+    --    กลายเป็น "ยังไม่มีใครตัดสินว่านอนไหน" · **ไม่มี constraint ไหนขัด เพราะทั้งสองฝั่ง `null` ถูกต้อง**
+    --    · `'none'` = `day.noHotel` ของเดิม (`hotelLegs.ts:69` ข้ามวันพวกนี้ก่อนจัด leg)
+    --    · `city` ที่นอน = `overnightCity ?? city` — อ่านจาก `data/itinerary.ts` ไม่ใช่จำเอา
+    ('d0',  date '2026-10-11', 'hanoi',     'none', null),        -- noHotel · นอนบนเครื่อง
+    ('d1',  date '2026-10-12', 'busan',     'city', 'busan'),
+    ('d2',  date '2026-10-13', 'busan',     'city', 'busan'),
+    ('d3',  date '2026-10-14', 'busan',     'city', 'busan'),
+    ('d4',  date '2026-10-15', 'sokcho',    'city', 'sokcho'),
+    ('d5',  date '2026-10-16', 'sokcho',    'city', 'gangneung'),  -- override ใน trip_meta
     ('d6',  date '2026-10-17', 'gangneung', 'city', 'seoul'),
-    ('d7',  date '2026-10-18', 'seoul',     null,   null),
-    ('d8',  date '2026-10-19', 'seoul',     null,   null),
+    ('d7',  date '2026-10-18', 'seoul',     'city', 'seoul'),
+    ('d8',  date '2026-10-19', 'seoul',     'city', 'seoul'),
     ('d9',  date '2026-10-20', 'suwon',     'city', 'seoul'),
-    ('d10', date '2026-10-21', 'seoul',     'none', null)
+    ('d10', date '2026-10-21', 'seoul',     'none', null)         -- noHotel · บินกลับ
   ) as d(day_key, the_date, city, ov_kind, ov_city);
 
   -- ── ตรวจทันที ไม่ใช่ตอนจบ — ผิดตรงไหนต้องรู้ตรงนั้น ────────────────────────
+  -- 🔴 ทริปนี้ทุกคืนตัดสินแล้ว — `null` แม้แถวเดียวแปลว่ายกความหมายผิดมา ไม่ใช่ข้อมูลขาด
+  select count(*) into n from public.trip_days
+   where trip_id = v_trip and overnight_kind is null;
+  if n > 0 then raise exception '% วันได้ overnight_kind = null = "ยังไม่ตัดสิน" ทั้งที่จองครบแล้ว', n; end if;
+
   select count(*) into n from public.trip_days where trip_id = v_trip;
   if n <> 11 then raise exception 'trip_days ต้องได้ 11 แถว ได้ %', n; end if;
 
