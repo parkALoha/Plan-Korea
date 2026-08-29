@@ -55,9 +55,14 @@ begin
     lpad(s.order_index::text, 4, '0') || 'V',
     s.kind,
     -- 🔴 XOR บังคับโดย trip_stops_place_by_kind — hotel/intercity ต้องเป็น NULL ทั้งคู่
-    case when s.kind in ('place','transfer') and s.place_id not like 'custom-%'
+    -- 🔴 **`custom-` ไม่ใช่นิยามของ "เป็น custom place"** — นิยามคือ *มีแถวใน `custom_places`*
+    --    36 ใน 37 แถวบังเอิญมี prefix · แถวที่ 37 คือ `home-base` (ที่อยู่จริงของเจ้าของทริป
+    --    ตั้งใจไม่ขึ้น git — `transferPoints.ts:21-23`) · **ทดสอบสมาชิกภาพ ไม่ใช่ทดสอบชื่อ**
+    case when s.kind in ('place','transfer')
+           and not exists (select 1 from legacy.custom_places cp where cp.id = s.place_id)
          then (select c.id from public.catalog_places c where c.legacy_slug = s.place_id) end,
-    case when s.kind in ('place','transfer') and s.place_id like 'custom-%'
+    case when s.kind in ('place','transfer')
+           and exists (select 1 from legacy.custom_places cp where cp.id = s.place_id)
          then pg_temp.lid('custom_place', s.place_id) end,
     s.dwell_minutes, s.travel_mode, s.note,
     -- 🔴 `photo_url` → `photo_path` **เปลี่ยนทั้งชื่อและความหมาย** (`column-map.md:293` · E2-AC5)

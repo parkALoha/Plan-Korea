@@ -24,7 +24,7 @@ do $e7$
 declare
   v_owner uuid := nullif(current_setting('e7.owner_uuid', true), '')::uuid;
   v_trip  uuid := pg_temp.lid('trip', 'korea-2026-10');
-  n int; expected int;
+  n int; expected int; n_unprefixed int;
 begin
   if v_owner is null then raise exception 'ต้องตั้ง e7.owner_uuid ก่อน'; end if;
   if not exists (select 1 from public.trips where id = v_trip) then
@@ -71,10 +71,22 @@ begin
   select count(*) into expected from legacy.custom_places where description is not null and trim(description) <> '';
   if n <> expected then raise exception 'คำอธิบายต้องได้ % ได้ %', expected, n; end if;
 
+  -- 🔴 **เคสที่บังคับให้สมมติฐาน "custom place ขึ้นต้นด้วย custom-" ผิดได้**
+  --    ก้อน 03/04 เคยแยกคลัง/custom ด้วย prefix · ถูก 36 ใน 37 แถว
+  --    แถวที่ 37 คือ `home-base` — **ที่อยู่จริงของเจ้าของทริป ตั้งใจตั้งชื่อต่างเพราะไม่ขึ้น git**
+  --    ถ้าวันหนึ่งทุกแถวมี prefix เคสนี้จะแดง = **มีคนต้องมาตัดสินใหม่ ไม่ใช่เงียบแล้วปล่อยผ่าน**
+  select count(*) into n_unprefixed from legacy.custom_places where id not like 'custom-%';
+  if n_unprefixed = 0 then
+    raise exception 'ทุกแถวมี prefix custom- แล้ว — เคสที่กันการเดาจากชื่อหมดอำนาจ ให้คนตัดสินใหม่';
+  end if;
+
   raise notice 'E7 · custom_places % แถว · ชื่อ % แถว · คำอธิบาย % แถว',
     (select count(*) from public.custom_places where trip_id = v_trip),
     (select count(*) from public.custom_place_names where trip_id = v_trip),
-    n;
+    -- 🔴 ถามฐานตรง ๆ ไม่ใช้ `n` ที่ใช้ซ้ำทั้งบล็อก — ด่านที่เติมทีหลังเคยทับค่านี้
+    --    แล้วรายงานพิมพ์ `1` แทน `37` **โดยข้อมูลไม่ได้เสียอะไรเลย**
+    --    จับได้เพราะบังเอิญเทียบกับรอบก่อน ไม่ใช่เพราะมีอะไรเตือน
+    (select count(*) from public.custom_place_descriptions where trip_id = v_trip);
 end $e7$;
 
 commit;

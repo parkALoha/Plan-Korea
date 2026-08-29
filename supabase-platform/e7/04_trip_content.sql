@@ -117,9 +117,10 @@ begin
   )
   select
     pg_temp.lid('hidden', h.place_id), v_trip,
-    case when h.place_id not like 'custom-%'
+    -- ทดสอบสมาชิกภาพ ไม่ใช่ prefix — ดูเหตุผลในก้อน 03
+    case when not exists (select 1 from legacy.custom_places cp where cp.id = h.place_id)
          then (select c.id from public.catalog_places c where c.legacy_slug = h.place_id) end,
-    case when h.place_id like 'custom-%'
+    case when exists (select 1 from legacy.custom_places cp where cp.id = h.place_id)
          then pg_temp.lid('custom_place', h.place_id) end,
     case when h.hidden_by is not null then v_owner end, h.hidden_by,
     h.hidden_at
@@ -147,9 +148,9 @@ begin
     -- PK เดิมคือ (plan_id, place_id) — ต้องรวมทั้งคู่ ไม่งั้นโน้ตคนละแผนชนกัน
     pg_temp.lid('place_note', p.plan_id || '/' || p.place_id), v_trip,
     pg_temp.lid('plan', p.plan_id),
-    case when p.place_id not like 'custom-%'
+    case when not exists (select 1 from legacy.custom_places cp where cp.id = p.place_id)
          then (select c.id from public.catalog_places c where c.legacy_slug = p.place_id) end,
-    case when p.place_id like 'custom-%'
+    case when exists (select 1 from legacy.custom_places cp where cp.id = p.place_id)
          then pg_temp.lid('custom_place', p.place_id) end,
     p.note,
     case when p.photo_url is not null
