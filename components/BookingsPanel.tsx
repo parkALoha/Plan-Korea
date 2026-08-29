@@ -44,6 +44,27 @@ export const BOOKING_CATEGORY_ICON: Record<BookingCategory, string> = {
   other: "📌",
 };
 
+/**
+ * 🔴 **ใช้สองตัวนี้เมื่อค่ามาจากฐาน** — `bookings.category` มีแค่ `length 1..40` **ไม่ใช่ enum**
+ * (P1 วัดฐานเอง 29 ส.ค. 2026) → ค่านอก 6 หมวดเข้ามาได้ทุกเมื่อ และ `tsc` *รับรอง* ว่าปลอดภัย
+ * เพราะเราประกาศชนิดคอลัมน์เป็น union เอง
+ *
+ * ตกไป `other` ซึ่งเป็นสมาชิกจริงของทั้งสองตาราง — ตรงความหมาย ไม่ต้องคิดค่าใหม่
+ * 📌 จุดที่วนจาก `BookingCategory` เอง (แถวปุ่มเลือกหมวดใน `BookingEditModal`) **ไม่ต้องใช้ตัวนี้**
+ *    ปลอดภัยโดยโครงสร้างอยู่แล้ว และการแก้เหมารวมจะทำให้อ่านไม่ออกว่าจุดไหนรับค่าภายนอกจริง
+ */
+export function bookingCategoryLabelOf(category: string | null | undefined): string {
+  return category && Object.hasOwn(BOOKING_CATEGORY_LABEL, category)
+    ? BOOKING_CATEGORY_LABEL[category as BookingCategory]
+    : BOOKING_CATEGORY_LABEL.other;
+}
+
+export function bookingCategoryIconOf(category: string | null | undefined): string {
+  return category && Object.hasOwn(BOOKING_CATEGORY_ICON, category)
+    ? BOOKING_CATEGORY_ICON[category as BookingCategory]
+    : BOOKING_CATEGORY_ICON.other;
+}
+
 function dateLabel(booking: TripBooking) {
   if (!booking.date) return null;
   const d = new Date(booking.date);
@@ -138,7 +159,7 @@ export function BookingsPanel({
                   className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-sm">
-                    {BOOKING_CATEGORY_ICON[booking.category]}
+                    {bookingCategoryIconOf(booking.category)}
                   </span>
                   <div className="min-w-0">
                     {/* ป้ายสถานะอยู่บรรทัดบนสุดของทุกใบ ตำแหน่งเดียวกันเสมอ — กวาดตาลงมาทีเดียว
@@ -150,7 +171,7 @@ export function BookingsPanel({
                         {badge.label}
                       </span>
                       <span>
-                        {BOOKING_CATEGORY_LABEL[booking.category]}
+                        {bookingCategoryLabelOf(booking.category)}
                         {dateLabel(booking) ? ` · ${dateLabel(booking)}` : ""}
                         {booking.time ? ` ${booking.time}` : ""}
                       </span>

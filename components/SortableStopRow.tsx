@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CATEGORY_EMOJI, Place } from "@/data/places";
+import { Place } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import type { TripStop } from "@/lib/supabase";
 import type { ScheduledStop, TravelMode } from "@/lib/schedule";
 import { computeDepartureAdvice } from "@/lib/departureAdvice";
@@ -16,7 +17,7 @@ import { PhotoLightbox } from "./PhotoLightbox";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
 import { TransferAdvicePanel } from "./TransferAdvicePanel";
-import { INTERCITY_MODE_ICON, INTERCITY_MODE_LABEL, type IntercityMode } from "./IntercityEditModal";
+import { INTERCITY_MODE_LABEL, intercityModeIconOf, type IntercityMode } from "./IntercityEditModal";
 
 const DWELL_STEP_MINUTES = 15;
 const MIN_DWELL_MINUTES = 15;
@@ -256,7 +257,7 @@ export function SortableStopRow({
         {stop.kind === "intercity" ? (
           <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
-              {INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]}
+              {intercityModeIconOf(stop.intercity_mode)}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate font-semibold text-content">
@@ -329,7 +330,7 @@ export function SortableStopRow({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold text-content hover:underline">
-                    {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
+                    {categoryMetaOf(sched.place.category).emoji} {sched.place.nameTh}
                   </span>
                   {stop.added_by && (
                     <span className="block truncate text-xs text-content-soft">เลือกโดย {stop.added_by}</span>

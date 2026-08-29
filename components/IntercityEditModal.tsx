@@ -14,6 +14,22 @@ export const INTERCITY_MODE_ICON: Record<IntercityMode, string> = {
   other: "🚗",
 };
 
+/**
+ * 🔴 **ใช้ตัวนี้เมื่อค่ามาจากฐาน** — `trip_stops.intercity_mode` **ไม่มี check constraint เลย**
+ * (P1 วัดฐานเอง 29 ส.ค. 2026) → ค่านอก 3 ตัวเข้ามาได้ทุกเมื่อ
+ *
+ * ⚠️ ท่าเดิม `INTERCITY_MODE_ICON[(x as IntercityMode) ?? "other"]` **กันได้แค่ `null`**
+ * ไม่ได้กัน *ค่าที่ไม่รู้จัก* — `"เรือ"` ไม่ใช่ `null` จึงผ่าน `??` แล้วได้ `undefined` ออกไปเรนเดอร์เป็นความว่าง
+ * 🎯 `?? "other"` อ่านเหมือนมี fallback แล้ว **และนั่นคือเหตุผลที่ไม่มีใครกลับมาดูมัน**
+ *
+ * ตกไป `other` ("🚗") ซึ่งเป็นสมาชิกจริงของตาราง — ไม่ต้องคิดค่าใหม่ และแปลว่า "โหมดอื่น" ตรงความหมาย
+ */
+export function intercityModeIconOf(mode: string | null | undefined): string {
+  return mode && Object.hasOwn(INTERCITY_MODE_ICON, mode)
+    ? INTERCITY_MODE_ICON[mode as IntercityMode]
+    : INTERCITY_MODE_ICON.other;
+}
+
 export const INTERCITY_MODE_LABEL: Record<IntercityMode, string> = {
   bus: "รถบัส",
   ktx: "KTX",

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { CATEGORY_EMOJI, type Place } from "@/data/places";
+import { type Place } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import { Modal } from "./Modal";
 import type { TripStop } from "@/lib/supabase";
 import type { DaySchedule } from "@/lib/schedule";
@@ -181,7 +182,7 @@ export function RouteSuggestionModal({
                 {before.stops.map((s, i) => (
                   <li key={s.id} className="rounded-lg bg-surface-soft/50 px-2 py-1.5 text-xs">
                     <div className="font-medium text-content">
-                      {i + 1}. {s.place ? `${CATEGORY_EMOJI[s.place.category]} ${s.place.nameTh}` : "—"}
+                      {i + 1}. {s.place ? `${categoryMetaOf(s.place.category).emoji} ${s.place.nameTh}` : "—"}
                     </div>
                     <div className="text-[11px] text-content-soft">
                       {s.arrival}–{s.departure}
@@ -206,7 +207,7 @@ export function RouteSuggestionModal({
                       }`}
                     >
                       <div className="font-medium text-content">
-                        {i + 1}. {s.place ? `${CATEGORY_EMOJI[s.place.category]} ${s.place.nameTh}` : "—"}
+                        {i + 1}. {s.place ? `${categoryMetaOf(s.place.category).emoji} ${s.place.nameTh}` : "—"}
                       </div>
                       <div className={`text-[11px] ${closed ? "text-maple-dark" : "text-content-soft"}`}>
                         {s.arrival}–{s.departure}

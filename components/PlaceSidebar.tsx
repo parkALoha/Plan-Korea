@@ -3,8 +3,9 @@
 import { type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, Place, cityCenter, placesByCity } from "@/data/places";
+import { Category, Place, cityCenter, placesByCity } from "@/data/places";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
@@ -335,7 +336,7 @@ function PlaceSidebarContent({
         {groupedVisibleCards.map(({ category, cards }) => (
           <div key={category} className="mb-4">
             <h3 className="mb-1.5 text-xs font-semibold text-content-soft">
-              {CATEGORY_EMOJI[category]} {CATEGORY_LABEL[category]}
+              {categoryMetaOf(category).emoji} {categoryMetaOf(category).label}
             </h3>
             <div className="grid grid-cols-2 gap-2">
               {cards.map(({ place, isCustom }) => {

@@ -15,7 +15,8 @@ import { PlanEditModal, type PlanEditMode } from "@/components/PlanEditModal";
 import { TripHeader } from "@/components/TripHeader";
 import { TripPrepPanel } from "@/components/TripPrepPanel";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
-import { CATEGORY_EMOJI, type Place } from "@/data/places";
+import { type Place } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import type { City, Day } from "@/data/itinerary";
 import { hotelAnchorId } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
@@ -475,7 +476,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   async function handleRemoveStop(stopId: string) {
     const stop = stops.find((s) => s.id === stopId);
     const place = stop ? resolvePlace(stop.place_id, customPlaces) : null;
-    const label = place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "จุดแวะนี้";
+    const label = place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : "จุดแวะนี้";
     const stashed = stop
       ? await stashNote(stop.place_id, stop.note ?? null, stop.photo_url ?? null)
       : false;

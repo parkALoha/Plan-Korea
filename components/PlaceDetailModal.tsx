@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CATEGORY_EMOJI, CATEGORY_LABEL, Place } from "@/data/places";
+import { Place } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import { Modal } from "./Modal";
 import { useTravelTime } from "@/hooks/useTravelTime";
 import { useHotelDistance } from "@/hooks/useHotelDistance";
@@ -107,7 +108,7 @@ export function PlaceDetailModal({
   return (
     <Modal
       onClose={onClose}
-      eyebrow={`${CATEGORY_EMOJI[place.category]} ${CATEGORY_LABEL[place.category]}`}
+      eyebrow={`${categoryMetaOf(place.category).emoji} ${categoryMetaOf(place.category).label}`}
       title={place.nameTh}
       subtitle={place.nameEn}
       bodyClassName="pb-5"

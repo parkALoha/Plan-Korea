@@ -1,6 +1,7 @@
 "use client";
 
-import { CATEGORY_COLOR, CATEGORY_EMOJI, type Category } from "@/data/places";
+import { type Category } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
 import { photoUrlAtWidth } from "@/lib/photoUrl";
 
@@ -30,9 +31,11 @@ export function PlaceThumb({
     return (
       <div
         className={`${base} flex items-center justify-center text-sm`}
-        style={{ backgroundColor: `${CATEGORY_COLOR[category]}22` }}
+        // 🔴 ต่อสตริงเป็นสีโปร่ง `#rrggbb` + `22` — ค่า fallback จึงต้องเป็นเลขฐานสิบหก
+        // ห้ามเป็นโทเคน `var(--…)` (ดูเหตุผลเต็มที่ `components/categoryMeta.ts`)
+        style={{ backgroundColor: `${categoryMetaOf(category).color}22` }}
       >
-        {CATEGORY_EMOJI[category]}
+        {categoryMetaOf(category).emoji}
       </div>
     );
   }

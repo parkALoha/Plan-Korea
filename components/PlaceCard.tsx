@@ -1,6 +1,6 @@
 "use client";
 
-import { CATEGORY_EMOJI } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import type { Place } from "@/data/places";
 import type { PlaceNote } from "@/lib/supabase";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
@@ -65,7 +65,7 @@ export function PlaceCard({
               className="h-full w-full object-cover"
             />
           ) : (
-            <span className="text-3xl">{CATEGORY_EMOJI[place.category]}</span>
+            <span className="text-3xl">{categoryMetaOf(place.category).emoji}</span>
           )}
           {isCustom && (
             <span className="absolute left-1.5 top-1.5 rounded-full bg-pine px-2 py-0.5 text-[10px] font-medium text-cream">
