@@ -24,12 +24,35 @@
 · 🔴 **สร้าง org ใหม่เป็นทางสุดท้าย** — P6 อ่าน FAQ แล้วพบว่าโควตาน่าจะผูกกับ *บัญชี* ไม่ใช่ *org* → เปิด org ใหม่อาจไม่ได้ช่องเพิ่มเลย
 · 📌 **ไม่ต้องรีบ** — `AC8` ① ปิดแล้ว (restore พิสูจน์ในเครื่องแล้ว) · ② ใช้ตอนซ้อม `AC1`/`AC6` เท่านั้น
 
-### 1.3 รัน migration `20260829020000_e7_hidden_places_accept_custom.sql` บน `engine-dev`
-🔴 **ต้องรันก่อน `E7` เท่านั้น ไม่งั้นข้อมูลหาย 21 แถว** — `hidden_places` วันนี้รับ custom place ไม่ได้
-แต่สำเนาแช่แข็งมี 21 จาก 39 แถวที่ชี้ไป custom place · **หายแบบไม่มีสัญญาณ ไม่มี error**
-· ไฟล์ commit แล้ว · **ทดสอบในสนามซ้อมในเครื่องแล้ว ผ่านทั้งสามทิศ** (ไม่ระบุที่→ปฏิเสธ · ระบุสองทาง→ปฏิเสธ · ซ่อน custom place→ทำได้)
+### 1.3 ✅ **รันแล้ว** — `20260829020000_e7_hidden_places_accept_custom.sql`
+ผู้ใช้รันบน `engine-dev` เมื่อ 29 ส.ค. (`Success. No rows returned`) แล้วเติมแถวใน
+`supabase_migrations.schema_migrations` ตามที่ `rlsMatrix` ฟ้อง · **ปิดรูข้อมูลหาย 21 แถว**
+
+### 1.4 🔴 รัน migration `20260829040000_e7_bookings_status_legacy_domain.sql` บน `engine-dev`
+**รูที่สองของ `E7` — และคราวนี้ไม่ใช่คอลัมน์ที่ขาด แต่เป็น *โดเมนของค่า***
+
+```
+column-map.md:70    `status`  →  "คงเดิม"
+e2_bookings.sql:67  ของจริง   →  check (status in ('todo','booked','cancelled'))
+
+โดเมนเดิม   booked · pending · walk_up      (lib/supabase.ts:140)
+ที่ลงจริง    todo   · booked  · cancelled
+ทับกัน      **แค่ `booked`**
+```
+· ข้อมูลจริง 8 แถว = `pending` 5 · `walk_up` 3 → **ไม่มีแถวไหนใส่ได้เลยสักแถว**
+· `walk_up` มีโค้ดอ่านอยู่ 3 ที่ (`supabase.ts:137` · `bookingStatus.ts:37,58` · `BookingEditModal.tsx:22`)
+  และ **ไม่มีค่าปลายทางที่แทนได้** — `todo` = "ยังไม่ทำ" ตรงข้ามความหมาย · `booked` = "ทำแล้ว" ก็ผิด
+· ตัดสิน: `column-map.md` เป็นฉบับผูกพัน → คืนเป็น `pending · booked · walk_up · cancelled`
+  **ถอน `todo` ทิ้ง** เพราะมันคือ `pending` คนละชื่อ · วัดแล้ว**ไม่มีผู้บริโภคสักราย**
+· ทดสอบในสนามซ้อมแล้ว ยิงครบ 4 ทิศในตัว migration เอง + ทิศแดงอีก 3 ใบจากฝั่งสคริปต์ย้าย
 · ยังไม่ได้แตะ `engine-dev` — การแตะฐานด้วย credential จริงเป็นสิทธิ์ของผู้ใช้
-· รายละเอียดเต็ม: [`e7-migration-findings.md`](./e7-migration-findings.md)
+
+### 1.5 🟡 ไฟล์รูปใน storage ของโปรเจกต์เก่า — **ยังไม่มีใครเขียนขั้นตอนนี้**
+`trip_stops` 1 แถวถือรูปที่ `ejzibhgqhxdzkovsnpds` (**โปรเจกต์ที่ห้ามแตะทุกกรณี**)
+· สคริปต์ย้ายแปลง URL → path ถูกต้องแล้ว (`<trip_id>/<ชื่อไฟล์>`) แต่ **ตัวไฟล์ยังอยู่ที่เดิม**
+· ปลายทางต้องคัดลอกผ่าน **Storage API** — SQL ทำไม่ได้ (`e5_drop_trip_cover_storage.sql:55`
+  บันทึกไว้ว่า Supabase บล็อก `delete from storage.objects` ที่ระดับฐาน · ฝั่ง insert ก็ทางเดียวกัน)
+· **ไม่ด่วน** — 1 แถว · รูปเดียว · ไม่บล็อกอะไร แต่ถ้าไม่ทำ รูปจะหายไปเงียบ ๆ ตอนขึ้นระบบใหม่
 
 ---
 
