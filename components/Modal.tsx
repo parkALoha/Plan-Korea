@@ -83,7 +83,14 @@ export function Modal({
           {headerExtra}
         </div>
 
-        <div className={`min-h-0 flex-1 overflow-y-auto px-5 pb-3 ${bodyClassName}`}>{children}</div>
+        {/* 🔴 `pb-3` มีไว้เป็น *ช่องไฟก่อนแถบปุ่มท้ายกล่อง* ไม่ใช่ระยะขอบล่างของกล่อง (P2 · 28 ส.ค. 2026)
+            โมดัลที่ไม่มี `footer` จึงได้ขอบล่าง 12px ขณะที่หัวกล่องมี `pt-5` = 20px → **บนหนักกว่าล่าง**
+            ผู้ใช้ทักที่ฟอร์มสร้างทริป (ไม่มี footer) ว่า "ดูไม่สมดุล" · วัดแล้ว: บน 20 · ล่าง 12 */}
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto px-5 ${footer ? "pb-3" : "pb-5"} ${bodyClassName}`}
+        >
+          {children}
+        </div>
 
         {footer && <div className="flex shrink-0 gap-2 px-5 pb-5 pt-3">{footer}</div>}
       </div>

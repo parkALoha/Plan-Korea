@@ -274,7 +274,10 @@ export function HomeScreen() {
           // โดยตรงแทนที่จะรอ useActiveTripId() ตัดสินว่า "none" เพราะ Home ไม่ได้ resolve ทริปเดียวอีกแล้ว
           <div className="flex flex-col items-center gap-4 py-10 text-center">
             <p className="text-content-soft">{COPY.noTripsYet}</p>
-            <CreateTripForm />
+            {/* หน้าเปล่ากินเต็มความกว้างคอลัมน์ ฟอร์มจึงต้องถูกจำกัดตรงนี้ — ในโมดัลไม่ต้อง */}
+            <div className="w-full max-w-xs">
+              <CreateTripForm />
+            </div>
           </div>
         ) : (
           <>
@@ -304,6 +307,11 @@ export function HomeScreen() {
         </button>
       )}
 
+      {/* 🔴 ห้ามใส่ความสูงขั้นต่ำให้กล่องนี้ — เคยใส่ `min-h-[26rem]` แล้วถอนออก 28 ส.ค. 2026
+          เหตุผลตอนใส่: ปฏิทินถูกตัดเมื่อที่ว่างใต้ช่องวันที่ไม่พอ จึงดันกล่องให้สูงเพื่อหาที่ให้มัน
+          เป็นการแก้ที่อาการ · ต้นเหตุจริงถูกแก้ทีหลังใน `AnchoredPanel`: แผ่นที่เลื่อนไม่ได้ (ปฏิทิน)
+          จะเลื่อนตัวเองขึ้นให้พอดีจอ ไม่ตัดเนื้อทิ้ง → ความสูงของกล่องไม่เกี่ยวอีกต่อไป
+          สิ่งที่เหลืออยู่คือช่องว่างเปล่าใต้ปุ่ม ซึ่งผู้ใช้ทักเอง */}
       {createOpen && (
         <Modal onClose={() => setCreateOpen(false)} title={COPY.newTrip} size="md">
           <CreateTripForm />

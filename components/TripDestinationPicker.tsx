@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { E5_COPY } from "@/lib/i18n";
 
@@ -185,6 +185,33 @@ export function TripDestinationPicker({
     onChange(selected.filter((c) => c.id !== id));
   }
 
+  /**
+   * 🔴 **โฟกัสต้องตามชิปที่ย้ายไป ไม่ใช่ค้างที่ตำแหน่งเดิม** (P2 วัดเจอ 28 ส.ค. 2026 · P1 สั่งแก้ทันที)
+   * ปุ่มที่เพิ่งกดจะกลายเป็น `disabled` ทันทีที่ชิปขึ้นไปเป็นแถวแรก/ลงไปแถวท้าย →
+   * **เบราว์เซอร์ทิ้งโฟกัสลง `<body>`** (วัดจริง: `document.activeElement` = `BODY` หลังกด ↑ ครั้งเดียว)
+   * → ผู้ใช้คีย์บอร์ด **เลื่อนได้ครั้งเดียวแล้วหลุด** ต้อง Tab ไล่กลับเข้ามาใหม่ทุกครั้ง
+   * ⚠️ ผู้ใช้เมาส์ไม่เจอเลย เพราะเมาส์ไม่ต้องใช้โฟกัสในการกดครั้งถัดไป — **บั๊กที่มีผู้ใช้กลุ่มเดียว
+   * และกลุ่มนั้นไม่ได้อยู่ในห้องตอนทดสอบ**
+   * · ถ้าปุ่มทิศเดิมของแถวใหม่ `disabled` (ชิปไปสุดหัว/ท้ายแล้ว) ให้โฟกัสปุ่มทิศตรงข้ามของ *แถวเดียวกัน*
+   *   — สำคัญกว่าการรักษาทิศ คือการไม่หลุดออกจากชิปที่ผู้ใช้กำลังจัดอยู่
+   * 📌 เก็บคิวไว้ใน `ref` ไม่ใช่ `state` — มันไม่ใช่ข้อมูลที่ต้องวาด และ setState ในเอฟเฟกต์
+   *   จะทำให้เกิด render ซ้อน (`react-hooks/set-state-in-effect` จับได้จริงตอนเขียนรอบแรก)
+   *   เอฟเฟกต์เกาะ `selected` แทน — พ่อสร้างอาร์เรย์ใหม่ทุกครั้งที่เรียก `onChange` จึงยิงพอดีหลังวาดเสร็จ
+   */
+  const listRef = useRef<HTMLUListElement>(null);
+  const pendingFocus = useRef<{ index: number; dir: -1 | 1 } | null>(null);
+
+  useEffect(() => {
+    const p = pendingFocus.current;
+    if (!p) return;
+    pendingFocus.current = null;
+    const row = listRef.current?.querySelector(`[data-row="${p.index}"]`);
+    const same = row?.querySelector<HTMLButtonElement>(`[data-move="${p.dir}"]`);
+    const other = row?.querySelector<HTMLButtonElement>(`[data-move="${p.dir * -1}"]`);
+    const target = same && !same.disabled ? same : other;
+    target?.focus();
+  }, [selected]);
+
   /** สลับกับเพื่อนบ้าน — ไม่ใช่ย้ายไปท้าย/หัว เพื่อให้กดหลายทีแล้วเดาผลได้ตรง ๆ */
   function move(index: number, dir: -1 | 1) {
     const j = index + dir;
@@ -192,6 +219,8 @@ export function TripDestinationPicker({
     const next = [...selected];
     [next[index], next[j]] = [next[j], next[index]];
     onChange(next);
+    // 🔴 ต้องตามโฟกัสไปกับชิปที่ย้าย ไม่ใช่ปล่อยไว้ที่ตำแหน่งเดิม — ดู `focusAfterMove`
+    pendingFocus.current = { index: j, dir };
   }
 
   const countryOptions: DropdownOption[] =
@@ -217,10 +246,11 @@ export function TripDestinationPicker({
       <label className="mb-1 block text-xs font-medium text-content-soft">{COPY.label}</label>
 
       {selected.length > 0 && (
-        <ul className="mb-2 space-y-1.5">
+        <ul ref={listRef} className="mb-2 space-y-1.5">
           {selected.map((city, i) => (
             <li
               key={city.id}
+              data-row={i}
               className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-soft/60 p-1.5"
             >
               <DestinationThumb citySlug={city.legacy_slug ?? null} countryId={city.country_id} />
@@ -231,6 +261,7 @@ export function TripDestinationPicker({
                 <div className="flex shrink-0 items-center gap-0.5">
                   <button
                     type="button"
+                    data-move="-1"
                     onClick={() => move(i, -1)}
                     disabled={i === 0}
                     aria-label={COPY.moveEarlier(city.name_th)}
@@ -240,6 +271,7 @@ export function TripDestinationPicker({
                   </button>
                   <button
                     type="button"
+                    data-move="1"
                     onClick={() => move(i, 1)}
                     disabled={i === selected.length - 1}
                     aria-label={COPY.moveLater(city.name_th)}

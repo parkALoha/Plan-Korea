@@ -50,7 +50,9 @@ export function TripStatusFallback({ trip }: { trip: Exclude<ActiveTripState, { 
     return (
       <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
         <p className="text-content">{soleTripMessage({ ok: false, reason: "none" })}</p>
-        <CreateTripForm />
+        <div className="w-full max-w-xs">
+          <CreateTripForm />
+        </div>
       </div>
     );
   }

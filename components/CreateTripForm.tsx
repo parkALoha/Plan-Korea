@@ -89,7 +89,12 @@ export function CreateTripForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col gap-2.5 text-left">
+    // 🔴 ฟอร์มไม่จำกัดความกว้างเอง — **ผู้เรียกเป็นคนกำหนด** (P2 · 28 ส.ค. 2026)
+    // เดิมมี `max-w-xs` (320px) ติดมาจากตอนที่ฟอร์มนี้ยืนกลางหน้าเปล่าอย่างเดียว · พอถูกเรียกในโมดัล
+    // กว้าง 448px มันเลยกินแค่ 320 แล้ว **ชิดซ้าย เหลือขอบขวาลอย 108px** (วัดแล้ว: กล่อง 327–775 ·
+    // ช่องกรอก 347–667) — ผู้ใช้ทักว่า "ไม่ center และดูไม่สมดุล" ซึ่งถูก แม้ตัวกล่องจะ center พอดีเป๊ะ
+    // 📌 หน้าเปล่ายังแคบเท่าเดิม เพราะผู้เรียกห่อด้วย `max-w-xs` ให้แล้ว
+    <form onSubmit={handleSubmit} className="flex w-full flex-col gap-2.5 text-left">
       {readOnly && (
         <div
           role="status"
