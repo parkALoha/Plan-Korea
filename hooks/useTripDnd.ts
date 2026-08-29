@@ -12,7 +12,8 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
-import { CITY_NAME_TH, PLACE_CITY_NAME_TH, type Day } from "@/data/itinerary";
+import { PLACE_CITY_NAME_TH, type Day } from "@/data/itinerary";
+import { cityNameThOf } from "@/components/cityMeta";
 import { resolvePlace } from "@/lib/resolvePlace";
 import type { CustomPlace, TripStop } from "@/lib/supabase";
 import { showUndoToast } from "@/lib/toast";
@@ -144,7 +145,7 @@ export function useTripDnd({
         // การเด้งกล่อง "แน่ใจไหม" ขวางทุกครั้งจึงผิดมากกว่าถูก) แทน window.confirm เดิม — เฟส 20.2
         if (place.city !== targetDay.city && stopId) {
           showUndoToast(
-            `"${place.nameTh}" อยู่ที่${PLACE_CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]}`,
+            `"${place.nameTh}" อยู่ที่${PLACE_CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
             () => removeStop(stopId)
           );
         }
@@ -202,7 +203,7 @@ export function useTripDnd({
     Promise.resolve(moveStopToDay(stopId, targetDayId)).then(() => {
       if (place.city !== targetDay.city) {
         showUndoToast(
-          `"${place.nameTh}" อยู่ที่${PLACE_CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${CITY_NAME_TH[targetDay.city]}`,
+          `"${place.nameTh}" อยู่ที่${PLACE_CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
           () => moveStopToDay(stopId, sourceDayId)
         );
       }

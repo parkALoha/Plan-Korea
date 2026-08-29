@@ -30,7 +30,7 @@ const HELPER_FILE = "components/cityMeta.ts";
 
 /**
  * 🔴 **ทะเบียนของที่ยังไม่ถูกแก้ — ไม่ใช่ข้อยกเว้นถาวร**
- * 4 ไฟล์ · **9 จุด** — `components/*` เป็นโซน P2 · `hooks/useTripDnd.ts` เจ้าของยังไม่ชัด
+ * 3 ไฟล์ · **7 จุด** (เดิม 5 ไฟล์ 11 จุด · `app/summary` กับ `hooks/useTripDnd` แก้แล้ว) — `components/*` เป็นโซน P2 · `hooks/useTripDnd.ts` เจ้าของยังไม่ชัด
  * P3 ไม่แก้ข้ามโซนตามกติกา `TEAM.md` · รายงานให้ P1 ส่งต่อแล้ว 29 ส.ค. 2026
  * 🔴 **ตัวเลขนี้มาจากตัวสแกนเอง ไม่ได้นับด้วยมือ** — `grep "CITY_META\["` ที่ P3 ใช้รายงานรอบแรก
  * ได้ 4 จุด เพราะมันไม่ได้นับ `CITY_NAME_TH[` / `CITY_NAME_EN[` ซึ่งเป็นรูปเดียวกันทุกประการ
@@ -40,7 +40,6 @@ const KNOWN_DIRECT_INDEX: Record<string, number> = {
   "components/PlaceSidebar.tsx": 5,
   "components/HotelEditModal.tsx": 1,
   "components/ImmigrationSheet.tsx": 1,
-  "hooks/useTripDnd.ts": 2,
 };
 
 function stripComments(source: string): string {
