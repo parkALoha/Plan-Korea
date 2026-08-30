@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
 import type { Day } from "@/data/itinerary";
-import { countryOfCitySlug, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
+import { immigrationCountryOf } from "@/lib/immigrationCountry";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { resolveEventPlace } from "@/lib/eventPlace";
@@ -63,40 +63,6 @@ import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
 import NoteBody from "@/components/NoteBody";
 
-/**
- * ประเทศที่เอกสาร ตม. (`ImmigrationSheet`) เป็นของ — ทริปนี้ข้าม 2 ประเทศ (ฮานอยพักเครื่อง → เกาหลี)
- * เอกสารใบเดียวเป็นของประเทศเดียว เลือกไม่ได้แบบเดาเงียบๆ (P1 27 ส.ค. 2026) — ใช้ประเทศที่มีจำนวนวัน
- * มากที่สุดในทริป (ทริปนี้คือเกาหลี 5/6 เมือง) แล้วเขียนชื่อประเทศที่เลือกไว้บนเอกสารเองอยู่แล้ว (h1 +
- * หัวข้อที่พัก ดู ImmigrationSheet.tsx) เจ้าหน้าที่จึงไม่มีทางอ่านผิดประเทศแบบไม่รู้ตัว
- * 🔴 **แก้ `B6` (30 ส.ค. 2026 · P3): คำนวณจาก *วันของทริปนั้นจริง ๆ* ไม่ใช่จาก `ITINERARY`**
- * เดิมเป็นค่าคงที่ระดับโมดูลที่อ่านไฟล์ทริปเกาหลี — พอหน้านี้เรนเดอร์ทริปแพลตฟอร์มได้
- * **ทริปญี่ปุ่นจะได้เอกสาร ตม. เกาหลี** โดยไม่มีอะไรฟ้อง · เกณฑ์เดิม (ประเทศที่มีวันมากที่สุด)
- * **ไม่เปลี่ยน** — เปลี่ยนแค่ว่านับจากวันชุดไหน
- */
-function immigrationCountryOf(
-  days: readonly { city: Day["city"] }[]
-): { code: CountryCode; nameEn: string; nameTh: string } | null {
-  const dayCountByCountry = new Map<CountryCode, number>();
-  for (const day of days) {
-    // 🔴 `countryOfCitySlug` คืน `null` เมื่อไม่รู้จัก — ข้ามวันนั้นแทนที่จะนับ `undefined` เป็นประเทศหนึ่ง
-    //    (ตัวเก่า `countryOfCity()` index `Record` ที่คีย์เป็น union ตรง ๆ → `undefined` เงียบ ๆ)
-    const country = countryOfCitySlug(day.city);
-    if (!country) continue;
-    dayCountByCountry.set(country, (dayCountByCountry.get(country) ?? 0) + 1);
-  }
-  // 🔴 **ไม่มีประเทศที่รู้จักเลย → คืน `null` = ไม่แสดงชีต** — ไม่เดา `"kr"` เหมือนเดิม
-  //    (ค่าเริ่มต้น `"kr"` เดิมปลอดภัยเพราะต้นทางเป็นไฟล์ทริปเกาหลี · ตอนนี้ต้นทางเป็นทริปอะไรก็ได้)
-  let winner: CountryCode | null = null;
-  let winnerDays = -1;
-  for (const [country, days] of dayCountByCountry) {
-    if (days > winnerDays) {
-      winner = country;
-      winnerDays = days;
-    }
-  }
-  if (!winner) return null;
-  return { code: winner, nameEn: COUNTRY_NAME_EN[winner], nameTh: COUNTRY_NAME_TH[winner] };
-}
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
   if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
@@ -662,7 +628,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   //    · `ready` + 0 วัน → ทริปไม่มีวัน — รอระบบ ไม่ใช่สิ่งที่เขาแก้เอง
   //    · `loading` → ไม่ใช่ทั้งสองอย่าง ตกไปที่กิ่ง "กำลังโหลด" ของ JSX เดิม (มีอยู่แล้วท้ายเทอร์นารี)
   //    🔴 ด่าน `noLegacyItineraryRender.test.ts` แก้พร้อมกันในคอมมิตนี้ ไม่ปล่อยให้หลวมระหว่างกลาง
-  const immigrationCountry = useMemo(() => immigrationCountryOf(itinerary), [itinerary]);
+  const immigrationPick = useMemo(() => immigrationCountryOf(itinerary), [itinerary]);
   const dayPlanReady = platformState.status === "ready" && itinerary.length > 0;
   const dayPlanEmpty = platformState.status === "ready" && itinerary.length === 0;
   const dayPlanUnreadable = platformState.status === "error";
@@ -829,15 +795,31 @@ export function SummaryContent({ tripId }: { tripId: string }) {
           **ไม่แสดงดีกว่าเดา** (เดิมค่าเริ่มต้นเป็น `"kr"` ซึ่งปลอดภัยตอนต้นทางเป็นไฟล์ทริปเกาหลีเท่านั้น)
           ตกไปที่กิ่งถัดไปของเทอร์นารีเดิม ไม่ได้เพิ่มกิ่งใหม่ */}
       {overallLoaded && immigrationView && (
-        dayPlanReady && immigrationCountry ? (
+        dayPlanReady && immigrationPick.kind === "ok" ? (
           <ImmigrationSheet
-            country={immigrationCountry}
+            country={immigrationPick}
             days={itinerary}
             hotelLegs={hotelLegs}
             hotels={hotels}
             stopsByDay={stopsByDay}
             customPlaces={customPlaces}
           />
+        ) : dayPlanReady && immigrationPick.kind === "tie" ? (
+          /* 🔴 **เสมอกัน → ไม่แสดงชีต *แต่บอกเหตุผล*** (P3 เสนอ · P1 รับ · 30 ส.ค. 2026)
+             ถ้าเงียบเฉย ๆ เราจะเปลี่ยน *เดาผิด 50%* เป็น *หายเงียบ 100%* ซึ่งแยกไม่ออกจาก
+             "ฟีเจอร์นี้ไม่มี" · ด่านที่เอาของออก ต้องบอกว่าทำไม
+             ⚠️ **ถ้อยคำนี้ชั่วคราว — P1 อนุมัติให้ใช้ไปก่อนเพื่อไม่ให้งานติด · รอ P2 เคาะ**
+                เขาเปลี่ยนได้โดยไม่ต้องถือว่ากลับมติ */
+          <div className="mx-auto max-w-2xl px-4 pt-5">
+            <p
+              role="status"
+              className="rounded-lg bg-panel-gold px-3 py-2 text-center text-xs text-panel-gold-ink"
+            >
+              {en
+                ? "This trip splits evenly between two countries — can't pick an immigration sheet automatically"
+                : "ทริปนี้มีสองประเทศจำนวนวันเท่ากัน — เลือกเอกสาร ตม. ให้อัตโนมัติไม่ได้"}
+            </p>
+          </div>
         ) : dayPlanUnreadable ? (
           <div className="mx-auto max-w-2xl px-4 pt-5">
             <DayPlanUnavailableNotice reason="unreadable" />
