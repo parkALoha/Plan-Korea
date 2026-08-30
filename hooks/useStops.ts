@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
 import { buildUuidToDayKey, mapStopRows } from "@/hooks/dayKeyMaps";
-import { buildDayBridge } from "@/lib/engine/dayBridge";
+import { useTripDays } from "@/hooks/useTripDays";
 import { readCache, writeCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { showToast } from "@/lib/toast";
@@ -42,6 +42,8 @@ export function useStops(tripId: string | null, planId: string | null) {
 
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const tripIdRef = useRef<string | null>(null);
+  // 🔴 `E6-AC11` — วันของทริปมาจาก provider เดียว ไม่ยิงเอง (ดู `hooks/useTripDays.tsx`)
+  const { rows: dayRows, bridge } = useTripDays();
   const dayToUuid = useRef<Map<string, string>>(new Map());
   const uuidToDay = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,47 +84,21 @@ export function useStops(tripId: string | null, planId: string | null) {
   useEffect(() => {
     if (!supabaseConfigured || !tripId || !planId) return;
     const channelName = `trip_stops_changes_${Math.random().toString(36).slice(2)}`;
-    let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    async function init() {
+    // ไม่มี `await` เหลือแล้วหลัง `E6-AC11` ก้าวที่ 3 — ไม่มีการแข่งกันให้ยกเลิก (`cancelled` ถูกถอด)
+    function init() {
       const cached = readCache<TripStop[]>(`stops:${planId}`);
       if (cached) {
         setStops(sortStops(cached));
         setLoaded(true);
       }
 
-      const dbDays = await fetchReadJson<{ id: string; date: string }[]>(
-        `/api/engine/trips/${tripId}/days`
-      );
-      if (cancelled) return;
-      if (!dbDays) return void setLoaded(true);
-      /**
-       * 🔴 **สะพานไม่มีฝั่ง `ITINERARY` อีกแล้ว — ส่ง `[]` โดยเจตนา** (P1 ตัดสิน 28 ส.ค. 2026)
-       *
-       * เดิมโหลดไฟล์ทริปเกาหลีมาจับคู่ด้วย **วันที่ปฏิทินล้วน ไม่ผูก `tripId` เลย** → ทริปใดก็ตามที่วัน
-       * ทับช่วง 11–21 ต.ค. จะได้คีย์ `"d*"` ปนเข้ามา · P4 วัดเจอสภาพครึ่ง ๆ: ทริปที่ทับ **5 จาก 11 วัน**
-       * → `d0..d4` เขียนได้ · `d5..d10` แปลงเป็น `null` → `insertAt` **`return` เงียบ ไม่มี error ไม่มี toast**
-       * 🎯 **ผู้ใช้กดเพิ่มของในวันที่ 6–11 แล้วไม่มีอะไรเกิดขึ้น และไม่มีอะไรบอกว่าทำไม**
-       *
-       * ✅ ส่ง `[]` **กำจัดสภาพ "วันที่แสดงได้แต่เขียนไม่ได้" ทิ้งทั้งชั้น** ไม่ใช่เพิ่มเงื่อนไขมากันทีละเคส
-       * · ทำได้ตอนนี้เพราะไม่มีหน้าไหนเรนเดอร์วันจากไฟล์นั้นอีกแล้ว → **คีย์ `d*` ไม่มีผู้บริโภคเหลือ**
-       * ⚠️ **ถอดแค่ฝั่ง `ITINERARY` ไม่ใช่ถอดสะพาน** — `dayKeyToDbId` ยังให้ `uuid → uuid`
-       *   ซึ่งเป็นสิ่งที่ทริปแพลตฟอร์มใช้จริงทุกวันนี้
-       */
-      const bridge = buildDayBridge([], dbDays);
-      reportDayBridgeWarningIfAny(bridge);
-      // สะพานเป็นคนถือแมปวัน — ห้ามประกอบเองซ้ำที่นี่
-      // ⚠️ เดิมคอมเมนต์นี้เขียนว่าแมปมี `"d0"→uuid` **และ** `uuid→uuid` — **หมดอายุตั้งแต่ส่ง `[]`**
-      //    ตอนนี้เหลือ `uuid→uuid` ล้วน · ฝั่ง `"d0"` ไม่มีผู้ผลิตและไม่มีผู้บริโภคแล้ว
-      // 🔴 เคยประกอบเองอยู่พักหนึ่ง แล้ว `useDaySettings`/`useOvernightOverrides` ก็ประกอบของตัวเอง
-      //    ซึ่งเป็นสิ่งที่ `dayBridge` เตือนไว้ตั้งแต่หัวไฟล์ว่า *"มันจะแปลงไม่เหมือนกันสักวัน"*
-      dayToUuid.current = new Map(bridge.dayKeyToDbId);
-      // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
-      uuidToDay.current = buildUuidToDayKey(dbDays, bridge);
-
-      await refetchRef.current?.();
-      if (cancelled) return;
+      // 🔴 **`E6-AC11` ก้าวที่ 3 (30 ส.ค. 2026 · P3): เลิกยิง `/days` เอง เลิกสร้างสะพานเอง**
+      //    ย้ายไปเอฟเฟกต์แยกข้างล่างที่ขึ้นกับ `useTripDays()` — **เอฟเฟกต์นี้เหลือแค่ แคช + channel**
+      //    เหตุผลที่ต้องแยก (ไม่ใช่ความสะอาด): `subscribe()` ต้องเกิดครั้งเดียวต่อ `(tripId, planId)`
+      //    ถ้า `rows`/`bridge` หลุดเข้า deps ที่นี่ มันจะสมัครใหม่ทุกครั้งที่ "วัน" เปลี่ยน identity
+      //    · เคสนับอยู่ใน `lib/__tests__/daySettingsSubscribe.test.tsx` (โครงเดียวกันทั้งสอง hook)
       setLoaded(true);
 
       channel = supabase
@@ -138,11 +114,28 @@ export function useStops(tripId: string | null, planId: string | null) {
 
     init();
     return () => {
-      cancelled = true;
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
   }, [tripId, planId]);
+
+  /**
+   * 🔴 **เอฟเฟกต์ที่สอง — ผูกกับ "วัน" เท่านั้น** (`E6-AC11` ก้าวที่ 3 · 30 ส.ค. 2026 · P3)
+   * ต้องตั้ง **สองแมป** ก่อนดึงแถว: `dayToUuid` (ไว้เขียนกลับ) และ `uuidToDay` (ไว้แปลงแถวที่อ่านมา)
+   * · `mapStopRows` อ่าน `uuidToDay.current` → ถ้าดึงแถวก่อนตั้งแมป **ทุกแถวจะถูกทิ้งเงียบ**
+   *   (`mapStopRows` ข้ามแถวที่หาวันไม่เจอ) — จึงต้องอยู่ในเอฟเฟกต์เดียวกับการเรียก `refetch`
+   * · ⚠️ ขอบเขตที่ P1 อนุมัติ: ย้าย *ที่อยู่* ของ effect เท่านั้น — callback/filter ของ subscription คงเดิม
+   */
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId || !planId) return;
+    // `rows === null` = ยังไม่ได้คำตอบ/อ่านไม่ได้ — ไม่ใช่ "ทริปไม่มีวัน"
+    if (!dayRows) return;
+    reportDayBridgeWarningIfAny(bridge);
+    dayToUuid.current = new Map(bridge.dayKeyToDbId);
+    // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
+    uuidToDay.current = buildUuidToDayKey(dayRows, bridge);
+    void refetchRef.current?.();
+  }, [tripId, planId, dayRows, bridge]);
 
   /** เขียนแบบมีเสียง แล้วดึงของจริงมาทับ state ที่เดาไว้ตอนล้ม */
   const call = useCallback(
