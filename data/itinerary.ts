@@ -4,7 +4,6 @@
  * เก็บข้อมูลไว้เฉยๆ เพราะเป็นบันทึกว่า "ตอนวางแผนแรกคิดว่าวันไหนควรไปที่ไหนบ้าง" ซึ่งยังอ่านมีประโยชน์
  * ถ้าจะลบทิ้งจริงต้องเอา `Day.slots` ออกด้วยทั้งหมด
  */
-import type { Place } from "@/data/places";
 
 export type Slot = {
   id: string;
@@ -615,45 +614,4 @@ export const ITINERARY: Day[] = [
 ];
 
 
-export const CITY_NAME_TH: Record<Day["city"], string> = {
-  hanoi: "ฮานอย",
-  busan: "ปูซาน",
-  sokcho: "ซกโช",
-  gangneung: "คังนึง",
-  seoul: "โซล",
-  suwon: "ซูวอน",
-};
 
-export const CITY_NAME_EN: Record<Day["city"], string> = {
-  hanoi: "Hanoi",
-  busan: "Busan",
-  sokcho: "Sokcho",
-  gangneung: "Gangneung",
-  seoul: "Seoul",
-  suwon: "Suwon",
-};
-
-/**
- * ชื่อไทยของ**ทุกเมืองที่สถานที่หนึ่งอาจอยู่ได้** — กว้างกว่า `CITY_NAME_TH` ที่เป็นเมืองของทริปเท่านั้น
- *
- * แยกกันสองตัวโดยตั้งใจ: `lib/citySegments.ts` ใช้ `Object.keys(CITY_NAME_TH)` เป็นรายชื่อเมือง
- * ของทริปไปหาว่าพิกัดหนึ่งอยู่เมืองไหน — เติมกรุงเทพ/โฮจิมินห์เข้าไปในนั้นจะทำให้ช่วงเมืองบนแผนที่
- * รายวันเพี้ยน ส่วนตัวนี้ใช้เฉพาะตอนต้องเอ่ยชื่อเมืองของ `Place` ที่อาจเป็นสนามบินนอกเกาหลี
- */
-export const PLACE_CITY_NAME_TH: Record<Place["city"], string> = {
-  ...CITY_NAME_TH,
-  bangkok: "กรุงเทพ",
-  hcmc: "โฮจิมินห์",
-};
-
-export const CITY_META: Record<
-  Day["city"],
-  { icon: string; color: string; colorDark: string }
-> = {
-  hanoi: { icon: "🛫", color: "#a8552f", colorDark: "#843f21" },
-  busan: { icon: "🌊", color: "#2f6690", colorDark: "#234d6e" },
-  sokcho: { icon: "🍁", color: "#3f7d5c", colorDark: "#2e5d44" },
-  gangneung: { icon: "☕", color: "#2e7d82", colorDark: "#215d61" },
-  seoul: { icon: "🏯", color: "#6b4c7a", colorDark: "#523a5e" },
-  suwon: { icon: "🏰", color: "#b8862e", colorDark: "#946b23" },
-};

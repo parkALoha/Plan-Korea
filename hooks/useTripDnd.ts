@@ -12,7 +12,8 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
-import { PLACE_CITY_NAME_TH, type Day } from "@/data/itinerary";
+import { PLACE_CITY_NAME_TH } from "@/data/cityNames";
+import type { Day } from "@/data/itinerary";
 import { cityNameThOf } from "@/components/cityMeta";
 import { resolvePlace } from "@/lib/resolvePlace";
 import type { CustomPlace, TripStop } from "@/lib/supabase";

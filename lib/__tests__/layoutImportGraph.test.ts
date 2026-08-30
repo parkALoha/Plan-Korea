@@ -143,10 +143,17 @@ describe("import graph ของ app/layout.tsx", () => {
   // data/itinerary.ts ย้ายออกจาก app/page.tsx ไปอยู่ที่ TripPlanScreen.tsx ทั้งก้อน — app/page.tsx
   // ตอนนี้เหลือแค่ import HomeScreen เดียว ไม่แตะ data/* เลย ถ้าไม่ย้ายเป้า positive control นี้จะแดง
   // ตลอดไปโดยไม่ได้บอกอะไรผิด (เจตนาของเคสไม่เปลี่ยน แค่ตามไฟล์ที่เนื้อหาย้ายไป)
+  // 🔴 **แก้ 30 ส.ค. 2026 (P3 · `E6-AC1`) — เป้าที่ปักไว้คือ `data/itinerary.ts` และมันไม่จริงอีกแล้ว**
+  //    `B6` + การแยก `data/cityNames.ts` ออกมา ทำให้ `TripPlanScreen` **เลิกเดินถึง `data/itinerary.ts`**
+  //    ซึ่ง**คือผลลัพธ์ที่เราตั้งใจ** ไม่ใช่ความพัง — แต่เคสนี้แดงเพราะมันปักชื่อไฟล์ *ตัวที่เรากำลังไล่ออก*
+  //    🎯 **positive control ต้องยึดของที่ *ตั้งใจให้อยู่ต่อ*** ไม่ใช่ของที่แผนงานกำลังจะเอาออก
+  //       ไม่งั้นความสำเร็จของงานจะมาในรูปของเคสที่แดง และคนถัดไปจะอ่านว่าถอยหลัง
+  //    · `data/places.ts` เป็นเป้าที่ถูกกว่า: หน้าแผน**ต้อง**อ่านคลังสถานที่ตามนิยามของมันเอง
+  //      ถ้าวันหนึ่งมันเลิกอ่าน แปลว่าโครงหน้าเปลี่ยนจริง ๆ ซึ่งเป็นสิ่งที่เคสนี้ควรฟ้อง
   it("ตัวตรวจจับได้จริง — หน้าแผน (components/TripPlanScreen.tsx) ต้องไปถึง data/*", () => {
     const found = dataFiles(walk(resolve(ROOT, "components/TripPlanScreen.tsx")));
     expect(found.length).toBeGreaterThan(0);
-    expect(found).toContain("data/itinerary.ts");
+    expect(found).toContain("data/places.ts");
   });
 
   /**

@@ -1,5 +1,5 @@
 import type { City } from "@/data/itinerary";
-import { CITY_NAME_TH } from "@/data/itinerary";
+import { CITY_NAME_TH } from "@/data/cityNames";
 import { cityCenter, type Place } from "@/data/places";
 import type { TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";

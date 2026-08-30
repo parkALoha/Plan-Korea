@@ -1,4 +1,5 @@
-import { CITY_META, CITY_NAME_EN, CITY_NAME_TH, type Day } from "@/data/itinerary";
+import { CITY_META, CITY_NAME_EN, CITY_NAME_TH } from "@/data/cityNames";
+import type { Day } from "@/data/itinerary";
 
 export type CityMeta = { icon: string; color: string; colorDark: string };
 
