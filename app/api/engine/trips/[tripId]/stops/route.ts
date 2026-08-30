@@ -31,6 +31,7 @@ type Row = {
   transfer_target_label: string | null; visited_at: string | null;
   legacy_added_by: string | null; updated_at: string;
   custom_place_id: string | null;
+  schedule_bound: string | null; fixed_start_time: string | null; fixed_end_time: string | null;
   catalog_places: { legacy_slug: string | null } | null;
 };
 
@@ -41,6 +42,17 @@ export type StopDto = {
   kind: string; intercity_from: string | null; intercity_to: string | null;
   intercity_mode: string | null; transfer_target_time: string | null;
   transfer_target_label: string | null; visited_at: string | null;
+  /** 🔴 สามตัวนี้ส่ง **ดิบ** ให้ไคลเอนต์แปลงเอง (`B6` · 30 ส.ค. 2026 · P3 ขอ · P1 เพิ่ม)
+   *  ฐานมีมาตั้งแต่ก้อน `E7` 08 **แต่ไม่เคยผ่าน DTO เลย** → ไคลเอนต์แยก event ออกจากจุดแวะไม่ได้
+   *  จึงไหลไปตาม `rank` ต่อท้ายวัน (เช็คเอาต์โรงแรมไปกองท้ายวัน)
+   *
+   *  ⚠️ **`schedule_bound` เป็น *ตัวคั่น* ไม่ใช่ *ป้ายกำกับ*** — ใบที่เป็น `null` **ก่อนหน้า**
+   *  ใบที่เป็น `'before'` ก็อยู่ฝั่งก่อนจุดแวะด้วย · ห้ามอ่านทีละแถวแล้วตัดสิน
+   *  กฎเต็มอยู่ที่ `hooks/useDaySchedule.ts:138-142` บน `main` (แบ่งด้วย *ลำดับ* ไม่ใช่ *เวลา*)
+   *
+   *  📌 อ่านอย่างเดียว — **ไม่ได้เพิ่มเข้า `WRITABLE`** เพราะยังไม่มีเส้นทางไหนแก้มันจากไคลเอนต์ */
+  schedule_bound: string | null;
+  fixed_start_time: string | null; fixed_end_time: string | null;
 };
 
 function toDto(r: Row, orderIndex: number): StopDto {
@@ -54,6 +66,8 @@ function toDto(r: Row, orderIndex: number): StopDto {
     kind: r.kind, intercity_from: r.intercity_from, intercity_to: r.intercity_to,
     intercity_mode: r.intercity_mode, transfer_target_time: r.transfer_target_time,
     transfer_target_label: r.transfer_target_label, visited_at: r.visited_at,
+    schedule_bound: r.schedule_bound,
+    fixed_start_time: r.fixed_start_time, fixed_end_time: r.fixed_end_time,
   };
 }
 
