@@ -7,6 +7,7 @@ import type { Place } from "@/data/places";
 import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
+import { splitDayEvents } from "@/lib/engine/dayEvents";
 import { resolveEventPlace } from "@/lib/eventPlace";
 import { LayoverBadges } from "@/components/LayoverBadges";
 import { isOpenDuring, minutesUntilClose, weekdayHoursLabel } from "@/lib/openingHours";
@@ -271,8 +272,19 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   //    `mapActionsFor(null, …)` → ผู้ให้บริการแผนที่ = Google อย่างเดียว ซึ่งใช้ได้ทุกที่ (นโยบายเขียนไว้ที่ data/emergency.ts)
   const mapCountryCode = countryOfCitySlug(day.city);
 
-  const dayStops = useMemo(
-    () => stops.filter((s) => s.day_id === day.id).sort((a, b) => a.order_index - b.order_index),
+  /**
+   * 🔴 **แยกแถว `kind='event'` ออกจากจุดแวะ + แบ่งก่อน/หลัง** (`B6` · 30 ส.ค. 2026 · P3)
+   * `E7` ยุบ `day.events[]` กับ `stops[]` เข้า `trip_stops` ใบเดียว → **ลำดับเดียว** และกฎการรวม
+   * ที่เคยอยู่ในตัวเรนเดอร์ไม่ได้ถูกย้ายมา → event ทั้ง 8 ใบของวันแรกไปกองท้ายวัน
+   * ⚠️ **ต้องกรองที่นี่ ไม่ใช่แค่ตอนเรนเดอร์** — `dayStops` ถูกใช้อีก ~10 ที่ (จุดถัดไป · ตัวนับ ·
+   *    ประเมินความช้า · โมดัลรายละเอียด) · ปล่อย event ปนไว้ = ทุกตัวนั้นนับผิดเงียบ ๆ
+   * กฎเต็ม + เคสอยู่ที่ `lib/engine/dayEvents.ts`
+   */
+  const { stops: dayStops, before: dayEventsBefore, after: dayEventsAfter } = useMemo(
+    () =>
+      splitDayEvents(
+        stops.filter((s) => s.day_id === day.id).sort((a, b) => a.order_index - b.order_index)
+      ),
     [stops, day.id]
   );
 
@@ -293,6 +305,9 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   } = useDaySchedule({
       day,
       stops: dayStops,
+      // 🔴 วันจากฐานไม่มี `day.events` — ส่งผลการแยกจาก `trip_stops` เข้าไปแทน (`B6`)
+      //    ส่งเป็น *ผลการแบ่งแล้ว* ไม่ใช่อาเรย์ดิบ เพราะกฎการแบ่งอยู่ที่ `dayEvents.ts` ที่เดียว
+      eventsSplit: { before: dayEventsBefore, after: dayEventsAfter },
       customPlaces,
       hotel: endHotel,
       startHotel,

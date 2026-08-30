@@ -7,6 +7,7 @@ import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
 import type { Day } from "@/data/itinerary";
 import { immigrationCountryOf } from "@/lib/immigrationCountry";
+import { splitDayEvents } from "@/lib/engine/dayEvents";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { resolveEventPlace } from "@/lib/eventPlace";
@@ -123,7 +124,14 @@ function SummaryDayCard({
   // 🔴 ห้าม index ตรง — `CITY_META` มี 6 เมืองเกาหลี · `Day` จากฐานมีได้ 42 เมือง (ดู components/cityMeta.ts)
   const meta = cityMetaOf(day.city);
   // เซ็นรูปจุดแวะทั้งวันครั้งเดียว (E2-AC13 ②) — การ์ดนี้เรนเดอร์ต่อวันอยู่แล้วเหมือน DayStopsSection
-  const signedStopPhotos = useSignedFiles(stops.map((s) => s.photo_url));
+  /**
+   * 🔴 **แยกแถว `kind='event'` ออกจากจุดแวะ + แบ่งก่อน/หลัง** (`B6` · 30 ส.ค. 2026 · P3)
+   * เหตุผลเต็มและกฎอยู่ที่ `lib/engine/dayEvents.ts` · การ์ดนี้ใช้ `dayStops` แทน `stops` ทุกที่
+   * ⚠️ รวมถึง `stops[i]` ที่ index ด้วยตำแหน่งใน `schedule` — **`schedule` สร้างจาก `dayStops`**
+   *    ถ้าปล่อยให้ index ลง `stops` เดิม ตำแหน่งจะเลื่อนทันทีที่วันนั้นมี event (ผิดแบบเงียบ)
+   */
+  const { stops: dayStops, before: evBefore, after: evAfter } = useMemo(() => splitDayEvents(stops), [stops]);
+  const signedStopPhotos = useSignedFiles(dayStops.map((s) => s.photo_url));
   // แถวที่กดเปิดดูรายละเอียดอยู่ — หน้านี้ยังอ่านอย่างเดียวเหมือนเดิม โมดัลไม่มีปุ่มแก้อะไรเลย
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   // แถวตารางบินที่กดอยู่ — คนละสเตทกับ viewIndex เพราะไม่ได้อ้างดัชนีใน schedule (คนละลิสต์กัน)
@@ -137,7 +145,13 @@ function SummaryDayCard({
     eventsBeforeStops,
     eventsAfterStops,
     mealCount,
-  } = useDaySchedule({ day, stops, customPlaces, hotel, startHotel, returnTravelMode, startTime });
+  } = useDaySchedule({
+    day,
+    stops: dayStops,
+    // 🔴 วันจากฐานไม่มี `day.events` — ส่งผลการแบ่งจาก `trip_stops` เข้าไปแทน (`B6`)
+    eventsSplit: { before: evBefore, after: evAfter },
+    customPlaces, hotel, startHotel, returnTravelMode, startTime,
+  });
 
   const travelMinutes =
     (daySchedule.travelMinutesFromStart ?? 0) +
@@ -291,7 +305,7 @@ function SummaryDayCard({
         )}
 
         {schedule.map((sched, i) => {
-          const stop = stops[i];
+          const stop = dayStops[i];
           const mode = (stop.travel_mode as TravelMode | null) ?? null;
           // แถวสถานที่จริงเท่านั้นที่กดดูรายละเอียดได้ — แถวข้ามเมือง/แวะที่พัก/ไปสนามบิน ไม่มีอะไรให้ดูต่อ
           const place = stop.kind === "intercity" || stop.kind === "hotel" ? null : sched.place;
@@ -435,8 +449,8 @@ function SummaryDayCard({
           place={schedule[viewIndex].place!}
           previousPlace={viewIndex > 0 ? schedule[viewIndex - 1].place ?? null : null}
           hotel={hotel}
-          userNote={stops[viewIndex]?.note}
-          userPhotoUrl={stops[viewIndex]?.photo_url}
+          userNote={dayStops[viewIndex]?.note}
+          userPhotoUrl={dayStops[viewIndex]?.photo_url}
           onClose={() => setViewIndex(null)}
         />
       )}
@@ -765,7 +779,8 @@ export function SummaryContent({ tripId }: { tripId: string }) {
           {overallLoaded && !immigrationView && (
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-cream/90">
               <span>
-                🗺️ {stops.length} {t("stopsInTrip")}
+                {/* 🔴 นับเฉพาะจุดแวะจริง — แถว `kind='event'` (ตารางบิน/เช็คเอาต์) ไม่ใช่จุดแวะ (`B6`) */}
+                🗺️ {stops.filter((s) => !s.event).length} {t("stopsInTrip")}
               </span>
               {dayPlanReady && (
                 <>

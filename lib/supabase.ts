@@ -1,3 +1,4 @@
+import type { EventDto } from "@/app/api/engine/trips/[tripId]/stops/route";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -122,6 +123,14 @@ export type TripStop = {
   intercity_to?: string | null;
   /** ใช้เมื่อ kind === "intercity" — "bus" | "ktx" | "other" */
   intercity_mode?: string | null;
+  /**
+   * 🔴 **ก้อนย่อยของแถว `kind='event'`** — มีเฉพาะแถว event (`B6` · 30 ส.ค. 2026)
+   * รูปมาจาก `EventDto` ของ API โดยตรง **ไม่ประกาศซ้ำ** เพราะสองใบที่ต้องซิงก์กันเองคือของที่จะเพี้ยน
+   * · ฐานบังคับด้วย `trip_stops_event_columns_only_on_events` ว่าคอลัมน์พวกนี้เป็น `null` เสมอถ้าไม่ใช่ event
+   *   → **ทดสอบว่าเป็น event ด้วย `stop.event != null` ไม่ใช่เทียบสตริง `kind`**
+   * · กฎการแบ่ง ก่อน/หลังจุดแวะ อยู่ที่ `lib/engine/dayEvents.ts` — **`schedule_bound` เป็นตัวคั่น ไม่ใช่ป้าย**
+   */
+  event?: EventDto;
   /** ใช้เมื่อ kind === "transfer" (migration 0025) — เวลาที่ต้องไปให้ทัน "HH:MM" เช่น เวลาบิน
    *  ว่าง = ไม่มีเดดไลน์ เป็นแค่แถวเดินทางไปสนามบินเฉยๆ */
   transfer_target_time?: string | null;

@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { CITY_LOCALE, type Place } from "@/data/places";
-import type { Day } from "@/data/itinerary";
+import type { Day, DayEvent } from "@/data/itinerary";
 import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
 import { resolvePlace } from "@/lib/resolvePlace";
 import {
@@ -36,9 +36,18 @@ export function useDaySchedule({
   startHotel,
   returnTravelMode,
   startTime,
+  eventsSplit,
 }: {
   day: Day;
   stops: TripStop[];
+  /**
+   * 🔴 **ผลการแบ่ง event ที่ผู้เรียกแยกมาแล้ว** (`B6` · 30 ส.ค. 2026 · P3)
+   * วันจากฐานไม่มี `day.events` — event เป็นแถวใน `trip_stops` (`kind='event'`)
+   * ผู้เรียกกรองออกจาก `stops` แล้วแบ่งด้วย `lib/engine/dayEvents.ts` **ซึ่งเป็นที่เดียวที่มีกฎ**
+   * ⚠️ ส่ง *ผลการแบ่ง* ไม่ใช่อาเรย์ดิบ — ถ้าส่งดิบมา กฎจะถูกเขียนซ้ำที่นี่อีกใบ ซึ่งเป็นสิ่งที่
+   *    `dayBridge.ts` เตือนไว้เองว่า *"ถ้าแต่ละตัวแปลงเอง มันจะแปลงไม่เหมือนกันสักวัน"*
+   */
+  eventsSplit?: { before: DayEvent[]; after: DayEvent[] };
   customPlaces: CustomPlace[];
   hotel: TripHotel | null;
   startHotel: TripHotel | null;
@@ -152,11 +161,23 @@ export function useDaySchedule({
 
   // เหตุการณ์ตายตัว (เที่ยวบิน ฯลฯ) แบ่งเป็นก่อน/หลังช่วงว่างที่แทรกจุดแวะได้ ด้วย anchor "before"/"after"
   // (ดู DayEvent ใน data/itinerary.ts) — ถ้าวันนี้ไม่มี anchor เลย events ทั้งหมดจะแสดงเหนือจุดแวะเหมือนเดิม
-  const beforeAnchorEvent = day.events?.find((e) => e.anchor === "before");
-  const afterAnchorEvent = day.events?.find((e) => e.anchor === "after");
-  const beforeAnchorIndex = beforeAnchorEvent ? day.events!.indexOf(beforeAnchorEvent) : -1;
-  const eventsBeforeStops = beforeAnchorIndex >= 0 ? day.events!.slice(0, beforeAnchorIndex + 1) : day.events;
-  const eventsAfterStops = beforeAnchorIndex >= 0 ? day.events!.slice(beforeAnchorIndex + 1) : [];
+  // 🔴 `eventsSplit` (ทริปจากฐาน) ชนะ `day.events` (ไฟล์ทริปเกาหลีเดิม) — วันหนึ่งจะมีแค่ทางเดียว
+  const legacyBeforeAnchor = day.events?.find((e) => e.anchor === "before");
+  const legacyBeforeIndex = legacyBeforeAnchor ? day.events!.indexOf(legacyBeforeAnchor) : -1;
+  const eventsBeforeStops = eventsSplit
+    ? eventsSplit.before
+    : legacyBeforeIndex >= 0
+      ? day.events!.slice(0, legacyBeforeIndex + 1)
+      : day.events;
+  const eventsAfterStops = eventsSplit
+    ? eventsSplit.after
+    : legacyBeforeIndex >= 0
+      ? day.events!.slice(legacyBeforeIndex + 1)
+      : [];
+  // เวลาเริ่มต้นที่แนะนำ = เวลาของ anchor `before` — หาในผลการแบ่ง ไม่ใช่ใน `day.events` เท่านั้น
+  const beforeAnchorEvent = legacyBeforeAnchor ?? eventsBeforeStops?.find((e) => e.anchor === "before");
+  const afterAnchorEvent =
+    day.events?.find((e) => e.anchor === "after") ?? eventsAfterStops.find((e) => e.anchor === "after");
 
   // เวลาเริ่มนับตารางจุดแวะของวันนี้ ตามลำดับความสำคัญ:
   //   1) เวลาที่ตั้งเองไว้ (ตั้งได้ทุกวัน รวมวันบิน — บางทีผ่าน ตม. เร็ว/ช้ากว่าที่เผื่อไว้)
