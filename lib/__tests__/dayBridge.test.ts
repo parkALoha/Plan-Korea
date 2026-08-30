@@ -237,7 +237,6 @@ describe("buildDayBridge", () => {
  */
 describe("ทะเบียนผู้เรียก buildDayBridge", () => {
   const CALLERS: Record<string, string> = {
-    "hooks/useBookings.tsx": "การจอง",
     // 🔴 **`hooks/useTripDays.tsx` คือปลายทางของ `E6-AC11`** — ผู้เรียกที่ *ควรจะเหลือรายเดียว*
     //    เมื่อย้ายครบ · `useOvernightOverrides` ย้ายมาแล้ว 30 ส.ค. 2026 จึงหลุดจากทะเบียนนี้
     "hooks/useTripDays.tsx": "provider แหล่งเดียวของวัน (E6-AC11) — ปลายทางของอีก 3 ตัวที่เหลือ",

@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildUuidToDayKey } from "@/hooks/dayKeyMaps";
-import { buildDayBridge } from "@/lib/engine/dayBridge";
+import { useTripDays } from "@/hooks/useTripDays";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
 import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
@@ -44,6 +44,8 @@ export type NewBooking = {
 function useBookingsStore(tripId: string | null) {
   const [bookings, setBookings] = useState<TripBooking[]>([]);
   const tripIdRef = useRef<string | null>(null);
+  // 🔴 `E6-AC11` — วันของทริปมาจาก provider เดียว ไม่ยิงเอง (ดู `hooks/useTripDays.tsx`)
+  const { rows: dayRows, bridge } = useTripDays();
   const dayToUuid = useRef<Map<string, string>>(new Map());
   const uuidToDay = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,7 +70,7 @@ function useBookingsStore(tripId: string | null) {
     const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
 
     const channelName = `bookings_changes_${Math.random().toString(36).slice(2)}`;
-    let cancelled = false;
+    // ไม่มี `await` เหลือแล้วหลัง `E6-AC11` ก้าวที่ 4 — ไม่มีการแข่งกันให้ยกเลิก
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
@@ -80,52 +82,9 @@ function useBookingsStore(tripId: string | null) {
         setLoaded(true);
       }
 
-      const dbDays = await fetchReadJson<{ id: string; date: string }[]>(
-        `/api/engine/trips/${tripId}/days`
-      );
-      if (cancelled) return;
-      if (!dbDays) return void setLoaded(true);
-      /**
-       * 🔴 **สะพานไม่มีฝั่ง `ITINERARY` อีกแล้ว — ส่ง `[]` โดยเจตนา** (P1 ตัดสิน 28 ส.ค. 2026)
-       *
-       * เดิมโหลดไฟล์ทริปเกาหลีมาจับคู่ด้วย **วันที่ปฏิทินล้วน ไม่ผูก `tripId` เลย** → ทริปใดก็ตามที่วัน
-       * ทับช่วง 11–21 ต.ค. จะได้คีย์ `"d*"` ปนเข้ามา · P4 วัดเจอสภาพครึ่ง ๆ: ทริปที่ทับ **5 จาก 11 วัน**
-       * → `d0..d4` เขียนได้ · `d5..d10` แปลงเป็น `null` → `insertAt` **`return` เงียบ ไม่มี error ไม่มี toast**
-       * 🎯 **ผู้ใช้กดเพิ่มของในวันที่ 6–11 แล้วไม่มีอะไรเกิดขึ้น และไม่มีอะไรบอกว่าทำไม**
-       *
-       * ✅ ส่ง `[]` **กำจัดสภาพ "วันที่แสดงได้แต่เขียนไม่ได้" ทิ้งทั้งชั้น** ไม่ใช่เพิ่มเงื่อนไขมากันทีละเคส
-       * · ทำได้ตอนนี้เพราะไม่มีหน้าไหนเรนเดอร์วันจากไฟล์นั้นอีกแล้ว → **คีย์ `d*` ไม่มีผู้บริโภคเหลือ**
-       * ⚠️ **ถอดแค่ฝั่ง `ITINERARY` ไม่ใช่ถอดสะพาน** — `dayKeyToDbId` ยังให้ `uuid → uuid`
-       *   ซึ่งเป็นสิ่งที่ทริปแพลตฟอร์มใช้จริงทุกวันนี้
-       */
-      const bridge = buildDayBridge([], dbDays);
-      reportDayBridgeWarningIfAny(bridge);
-      // สะพานเป็นคนถือแมปวัน — ห้ามประกอบเองซ้ำที่นี่
-      // ⚠️ เดิมคอมเมนต์นี้เขียนว่าแมปมี `"d0"→uuid` **และ** `uuid→uuid` — **หมดอายุตั้งแต่ส่ง `[]`**
-      //    ตอนนี้เหลือ `uuid→uuid` ล้วน · ฝั่ง `"d0"` ไม่มีผู้ผลิตและไม่มีผู้บริโภคแล้ว
-      dayToUuid.current = new Map(bridge.dayKeyToDbId);
-      // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
-      uuidToDay.current = buildUuidToDayKey(dbDays, bridge);
-
-      const rows = await fetchReadJson<(TripBooking & { trip_day_id: string | null })[]>(
-        `/api/engine/trips/${tripId}/bookings`
-      );
-      if (cancelled) return;
-      if (rows) {
-        // 🔴 `day_id` ที่ route คืนมาเป็น uuid — แปลงเป็น `"d0"` ที่นี่
-        //    วันที่ไม่มีในไฟล์เดิม → `day_id` เป็น `null` **ไม่ใช่ uuid ดิบ** ที่ UI หาไม่เจอ
-        const mapped = rows.map((r) => ({
-          ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
-        }));
-        setBookings(sortBookings(mapped));
-        // 🔴 booking ไม่ถูกทิ้งเมื่อสะพานวันไม่ครบ (ต่างจาก stops) — ได้แค่ `day_id: null` แทน จึงไม่ต้อง
-        // กัน writeCache (จำนวนแถวเท่าเดิม ไม่มีอะไรให้ปกป้อง) แค่เตือนถ้าบางใบเสียการผูกวันไป
-        reportDayBridgeDropIfAny(
-          rows.filter((r) => r.trip_day_id !== null).length,
-          mapped.filter((r) => r.day_id !== null).length
-        );
-        writeTripCache(activeTripId, "bookings", mapped);
-      }
+      // 🔴 **`E6-AC11` ก้าวที่ 4 (30 ส.ค. 2026 · P3): เลิกยิง `/days` เอง เลิกสร้างสะพานเอง**
+      //    ย้ายไปเอฟเฟกต์แยกข้างล่าง — เอฟเฟกต์นี้เหลือแค่ แคช + channel
+      //    · `subscribe()` ต้องเกิดครั้งเดียวต่อ `tripId` · เคสนับอยู่ใน `daySettingsSubscribe.test.tsx`
       setLoaded(true);
 
       channel = supabase
@@ -141,11 +100,26 @@ function useBookingsStore(tripId: string | null) {
     init();
 
     return () => {
-      cancelled = true;
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
   }, [tripId]);
+
+  /**
+   * 🔴 **เอฟเฟกต์ที่สอง — ผูกกับ "วัน" เท่านั้น** (`E6-AC11` ก้าวที่ 4 · 30 ส.ค. 2026 · P3)
+   * `reload()` แปลง `trip_day_id` → `day_id` ผ่าน `uuidToDay.current` → **ต้องตั้งแมปก่อนเรียกเสมอ**
+   * ⚠️ ต่างจากอีกสาม hook ตรงที่ **booking ไม่ถูกทิ้งเมื่อสะพานไม่ครบ** (`trip_day_id` เป็น nullable
+   *    โดยตั้งใจ — ตั๋วที่ยังไม่ผูกวันมีจริง) · การนับที่ `reload()` จึงนับเฉพาะแถวที่ *มี* วัน
+   */
+  useEffect(() => {
+    if (!supabaseConfigured || !tripId) return;
+    if (!dayRows) return;
+    reportDayBridgeWarningIfAny(bridge);
+    dayToUuid.current = new Map(bridge.dayKeyToDbId);
+    // เหตุผลที่ห้ามกลับด้าน `dayKeyToDbId` เอง อยู่ใน `hooks/dayKeyMaps.ts` (คีย์ซ้อน → `"d0"` หาย)
+    uuidToDay.current = buildUuidToDayKey(dayRows, bridge);
+    void refetchRef.current?.();
+  }, [tripId, dayRows, bridge]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const reload = useCallback(async () => {
