@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CATEGORY_EMOJI } from "@/data/places";
 import type { Place } from "@/data/places";
-import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
@@ -49,7 +48,7 @@ import { useMounted } from "@/hooks/useMounted";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
 import { TripDataProvider } from "@/components/TripDataProvider";
 import { TripStatusFallback } from "@/components/TripStatusFallback";
-import { useLegacyDayPlanGate } from "@/hooks/useLegacyDayPlanGate";
+import { usePlatformItinerary } from "@/hooks/usePlatformItinerary";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 
 
@@ -76,11 +75,33 @@ function stopRowLabel(
 
 /** วันในทริปที่ตรงกับวันที่ todayIso ตามนาฬิกาเครื่อง — ก่อนทริปคืนวันแรก, หลังทริปคืนวันสุดท้าย */
 function findTodayIndex(itinerary: Day[], todayIso: string): number {
+  // 🔴 **`B6` (30 ส.ค. 2026 · P3): อาเรย์ว่างเป็นสภาพปกติแล้ว ไม่ใช่เคสที่เป็นไปไม่ได้**
+  //    เดิม `itinerary` คือ `ITINERARY` ซึ่งมี 11 วันคงที่ตั้งแต่เฟรมแรกเสมอ → `itinerary[0]` ปลอดภัยโดยบังเอิญ
+  //    ตอนนี้วันมาจากฐาน → **เฟรมแรกว่างทุกครั้ง** → `itinerary[0].date` = `TypeError` ทั้งหน้า
+  if (itinerary.length === 0) return 0;
   const exact = itinerary.findIndex((d) => d.date === todayIso);
   if (exact >= 0) return exact;
   if (todayIso < itinerary[0].date) return 0;
   return itinerary.length - 1;
 }
+
+/**
+ * 🔴 **วันว่างสำหรับเฟรมที่ยังไม่มีข้อมูล — ไม่ได้ถูกเรนเดอร์** (`B6` · P3)
+ * hook ด้านล่างรับ `day` ทุกตัวและ **ต้องถูกเรียกทุกเฟรมตามกฎของ React** จึงคืนค่าว่างให้มันแทน
+ * `undefined` · ประตูข้างล่าง (`dayPlanGate`) คืนหน้าอื่นก่อนถึง JSX ที่ใช้ค่าพวกนี้เสมอ
+ * ⚠️ **ห้ามใส่ค่าที่ดูเหมือนข้อมูลจริง** (เช่นวันที่วันนี้) — ถ้าวันหนึ่งประตูรั่ว เราอยากให้จอว่าง
+ *    ไม่ใช่จอที่ดูถูกต้องแต่เป็นของปลอม
+ */
+const EMPTY_DAY: Day = {
+  id: "",
+  date: "",
+  weekdayTh: "",
+  weekdayEn: "",
+  city: "" as Day["city"],
+  cityTh: "",
+  cityEn: "",
+  slots: [],
+};
 
 /** โครงหน้าตอนโหลด — ทรงเดียวกับการ์ด "จุดถัดไป" + ลิสต์ถัดจากนี้ (เฟส 20.4)
  *  เดิมเป็นข้อความ "กำลังโหลด..." เปล่าๆ ขณะที่หน้าแผนมี skeleton อยู่แล้ว
@@ -192,9 +213,18 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides(tripId);
   const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
 
+  // 🔴 **`B6` (30 ส.ค. 2026 · P3) — แหล่งของวันเปลี่ยนจากไฟล์เป็นฐาน · JSX ไม่ถูกแตะ**
+  //    หน้านี้หนักกว่า `/summary` เพราะมันเป็นหน้า *วันเดียว* ที่ index ด้วย `dayIndex` ตรง ๆ
+  //    → ต้องมี "วันว่าง" ให้ hook กิน และประตูต้องคืนหน้าอื่นก่อนถึง JSX ที่ deref `day.` 25 จุด
+  const platformItinerary = usePlatformItinerary(tripId, true);
+  const platformState = platformItinerary.state;
   const itinerary = useMemo(
-    () => applyOvernightOverrides(ITINERARY, overnightOverrides),
-    [overnightOverrides]
+    () =>
+      applyOvernightOverrides(
+        platformState.status === "ready" ? platformState.days : [],
+        overnightOverrides
+      ),
+    [platformState, overnightOverrides]
   );
   const { hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
   const { byDay: weatherByDay } = useTripWeather(itinerary);
@@ -210,7 +240,7 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   const todayIso = localDateIso(now);
   // คำนวณใหม่ทุกครั้งที่ now เดิน (ทุก 30 วิ) แทนที่จะ freeze ด้วย useState ครั้งเดียว
   // (เดิมเปิดค้างข้ามคืนแล้วยังโชว์วันเก่า — บั๊ก 7.5 เพราะมือถือมักอยู่ในกระเป๋าตอนเที่ยวจริง)
-  const todayIndex = useMemo(() => findTodayIndex(ITINERARY, todayIso), [todayIso]);
+  const todayIndex = useMemo(() => findTodayIndex(itinerary, todayIso), [itinerary, todayIso]);
 
   const [dayIndex, setDayIndex] = useState(todayIndex);
   // ตามวันจริงอัตโนมัติเฉพาะตอนที่ผู้ใช้กำลังดู "วันนี้" อยู่พอดี (ยังไม่ได้กด ‹ › เลือกดูวันอื่นเอง)
@@ -223,7 +253,9 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
     }
   }, [todayIndex]);
 
-  const day = itinerary[dayIndex];
+  // 🔴 `?? EMPTY_DAY` — เฟรมที่ยังไม่มีวัน (หรือ index หลุดช่วงตอนจำนวนวันเปลี่ยน)
+  //    ประตูข้างล่างคืนหน้าอื่นก่อนเสมอ · ค่านี้มีไว้ให้ hook ที่ต้องถูกเรียกทุกเฟรมเท่านั้น
+  const day = itinerary[dayIndex] ?? EMPTY_DAY;
   // เทียบวันที่ตรงๆ ไม่ใช่ index — เดิม dayIndex === todayIndex เป็น true เสมอตอนยังไม่ถึงทริป
   // (findTodayIndex clamp เป็น index 0) ทำให้ /today ขึ้นแถบ "ช้ากว่าแผน" ผิดๆ ทั้งที่ยังอีกหลายเดือน — บั๊ก 7.2
   const isRealToday = day.date === todayIso;
@@ -282,7 +314,18 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   // 🔴 `useLegacyDayPlanGate` ไม่ใช่ `useTripDaysGate` — ตัวหลังถามแค่ "มีวันไหม" ซึ่งเลิกเป็นตัวแทน
   //    ของ "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง (ทริปแพลตฟอร์มมีวันจริงแล้ว
   //    → `"ready"` → หน้านี้เคยเรนเดอร์แผนเกาหลีทับทริปอื่น) · เหตุผลเต็มอยู่ในไฟล์ของด่าน
-  const dayPlanGate = useLegacyDayPlanGate(tripId);
+  // 🔴 **`B6`: ประตูไม่ได้หาย — คนตอบเปลี่ยน** (30 ส.ค. 2026 · P3)
+  //    เดิม `useLegacyDayPlanGate` ตอบ `"unsupported"` เสมอ เพราะแหล่งของวันเป็นไฟล์ทริปเกาหลี
+  //    → ทริปอื่นจะได้แผนเกาหลีทับ · ตอนนี้แหล่งเป็นฐานของทริปนั้นเอง คำถามเดิมจึงตอบจากสถานะของมัน
+  //    🎯 **ค่าที่คืนใช้ชื่อเดิมทั้งสามค่า** → กิ่ง `if (dayPlanGate === …)` สามอันข้างล่าง **ไม่ต้องแก้สักบรรทัด**
+  const dayPlanGate: "loading" | "unreadable" | "unsupported" | "ready" =
+    platformState.status === "loading"
+      ? "loading"
+      : platformState.status === "error"
+        ? "unreadable"
+        : itinerary.length === 0
+          ? "unsupported"
+          : "ready";
 
   const nextIndex = dayStops.findIndex((s) => !s.visited_at);
   const nextStop = nextIndex >= 0 ? dayStops[nextIndex] : null;
