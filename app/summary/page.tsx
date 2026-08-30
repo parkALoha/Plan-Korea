@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CATEGORY_EMOJI, type Place } from "@/data/places";
 import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
-import { ITINERARY } from "@/data/itinerary";
 import type { Day } from "@/data/itinerary";
 import { countryOfCitySlug, COUNTRY_NAME_EN, COUNTRY_NAME_TH, type CountryCode } from "@/data/emergency";
 import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
@@ -56,7 +55,7 @@ import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useSignedFiles } from "@/hooks/useSignedFiles";
-import { useLegacyDayPlanGate } from "@/hooks/useLegacyDayPlanGate";
+import { usePlatformItinerary } from "@/hooks/usePlatformItinerary";
 import { DayPlanUnavailableNotice } from "@/components/DayPlanUnavailableNotice";
 import { HotelsFlatList } from "@/components/HotelsFlatList";
 import { useActiveTripId } from "@/hooks/useActiveTripId";
@@ -69,18 +68,25 @@ import NoteBody from "@/components/NoteBody";
  * เอกสารใบเดียวเป็นของประเทศเดียว เลือกไม่ได้แบบเดาเงียบๆ (P1 27 ส.ค. 2026) — ใช้ประเทศที่มีจำนวนวัน
  * มากที่สุดในทริป (ทริปนี้คือเกาหลี 5/6 เมือง) แล้วเขียนชื่อประเทศที่เลือกไว้บนเอกสารเองอยู่แล้ว (h1 +
  * หัวข้อที่พัก ดู ImmigrationSheet.tsx) เจ้าหน้าที่จึงไม่มีทางอ่านผิดประเทศแบบไม่รู้ตัว
- * ⚠️ คำนวณจาก ITINERARY ที่เป็นข้อมูลสถิตย์ ไม่ขึ้นกับ props/state จึงทำครั้งเดียวนอกคอมโพเนนต์ได้
+ * 🔴 **แก้ `B6` (30 ส.ค. 2026 · P3): คำนวณจาก *วันของทริปนั้นจริง ๆ* ไม่ใช่จาก `ITINERARY`**
+ * เดิมเป็นค่าคงที่ระดับโมดูลที่อ่านไฟล์ทริปเกาหลี — พอหน้านี้เรนเดอร์ทริปแพลตฟอร์มได้
+ * **ทริปญี่ปุ่นจะได้เอกสาร ตม. เกาหลี** โดยไม่มีอะไรฟ้อง · เกณฑ์เดิม (ประเทศที่มีวันมากที่สุด)
+ * **ไม่เปลี่ยน** — เปลี่ยนแค่ว่านับจากวันชุดไหน
  */
-const IMMIGRATION_DOCUMENT_COUNTRY: { code: CountryCode; nameEn: string; nameTh: string } = (() => {
+function immigrationCountryOf(
+  days: readonly { city: Day["city"] }[]
+): { code: CountryCode; nameEn: string; nameTh: string } | null {
   const dayCountByCountry = new Map<CountryCode, number>();
-  for (const day of ITINERARY) {
+  for (const day of days) {
     // 🔴 `countryOfCitySlug` คืน `null` เมื่อไม่รู้จัก — ข้ามวันนั้นแทนที่จะนับ `undefined` เป็นประเทศหนึ่ง
     //    (ตัวเก่า `countryOfCity()` index `Record` ที่คีย์เป็น union ตรง ๆ → `undefined` เงียบ ๆ)
     const country = countryOfCitySlug(day.city);
     if (!country) continue;
     dayCountByCountry.set(country, (dayCountByCountry.get(country) ?? 0) + 1);
   }
-  let winner: CountryCode = "kr";
+  // 🔴 **ไม่มีประเทศที่รู้จักเลย → คืน `null` = ไม่แสดงชีต** — ไม่เดา `"kr"` เหมือนเดิม
+  //    (ค่าเริ่มต้น `"kr"` เดิมปลอดภัยเพราะต้นทางเป็นไฟล์ทริปเกาหลี · ตอนนี้ต้นทางเป็นทริปอะไรก็ได้)
+  let winner: CountryCode | null = null;
   let winnerDays = -1;
   for (const [country, days] of dayCountByCountry) {
     if (days > winnerDays) {
@@ -88,8 +94,9 @@ const IMMIGRATION_DOCUMENT_COUNTRY: { code: CountryCode; nameEn: string; nameTh:
       winnerDays = days;
     }
   }
+  if (!winner) return null;
   return { code: winner, nameEn: COUNTRY_NAME_EN[winner], nameTh: COUNTRY_NAME_TH[winner] };
-})();
+}
 
 function dateLabelOf(iso: string, lang: Lang = "th") {
   if (lang === "en") return formatDateEn(iso).replace(/ \d{4}$/, "");
@@ -591,9 +598,21 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
   const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides(tripId);
 
+  // 🔴 **`B6` (30 ส.ค. 2026 · P3) — แหล่งของวันเปลี่ยนจากไฟล์เป็นฐาน · JSX ข้างล่างไม่ถูกแตะสักบรรทัด**
+  //    มติ `:640-641` เก็บ JSX ที่เรนเดอร์จาก `itinerary` ไว้โดยตั้งใจเพื่อวันนี้ — เปลี่ยนแค่ *ใครป้อน*
+  //    🎯 ของที่เปลี่ยนจริงไม่ใช่ "ข้อมูลมาจากไหน" แต่คือ **`itinerary` เลิกเป็นค่าคงที่**:
+  //    เดิมมี 11 วันตั้งแต่เฟรมแรกเสมอ · ตอนนี้ **ว่างในเฟรมแรกทุกครั้ง** แล้วค่อยมี
+  //    (รูป sync→async ที่ `TEAM.md §3.4` เตือนไว้ — หน้านี้ทนได้เพราะเรนเดอร์ด้วย `.map` ทั้งหมด
+  //     ต่างจาก `/today` ที่ index ด้วย `dayIndex` ตรง ๆ จึงต้องมีกิ่งว่างก่อน · ยังไม่ทำในคอมมิตนี้)
+  const platformItinerary = usePlatformItinerary(tripId, true);
+  const platformState = platformItinerary.state;
   const itinerary = useMemo(
-    () => applyOvernightOverrides(ITINERARY, overnightOverrides),
-    [overnightOverrides]
+    () =>
+      applyOvernightOverrides(
+        platformState.status === "ready" ? platformState.days : [],
+        overnightOverrides
+      ),
+    [platformState, overnightOverrides]
   );
   const { hotelLegs, hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
   // ธีมมืดชุดเดียวกับ /today (เฟส 20.4) — กลางดึกที่เกาหลีกดจาก "วันนี้" มาหน้านี้แล้วเจอพื้นครีม
@@ -635,18 +654,18 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   // 🔴 gate เฉพาะโครงวัน + hotelLegs/immigration ที่ผูกกับ itinerary — ไม่แตะ bookings/checklist ที่ไม่พึ่ง
   // trip_days เลย (P1/P3, 27 ส.ค. 2026 — ดู §21/§22) hotelLegs ใช้ itinerary คำนวณช่วงวันของที่พัก จึงนับเป็น
   // itinerary-dependent ด้วยแม้ hotels เองจะเป็น day-independent
-  // 🔴 `useLegacyDayPlanGate` ไม่ใช่ `useTripDaysGate` — ตัวหลังถามแค่ "มีวันไหม" ซึ่งเลิกเป็นตัวแทนของ
-  //    "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง · เหตุผลเต็มอยู่ในไฟล์ของด่าน
-  //    🎯 P1 ยิงจริงบน `/trip/647ed2c2/summary` (ทริปญี่ปุ่น) แล้วได้แผนเกาหลีทั้งฉบับ — หน้านี้เอง
-  const dayPlanGate = useLegacyDayPlanGate(tripId);
-  // 🔴 **`dayPlanReady` เป็นเท็จเสมอตั้งแต่ 28 ส.ค. 2026** — `useLegacyDayPlanGate` ไม่มีสถานะที่ทำให้
-  //    เรนเดอร์ `ITINERARY` ได้อีกแล้ว (`"legacy"` ถูกถอดออกจาก type) · หน้านี้จึง **ปฏิเสธทุกทริป**
-  //    จนกว่า `B6` จะต่อเข้ามา — เหตุผลเต็มอยู่ที่ `lib/engine/legacyDayPlan.ts`
-  //    ⚠️ JSX ที่เรนเดอร์จาก `itinerary` ยังอยู่โดยตั้งใจ — `B6` จะกลับมาใช้เส้นทางเดิมโดยเปลี่ยนแค่
-  //      *แหล่งของวัน* · ลบทิ้งตอนนี้ = ต้องเขียนใหม่ทั้งหมดตอนนั้น
-  const dayPlanReady = false as boolean;
-  const dayPlanEmpty = overallLoaded && dayPlanGate === "unsupported";
-  const dayPlanUnreadable = overallLoaded && dayPlanGate === "unreadable";
+  // 🔴 **`B6`: ประตูไม่ได้หายไป — คนตอบเปลี่ยน** (30 ส.ค. 2026 · P3)
+  //    `useLegacyDayPlanGate` ตอบคำถาม *"หน้านี้เรนเดอร์ทริปนี้ได้ไหม"* แล้วตอบ **"ไม่ได้" เสมอ**
+  //    เพราะแหล่งของวันเป็นไฟล์ทริปเกาหลี → ทริปอื่นจะได้แผนเกาหลีทับ (P1 ยิงเจอบนทริปญี่ปุ่นจริง)
+  //    ตอนนี้แหล่งเป็นฐานของทริปนั้นเอง → **คนตอบคำถามเดียวกันคือสถานะของ `usePlatformItinerary`**
+  //    · `error`  → อ่านไม่ได้ (เน็ต/500) — ผู้ใช้ลองใหม่ได้เอง
+  //    · `ready` + 0 วัน → ทริปไม่มีวัน — รอระบบ ไม่ใช่สิ่งที่เขาแก้เอง
+  //    · `loading` → ไม่ใช่ทั้งสองอย่าง ตกไปที่กิ่ง "กำลังโหลด" ของ JSX เดิม (มีอยู่แล้วท้ายเทอร์นารี)
+  //    🔴 ด่าน `noLegacyItineraryRender.test.ts` แก้พร้อมกันในคอมมิตนี้ ไม่ปล่อยให้หลวมระหว่างกลาง
+  const immigrationCountry = useMemo(() => immigrationCountryOf(itinerary), [itinerary]);
+  const dayPlanReady = platformState.status === "ready" && itinerary.length > 0;
+  const dayPlanEmpty = platformState.status === "ready" && itinerary.length === 0;
+  const dayPlanUnreadable = platformState.status === "error";
 
   function handleExportJson() {
     const payload = {
@@ -806,10 +825,13 @@ export function SummaryContent({ tripId }: { tripId: string }) {
         <div className="px-4 py-10 text-center text-sm text-content-soft">{t("loading")}</div>
       )}
 
+      {/* 🔴 `&& immigrationCountry` เพิ่ม `B6`: เอกสารใบเดียวเป็นของประเทศเดียว — ถ้าไม่รู้ว่าประเทศไหน
+          **ไม่แสดงดีกว่าเดา** (เดิมค่าเริ่มต้นเป็น `"kr"` ซึ่งปลอดภัยตอนต้นทางเป็นไฟล์ทริปเกาหลีเท่านั้น)
+          ตกไปที่กิ่งถัดไปของเทอร์นารีเดิม ไม่ได้เพิ่มกิ่งใหม่ */}
       {overallLoaded && immigrationView && (
-        dayPlanReady ? (
+        dayPlanReady && immigrationCountry ? (
           <ImmigrationSheet
-            country={IMMIGRATION_DOCUMENT_COUNTRY}
+            country={immigrationCountry}
             days={itinerary}
             hotelLegs={hotelLegs}
             hotels={hotels}
@@ -844,8 +866,9 @@ export function SummaryContent({ tripId }: { tripId: string }) {
           {dayPlanEmpty && (
             <>
               <DayPlanUnavailableNotice />
-              {/* 🔴 leg มาจาก ITINERARY ตรงกับที่พักจริงของทริปแพลตฟอร์มไม่ได้เลย (P1/P3, 27 ส.ค. 2026
-                  — ดู §22/§23) แสดงที่พักจริงตรง ๆ ด้วยวันที่ของตัวเองแทนการจัดกลุ่มเป็น leg */}
+              {/* 🔴 กิ่งนี้คือ "ทริปไม่มีวันสักวัน" → `itinerary` ว่าง → จัด leg ไม่ได้ตามนิยาม
+                  แสดงที่พักจริงตรง ๆ ด้วยวันที่ของตัวเองแทน (เหตุผลเดิม 27 ส.ค. คือ leg มาจาก
+                  `ITINERARY` ซึ่ง `B6` แก้ไปแล้ว — แต่ข้อสรุปยังเหมือนเดิมด้วยเหตุผลใหม่) */}
               <HotelsFlatList hotels={hotels} />
             </>
           )}

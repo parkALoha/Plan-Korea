@@ -68,12 +68,33 @@ describe("สัญญาของ type", () => {
  * มันเป็นด่านที่ถูกสำหรับ `TripPlanScreen` (ประกอบกับ `B6` ซึ่งรู้จักทริปแพลตฟอร์มจริง)
  * แต่ **ตอบผิดสำหรับสองหน้านี้** — และการ "รวมให้เหลือด่านเดียว" ดูเหมือนการทำความสะอาดที่สมเหตุสมผลมาก
  */
-describe("หน้าที่เรนเดอร์จาก ITINERARY ต้องใช้ด่านที่ถามคำถามถูก", () => {
+describe("หน้าที่เรนเดอร์วัน ต้องใช้ด่านที่ถามคำถามถูก", () => {
+  /**
+   * 🔴 **แก้ 30 ส.ค. 2026 พร้อม `B6` (P3 — เจ้าของไฟล์นี้เอง)**
+   * เกณฑ์เดิมบังคับชื่อ `useLegacyDayPlanGate(` ตรง ๆ · `B6` เปลี่ยนแหล่งของวันใน `app/summary`
+   * เป็น `usePlatformItinerary` → **คนตอบคำถามเดียวกันเปลี่ยนตัว ไม่ใช่คำถามหายไป**
+   * 🎯 **ผมเขียนเกณฑ์นี้ผูกกับ *ชื่อ* จึงต้องมาแก้ตอนชื่อเปลี่ยน — เกณฑ์ที่ผูกกับ *คำถาม* ไม่ต้อง**
+   *    (และนี่คือใบที่สองในคอมมิตเดียวกัน · อีกใบคือ `noLegacyItineraryRender.test.ts`)
+   * ⚠️ **ส่วนที่ยังบังคับเหมือนเดิมทุกตัวอักษร: ห้ามใช้ `useTripDaysGate`** — มันถามว่า "มีวันไหม"
+   *    ซึ่งเลิกเป็นตัวแทนของ "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง
+   *    · การ "รวมให้เหลือด่านเดียว" ยังดูเหมือนการทำความสะอาดที่สมเหตุสมผลมากเหมือนเดิม
+   */
+  const ACCEPTED_GATES = ["useLegacyDayPlanGate(", "usePlatformItinerary("];
   for (const page of ["app/today/page.tsx", "app/summary/page.tsx"]) {
-    it(`${page} ใช้ useLegacyDayPlanGate ไม่ใช่ useTripDaysGate`, () => {
+    it(`${page} มีด่านที่ถามว่า "เรนเดอร์ทริปนี้ได้ไหม" และไม่ใช่ useTripDaysGate`, () => {
       const src = readFileSync(join(process.cwd(), page), "utf8");
-      expect(src).toContain("useLegacyDayPlanGate(");
+      expect(
+        ACCEPTED_GATES.some((g) => src.includes(g)),
+        `${page} ไม่มีด่านสักตัว — รับได้: ${ACCEPTED_GATES.join(" หรือ ")}`,
+      ).toBe(true);
       expect(src).not.toContain("useTripDaysGate(");
     });
   }
+
+  it("🔴 เคสควบคุม — ตัวตรวจต้องจับ 'ไม่มีด่านเลย' ได้ ไม่ใช่ผ่านเสมอ", () => {
+    // รายการที่กว้างขึ้นมีราคา: ถ้าไม่มีเคสนี้ `some(...)` อาจกลายเป็นจริงเสมอโดยไม่มีใครรู้
+    const gates = ["useLegacyDayPlanGate(", "usePlatformItinerary("];
+    expect(gates.some((g) => "export default function P(){return null}".includes(g))).toBe(false);
+    expect(gates.some((g) => "const x = usePlatformItinerary(id, true);".includes(g))).toBe(true);
+  });
 });

@@ -99,9 +99,35 @@ describe("🔴 E7-AC9 — ไม่มีหน้าไหนมีทางเ
     expect(classifyLegacyDayPlan(elevenDays)).toBe("unsupported");
   });
 
-  it("🔴 ① สองหน้ายังต่อด่านอยู่จริง — ถอดด่านออกเงียบ ๆ ไม่ได้", () => {
-    const missing = PAGES.filter((p) => !stripComments(read(p)).includes("useLegacyDayPlanGate"));
-    expect(missing, `หน้าพวกนี้เลิกเรียกด่านแล้ว: ${missing.join(", ")}`).toEqual([]);
+  /**
+   * 🔴 **แก้ 30 ส.ค. 2026 พร้อม `B6` — เกณฑ์เดิมบังคับชื่อ `useLegacyDayPlanGate` ตัวเดียว**
+   * `B6` เปลี่ยน *คนตอบ* คำถาม *"หน้านี้เรนเดอร์ทริปนี้ได้ไหม"* จาก `useLegacyDayPlanGate`
+   * เป็นสถานะของ `usePlatformItinerary` (แหล่งของวันเป็นฐานของทริปนั้นเองแล้ว)
+   * 🎯 **เกณฑ์ที่ถูกคือ *"มีประตูสักตัวก่อนเรนเดอร์วัน"* ไม่ใช่ *"เรียกฟังก์ชันชื่อนี้"*** —
+   *    ผมเขียนเกณฑ์เดิมผูกกับ **ชื่อ** จึงต้องมาแก้ตอนชื่อเปลี่ยน · เกณฑ์ที่ผูกกับ *คุณสมบัติ* ไม่ต้อง
+   *    (รูปเดียวกับ `waiting-on-user.md §3.10`: กฎที่ผูกกับ *เครื่องมือ* ไม่ถูกใช้กับเครื่องมือถัดไป)
+   * ⚠️ **แก้เกณฑ์ ไม่ใช่ลบเคส** — ตรงกับ *"ทะเบียนต้องผิดได้"* ของ P4 · P1 อนุมัติล่วงหน้าไว้แล้ว
+   */
+  it("🔴 ① สองหน้ายังมีประตูก่อนเรนเดอร์วัน — ถอดด่านออกเงียบ ๆ ไม่ได้", () => {
+    const GATES = ["useLegacyDayPlanGate", "usePlatformItinerary"];
+    const missing = PAGES.filter((p) => {
+      const src = stripComments(read(p));
+      return !GATES.some((g) => src.includes(g));
+    });
+    expect(
+      missing,
+      `หน้าพวกนี้ไม่มีประตูสักตัวแล้ว: ${missing.join(", ")}\n` +
+        `  · ประตูที่รับได้: ${GATES.join(" หรือ ")}\n` +
+        "  · ถ้าเพิ่มประตูแบบใหม่ ให้เติมชื่อเข้า `GATES` พร้อมเหตุผล — อย่าลบเคสนี้",
+    ).toEqual([]);
+  });
+
+  it("🔴 ① เคสควบคุมของประตู — ตัวตรวจต้องจับ 'ไม่มีประตูเลย' ได้จริง", () => {
+    // ถ้าไม่มีเคสนี้ `GATES.some(...)` ที่กว้างขึ้นอาจกลายเป็น "ผ่านเสมอ" โดยไม่มีใครรู้
+    const GATES = ["useLegacyDayPlanGate", "usePlatformItinerary"];
+    const noGate = "export default function Page() { return <div>{days.map(d => d.id)}</div>; }";
+    expect(GATES.some((g) => stripComments(noGate).includes(g))).toBe(false);
+    expect(GATES.some((g) => stripComments("const s = usePlatformItinerary(id, true);").includes(g))).toBe(true);
   });
 
   it("🔴 ② เคสควบคุมฝั่งบวก — ยัด `\"legacy\"` กลับเข้าไป ตัวสแกนต้องจับได้ทั้งสองชั้น", () => {
