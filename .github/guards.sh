@@ -498,6 +498,15 @@ if [ -d "$ROOT/lib" ] && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 && [
   python3 "$NAIVESTRIP" "$ROOT" || fail=1
 fi
 
+# ── E6-AC11: ห้ามหลบ `no-restricted-imports` ด้วย eslint-disable (P1 ขอ · P6 · 30 ส.ค. 2026) ──
+# 🔴 กฎ eslint เองปิดได้ด้วย `eslint-disable-next-line no-restricted-imports` ในไฟล์ที่แก้ได้เอง
+#    หรือปิดได้เงียบกว่านั้นด้วย `/* eslint-disable */` เปล่าๆ (ไม่มีชื่อกฎให้ grep หาเจอเลย)
+#    วัดจริงแล้ว blanket disable = 0 จุดในรีโปวันนี้ → ห้ามได้ที่ราคา 0 ไม่กระทบใครสักคน
+ESLINTDISABLE="$(cd "$(dirname "$0")" && pwd)/check-eslint-disable.py"
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 && [ -f "$ESLINTDISABLE" ]; then
+  python3 "$ESLINTDISABLE" "$ROOT" || fail=1
+fi
+
 # ── E5: ลิงก์ภายในที่ชี้หน้าของทริป ต้องมี tripId (P2 เจอบั๊ก · P1 ขอ · 27 ส.ค. 2026) ──
 # 🔴 ปุ่ม "Immigration sheet" ชี้ไป `/summary?...` ไม่มี `/trip/${tripId}` → กดแล้วไม่ไปไหน
 #    เป็นปุ่มที่ผู้ใช้ต้องกดหน้าเคาน์เตอร์ ตม. วันที่ 11 ต.ค. · รอดมาเพราะสตริงอยู่คนละบรรทัดกับ `href=`

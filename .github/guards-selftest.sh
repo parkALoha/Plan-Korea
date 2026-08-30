@@ -776,6 +776,34 @@ cp "$(cd "$(dirname "$0")" && pwd)"/check-*.py "$(cd "$(dirname "$0")" && pwd)"/
 git -C "$d" add -A >/dev/null 2>&1
 pyc "naive-strip: ตัวด่านทุกตัวต้องผ่านกฎของตัวเอง" pass check-naive-strip.py "$d"
 
+# ── E6-AC11 eslint-disable (P6 · 30 ส.ค. 2026) ────────────────────────────────
+d="$(mkrepo)"; pyc "eslint-disable: ทรีสะอาดต้องผ่าน" pass check-eslint-disable.py "$d"
+
+d="$(mkrepo)"; printf '/* eslint-disable */\nconst x = 1;\n' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "eslint-disable: blanket disable ไม่ระบุชื่อกฎ ต้องโดนจับ" fail check-eslint-disable.py "$d"
+
+d="$(mkrepo)"; printf 'import { buildDayBridge } from "@/lib/engine/dayBridge";\n// eslint-disable-next-line no-restricted-imports\nconst y = buildDayBridge();\n' > "$d/lib/x.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "eslint-disable: หลบ no-restricted-imports นอกไฟล์ยกเว้น ต้องโดนจับ" fail check-eslint-disable.py "$d"
+
+# ✅ เคสควบคุมฝั่งบวก — ไฟล์ที่ eslint.config.mjs ยกเว้นไว้จริง (hooks/useTripDays.tsx) ต้องผ่าน
+d="$(mkrepo)"; mkdir -p "$d/hooks"
+printf 'import { buildDayBridge } from "@/lib/engine/dayBridge";\n// eslint-disable-next-line no-restricted-imports\nexport function useTripDays() { return buildDayBridge(); }\n' > "$d/hooks/useTripDays.tsx"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "eslint-disable: disable ใน hooks/useTripDays.tsx (ไฟล์ยกเว้น) ต้องไม่โดนจับ" pass check-eslint-disable.py "$d"
+
+# ✅ เคสควบคุมฝั่งบวก — ไฟล์ทดสอบ lib/__tests__/** อีกไฟล์ที่ถูกยกเว้นไว้
+d="$(mkrepo)"; mkdir -p "$d/lib/__tests__"
+printf 'import { buildDayBridge } from "../engine/dayBridge";\n// eslint-disable-next-line no-restricted-imports\ntest("x", () => buildDayBridge());\n' > "$d/lib/__tests__/dayBridge.test.ts"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "eslint-disable: disable ใน lib/__tests__/** (ไฟล์ยกเว้น) ต้องไม่โดนจับ" pass check-eslint-disable.py "$d"
+
+# ✅ เคสควบคุมฝั่งบวก — disable กฎอื่นที่ไม่ใช่ no-restricted-imports ต้องไม่โดนจับ (ของจริงมี 27 จุดแบบนี้)
+d="$(mkrepo)"; printf '// eslint-disable-next-line @next/next/no-img-element\nconst img = <img src="x" />;\n' > "$d/lib/x.tsx"
+git -C "$d" add -A >/dev/null 2>&1
+pyc "eslint-disable: disable กฎอื่นที่ไม่ใช่ no-restricted-imports ต้องไม่โดนจับ" pass check-eslint-disable.py "$d"
+
 # ── E5 trip-links (P6 · 27 ส.ค. 2026) ─────────────────────────────────────────
 mktrip() {  # ทรีที่มี route ของทริปจริง
   d="$(mkrepo)"; mkdir -p "$d/app/trip/[tripId]/summary" "$d/app/trip/[tripId]/today" "$d/app/summary"
@@ -844,7 +872,7 @@ mkworktree() {  # ทรีที่ `.git` เป็น *ไฟล์* — ร�
 wiring() {  # wiring <ชื่อทรี> <path>
   label="$1"; dir="$2"
   out="$("$G" "$dir" 2>&1)"
-  for want in api-hosts naive-strip; do
+  for want in api-hosts naive-strip eslint-disable; do
     if printf '%s' "$out" | grep -q "$want"; then
       echo "✅ สาย ($label): guards.sh เรียก $want จริง"
     else
