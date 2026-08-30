@@ -101,9 +101,21 @@ export function useOvernightOverrides(tripId: string | null) {
 
       const next = toOvernightOverrides(rows, bridge) as Overrides;
       setOverrides(next);
-      // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — วัดจากจำนวนวันที่สะพานจับคู่ได้จริง
-      // (`bridge.matched`) เทียบกับจำนวนวันที่ฐานมีจริง (`rows.length`) ไม่ใช่ผลลัพธ์ที่ toMap ให้มา
-      if (!reportDayBridgeDropIfAny(rows.length, bridge.matched)) {
+      // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — เทียบจำนวนวันที่ฐานมี (`rows.length`)
+      // กับจำนวนวันที่สะพาน**แมปได้จริง**
+      //
+      // 🔴 **แก้ 30 ส.ค. 2026 (P3) — เดิมใช้ `bridge.matched` และมันเป็น `0` เสมอตามนิยาม**
+      //    `matched` นับ *คู่ที่จับได้ระหว่างวันในไฟล์กับวันในฐาน* โดยไล่จาก `legacyDays`
+      //    ตั้งแต่ผู้เรียกเปลี่ยนเป็น `buildDayBridge([], rows)` (P2 · 28 ส.ค.) **`legacyDays` ว่างเสมอ
+      //    → `matched === 0` เสมอ** → `reportDayBridgeDropIfAny(11, 0)` = `true` **ทุกครั้งที่โหลด**
+      //    ผลสองอย่าง ทั้งคู่เงียบ:
+      //      ① แถบ 🚧 "ยังแสดงไม่ได้" ติดค้างถาวร (ธง `rowsDropped` **ตั้งได้ ล้างไม่ได้** โดยตั้งใจ)
+      //      ② `writeTripCache` **ไม่เคยถูกเรียกเลย** → ค่าที่นอนไม่เคยลงแคช → อ่านออฟไลน์ไม่เห็น
+      //    🎯 **ไม่มีบรรทัดไหนที่นี่เปลี่ยนเลย — *ความหมายของค่าที่รับมา* เปลี่ยนใต้เท้า**
+      //    · คอมเมนต์เหนือขึ้นไป 8 บรรทัดจับ expiry ฝาแฝดของมันได้แล้ว (`dayKeyToDbId` "หมดอายุตั้งแต่ส่ง `[]`")
+      //      **แต่ `matched` ที่อยู่ในบรรทัดถัดมาไม่ถูกตรวจ** — เจอตอน `B6` เปิดหน้าจริงแล้วแถบยังค้าง
+      //    ✅ ตัวที่ถูกคือ `dayKeyToDbId.size` = จำนวนวันที่แมปได้จริง (uuid→uuid หนึ่งตัวต่อวันในฐาน)
+      if (!reportDayBridgeDropIfAny(rows.length, bridge.dayKeyToDbId.size)) {
         writeTripCache(activeTripId, "overnightOverrides", next);
       }
       setLoaded(true);
