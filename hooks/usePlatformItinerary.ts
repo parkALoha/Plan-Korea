@@ -15,6 +15,11 @@ type DbDayRow = {
   date: string;
   city_id: string | null;
   city: { id: string; legacy_slug: string | null; name_th: string; name_en: string } | null;
+  /** 🔴 เพิ่ม 30 ส.ค. 2026 (`B6` · P3) — API คืนสองฟิลด์นี้มาตลอด **แต่ `toDay` ทิ้งมันไป**
+   *  `overnight_kind` = `'none'` วันบิน/ไม่ได้นอนโรงแรม · `'city'` นอนในเมือง · `null` ยังไม่ตัดสิน (`D80`)
+   *  `catalog_cities.legacy_slug` = เมืองที่ **นอน** (คนละคีย์กับ `city` ที่แปลว่าเมืองที่วันนั้น *อยู่*) */
+  overnight_kind?: "city" | "none" | null;
+  catalog_cities?: { legacy_slug: string | null } | null;
 };
 
 export type PlatformItineraryState =
@@ -156,6 +161,18 @@ function toDay(row: DbDayRow): Day {
     city: (row.city?.legacy_slug ?? "") as Day["city"],
     cityTh: row.city?.name_th ?? UNSET_CITY_TH,
     cityEn: row.city?.name_en ?? UNSET_CITY_EN,
+    // 🔴 **`B6` (30 ส.ค. 2026 · P3) — สองฟิลด์นี้เคยถูกทิ้ง และ `hotelLegs` ต้องการมันจริง**
+    //    เจอตอนเปิด `/summary` ของทริปที่ `E7` ย้ายมา: ที่พักถูกจัดเป็น **7 ช่วง ครอบ 11 คืน**
+    //    ทั้งที่ฐานบอกว่านอนจริง 9 คืน (`overnight_kind='city'` 9 วัน) — วันบินสองวัน (`'none'`)
+    //    ถูกนับเป็นคืนที่ต้องมีโรงแรมด้วย เพราะ `hotelLegs` เห็น `noHotel` เป็น `undefined`
+    //    🎯 **ไม่ใช่ข้อมูลหาย — มันอยู่ในผลลัพธ์ของ API มาตลอด แค่ไม่มีใครแมปมันเข้า `Day`**
+    //    ⚠️ `overnightCity` ตั้งเฉพาะตอน `kind === 'city'` — `hotelLegs` อ่านเป็น `overnightCity ?? city`
+    //       ถ้าตั้งตอน `null` (ยังไม่ตัดสิน) จะกลายเป็นการตัดสินแทนผู้ใช้ ซึ่ง `D80` ห้ามไว้
+    noHotel: row.overnight_kind === "none" ? true : undefined,
+    overnightCity:
+      row.overnight_kind === "city" && row.catalog_cities?.legacy_slug
+        ? (row.catalog_cities.legacy_slug as Day["city"])
+        : undefined,
     slots: [],
   };
 }
