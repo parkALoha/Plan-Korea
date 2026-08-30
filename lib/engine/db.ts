@@ -1144,6 +1144,30 @@ export function stopsOfPlan(db: Db, tripId: string, planId: string) {
     .order("id", { ascending: true });
 }
 
+/** `rank` ของ **จุดแวะเท่านั้น** ในวันหนึ่ง — ไม่รวมแถว `kind='event'`
+ *
+ *  🔴 **ใช้ตัวนี้ทุกที่ที่แปล `atIndex` → `rank`** (`POST` แทรก · `PATCH` ย้าย) · 30 ส.ค. 2026 · P2 ไล่เจอ
+ *  `atIndex` มาจากลิสต์ที่ผู้ใช้เห็น ซึ่ง **ไม่มีแถว event** (`splitDayEvents` ดึงออกไปแสดงแยก)
+ *  → ถ้าเทียบกับลิสต์เต็ม ตำแหน่งจะเลื่อนตามจำนวน event ของวันนั้น **และเลื่อนแบบเงียบ**
+ *
+ *  🎯 **ไม่ใช่แค่กันปัญหาของไคลเอนต์ — มันผิดอยู่แล้วก่อนใครจะกรอง**
+ *  ตำแหน่งของ event เทียบกับจุดแวะ **ไม่มีความหมาย**: `splitDayEvents` แบ่ง before/after จาก
+ *  *ลำดับของแถว event กันเอง* ไม่ได้ดูว่ามันอยู่ตรงไหนเทียบจุดแวะ → เอามานับตำแหน่งแทรกไม่ได้ตั้งแต่ต้น
+ *
+ *  ⚠️ **`ranksInDay` (ลิสต์เต็ม) ยังต้องใช้ที่ `PUT` เรียงใหม่** — ตรงนั้นใช้ตรวจว่า `orderedIds`
+ *  เป็นของวันนี้จริงไหม ซึ่งต้องเทียบกับ *ทุกแถว* ไม่ใช่เฉพาะจุดแวะ */
+export function stopRanksInDay(db: Db, tripId: string, planId: string, tripDayId: string) {
+  return engineTable(db, "trip_stops")
+    .select("id, rank")
+    .eq("trip_id", tripId)
+    .eq("plan_id", planId)
+    .eq("trip_day_id", tripDayId)
+    .neq("kind", "event")
+    .is("deleted_at", null)
+    .order("rank", { ascending: true })
+    .order("id", { ascending: true });
+}
+
 /** `rank` ของจุดแวะในวันหนึ่ง เรียงแล้ว — ใช้คำนวณตำแหน่งแทรก */
 export function ranksInDay(db: Db, tripId: string, planId: string, tripDayId: string) {
   return engineTable(db, "trip_stops")

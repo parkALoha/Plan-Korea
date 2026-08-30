@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import {
-  catalogPlaceIdBySlug, insertStop, ranksInDay, softDeleteStop, stopsOfPlan, updateStop, updateStopInDay,
+  catalogPlaceIdBySlug, insertStop, ranksInDay, softDeleteStop, stopRanksInDay, stopsOfPlan, updateStop,
+  updateStopInDay,
 } from "@/lib/engine/db";
 import type { InsertRow } from "@/lib/engine/db";
 import { rankBetween, rankForInsert } from "@/lib/engine/rank";
@@ -176,7 +177,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
   const db = await createServerSupabase();
 
   // ตำแหน่งแทรก → `rank` · **อ่าน rank ปัจจุบันของวันนั้นก่อนเสมอ**
-  const { data: existing, error: rankErr } = await ranksInDay(db, tripId, planId, tripDayId);
+  // 🔴 `stopRanksInDay` ไม่ใช่ `ranksInDay` — `atIndex` มาจากลิสต์ที่ไม่มี event (ดูเหตุผลที่ `db.ts`)
+  const { data: existing, error: rankErr } = await stopRanksInDay(db, tripId, planId, tripDayId);
   if (rankErr) return NextResponse.json({ error: rankErr.message }, { status: 502 });
   const ranks = ((existing ?? []) as { rank: string }[]).map((r) => r.rank);
   const at = typeof b.atIndex === "number" ? b.atIndex : ranks.length;
@@ -272,7 +274,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
   if (typeof b.tripDayId === "string" && UUID.test(b.tripDayId)) {
     const planId = String(b.planId ?? "");
     if (!UUID.test(planId)) return NextResponse.json({ error: "ต้องมี planId เมื่อย้ายวัน" }, { status: 400 });
-    const { data: existing, error: rankErr } = await ranksInDay(db, tripId, planId, b.tripDayId);
+    // 🔴 `stopRanksInDay` เช่นกัน — `atIndex` ของการย้ายก็มาจากลิสต์ที่ไม่มี event
+    const { data: existing, error: rankErr } = await stopRanksInDay(db, tripId, planId, b.tripDayId);
     if (rankErr) return NextResponse.json({ error: rankErr.message }, { status: 502 });
     const ranks = ((existing ?? []) as { id: string; rank: string }[]).filter((r) => r.id !== id).map((r) => r.rank);
     patch.trip_day_id = b.tripDayId;
