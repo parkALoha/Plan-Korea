@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { City } from "@/data/itinerary";
 import { supabaseConfigured } from "@/lib/supabase";
-import { buildDayBridge } from "@/lib/engine/dayBridge";
-import { toOvernightOverrides, type DayOvernightRow } from "@/lib/engine/overnightShape";
+import { useTripDays } from "@/hooks/useTripDays";
+import { toOvernightOverrides } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
 import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { showToast } from "@/lib/toast";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
-import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
 type Overrides = Record<string, City>;
 
@@ -48,6 +47,8 @@ export function useOvernightOverrides(tripId: string | null) {
   }
   const tripIdRef = useRef<string | null>(null);
   const dayIdRef = useRef<Map<string, string>>(new Map());
+  // 🔴 `E6-AC11` — วันของทริปมาจาก provider เดียว ไม่ยิงเอง (ดู `hooks/useTripDays.tsx`)
+  const { rows, bridge } = useTripDays();
 
   useEffect(() => {
     tripIdRef.current = tripId;
@@ -55,34 +56,25 @@ export function useOvernightOverrides(tripId: string | null) {
 
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
-    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
-    let cancelled = false;
+    const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว
+    // 🔴 **ไม่มี `async`/`cancelled` แล้ว** — `E6-AC11` ย้ายการยิง `/days` ไป provider
+    //    เอฟเฟกต์นี้จึงเป็นการ *แปลงค่าที่มีอยู่แล้ว* ล้วน ๆ · ไม่มี await = ไม่มีการแข่งกันให้ยกเลิก
+    // 🔴 `rows === null` = **ยังไม่ได้คำตอบ หรืออ่านไม่ได้** — ไม่ใช่ "ทริปไม่มีวัน" (`[]` ต่างหากที่แปลว่านั้น)
+    //    ปล่อยผ่านเป็น `[]` ตรงนี้จะทำให้แคชถูกทับด้วยผลว่าง ซึ่งเป็นบั๊กที่ `reportDayBridgeDropIfAny` กันอยู่
 
-    async function init() {
+    function apply() {
       const cached = readTripCache<Overrides>(activeTripId, "overnightOverrides");
       if (cached) {
         setOverrides(cached);
         setLoaded(true);
       }
 
-      const rows = await fetchReadJson<DayOvernightRow[]>(`/api/engine/trips/${tripId}/days`);
-      if (cancelled) return;
+      // 🔴 **`E6-AC11` (30 ส.ค. 2026 · P3): เลิกยิง `/days` เอง — อ่านจาก `useTripDays()` แหล่งเดียว**
+      //    เดิม hook นี้ยิงเองแล้วสร้าง `buildDayBridge([], rows)` ใบของตัวเอง เหมือนอีก 3 ตัว
+      //    → สะพาน 4 ใบที่ต้องเพี้ยนพร้อมกันถึงจะมีคนเห็น · ใบนี้เพี้ยนไปแล้วจริงเมื่อวันเดียวกัน
+      //      (`bridge.matched` เป็น `0` เสมอ → แถบ 🚧 ค้าง + แคชไม่เคยถูกเขียน)
       if (!rows) return void setLoaded(true);
 
-            /**
-       * 🔴 **สะพานไม่มีฝั่ง `ITINERARY` อีกแล้ว — ส่ง `[]` โดยเจตนา** (P1 ตัดสิน 28 ส.ค. 2026)
-       *
-       * เดิมโหลดไฟล์ทริปเกาหลีมาจับคู่ด้วย **วันที่ปฏิทินล้วน ไม่ผูก `tripId` เลย** → ทริปใดก็ตามที่วัน
-       * ทับช่วง 11–21 ต.ค. จะได้คีย์ `"d*"` ปนเข้ามา · P4 วัดเจอสภาพครึ่ง ๆ: ทริปที่ทับ **5 จาก 11 วัน**
-       * → `d0..d4` เขียนได้ · `d5..d10` แปลงเป็น `null` → `insertAt` **`return` เงียบ ไม่มี error ไม่มี toast**
-       * 🎯 **ผู้ใช้กดเพิ่มของในวันที่ 6–11 แล้วไม่มีอะไรเกิดขึ้น และไม่มีอะไรบอกว่าทำไม**
-       *
-       * ✅ ส่ง `[]` **กำจัดสภาพ "วันที่แสดงได้แต่เขียนไม่ได้" ทิ้งทั้งชั้น** ไม่ใช่เพิ่มเงื่อนไขมากันทีละเคส
-       * · ทำได้ตอนนี้เพราะไม่มีหน้าไหนเรนเดอร์วันจากไฟล์นั้นอีกแล้ว → **คีย์ `d*` ไม่มีผู้บริโภคเหลือ**
-       * ⚠️ **ถอดแค่ฝั่ง `ITINERARY` ไม่ใช่ถอดสะพาน** — `dayKeyToDbId` ยังให้ `uuid → uuid`
-       *   ซึ่งเป็นสิ่งที่ทริปแพลตฟอร์มใช้จริงทุกวันนี้
-       */
-      const bridge = buildDayBridge([], rows);
       // 🔴 **สะพานว่าง ≠ ไม่มีใครตั้งค่าที่นอน** — ถ้าไม่บอก หน้าจอจะเงียบเหมือนไม่มีข้อมูล
       //    ทั้งที่จริงคือ `E7` ยังไม่ได้ย้ายวันมาสักวัน (`P-21` ในรูปที่จะกัดตอน cutover)
       // `dayBridgeWarning` ถูกถอด: ทุกกิ่งของมันอิง `ITINERARY` ทั้งหมด → ส่ง `[]` แล้ว
@@ -121,11 +113,8 @@ export function useOvernightOverrides(tripId: string | null) {
       setLoaded(true);
     }
 
-    init();
-    return () => {
-      cancelled = true;
-    };
-  }, [tripId]);
+    apply();
+  }, [tripId, rows, bridge]);
 
   const setOvernightCity = useCallback(
     async (dayId: string, city: City) => {

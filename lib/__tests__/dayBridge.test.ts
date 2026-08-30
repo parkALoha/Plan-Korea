@@ -239,8 +239,10 @@ describe("ทะเบียนผู้เรียก buildDayBridge", () => {
   const CALLERS: Record<string, string> = {
     "hooks/useStops.ts": "จุดแวะ — แปลง trip_day_id เป็นคีย์ที่ UI ใช้",
     "hooks/useDaySettings.ts": "ตั้งค่ารายวัน",
-    "hooks/useOvernightOverrides.ts": "ความตั้งใจเรื่องที่นอน",
     "hooks/useBookings.tsx": "การจอง",
+    // 🔴 **`hooks/useTripDays.tsx` คือปลายทางของ `E6-AC11`** — ผู้เรียกที่ *ควรจะเหลือรายเดียว*
+    //    เมื่อย้ายครบ · `useOvernightOverrides` ย้ายมาแล้ว 30 ส.ค. 2026 จึงหลุดจากทะเบียนนี้
+    "hooks/useTripDays.tsx": "provider แหล่งเดียวของวัน (E6-AC11) — ปลายทางของอีก 3 ตัวที่เหลือ",
   };
   /** ไฟล์ที่ *นิยาม* ฟังก์ชัน — ไม่ใช่ผู้เรียก (ตัวสแกนเห็น `export function buildDayBridge(`) */
   const DEFINITION = "lib/engine/dayBridge.ts";
@@ -255,7 +257,12 @@ describe("ทะเบียนผู้เรียก buildDayBridge", () => {
   }
 
   it("🔴 ควบคุมฝั่งบวก — ต้องหาผู้เรียกเจอจริง ไม่งั้น `0 offender` แปลว่าตัวสแกนพัง", () => {
-    expect(callers().length, "หาผู้เรียก buildDayBridge ไม่เจอสักไฟล์ — ตัวสแกนพัง").toBeGreaterThan(3);
+    // 🔴 **เกณฑ์นี้ต้อง *ลดลง* ตาม `E6-AC11` ไม่ใช่คงที่** — งานคือไล่ผู้เรียกให้เหลือรายเดียว
+    //    เดิมปัก `> 3` (มี 4 ราย) · ย้าย `useOvernightOverrides` แล้วเหลือ 4 ราย (รวม provider ใหม่)
+    //    🎯 **ถ้าปักเป็นเลขคงที่ ความคืบหน้าของ `AC11` จะมาในรูปเคสแดง** — รูปเดียวกับ positive control
+    //       ของ `layoutImportGraph` ที่ปักชื่อไฟล์ที่แผนกำลังไล่ออก (P3 · 30 ส.ค. 2026)
+    //    ✅ สิ่งที่เคสนี้ต้องพิสูจน์คือ *ตัวสแกนหาเจอ* → `> 0` พอ · จำนวนที่ถูกต้องเป็นหน้าที่ของทะเบียน
+    expect(callers().length, "หาผู้เรียก buildDayBridge ไม่เจอสักไฟล์ — ตัวสแกนพัง").toBeGreaterThan(0);
   });
 
   it("🔴 ผู้เรียกรายใหม่ต้องมาขึ้นทะเบียน — ส่ง `ITINERARY` = อ้างว่าแผนของทริปนั้นอยู่ในไฟล์", () => {
