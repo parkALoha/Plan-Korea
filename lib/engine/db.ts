@@ -1131,7 +1131,7 @@ export function duplicatePlan(db: Db, tripId: string, sourcePlanId: string, name
 // ───────────────────────────────────────────────────────────────────────────
 
 const STOP_COLS =
-  "id, trip_day_id, kind, rank, dwell_minutes, travel_mode, note, photo_path, intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label, visited_at, legacy_added_by, updated_at, custom_place_id, schedule_bound, fixed_start_time, fixed_end_time, catalog_places(legacy_slug)";
+  "id, trip_day_id, kind, rank, dwell_minutes, travel_mode, note, photo_path, intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label, visited_at, legacy_added_by, updated_at, custom_place_id, event_kind, schedule_bound, fixed_start_time, fixed_end_time, day_offset, title, title_en, icon, is_alert, time_is_flexible, flight_no, flight_from_code, flight_to_code, flight_from_en, flight_to_en, layover_baggage, layover_immigration, layover_leaves_airport, layover_terminal_change, place_ref, catalog_places(legacy_slug)";
 
 /** จุดแวะของแผน **ที่ยังไม่ถูกลบ** เรียง `(rank, id)` — `D81` ③ */
 export function stopsOfPlan(db: Db, tripId: string, planId: string) {

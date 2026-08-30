@@ -31,8 +31,41 @@ type Row = {
   transfer_target_label: string | null; visited_at: string | null;
   legacy_added_by: string | null; updated_at: string;
   custom_place_id: string | null;
-  schedule_bound: string | null; fixed_start_time: string | null; fixed_end_time: string | null;
+  event_kind: string | null; schedule_bound: string | null;
+  fixed_start_time: string | null; fixed_end_time: string | null; day_offset: number;
+  title: string | null; title_en: string | null; icon: string | null;
+  is_alert: boolean; time_is_flexible: boolean;
+  flight_no: string | null; flight_from_code: string | null; flight_to_code: string | null;
+  flight_from_en: string | null; flight_to_en: string | null;
+  layover_baggage: string | null; layover_immigration: string | null;
+  layover_leaves_airport: boolean | null; layover_terminal_change: boolean | null;
+  place_ref: string | null;
   catalog_places: { legacy_slug: string | null } | null;
+};
+
+/** เนื้อของแถว `kind === 'event'` — **ฐานบังคับว่าคอลัมน์กลุ่มนี้เป็น `null` เสมอถ้าไม่ใช่ event**
+ *  (`trip_stops_event_columns_only_on_events`) → แยกเป็นก้อนย่อยจึงตรงกับโครงฐาน ไม่ใช่แค่จัดระเบียบ
+ *
+ *  🔴 **ทำไมไม่แปะ 20 ฟิลด์ลง `StopDto` ตรง ๆ** (P3 เสนอ · P1 ตัดสิน · 30 ส.ค. 2026)
+ *  ทริปนี้มี **71 แถวที่ไม่ใช่ event** → จะได้ `null` 20 ตัวต่อแถว ทุกคำขอ ตลอดไป
+ *  · และทำให้ *ชนิดเดียว* ถือความหมายสองแบบ — รูปที่เราปฏิเสธไปแล้วตอน `read_only_selftest`
+ *  · ✅ **มี `event` = เป็น event** · ไคลเอนต์ไม่ต้องเทียบสตริง `kind` ที่ไหนอีก และ `tsc` บังคับให้เช็คก่อนใช้
+ *
+ *  ⚠️ **`schedule_bound` เป็น *ตัวคั่น* ไม่ใช่ *ป้ายกำกับ*** — ใบที่เป็น `null` **ก่อนหน้า** ใบที่เป็น
+ *  `'before'` ก็อยู่ฝั่งก่อนจุดแวะด้วย · ห้ามอ่านทีละแถวแล้วตัดสิน
+ *  กฎเต็ม: `hooks/useDaySchedule.ts:138-142` บน `main` (แบ่งด้วย **ลำดับ** ไม่ใช่ **เวลา**) */
+export type EventDto = {
+  /** 🔴 สามตัวนี้ **ไม่ใช่ `null`** เพราะ `trip_stops_event_needs_core` บังคับไว้ที่ฐาน
+   *  → ถ้าใครถอด constraint นั้น ต้องกลับมาแก้ตรงนี้ด้วย ไม่ใช่แค่ที่ migration */
+  fixed_start_time: string; title: string; icon: string;
+  event_kind: string | null; schedule_bound: string | null; fixed_end_time: string | null;
+  day_offset: number; title_en: string | null; is_alert: boolean; time_is_flexible: boolean;
+  flight_no: string | null; flight_from_code: string | null; flight_to_code: string | null;
+  flight_from_en: string | null; flight_to_en: string | null;
+  layover_baggage: string | null; layover_immigration: string | null;
+  layover_leaves_airport: boolean | null; layover_terminal_change: boolean | null;
+  /** `'hotel'` = พิกัดมาจาก `trip_hotels` ตอน render ไม่ใช่ค่าคงที่ (ฝั่งเก่า: `lib/eventPlace.ts`) */
+  place_ref: string | null;
 };
 
 export type StopDto = {
@@ -42,20 +75,11 @@ export type StopDto = {
   kind: string; intercity_from: string | null; intercity_to: string | null;
   intercity_mode: string | null; transfer_target_time: string | null;
   transfer_target_label: string | null; visited_at: string | null;
-  /** 🔴 สามตัวนี้ส่ง **ดิบ** ให้ไคลเอนต์แปลงเอง (`B6` · 30 ส.ค. 2026 · P3 ขอ · P1 เพิ่ม)
-   *  ฐานมีมาตั้งแต่ก้อน `E7` 08 **แต่ไม่เคยผ่าน DTO เลย** → ไคลเอนต์แยก event ออกจากจุดแวะไม่ได้
-   *  จึงไหลไปตาม `rank` ต่อท้ายวัน (เช็คเอาต์โรงแรมไปกองท้ายวัน)
-   *
-   *  ⚠️ **`schedule_bound` เป็น *ตัวคั่น* ไม่ใช่ *ป้ายกำกับ*** — ใบที่เป็น `null` **ก่อนหน้า**
-   *  ใบที่เป็น `'before'` ก็อยู่ฝั่งก่อนจุดแวะด้วย · ห้ามอ่านทีละแถวแล้วตัดสิน
-   *  กฎเต็มอยู่ที่ `hooks/useDaySchedule.ts:138-142` บน `main` (แบ่งด้วย *ลำดับ* ไม่ใช่ *เวลา*)
-   *
-   *  📌 อ่านอย่างเดียว — **ไม่ได้เพิ่มเข้า `WRITABLE`** เพราะยังไม่มีเส้นทางไหนแก้มันจากไคลเอนต์ */
-  schedule_bound: string | null;
-  fixed_start_time: string | null; fixed_end_time: string | null;
+  event?: EventDto;
 };
 
 function toDto(r: Row, orderIndex: number): StopDto {
+  const ev = toEventDto(r);
   return {
     id: r.id, trip_day_id: r.trip_day_id,
     // 🔴 คลังกลางใช้ slug · ของทริปใช้ id ตรง · `""` = สถานที่ที่ UI เดิมไม่รู้จัก
@@ -66,8 +90,26 @@ function toDto(r: Row, orderIndex: number): StopDto {
     kind: r.kind, intercity_from: r.intercity_from, intercity_to: r.intercity_to,
     intercity_mode: r.intercity_mode, transfer_target_time: r.transfer_target_time,
     transfer_target_label: r.transfer_target_label, visited_at: r.visited_at,
-    schedule_bound: r.schedule_bound,
-    fixed_start_time: r.fixed_start_time, fixed_end_time: r.fixed_end_time,
+    ...(ev ? { event: ev } : {}),
+  };
+}
+
+/** 📌 คืน `undefined` ถ้าแกนหลักไม่ครบ — **เข้าไม่ถึงตราบใดที่ `trip_stops_event_needs_core` ยังอยู่**
+ *  ไม่ทำให้ทั้งคำขอล้มเพราะแถวเดียว · ถ้าอยากให้ดัง ต้องเป็นเคสของ P4 ไม่ใช่ `throw` ที่นี่ */
+function toEventDto(r: Row): EventDto | undefined {
+  if (r.kind !== "event") return undefined;
+  if (r.fixed_start_time === null || r.title === null || r.icon === null) return undefined;
+  return {
+    fixed_start_time: r.fixed_start_time, title: r.title, icon: r.icon,
+    event_kind: r.event_kind, schedule_bound: r.schedule_bound, fixed_end_time: r.fixed_end_time,
+    day_offset: r.day_offset, title_en: r.title_en,
+    is_alert: r.is_alert, time_is_flexible: r.time_is_flexible,
+    flight_no: r.flight_no, flight_from_code: r.flight_from_code, flight_to_code: r.flight_to_code,
+    flight_from_en: r.flight_from_en, flight_to_en: r.flight_to_en,
+    layover_baggage: r.layover_baggage, layover_immigration: r.layover_immigration,
+    layover_leaves_airport: r.layover_leaves_airport,
+    layover_terminal_change: r.layover_terminal_change,
+    place_ref: r.place_ref,
   };
 }
 
