@@ -11,6 +11,47 @@ const CATEGORY_LABEL: Record<ChecklistCategory, string> = {
 
 const CATEGORY_ORDER: ChecklistCategory[] = ["packing", "before_hotel_checkout", "before_flight"];
 
+/** หัวข้อของกองที่หมวดไม่อยู่ใน `CATEGORY_ORDER` — เป็น *ทางออก* ไม่ใช่ *ทางเข้า* */
+const UNGROUPED_LABEL = "📌 อื่น ๆ";
+const UNGROUPED_KEY = "__ungrouped";
+
+export type ChecklistGroup = { key: string; label: string; items: ChecklistItem[] };
+
+/**
+ * 🔴 **จัดกลุ่มโดยที่ *ทุกแถวต้องออกมาเสมอ* ไม่ว่า `category` จะเป็นอะไร** (P2 เจอ · P1 ตัดสิน · 29 ส.ค. 2026)
+ *
+ * ของเดิมวน `CATEGORY_ORDER` แล้ว `items.filter((i) => i.category === c)` — **แถวที่หมวดไม่ตรงสักกอง
+ * จะไม่ถูกเรนเดอร์ที่ไหนเลย** และเพราะ `items.length` ไม่ใช่ 0 ข้อความ *"ยังไม่มีของที่ต้องเตรียม"*
+ * ก็ไม่ขึ้นด้วย → **ผู้ใช้เห็นรายการที่ดูปกติทุกประการ แต่ของเขาไม่อยู่ในนั้น**
+ *
+ * 🎯 **คนละกลไกกับ `CATEGORY_*[key]` ที่คืน `undefined`** — อันนั้นค่าหาย อันนี้ *แถว* หาย
+ * · ไม่มี `TABLE[x]` ให้ `grep` เจอ · ไม่มี `undefined` ให้ `tsc` บ่น
+ * · **ตัวสแกนทุกใบที่ทีมเขียนวันที่ 29 ส.ค. ผ่านมันฉลุย**
+ *
+ * เกิดได้จริงเพราะ `checklist_items.category` เป็น `text not null default 'packing'`
+ * **ไม่มี CHECK constraint** (`0022_checklist_categories.sql:4`)
+ *
+ * 📌 **ทำไมแก้ที่ตัวอ่าน ไม่ใช่เติม `CHECK` ที่ฐาน** (P1 ตัดสิน): `CHECK` กันค่าใหม่ได้
+ * **แต่ไม่ช่วยค่าที่เข้ามาก่อนมันมี** — คอลัมน์นี้ไม่มี `CHECK` มาตั้งแต่ 24 ส.ค. จึงไม่มีใครรับประกัน
+ * ได้ว่าฐานสะอาดอยู่แล้ว · และทางนี้ **ไม่ต้องมีใครรัน migration** ปลอดภัยทันทีที่ deploy
+ */
+export function groupChecklistItems(items: ChecklistItem[]): ChecklistGroup[] {
+  const known = new Set<string>(CATEGORY_ORDER);
+  const groups: ChecklistGroup[] = CATEGORY_ORDER.map((c) => ({
+    key: c,
+    label: CATEGORY_LABEL[c],
+    items: items.filter((i) => i.category === c),
+  }));
+  // กองท้ายสุด — รับทุกอย่างที่เหลือ จึงไม่มีแถวไหนตกหล่นตามนิยาม
+  groups.push({
+    key: UNGROUPED_KEY,
+    label: UNGROUPED_LABEL,
+    items: items.filter((i) => !known.has(i.category)),
+  });
+  // กองว่างไม่ต้องขึ้นหัวข้อ — ทริปปกติจะได้ไม่เห็น "อื่น ๆ" เปล่า ๆ
+  return groups.filter((g) => g.items.length > 0);
+}
+
 export function ChecklistPanel({
   items,
   onAdd,
@@ -83,14 +124,12 @@ export function ChecklistPanel({
         </p>
       ) : (
         <div className="space-y-4">
-          {CATEGORY_ORDER.map((c) => {
-            const groupItems = items.filter((i) => i.category === c);
-            if (groupItems.length === 0) return null;
+          {groupChecklistItems(items).map((group) => {
             return (
-              <div key={c}>
-                <div className="mb-1.5 text-[11px] font-semibold text-content-soft">{CATEGORY_LABEL[c]}</div>
+              <div key={group.key}>
+                <div className="mb-1.5 text-[11px] font-semibold text-content-soft">{group.label}</div>
                 <ul className="space-y-1">
-                  {groupItems.map((item) => (
+                  {group.items.map((item) => (
                     <li
                       key={item.id}
                       className="flex items-center gap-2 rounded-xl border border-line bg-surface-raised px-3 py-2 shadow-sm shadow-ink/5"
