@@ -18,6 +18,9 @@ import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
 
+/** คีย์ของถังท้าย — ไม่ใช่หมวดจริง จึงตั้งชื่อให้ชนกับหมวดในฐานไม่ได้ */
+const UNGROUPED_KEY = "__ungrouped";
+
 const CATEGORY_ORDER: Category[] = [
   "restaurant",
   "culture",
@@ -215,13 +218,36 @@ function PlaceSidebarContent({
      * เดิมโค้ดนี้วน `CATEGORY_ORDER` อย่างเดียว → **สถานที่ที่หมวดไม่รู้จักจะไม่ถูกเรนเดอร์เลย
      * และไม่มี error อะไรทั้งสิ้น** — ผู้ใช้เพิ่มสถานที่แล้วมันหายไปจากคลัง
      * 🎯 **`tsc` มองไม่เห็นข้อนี้ ต่อให้ชนิดถูกทุกบรรทัด** — มันคือการหล่นหายจาก *ลำดับ* ไม่ใช่จาก *ชนิด*
-     * · ท้ายลิสต์เสมอ (ไม่แทรกกลาง) และใช้ป้ายของ `UNSET_CATEGORY_META` ผ่าน `categoryMetaOf`
+     * · ท้ายลิสต์เสมอ (ไม่แทรกกลาง)
+     *
+     * 🔴 **แก้ 2 ก.ย. 2026 (P2 — UX เป็นโซนนี้ · P3 เขียนเองว่าเคสเขาบังคับแค่ "ต้องมีทางให้มันโผล่"):**
+     * ฉบับแรกแยก *แต่ละ* หมวดที่ไม่รู้จักเป็นคนละกลุ่ม แล้วให้ป้ายด้วย `categoryMetaOf(category)`
+     * ซึ่งคืน `UNSET_CATEGORY_META` ให้ทุกคีย์ที่ไม่รู้จัก → **หมวดแปลกสองตัว = สองกลุ่มที่หัวข้อ
+     * เหมือนกันเป๊ะ ("📍 อื่น ๆ") วางติดกัน** · ผู้ใช้อ่านว่าบั๊ก ไม่ได้อ่านว่าฟีเจอร์
+     * 🎯 `categoryMetaOf` ถูกสำหรับ *ค่าเดี่ยว* — เอาไปใช้เป็น *คีย์ของกลุ่ม* เป็นคนละหน้าที่
+     * → **ยุบเป็นถังเดียว** ตรงกับ `ChecklistPanel` (กอง "อื่น ๆ" ใบเดียวท้ายรายการ ไม่ขึ้นเมื่อว่าง)
+     *   **สองหน้าจอมีพฤติกรรมเดียวกัน สำคัญกว่าความละเอียดของหมวดที่เราไม่รู้จักอยู่ดี**
+     * · ทางที่ปฏิเสธ: โชว์สตริงดิบจากฐานเป็นป้าย (`"onsen"`) — สลัก DB ไม่ใช่ข้อความที่ผู้ใช้ควรเห็น
      */
     const known = new Set<string>(CATEGORY_ORDER);
-    const leftovers = [...byCategory.keys()].filter((c) => !known.has(c)).sort();
-    return [...CATEGORY_ORDER, ...leftovers]
-      .map((category) => ({ category, cards: byCategory.get(category) ?? [] }))
-      .filter((group) => group.cards.length > 0);
+    const unset = categoryMetaOf(null);
+    const groups = CATEGORY_ORDER.map((category) => ({
+      key: category as string,
+      emoji: categoryMetaOf(category).emoji,
+      label: categoryMetaOf(category).label,
+      cards: byCategory.get(category) ?? [],
+    }));
+    groups.push({
+      key: UNGROUPED_KEY,
+      emoji: unset.emoji,
+      label: unset.label,
+      // ถังท้ายรับ *ทุก* หมวดที่ไม่รู้จัก รวมเป็นกองเดียว — เรียงตามหมวดให้ผลคงที่ระหว่างรอบวาด
+      cards: [...byCategory.keys()]
+        .filter((c) => !known.has(c))
+        .sort()
+        .flatMap((c) => byCategory.get(c) ?? []),
+    });
+    return groups.filter((group) => group.cards.length > 0);
   }, [visibleCards]);
 
   // droppable ของคลังทั้งก้อน — ลากจุดแวะจากแพลนทริปมาปล่อยตรงนี้ = คืนสถานที่นั้นกลับคลัง (เอาออกจากวัน)
@@ -342,10 +368,10 @@ function PlaceSidebarContent({
             เลือกครบทุกที่ในโซนนี้แล้ว 🎉
           </div>
         )}
-        {groupedVisibleCards.map(({ category, cards }) => (
-          <div key={category} className="mb-4">
+        {groupedVisibleCards.map(({ key, emoji, label, cards }) => (
+          <div key={key} className="mb-4">
             <h3 className="mb-1.5 text-xs font-semibold text-content-soft">
-              {categoryMetaOf(category).emoji} {categoryMetaOf(category).label}
+              {emoji} {label}
             </h3>
             <div className="grid grid-cols-2 gap-2">
               {cards.map(({ place, isCustom }) => {
