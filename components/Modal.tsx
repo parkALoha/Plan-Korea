@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { useDismissable } from "@/hooks/useDismissable";
 
@@ -43,7 +44,31 @@ export function Modal({
   useBodyScrollLock();
   useDismissable(panelRef, onClose);
 
-  return (
+  /**
+   * 🔴 **ต้อง portal ออกไปที่ `body` — `fixed inset-0 z-50` เพียงอย่างเดียวไม่พอ** (P2 · 2 ก.ย. 2026)
+   *
+   * ผู้ใช้เจอเอง: เปิดโมดัลจากไซด์บาร์แล้ว **แถบวันที่ทะลุขึ้นมาทับกล่อง**
+   * · วัดแล้ว: `document.elementsFromPoint()` คืนปุ่มวัน **บนสุด** และคืนฉากหลังของโมดัล (`z=50`) *ใต้* มัน
+   *   ทั้งที่แถบวันเป็น `z-30` — **ตัวเลขบอกว่าโมดัลควรชนะ แต่มันแพ้**
+   *
+   * 🎯 **กลไก: `position: sticky` สร้าง stacking context *เสมอ* — ต่างจาก `relative`/`absolute`
+   * ที่สร้างก็ต่อเมื่อมี `z-index`** · คอลัมน์ไซด์บาร์เป็น `sticky top-4` (z-index: auto)
+   * → `z-50` ของโมดัลถูกขังไว้ **มีความหมายแค่ภายในคอลัมน์นั้น**
+   * → ที่ root: คอลัมน์ไซด์บาร์อยู่ระดับ auto(0) · แถบวัน `z-30` อยู่ root ด้วย → **30 ชนะ 0**
+   *
+   * ⚠️ **ไล่หา `transform`/`filter`/`will-change` ทั้งสายแล้วไม่เจอสักตัว** — ตัวการคือ `sticky` ล้วน ๆ
+   *    ซึ่งเป็นของที่ไม่มีใครนึกถึงเวลาดูปัญหา z-index
+   * 🔴 **และมันไม่ได้แก้ด้วยการเพิ่มเลข** — ต่อให้ `z-[999]` ก็ยังอยู่ในคอนเทกซ์เดิม
+   *    เลขที่ใหญ่ขึ้นจะทำให้ *ดูเหมือน* พยายามแก้แล้ว ทั้งที่รากไม่ถูกแตะ
+   *
+   * ✅ portal ไปที่ `body` = อยู่ root จริง · `z-50` มีความหมายจริง · **และเป็นรูปเดียวกับที่
+   *    `AnchoredPanel` ใช้อยู่แล้วในไฟล์ข้าง ๆ ด้วยเหตุผลตระกูลเดียวกัน (ถูกเฉือนโดยกล่องที่เลื่อนได้)**
+   * 📌 ไม่มีการ์ด `mounted` โดยตั้งใจ — **รูปเดียวกับ `AnchoredPanel`** · โมดัลถูกเรนเดอร์
+   *    ก็ต่อเมื่อ state ฝั่งไคลเอนต์เปิดมันเท่านั้น (`{open && <Modal …/>}`) จึงไม่มีรอบ SSR ที่แตะ `document`
+   *    · ถ้าวันหลังมีใครเรนเดอร์โมดัลแบบไม่มีเงื่อนไข จะต้องกลับมาใส่การ์ด — **ตอนนั้น `AnchoredPanel`
+   *      ก็ต้องใส่ด้วย** เพราะมันมีข้อสมมติเดียวกันเป๊ะ
+   */
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
       onClick={onClose}
@@ -94,7 +119,8 @@ export function Modal({
 
         {footer && <div className="flex shrink-0 gap-2 px-5 pb-5 pt-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
