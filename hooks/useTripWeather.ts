@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cityCenter } from "@/data/places";
+import { cityCenterOf, type CityWithCenter } from "@/lib/engine/cityCenter";
 import type { Day } from "@/data/itinerary";
 import type { DayWeather } from "@/lib/weather";
 
@@ -15,6 +16,7 @@ function keyOf(city: string, start: string, end: string) {
 }
 
 async function fetchCityWeather(
+  cities: readonly CityWithCenter[],
   city: Day["city"],
   start: string,
   end: string
@@ -25,7 +27,19 @@ async function fetchCityWeather(
   const pending = inFlight.get(key);
   if (pending) return pending;
 
-  const center = cityCenter(city);
+  /**
+   * 🔴 **แก้ 2 ก.ย. 2026 (`E2-AC16` · `D54`) — และมันคือทางแก้ที่คอมเมนต์ข้างล่างนี้ทำนายไว้เอง**
+   * ของเดิมใช้ `cityCenter()` อย่างเดียว ซึ่งเฉลี่ยจาก `PLACES` (6 เมืองเกาหลี) → **ทุกเมืองในประเทศใหม่
+   * ได้ `NaN` → ไม่ยิง → ไม่มีพยากรณ์อากาศเลย** · ตอนนี้เมืองในคลังถือพิกัดของตัวเองแล้ว
+   * · คลังก่อน (ครอบ 42 เมือง) → ตกไปไฟล์สถิตย์ (ทริปเกาหลีเดิมที่ยังไม่มีคลัง) → ตกไป `null`
+   * ⚠️ **`cities` เป็น optional โดยตั้งใจ** — ผู้เรียกที่ยังไม่ส่งมา (`app/today`) ได้พฤติกรรมเดิมเป๊ะ
+   *    ไม่ใช่พังหรือถูกบังคับให้แก้พร้อมกัน
+   */
+  const fromCatalog = cityCenterOf(cities, city);
+  const legacy = cityCenter(city);
+  const center =
+    fromCatalog ??
+    (Number.isFinite(legacy.lat) && Number.isFinite(legacy.lng) ? legacy : { lat: NaN, lng: NaN });
   /**
    * 🔴 **เมืองที่ไม่มีใน `data/places.ts` ให้ `NaN` — ต้องไม่ยิง** (P2 · 28 ส.ค. 2026)
    * `cityCenter` เฉลี่ยพิกัดของสถานที่ในเมืองนั้น · ทริปแพลตฟอร์มมีเมืองจากคลัง 42 เมือง และ
@@ -67,7 +81,13 @@ async function fetchCityWeather(
  * คืน `null` ต่อวันที่ยังพยากรณ์ไม่ได้ — Open-Meteo มองไปข้างหน้าได้ ~16 วันเท่านั้น
  * ตอนวางแผนล่วงหน้าเป็นเดือนจึงว่างทั้งหมด ซึ่งเป็นสภาพปกติ ไม่ใช่ error
  */
-export function useTripWeather(itinerary: Day[]) {
+export function useTripWeather(itinerary: Day[], cities: readonly CityWithCenter[] = []) {
+  /**
+   * 🔴 คีย์เสถียรของ `cities` — ผู้เรียกส่งอาเรย์ใหม่ทุก render ได้ **ถ้าใส่ตัวอาเรย์ลง deps ตรง ๆ
+   * เอฟเฟกต์จะยิงใหม่ทุกรอบวาด** แล้วยิงเน็ตซ้ำทั้งที่ข้อมูลเท่าเดิม
+   * · ใส่เฉพาะช่องที่เอฟเฟกต์นี้ *ใช้จริง* (`slug`/พิกัด) — ชื่อเมืองเปลี่ยนไม่ต้องยิงพยากรณ์ใหม่
+   */
+  const citiesKey = cities.map((c) => `${c.slug ?? ""}:${c.lat}:${c.lng}`).join("|");
   const [byDay, setByDay] = useState<Record<string, DayWeather>>({});
   // เหลืออีกกี่วันถึงวันแรกของทริป — คำนวณใน effect ไม่ใช่ตอน render เพราะ Date.now() เป็น impure
   // (eslint `react-hooks/purity` จับ) · null = ยังไม่ได้คำนวณรอบแรก
@@ -99,7 +119,7 @@ export function useTripWeather(itinerary: Day[]) {
       const results = await Promise.all(
         Array.from(rangeByCity.entries()).map(async ([city, range]) => ({
           city,
-          days: await fetchCityWeather(city, range.start, range.end),
+          days: await fetchCityWeather(cities, city, range.start, range.end),
         }))
       );
       if (cancelled) return;
@@ -119,7 +139,8 @@ export function useTripWeather(itinerary: Day[]) {
     return () => {
       cancelled = true;
     };
-  }, [itinerary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `citiesKey` แทน `cities` โดยตั้งใจ (ดูเหตุผลข้างบน)
+  }, [itinerary, citiesKey]);
 
   return { byDay, daysUntilFirstDay };
 }

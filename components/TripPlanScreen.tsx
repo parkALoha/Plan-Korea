@@ -292,7 +292,12 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   const { hotelLegs, hotelForDay, hotelBeforeDay } = useHotelSchedule(itinerary, hotels);
   // Open-Meteo มองไปข้างหน้าได้ ~16 วัน — ก่อนหน้านั้นทุกวันจะว่างเปล่า ซึ่งดูเหมือนฟีเจอร์พัง
   // บอกไปตรงๆ ครั้งเดียวเหนือลิสต์วัน ดีกว่าปล่อยให้เดาเอง
-  const { byDay: weatherByDay, daysUntilFirstDay } = useTripWeather(itinerary);
+  // 🔴 ส่งคลังเมืองเข้าไปด้วย — พิกัดของเมืองมาจาก `catalog_cities` ไม่ใช่ค่าเฉลี่ยจากไฟล์สถิตย์
+  //    (`E2-AC16`) · ไม่ส่ง = เมืองนอก 6 เมืองเกาหลีจะไม่มีพยากรณ์อากาศเลย
+  const { byDay: weatherByDay, daysUntilFirstDay } = useTripWeather(
+    itinerary,
+    tripCatalogCities.status === "ready" ? tripCatalogCities.cities : []
+  );
 
   /**
    * 🔴 **แถว `kind='event'` ต้องไม่ปนอยู่ในลิสต์จุดแวะ** (P3 เจอ · P1 ส่งต่อ · P2 ทำ · 2 ก.ย. 2026)

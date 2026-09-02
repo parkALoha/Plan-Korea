@@ -149,10 +149,23 @@ export function DayStopsSection({
    */
   const meta = cityMetaOf(day.city);
 
-  // ศูนย์กลางค้นหาตอนแทรกร้านก่อนจุดแรกของวัน (ยังไม่มี "จุดก่อนหน้า" ให้อิง) — ที่พักคืนนั้นก่อน ไม่งั้นใช้กลางเมือง
-  // ⚠️ เมืองที่ไม่มีใน `PLACES` จะได้ `NaN` (หารด้วยศูนย์) — ไม่ทำให้พัง แต่ทำให้ลำดับ "ร้านใกล้ ๆ" เพี้ยน
-  //    ตอนแทรกจุดแรกของวันที่ยังไม่มีที่พัก · ยอมรับในเฟสนี้ · แก้จริงต้องให้ศูนย์กลางเมืองมาจากคลังในฐาน
-  const centerBeforeFirstStop = hotel ? { lat: hotel.lat, lng: hotel.lng } : cityCenter(day.city);
+  /**
+   * ศูนย์กลางค้นหาตอนแทรกร้านก่อนจุดแรกของวัน (ยังไม่มี "จุดก่อนหน้า" ให้อิง) — ที่พักคืนนั้นก่อน ไม่งั้นกลางเมือง
+   *
+   * 🔴 **แก้ 2 ก.ย. 2026 (`D54` · `E2-AC16`) — และคอมเมนต์เดิมตรงนี้ *ผิด* จึงถูกลบ ไม่ใช่ย้าย**
+   * ของเดิมเขียนว่า *"`NaN` ไม่ทำให้พัง แค่ทำให้ลำดับร้านใกล้ ๆ เพี้ยน · ยอมรับในเฟสนี้"* — **ผมเขียนเอง**
+   * แล้ววัดทีหลังพบว่า **ค่าเดียวกันไหลไปถึง `useTripWeather` แล้วกลายเป็น `lat=NaN` → 400 ทุกใบ**
+   * 🎯 ***"ไม่พังตรงที่ผมดู" กับ "ไม่พัง" เป็นคนละประโยค*** — และคอมเมนต์ที่ประกาศว่ายอมรับได้
+   *    ทำให้คนอ่านรอบถัดไปเลิกตามต่อ ซึ่งแพงกว่าตัวบั๊กเอง
+   *
+   * `null` = ไม่รู้พิกัด → **ไม่เสนอปุ่มแทรก** (พิกัดเป็นของจำเป็นของคำขอค้นหา ไม่ใช่ของแต่ง)
+   */
+  const rawCityCenter = cityCenter(day.city);
+  const centerBeforeFirstStop = hotel
+    ? { lat: hotel.lat, lng: hotel.lng }
+    : Number.isFinite(rawCityCenter.lat) && Number.isFinite(rawCityCenter.lng)
+      ? rawCityCenter
+      : null;
 
   // ค่า default จาก/ไปของแถวเดินทางข้ามเมือง — เดาจาก city ของวันนี้ ไปเมืองที่นอนคืนนี้ (ถ้าต่างจากเมืองที่เที่ยว)
   const intercityFromCity = day.city;
@@ -453,11 +466,16 @@ export function DayStopsSection({
           {stops.length > 0 && !locked && (
             <InsertBetweenRow
               actions={[
-                {
-                  label: "+ แทรกร้านอาหารก่อนจุดแรก",
-                  tone: "maple",
-                  onClick: () => onInsertPlace(0, centerBeforeFirstStop, null),
-                },
+                // ไม่รู้พิกัด = ไม่เสนอปุ่มนี้ · ผลค้นหาที่ดึงไปผิดเมือง แย่กว่าไม่มีปุ่ม
+                ...(centerBeforeFirstStop
+                  ? [
+                      {
+                        label: "+ แทรกร้านอาหารก่อนจุดแรก",
+                        tone: "maple" as const,
+                        onClick: () => onInsertPlace(0, centerBeforeFirstStop, null),
+                      },
+                    ]
+                  : []),
                 ...(hotel
                   ? [
                       {

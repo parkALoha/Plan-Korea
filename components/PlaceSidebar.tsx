@@ -6,6 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Category, Place, cityCenter, placesByCity } from "@/data/places";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import { groupPlaceCards } from "@/components/placeGrouping";
+import { cityCenterOf } from "@/lib/engine/cityCenter";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
@@ -17,6 +18,9 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
+
+/** ข้อความบอกสาเหตุตอนปุ่มค้นหาถูกปิด — ปุ่มที่กดไม่ได้โดยไม่บอกว่าทำไม แย่กว่าปุ่มที่หายไป */
+const NO_CENTER_HINT = "ยังไม่รู้พิกัดของเมืองนี้ — ค้นหาแบบอิงระยะทางยังใช้ไม่ได้";
 
 const CATEGORY_ORDER: Category[] = [
   "restaurant",
@@ -236,7 +240,30 @@ function PlaceSidebarContent({
   const [nearbyKind, setNearbyKind] = useState<NearbyKind | null>(null);
   const focusedDayDate = itinerary.find((d) => d.id === focusedDayId)?.date;
   // ศูนย์กลางค้นหาร้านอาหารใกล้ๆ: จุดแวะล่าสุดของวันที่โฟกัส > ที่พัก > จุดกึ่งกลางเมือง
-  const nearbyCenter = referencePlace ?? referenceHotel ?? cityCenter(activeCity);
+  /**
+   * 🔴 **ศูนย์กลางของเมือง — ต้องไม่มีวันเป็น `NaN`** (`E2-AC16` · `D54` · P2 · 2 ก.ย. 2026)
+   * `cityCenter()` เดิมเฉลี่ยพิกัดของสถานที่ใน `PLACES` → **เมืองที่มี 0 แห่งได้ `0/0` = `NaN`**
+   * ซึ่งเป็นสภาพของ *ทุกเมืองนอก 6 เมืองเกาหลี* · `NaN` ไม่โยน ไม่ log — มันไหลเข้าคำขอค้นหาเงียบ ๆ
+   * · โหมดคลัง: อ่านพิกัดที่ **เมืองถือเอง** ผ่าน `cityCenterOf()` (คืน `null` ถ้าไม่รู้จัก/ไม่ใช่ตัวเลขจริง)
+   * · โหมดเดิม (ทริปเกาหลีจากไฟล์): ยังใช้ `cityCenter()` **แต่กรอง `NaN` ทิ้งก่อนส่งออก**
+   * ⚠️ **ยังไม่ปิด `E2-AC16` ทั้งข้อ** — เกณฑ์ของมันคือ *ผู้เรียกเลิก import `cityCenter`*
+   *    ไฟล์นี้ยังใช้อยู่สำหรับเส้นทางไฟล์สถิตย์ · ที่ปิดคือ **ช่อง `NaN`** ไม่ใช่ทั้ง AC
+   */
+  const activeCityCenter = useMemo((): { lat: number; lng: number } | null => {
+    if (catalogMode) {
+      const slug = catalogCities?.find((c) => c.id === currentCatalogCityId)?.slug;
+      return cityCenterOf(catalogCities ?? [], slug);
+    }
+    const c = cityCenter(activeCity);
+    return Number.isFinite(c.lat) && Number.isFinite(c.lng) ? c : null;
+  }, [catalogMode, catalogCities, currentCatalogCityId, activeCity]);
+
+  /**
+   * 🔴 **`null` ที่นี่แปลว่า "ไม่เสนอฟีเจอร์" ไม่ใช่ "ค้นแบบไม่เอียง"** — พิกัดเป็นของ *จำเป็น* ของคำขอนี้
+   * ผลลัพธ์ที่ถูกดึงไปผิดเมือง **แย่กว่าไม่มีผลลัพธ์** เพราะผู้ใช้เห็นรายการร้านแล้วจะเชื่อว่ามันใกล้
+   * 🎯 เหตุผลเดียวกับการ์ดฉุกเฉิน (แสดงเบอร์ประเทศอื่น แย่กว่าไม่แสดงเบอร์)
+   */
+  const nearbyCenter = referencePlace ?? referenceHotel ?? activeCityCenter;
 
   return (
     // min-h-0 + flex-1 สำคัญ: ในชีตมือถือความสูงมาจาก flex ไม่ใช่ค่าตายตัว h-full เลยคำนวณไม่ได้
@@ -303,22 +330,30 @@ function PlaceSidebarContent({
         }`}
       >
         <div className="mb-3 space-y-2">
+          {/* 🔴 ไม่มีพิกัด = **ไม่เสนอปุ่ม** ไม่ใช่เสนอแล้วค้นแบบไม่เอียง (ดูเหตุผลที่ `activeCityCenter`)
+              · บอกสาเหตุด้วย `title` — ปุ่มที่กดไม่ได้โดยไม่บอกว่าทำไม แย่กว่าปุ่มที่หายไป */}
           <button
             onClick={() => setNearbyKind("attraction")}
-            className="w-full rounded-xl border border-dashed border-maple/50 py-2 text-sm font-medium text-maple hover:bg-maple-soft/40"
+            disabled={!activeCityCenter}
+            title={activeCityCenter ? undefined : NO_CENTER_HINT}
+            className="w-full rounded-xl border border-dashed border-maple/50 py-2 text-sm font-medium text-maple hover:bg-maple-soft/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           >
             🎡 ที่เที่ยวยอดนิยมใน{displayCityNameTh}
           </button>
           <div className="flex gap-2">
             <button
               onClick={() => setNearbyKind("place")}
-              className="flex-1 rounded-xl border border-dashed border-content-soft/30 py-2 text-sm text-content-soft hover:border-maple hover:text-maple"
+              disabled={!nearbyCenter}
+              title={nearbyCenter ? undefined : NO_CENTER_HINT}
+              className="flex-1 rounded-xl border border-dashed border-content-soft/30 py-2 text-sm text-content-soft hover:border-maple hover:text-maple disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-content-soft/30 disabled:hover:text-content-soft"
             >
               สถานที่ท่องเที่ยว
             </button>
             <button
               onClick={() => setNearbyKind("restaurant")}
-              className="flex-1 rounded-xl border border-dashed border-content-soft/30 py-2 text-sm text-content-soft hover:border-maple hover:text-maple"
+              disabled={!nearbyCenter}
+              title={nearbyCenter ? undefined : NO_CENTER_HINT}
+              className="flex-1 rounded-xl border border-dashed border-content-soft/30 py-2 text-sm text-content-soft hover:border-maple hover:text-maple disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-content-soft/30 disabled:hover:text-content-soft"
             >
               🍽️ ร้านใกล้ๆ
             </button>
@@ -402,13 +437,15 @@ function PlaceSidebarContent({
         />
       )}
 
-      {nearbyKind && (
+      {/* ศูนย์กลางที่ใช้จริงต้องไม่ใช่ `null` — ปุ่มด้านบนกันไว้แล้ว ตรงนี้กันซ้ำเพราะ `nearbyKind`
+          ตั้งค่าจากที่อื่นได้ในอนาคต และ `NearbyPlacesModal` ต้องการพิกัดจริงตามชนิดของมัน */}
+      {nearbyKind && (nearbyKind === "attraction" ? activeCityCenter : nearbyCenter) && (
         <NearbyPlacesModal
           kind={nearbyKind}
           city={activeCity}
           // ที่เที่ยวมองทั้งเมือง เลยอิงกลางเมืองเสมอ ไม่ให้ผลลัพธ์เอียงไปตามจุดแวะล่าสุด
           // ส่วนร้านอาหาร/สถานที่แนะนำอิงจุดแวะล่าสุดของวันนั้น เพราะต้องการที่ที่เดินต่อจากจุดนั้นได้
-          center={nearbyKind === "attraction" ? cityCenter(activeCity) : nearbyCenter}
+          center={(nearbyKind === "attraction" ? activeCityCenter : nearbyCenter)!}
           addedBy={who}
           onClose={() => setNearbyKind(null)}
           onAdded={(placeId, coords) => onAddStopToDay(focusedDayId, placeId, coords)}
