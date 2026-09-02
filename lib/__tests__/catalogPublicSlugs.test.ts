@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { catalogPublicSlugs } from "@/lib/engine/db";
+import { catalogPublicSlugs, catalogPublicMapsQueries } from "@/lib/engine/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 type Recorded = { table: string; column: string; values: string[] } | null;
 
 /** ฐานปลอมที่จำว่าถูกถามอะไร — เพื่อยืนยันว่า "ไม่ถาม" ต่างจาก "ถามแล้วไม่เจอ" */
-function fakeDb(rows: { legacy_slug: string }[] | null, error: unknown = null) {
+function fakeDb(rows: Record<string, string>[] | null, error: unknown = null) {
   let recorded: Recorded = null;
   const db = {
     from(table: string) {
@@ -83,5 +83,43 @@ describe("catalogPublicSlugs — แคชได้ก็ต่อเมื่�
       column: "legacy_slug",
       values: ["gyeongbokgung", HOTEL],
     });
+  });
+});
+
+describe("catalogPublicMapsQueries — ประตูของ place_details_cache", () => {
+  /**
+   * 🔴 ตารางนี้รั่วคนละทางกับ `travel_time_cache`: คีย์คือ **ข้อความค้นหา** ซึ่งสำหรับสถานที่ที่
+   * ผู้ใช้เพิ่มเองคือ *ข้อความที่เขาพิมพ์* · และตัวแถวถือ `name_local`/`address_local`
+   * ที่บอกได้เองว่าเป็นที่ไหน → **ปิดที่ตัวแถวไม่ได้ ต้องไม่ให้เข้าตาราง**
+   */
+  it("คืนเฉพาะคิวรีที่มีจริงในคลัง — ข้อความที่ผู้ใช้พิมพ์เองตกไป", async () => {
+    const { db } = fakeDb([{ maps_query: "Gyeongbokgung Palace seoul" }]);
+    const got = await catalogPublicMapsQueries(db, [
+      "Gyeongbokgung Palace seoul",
+      "บ้านยาย 123/45 ซอยลาดพร้าว",
+    ]);
+    expect(got.has("Gyeongbokgung Palace seoul")).toBe(true);
+    expect(got.has("บ้านยาย 123/45 ซอยลาดพร้าว")).toBe(false);
+  });
+
+  /**
+   * 🔴 **เคสนี้กันความผิดพลาดที่ *ไม่มีอะไรฟ้องเลย*** — ทั้งสองฟังก์ชันใช้แกนร่วมกัน
+   * ถ้าก๊อปแล้วลืมเปลี่ยนคอลัมน์ (`legacy_slug` แทน `maps_query`) ผลคือ **ไม่เคย match อะไรเลย**
+   * → fail-closed → **ไม่มีเคสไหนแดง · ไม่มี error · เห็นได้ทางเดียวคือบิล Google โตขึ้นเงียบ ๆ**
+   * 🎯 ตระกูล *"ถูกโดยบังเอิญในทิศที่ปลอดภัย"* — ปลอดภัยจริง แต่ฟีเจอร์ตายโดยไม่มีใครรู้
+   */
+  it("🔴 ถามคลังด้วยคอลัมน์ maps_query ไม่ใช่ legacy_slug", async () => {
+    const { db, seen } = fakeDb([]);
+    await catalogPublicMapsQueries(db, ["Gyeongbokgung Palace seoul"]);
+    expect(seen()).toEqual({
+      table: "catalog_places",
+      column: "maps_query",
+      values: ["Gyeongbokgung Palace seoul"],
+    });
+  });
+
+  it("🔴 คิวรีล้ม = เซตว่าง (fail-closed) เหมือนตัวพี่", async () => {
+    const { db } = fakeDb(null, { message: "boom" });
+    await expect(catalogPublicMapsQueries(db, ["x"])).resolves.toEqual(new Set());
   });
 });

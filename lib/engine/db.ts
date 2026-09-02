@@ -199,14 +199,37 @@ export function browseCatalogPlaces(db: Db, opts: { cityId?: string; countryId?:
  *   คือ fail-closed: แพงขึ้น แต่ไม่มีทางรั่ว · ตรงข้ามกับการปล่อยผ่านเวลาตรวจไม่ได้
  */
 export async function catalogPublicSlugs(db: Db, slugs: string[]): Promise<Set<string>> {
-  const wanted = slugs.filter((s) => s.length > 0);
+  return catalogPublicValues(db, "legacy_slug", slugs);
+}
+
+/**
+ * คู่ของ `catalogPublicSlugs` สำหรับ `place_details_cache` ซึ่งคีย์ด้วย **ข้อความค้นหา** ไม่ใช่ id
+ *
+ * 🔴 **ทำไมต้องมีตัวที่สอง — `place_details_cache` รั่วคนละทางกับ `travel_time_cache`**
+ * `placeQueryKey()` (`lib/placeQuery.ts:19`) คืน `place.mapsQuery` ตรง ๆ เมื่อสถานที่ไม่มี
+ * `googlePlaceId` → **สำหรับสถานที่ที่ผู้ใช้เพิ่มเอง นั่นคือข้อความที่เขาพิมพ์** (ชื่อ/ที่อยู่)
+ * · และ **ตัวแถวยังถือ `name_local`/`address_local` ที่ Google ตอบกลับ** ซึ่งบอกได้เองว่าเป็นที่ไหน
+ *   → ต่างจาก `travel_time_cache` ที่แถวมีแค่ โหมด/นาที/เมตร
+ *
+ * 🎯 **จึงปิดด้วยการ *ไม่ให้เข้าตาราง* เท่านั้น — ไม่มีวิธีปิดที่ตัวแถว** · หลักเดียวกับที่ผู้ใช้เลือกไว้
+ *   สำหรับ `E3-AC6`: **แคชเฉพาะสิ่งที่พิสูจน์ได้ว่าเป็นของคลังสาธารณะ**
+ */
+export async function catalogPublicMapsQueries(db: Db, queries: string[]): Promise<Set<string>> {
+  return catalogPublicValues(db, "maps_query", queries);
+}
+
+/** แกนร่วมของสองตัวบน — ถามคลังว่าค่าไหน "มีอยู่จริง" · **ล้ม = เซตว่าง ไม่ใช่โยน ไม่ใช่เดา** */
+async function catalogPublicValues(
+  db: Db,
+  column: "legacy_slug" | "maps_query",
+  values: string[]
+): Promise<Set<string>> {
+  const wanted = values.filter((v) => v.length > 0);
   if (wanted.length === 0) return new Set();
-  const { data, error } = await engineTable(db, "catalog_places")
-    .select("legacy_slug")
-    .in("legacy_slug", wanted);
+  const { data, error } = await engineTable(db, "catalog_places").select(column).in(column, wanted);
   if (error || !data) return new Set();
   return new Set(
-    data.map((r) => (r as { legacy_slug: string | null }).legacy_slug).filter((s): s is string => !!s)
+    data.map((r) => (r as Record<string, string | null>)[column]).filter((v): v is string => !!v)
   );
 }
 

@@ -5,6 +5,7 @@ import { knownPlaceLocales } from "@/lib/engine/countries";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabaseConfigured } from "@/lib/supabase";
 import { createServerSupabase } from "@/lib/auth/server";
+import { catalogPublicMapsQueries } from "@/lib/engine/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
@@ -122,7 +123,9 @@ async function resolveFromGoogle(
   db: SupabaseClient,
   query: string,
   live: boolean,
-  locale: Locale | null
+  locale: Locale | null,
+  /** คิวรีนี้พิสูจน์แล้วว่าเป็นของคลังสาธารณะหรือยัง — **ไม่ผ่าน = ห้ามเขียนแคชกลาง** (`E3-AC6`) */
+  cacheable: boolean
 ): Promise<PlaceDetailsResponse> {
   const fieldMask = live
     ? "places.id,places.regularOpeningHours,places.currentOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews"
@@ -148,7 +151,7 @@ async function resolveFromGoogle(
   const reviews = place?.reviews?.slice(0, 3) ?? null;
   const local = locale ? await fetchLocalName(query, locale) : { nameLocal: null, addressLocal: null };
 
-  if (supabaseConfigured && googlePlaceId) {
+  if (cacheable && googlePlaceId) {
     const { error: cacheWriteErr } = await db.from("place_details_cache").upsert({
       maps_query: query,
       google_place_id: googlePlaceId,
@@ -235,12 +238,23 @@ async function resolveMany(
   locale: Locale | null,
   live = false
 ): Promise<Record<string, PlaceDetailsResponse>> {
+  /**
+   * 🔴 **แคชได้เฉพาะคิวรีที่พิสูจน์ได้ว่าเป็นของคลังสาธารณะ** (`E3-AC6` · หลักเดียวกับ `travel_time_cache`)
+   * `maps_query` เป็น **คีย์** ของตารางที่ใช้ร่วมกันทั้งระบบ · สำหรับสถานที่ที่ผู้ใช้เพิ่มเอง
+   * มันคือ **ข้อความที่เขาพิมพ์** (ชื่อ/ที่อยู่) — และแถวยังถือ `name_local`/`address_local`
+   * ที่บอกได้เองว่าเป็นที่ไหน **จึงปิดที่ตัวแถวไม่ได้ ต้องไม่ให้เข้าตารางตั้งแต่แรก**
+   * ⚠️ ไม่ผ่านประตู = ยังตอบผู้ใช้ตามปกติ **แค่ยิง Google ทุกครั้ง ไม่แตะแคชกลาง**
+   */
+  const publicQueries = supabaseConfigured
+    ? await catalogPublicMapsQueries(db, queries)
+    : new Set<string>();
+
   const cachedRows = new Map<string, CacheRow>();
-  if (supabaseConfigured) {
+  if (publicQueries.size > 0) {
     const { data, error: cacheReadErr } = await db
       .from("place_details_cache")
       .select(CACHE_COLUMNS)
-      .in("maps_query", queries);
+      .in("maps_query", [...publicQueries]);
     noteCacheFailure("place_details_cache/read", cacheReadErr);
     for (const row of (data ?? []) as CacheRow[]) cachedRows.set(row.maps_query, row);
   }
@@ -248,7 +262,7 @@ async function resolveMany(
   const entries = await Promise.all(
     queries.map(async (q): Promise<[string, PlaceDetailsResponse]> => {
       const row = cachedRows.get(q);
-      if (!row) return [q, await resolveFromGoogle(db, q, live, locale)];
+      if (!row) return [q, await resolveFromGoogle(db, q, live, locale, publicQueries.has(q))];
 
       const needsLocalName = locale != null && row.locale !== locale;
       const local = needsLocalName
