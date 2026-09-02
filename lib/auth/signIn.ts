@@ -1,6 +1,5 @@
 import { createBrowserSupabase } from "@/lib/auth/browser";
-import { clearAllCaches } from "@/lib/localCache";
-import { clearAll as clearOfflineStore } from "@/lib/engine/offlineStore";
+import { clearDeviceData } from "@/lib/auth/deviceData";
 import { safeNextPath } from "@/lib/auth/nextPath";
 
 /**
@@ -80,14 +79,11 @@ export async function sendMagicLink(email: string, next?: string | null): Promis
  *   **แต่ข้อมูลของเขายังอยู่บนเครื่องให้คนถัดไปเห็น**
  */
 export async function signOut(): Promise<void> {
-  clearAllCaches();
-  // 🔴 **ที่เก็บมีสองใบ และ `clearAllCaches()` เห็นใบเดียว** (P7 ชี้ · P1 ลง · 28 ส.ค. 2026)
-  //    `E6-AC7` ย้ายข้อมูลทริปจาก `localStorage` ไป IndexedDB ทีละ hook — **ตัวกวาดต้องมาก่อนผู้ย้าย**
-  //    ไม่งั้น hook แรกที่ย้ายจะสร้างบั๊กชื่อพาสปอร์ต/`trip-who` ขึ้นมาใหม่ในที่เก็บใบใหม่
-  //    (ข้อมูลของคนก่อนค้างให้คนถัดไปบนเครื่องเดียวกันเห็น) · **ใส่ตอนฐานยังว่างก็แค่ล้างของว่าง**
-  //    🎯 ตรงข้ามกับลำดับปกติของงาน: ปกติเราสร้างของก่อนแล้วค่อยกวาด — **ที่นี่กวาดก่อนถึงจะปลอดภัย**
-  //    ⚠️ ต้อง `await` และต้องอยู่ **ก่อน** `auth.signOut()` ด้วยเหตุผลเดียวกับบล็อกข้างบนทุกตัวอักษร
-  await clearOfflineStore();
+  // 🔴 **ที่เก็บมีสองใบ · `clearDeviceData()` เป็นตัวเดียวที่รู้ว่ามีสองใบ** (P7 ชี้ · 28 ส.ค. 2026)
+  //    เดิมบรรทัดนี้เป็น `clearAllCaches()` + `clearOfflineStore()` เรียงกัน **ซึ่งแปลว่าผู้เรียกทุกราย
+  //    ต้องจำว่ามีสองใบ** — และ `HomeScreen` (ทางสลับบัญชี) จำไม่ได้จริง ๆ · ดูเหตุผลเต็มใน `deviceData.ts`
+  //    ⚠️ ต้อง `await` และต้องอยู่ **ก่อน** `auth.signOut()` — มันโยนเมื่อออฟไลน์
+  await clearDeviceData();
   const supabase = createBrowserSupabase();
   await supabase.auth.signOut();
 }
