@@ -291,7 +291,16 @@ export function searchCatalogCities(
     //    `/covers/country-<id>.svg` ถ้าไม่เจอ · picker ต้องใช้ **cascade เดียวกัน** ไม่ใช่ระบบรูปที่สอง
     //    · ฐานมีข้อมูลอยู่แล้ว (`tripsForUser()` ดึง `legacy_slug` อยู่) แค่ไม่ได้ส่งออกทางนี้
     //    ⚠️ **เพิ่มอย่างเดียว ไม่แตะฟิลด์เดิม** — ผู้เรียกที่มีอยู่ไม่รู้สึกอะไร
-    .select("id, country_id, legacy_slug, name_th, name_en, name_local, catalog_countries!inner(id, name_th, name_en)")
+    .select(
+      // 🔴 **`lat`/`lng` เพิ่ม 2 ก.ย. 2026 — ให้ "เมือง" มีรูปเดียวกันทั้งสอง endpoint** (P2 ชี้)
+      //    `E2-AC16` เพิ่มพิกัดให้ `/api/engine/trips` (`trip.destinations[]`) แต่ **ไม่ได้เพิ่มที่นี่**
+      //    → แถวจาก `/api/engine/cities` ส่งเข้า `cityCenterOf()` จะได้ `null` **ทุกใบ** โดยชนิดไม่ห้าม
+      //    🎯 **และมันจะดูเหมือนบั๊กของ `cityCenterOf` ไม่ใช่ของ endpoint** เพราะฟังก์ชันคืน `null`
+      //       อย่างสุภาพตามที่ออกแบบ · **ผู้เรียกจะไปไล่ผิดที่**
+      //    ⚠️ วันนี้ยังไม่มีใครทำแบบนั้น (`TripDestinationPicker` ไม่ใช้พิกัด) — **เติมก่อนมีคนเจอ**
+      //    · เพิ่มอย่างเดียว ไม่แตะฟิลด์เดิม ตามกติกาที่คอมเมนต์ข้างบนตั้งไว้เอง
+      "id, country_id, legacy_slug, name_th, name_en, name_local, lat, lng, catalog_countries!inner(id, name_th, name_en)",
+    )
     .eq("catalog_countries.supported", true);
   if (safe !== "") {
     query = query.or(
