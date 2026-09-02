@@ -90,6 +90,9 @@ type RawTripRow = {
       legacy_slug: string | null;
       name_th: string;
       name_en: string;
+      /** 🔴 `not null` ในฐาน (`E2-AC16`/`D54`) — เมืองถือพิกัดของตัวเอง ไม่ได้เฉลี่ยจากสถานที่ลูก */
+      lat: number;
+      lng: number;
       catalog_countries: { id: string; name_th: string; name_en: string } | null;
     } | null;
   }[] | null;
@@ -118,6 +121,8 @@ export async function tripsForUser(db: Db): Promise<TripListItem[]> {
         slug: d.catalog_cities!.legacy_slug,
         nameTh: d.catalog_cities!.name_th,
         nameEn: d.catalog_cities!.name_en,
+        lat: d.catalog_cities!.lat,
+        lng: d.catalog_cities!.lng,
         // 🔴 ประเทศ **ไม่ได้เก็บซ้ำใน `trips`** โดยตั้งใจ — คลังบอกอยู่แล้ว เก็บซ้ำ = สองแหล่งความจริงที่ drift ได้
         //    `null` ที่นี่แปลว่า RLS ของ `catalog_countries` ปฏิเสธ ไม่ใช่ "เมืองไม่มีประเทศ" (FK บังคับอยู่)
         countryId: d.catalog_cities!.catalog_countries?.id ?? "",

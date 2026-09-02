@@ -559,7 +559,11 @@ export function tripsVisibleToMe(db: Db) {
   //       การเรียงในฝั่ง PostgREST ต้องพึ่ง `referencedTable` ซึ่งพังเงียบถ้าชื่อความสัมพันธ์เปลี่ยน
   return engineTable(db, "trips")
     .select(
-      "id, title, start_date, end_date,trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, catalog_countries(id, name_th, name_en))),trip_members(count)",
+      // 🔴 **`lat`/`lng` เพิ่ม 2 ก.ย. 2026 — `E2-AC16` / `D54`** · เมืองถือพิกัดของตัวเอง **ห้ามเฉลี่ยจากลูก**
+      //    `catalog_cities.lat`/`lng` เป็น `not null` (`…catalog_geo…sql:95-96`) → ทุกแถวมีพิกัดแน่นอน
+      //    ⚠️ **ไม่ใช่ฟิลด์เสริม** — `cityCenter()` เดิมเฉลี่ยจาก `PLACES` → เมืองที่มีสถานที่ 0 แห่งได้ `NaN`
+      //    และมันเจ็บเงียบ (แผนที่ซูมผิด · ระยะข้ามเมืองผิด · Copilot รายงานตัวเลขนั้นอย่างมั่นใจ)
+      "id, title, start_date, end_date,trip_destinations(rank, catalog_cities(id, legacy_slug, name_th, name_en, lat, lng, catalog_countries(id, name_th, name_en))),trip_members(count)",
     )
     .order("created_at");
 }

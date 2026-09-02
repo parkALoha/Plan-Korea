@@ -1,0 +1,65 @@
+import { describe, it, expect } from "vitest";
+import { cityCenterOf, type CityWithCenter } from "@/lib/engine/cityCenter";
+import { cityCenter as legacyCityCenter } from "@/data/places";
+
+/**
+ * `E2-AC16` / `D54` — จุดกึ่งกลางเมืองต้องมาจากพิกัดที่ **เมืองถือเอง**
+ * เจ้าของ: P1-Lead · 2 ก.ย. 2026
+ *
+ * 🔴 **เกณฑ์ของ AC เป็น *พฤติกรรม* ไม่ใช่ "ย้ายไฟล์แล้ว"** (backlog เขียนไว้เอง):
+ * *เมืองที่มีสถานที่ในคลัง 0–1 แห่งต้องได้พิกัดที่ถูก* — เป็นเคสที่ของเดิมตอบผิดที่สุด
+ * และเป็นสภาพของ **ทุกเมืองในประเทศใหม่**
+ */
+const CITIES: CityWithCenter[] = [
+  { slug: "tokyo", lat: 35.6762, lng: 139.6503 },
+  { slug: "busan", lat: 35.1796, lng: 129.0756 },
+  { slug: "no-coords", lat: NaN, lng: NaN },
+];
+
+describe("E2-AC16 — พิกัดมาจากเมือง ไม่ใช่ค่าเฉลี่ยของลูก", () => {
+  /**
+   * 🔴 **เคสที่เป็นเหตุผลของ AC ทั้งข้อ** — เทียบของเดิมกับของใหม่ในเคสเดียวกัน
+   * `tokyo` ไม่มีอยู่ใน `PLACES` เลย (ไฟล์นั้นมี 6 เมืองเกาหลี) → ของเดิมหาร 0
+   */
+  it("🔴 เมืองที่ไม่มีสถานที่ในไฟล์สถิตย์: ของเดิมได้ NaN · ของใหม่ได้พิกัดจริง", () => {
+    const old = legacyCityCenter("tokyo");
+    expect(Number.isNaN(old.lat), "ของเดิมไม่ได้ NaN — สมมติฐานของ AC ผิด ต้องกลับไปอ่านใหม่").toBe(true);
+
+    const now = cityCenterOf(CITIES, "tokyo");
+    expect(now).toEqual({ lat: 35.6762, lng: 139.6503 });
+  });
+
+  /** ⚠️ เคสควบคุม — กันกรณี "คืน null เสมอ" ซึ่งจะทำให้เคสฝั่งลบข้างล่างเขียวฟรีทั้งแผง */
+  it("เมืองที่รู้จัก ต้องได้พิกัดของเมืองนั้น ไม่ใช่ของเมืองอื่น", () => {
+    expect(cityCenterOf(CITIES, "busan")).toEqual({ lat: 35.1796, lng: 129.0756 });
+  });
+
+  /**
+   * 🔴 **ไม่รู้จัก = `null` ไม่ใช่ `{0,0}`**
+   * `{lat:0,lng:0}` เป็นพิกัดจริงกลางมหาสมุทรแอตแลนติก — **ค่าที่ดูเหมือนคำตอบ**
+   * ผู้เรียกต้องตัดสินใจเองว่าจะซ่อนแผนที่หรือไม่ยิงพยากรณ์ · เดาแทนเขาไม่ได้
+   */
+  it("🔴 เมืองที่ไม่รู้จัก → null (ไม่ใช่ {0,0} ซึ่งเป็นพิกัดจริงในทะเล)", () => {
+    expect(cityCenterOf(CITIES, "ไม่มีเมืองนี้")).toBeNull();
+  });
+
+  it("slug ว่าง/undefined → null ไม่ใช่โยน", () => {
+    expect(cityCenterOf(CITIES, null)).toBeNull();
+    expect(cityCenterOf(CITIES, undefined)).toBeNull();
+    expect(cityCenterOf(CITIES, "")).toBeNull();
+  });
+
+  /**
+   * 🔴 **`NaN` ผ่านชนิด `number` ได้** — ฐานประกาศ `not null` แต่ข้อมูลเดินผ่าน JSON
+   * และนี่คือ **บั๊กใบเดิมที่เรากำลังแก้** ไม่ใช่ของเผื่อ: ถ้าปล่อยผ่าน เราจะย้ายที่เกิดของ `NaN`
+   * จาก `data/places.ts` มาไว้ที่คลัง แล้วบอกว่าแก้แล้ว
+   */
+  it("🔴 แถวที่พิกัดเป็น NaN → null ไม่ใช่ส่ง NaN ต่อ", () => {
+    expect(cityCenterOf(CITIES, "no-coords")).toBeNull();
+  });
+
+  /** รายการว่าง (ยังโหลดไม่เสร็จ) ต้องไม่โยน — ผู้เรียกอยู่ใน render */
+  it("รายการเมืองว่าง → null", () => {
+    expect(cityCenterOf([], "tokyo")).toBeNull();
+  });
+});
