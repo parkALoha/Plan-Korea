@@ -11,6 +11,15 @@ export type CatalogCity = {
   nameTh: string;
   /** `legacy_slug` — คีย์ของรูปประจำเมือง (`/covers/city-<slug>.svg`) */
   slug: string | null;
+  /**
+   * พิกัดที่ **เมืองถือเอง** (`catalog_cities.lat/lng`) — `E2-AC16` · 2 ก.ย. 2026
+   * 🔴 **ไม่ใช่ค่าเฉลี่ยจากสถานที่ลูก** · ตัวเก่า (`cityCenter()` ใน `data/places.ts`) หารด้วยจำนวน
+   * สถานที่ → เมืองที่มี 0 แห่งได้ `NaN` เงียบ ๆ ซึ่งเป็นสภาพของ**ทุกเมืองในประเทศใหม่**
+   *
+   * ⚠️ **อ่านผ่าน `cityCenterOf()` เสมอ ห้ามอ่าน `.lat` ตรง ๆ** — ดูเหตุผลเรื่องแคชรูปเก่าที่หัว hook
+   */
+  lat: number;
+  lng: number;
 };
 
 /**
@@ -38,7 +47,7 @@ export type TripCitiesState =
 
 type TripRow = {
   id: string;
-  destinations?: { cityId: string; nameTh: string; slug: string | null }[];
+  destinations?: { cityId: string; nameTh: string; slug: string | null; lat: number; lng: number }[];
 };
 
 export function useTripCatalogCities(tripId: string): TripCitiesState {
@@ -57,7 +66,23 @@ export function useTripCatalogCities(tripId: string): TripCitiesState {
    * 🎯 **หนักกว่า "ว่างเปล่า" — มันคือ *ไม่ว่าง และหน้าตาเหมือนข้อมูลจริง*** (P1 เดินเทสต์เจอ 28 ส.ค. 2026)
    * · แคชของ `usePlatformItinerary`/`useCatalogPlaces` ถูกต้องแต่ **เอื้อมไม่ถึง** เพราะประตูปิดก่อน
    *
-   * ⚠️ **สิ่งที่แคชนี้แก้ และสิ่งที่มันแก้ไม่ได้:**
+   * ## 🔴 **แคชรูปเก่าไม่มี `lat`/`lng` — และผมเลือก *ไม่* ขึ้นเวอร์ชันคีย์** (`E2-AC16` · 2 ก.ย. 2026)
+ * เครื่องที่เคยเปิดแอปมี `trip:<id>:catalogCities` ที่เก็บไว้ **ก่อน** ฟิลด์พิกัดจะมี → อ่านได้ `undefined`
+ * ```
+ * ขึ้นเวอร์ชันคีย์  →  แคชเก่าถูกทิ้งทั้งก้อน  →  ออฟไลน์ = ไม่มีรายชื่อเมืองเลย
+ *                     →  **ประตู `isPlatformTrip` ปิด → หน้าแผนตกไปที่ `ITINERARY` ของทริปเกาหลี**
+ *                        ซึ่งเป็นบั๊กที่แคชใบนี้ถูกสร้างขึ้นมาแก้ตั้งแต่แรก
+ * คงคีย์เดิม        →  ได้รายชื่อเมืองครบ · ขาดแค่พิกัด → `cityCenterOf()` คืน `null` → ผู้เรียก fail closed
+ *                     →  ซ่อนฟีเจอร์ที่ต้องใช้พิกัด · **หายเองรอบที่ออนไลน์ครั้งถัดไป**
+ * ```
+ * 🎯 **ทิ้งของหลักเพื่อกันของรอง คือการแลกที่ผิดทาง** — และ `cityCenterOf` มี `Number.isFinite` อยู่แล้ว
+ * (`lib/engine/cityCenter.ts:44`) ซึ่ง **`undefined` ก็ไม่ finite** จึงครอบเคสนี้โดยไม่ต้องเพิ่มอะไร
+ * · ⚠️ **ข้อแลกที่ยอมรับ:** เครื่องที่ออฟไลน์ยาวจะไม่เห็นฟีเจอร์ที่ต้องใช้พิกัดจนกว่าจะออนไลน์ครั้งหนึ่ง
+ *   **ไม่ใช่พัง แต่ต้องรู้ว่ายอมอะไร**
+ * · 🔴 **ห้ามอ่าน `.lat`/`.lng` ตรง ๆ จากค่าที่มาจากแคช** — ชนิดบอกว่า `number` แต่แคชเก่าให้ `undefined`
+ *   **`tsc` จับไม่ได้ตามนิยาม** (นี่คือคลาสเดียวกับ `Record` ที่คีย์เป็น union ซึ่งทีมไล่ปิดกันมาทั้งสัปดาห์)
+ *
+ * ⚠️ **สิ่งที่แคชนี้แก้ และสิ่งที่มันแก้ไม่ได้:**
    * · แก้: เครื่องที่เคยเปิดทริปนี้ตอนออนไลน์ → ออฟไลน์แล้วยังรู้ว่าเป็นทริปแพลตฟอร์ม → ประตูเปิด แคชอื่นถูกใช้
    * · 🔴 **แก้ไม่ได้: เปิดทริปนี้ครั้งแรกตอนออฟไลน์** — ไม่มีอะไรในเครื่องให้ตอบ · `status` จะเป็น `error`
    *   และ `TripPlanScreen` **ยังตกไปที่ `ITINERARY` เหมือนเดิม** เพราะมันยุบ *"ไม่มีเมือง"* กับ *"ถามไม่ได้"*
@@ -81,6 +106,8 @@ export function useTripCatalogCities(tripId: string): TripCitiesState {
             id: d.cityId,
             nameTh: d.nameTh,
             slug: d.slug ?? null,
+            lat: d.lat,
+            lng: d.lng,
           }));
         },
         writeCache: (cities) => storeSet(key, cities),
