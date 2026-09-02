@@ -1,4 +1,4 @@
--- E6-AC13 · เติม `youtube_query` ให้ 72 สถานที่เดิม — เจ้าของ: P1-Lead · 2 ก.ย. 2026
+-- E6-AC13 · เติม `youtube_query` (72) + `google_place_id` (3) ให้สถานที่เดิม — เจ้าของ: P1-Lead · 2 ก.ย. 2026
 --
 -- ## ทำไมต้องมีก่อนสลับลำดับ resolve
 -- `E6-AC13` จะย้าย `PLACES` (สถิตย์) ไป *ท้ายสุด* ของลำดับ resolve เพื่อให้ side-map จากคลังถูกใช้จริง
@@ -152,6 +152,33 @@ begin
    where p.youtube_query is not null;
 
   raise notice 'youtube_query: ก่อน % · หลัง % · เป้าหมาย %', n_before, n_after, n_target;
+
+  -- ── google_place_id · 3 แถว ────────────────────────────────────────────────
+  -- 🔴 **น้อยแต่ตัดทิ้งไม่ได้** — `lib/placeQuery.ts:20`
+  --      `place.googlePlaceId ? PLACE_ID_PREFIX + id : place.mapsQuery`
+  --    มีค่า = ค้นด้วย **id ตรงตัว** · ไม่มี = ตกไปค้นด้วย *ข้อความ* ซึ่งชนชื่อซ้ำได้
+  -- ⚠️ ผมเกือบตัดข้อนี้ออกด้วยเหตุผลว่า *"static มีแค่ 3 คลังมี 0 — ใกล้เคียงกันแล้ว"*
+  --    **ซึ่งเทียบ *จำนวน* แทนที่จะเทียบ *สิ่งที่เสีย*** · P3 ไม่ตัด และเขาถูก
+  create temp table _gp(slug text primary key, gid text) on commit drop;
+  insert into _gp(slug, gid) values
+    ('seoul-jd-bbq-itaewon', 'ChIJe6RlIEqifDURwe9y313ZK5Y'),
+    ('seoul-saemaul-hongdae', 'ChIJy9F0pPqZfDURhOPTCrhJQz0'),
+    ('seoul-yoojung-sikdang', 'ChIJE7YZde2jfDURn_vUiTpEFwc');
+
+  update public.catalog_places p
+     set google_place_id = x.gid, updated_at = now()
+    from _gp x
+   where x.slug = p.legacy_slug and p.google_place_id is null;
+
+  select count(*) into n_after
+    from public.catalog_places p join _gp x on x.slug = p.legacy_slug
+   where p.google_place_id is not null;
+  select count(*) into n_target from public.catalog_places p join _gp x on x.slug = p.legacy_slug;
+
+  raise notice 'google_place_id: หลัง % · เป้าหมาย %', n_after, n_target;
+  if n_target > 0 and n_after <> n_target then
+    raise exception 'google_place_id ไม่ครบ: % จาก %', n_after, n_target;
+  end if;
 
   -- 🔴 เกณฑ์เชิงผลลัพธ์ ไม่ใช่ "update ผ่าน" — ทุกแถวที่มี slug ตรงต้องมีค่าครบ
   if n_after <> n_target then
