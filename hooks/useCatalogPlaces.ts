@@ -5,7 +5,25 @@ import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
 import { get as storeGet, set as storeSet } from "@/lib/engine/offlineStore";
 import type { Place } from "@/data/places";
-import { catalogPlaceToPlace, type CatalogPlaceRow } from "@/lib/engine/catalogPlace";
+import { cardToPlace, type CatalogNameCard } from "@/lib/engine/catalogPlace";
+
+/**
+ * แถวคลัง → `Place[]` · **แถวที่ `cardToPlace` ปฏิเสธจะถูกคัดออก ไม่ใช่แต่งค่าให้ผ่าน**
+ *
+ * 🔴 **เลิกใช้ `catalogPlaceToPlace` + `CatalogPlaceRow` แล้ว (2 ก.ย. 2026 · `E6-AC13` ก้าวที่ 2)**
+ * สองตัวนั้นประกาศ `nameTh: string` · `slug: string` ขณะที่ต้นทางจริง (`catalogPlaceCards`) คืน
+ * `null` ได้ทั้งคู่ — **`as CatalogPlaceRow[]` ตรงนี้คือจุดที่ `null` กลายเป็น `string` โดยไม่มีใครถาม**
+ * 🎯 ผลที่ตามมาไม่ใช่แค่ชนิดผิด: `/stops` (เซิร์ฟเวอร์) ใช้ `cardToPlace` ซึ่งมีลำดับชื่อสำรอง
+ * `th → en → local → slug` **ส่วนที่นี่อ่านตรง ๆ** → *ข้อมูลชุดเดียวกัน ให้คำตอบสองแบบ*
+ * ซึ่งเป็นสิ่งที่ไฟล์ `lib/engine/catalogPlace.ts` ถูกสร้างขึ้นมาเพื่อกันพอดี
+ *
+ * ⚠️ **แถวที่ไม่มี `slug` หายจากไซด์บาร์ — ตั้งใจ และไม่ใช่การถดถอย**
+ * `POST …/stops` ระบุสถานที่ด้วย slug (`catalogPlaceIdBySlug`) → แถวที่ไม่มี slug
+ * **กดเพิ่มลงวันไม่ได้อยู่แล้ว** · โชว์มันไว้ = ปุ่มที่กดแล้วได้ `400` เสมอ
+ */
+export function toPlaces(rows: CatalogNameCard[]): Place[] {
+  return rows.map(cardToPlace).filter((p): p is Place => p !== null);
+}
 
 export type CatalogPlacesState =
   | { status: "loading" }
@@ -46,20 +64,20 @@ export function useCatalogPlaces(cityId: string | null): CatalogPlacesState {
 
     // `async function` ครอบ — เหตุผลเดียวกับ `usePlatformItinerary`
     async function load() {
-      await hydrateThenFetch<CatalogPlaceRow[]>({
-        readCache: () => storeGet<CatalogPlaceRow[]>(key),
+      await hydrateThenFetch<CatalogNameCard[]>({
+        readCache: () => storeGet<CatalogNameCard[]>(key),
         fetchFresh: async () => {
           const r = await fetch(`/api/engine/places?cityId=${encodeURIComponent(id)}&limit=100`);
           if (!r.ok) throw new Error(`places ${r.status}`);
-          return (await r.json()) as CatalogPlaceRow[];
+          return (await r.json()) as CatalogNameCard[];
         },
-        // เก็บ *แถวดิบ* ไม่ใช่ผลของ `catalogPlaceToPlace()` — แปลงตอนอ่าน ให้โค้ดรุ่นหน้าอ่านของเดิมได้
+        // เก็บ *แถวดิบ* ไม่ใช่ผลของ `cardToPlace()` — แปลงตอนอ่าน ให้โค้ดรุ่นหน้าอ่านของเดิมได้
         writeCache: (rows) => storeSet(key, rows),
         onWriteFailed: () => noteCacheFailure("offlineStore/places/write", { code: "idb" }),
         applyCache: (rows) =>
-          setResult({ forCityId: id, state: { status: "ready", places: rows.map(catalogPlaceToPlace) } }),
+          setResult({ forCityId: id, state: { status: "ready", places: toPlaces(rows) } }),
         applyFresh: (rows) =>
-          setResult({ forCityId: id, state: { status: "ready", places: rows.map(catalogPlaceToPlace) } }),
+          setResult({ forCityId: id, state: { status: "ready", places: toPlaces(rows) } }),
         applyError: () => setResult({ forCityId: id, state: { status: "error" } }),
         isCancelled: () => cancelled,
       });
