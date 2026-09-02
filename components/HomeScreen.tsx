@@ -9,7 +9,8 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
-import { clearCache, readCache, writeCache } from "@/lib/localCache";
+import { readCache, writeCache } from "@/lib/localCache";
+import { clearDeviceData } from "@/lib/auth/deviceData";
 
 type TripDestination = {
   cityId: string;
@@ -211,7 +212,22 @@ export function HomeScreen() {
       writeCache(TRIP_LIST_CACHE_KEY, { ...cached, ownerId: user.id } satisfies CachedTripList);
       return;
     }
-    if (cached.ownerId !== user.id) clearCache(TRIP_LIST_CACHE_KEY);
+    // 🔴 **ล้าง *ที่เก็บทั้งสองใบ* ไม่ใช่คีย์เดียว** (P3 ชี้ IndexedDB · P1 พบว่าใหญ่กว่านั้น · P2 แก้ 2 ก.ย. 2026)
+    // ของเดิมล้างแค่ `TRIP_LIST_CACHE_KEY` → **ชื่อพาสปอร์ต · ที่พัก · ตั๋ว · สถานที่ที่เพิ่มเอง · โน้ต
+    // ของเจ้าของคนก่อนอยู่ครบทั้งสองที่เก็บ** · `ImmigrationSheet.tsx:15-17` เขียนอันตรายข้อนี้ไว้เอง
+    // แต่เขียนไว้สำหรับเส้นทาง `signOut` — **อันตรายเดียวกัน ปิดแค่ประตูเดียวจากสองประตู**
+    // 🎯 และประตูที่เปิดอยู่คือประตูที่ผู้ใช้ *ไม่ได้ตั้งใจเดินผ่าน* (session หมดอายุ · ล็อกอินคนละแท็บ)
+    //
+    // ⚠️ **`void` ไม่ได้แปลว่า "ยอมให้ล้างช้าได้"** — `clearDeviceData()` เรียก `clearAllCaches()`
+    // **ก่อน `await` ตัวแรก** ฝั่ง `localStorage` (ซึ่งเก็บชื่อพาสปอร์ต) จึงถูกล้าง *ในจังหวะเดียวกับ
+    // ของเดิมทุกประการ* · ที่เป็น async คือฝั่ง IndexedDB เท่านั้น
+    // 🔴 **แปลว่าบรรทัดนี้พึ่ง *ลำดับของคำสั่งข้างใน* `clearDeviceData()`** — ถ้าวันหลังมีคนสลับให้
+    // `await clearOfflineStore()` ขึ้นก่อน การล้าง localStorage จะเลื่อนไปหลัง render โดยที่ตรงนี้ไม่มีอะไรเปลี่ยน
+    // ✅ **ลำดับนั้นถูกบังคับด้วยเคสแล้ว ไม่ใช่ด้วยคำเตือน** — `lib/__tests__/deviceDataClear.test.ts`
+    //    เรียก `clearDeviceData()` **โดยจงใจไม่ `await`** แล้ว assert ว่าคีย์ถูกล้างแล้วในจังหวะ sync
+    //    (ถ้า `await` เคสจะเขียวไม่ว่าลำดับข้างในจะเป็นอย่างไร — การไม่ await คือสิ่งที่ทำให้มันมีอำนาจ)
+    //    · สลับลำดับ → แดง 2 เคส เขียว 3 · P1 ยิงทิศแดงยืนยันแล้ว (`da1debe`)
+    if (cached.ownerId !== user.id) void clearDeviceData();
   }, [user]);
 
   const trips = state.status === "ready" ? state.trips : null;
