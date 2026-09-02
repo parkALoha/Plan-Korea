@@ -825,7 +825,9 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       { params: Promise.resolve({ tripId: tripA }) },
     );
     expect(list.status, `อ่านจุดแวะควร 200: ${await list.clone().text()}`).toBe(200);
-    const stops = (await list.json()) as { place_id: string }[];
+    // 🔴 รูปคำตอบเปลี่ยนเป็น `{ stops, places }` เมื่อ 2 ก.ย. 2026 (`E6-AC13` · P1)
+    //    เดิมเป็นอาเรย์เปล่า · **เคสนี้แดงทันทีตอนเปลี่ยน ไม่ได้ผ่านเงียบ** (`.filter is not a function`)
+    const stops = ((await list.json()) as { stops: { place_id: string }[] }).stops;
     const mine = stops.filter((r) => r.place_id === customId);
     expect(
       mine.length,

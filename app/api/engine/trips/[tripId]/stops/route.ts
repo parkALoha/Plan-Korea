@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import {
-  catalogPlaceIdBySlug, insertStop, ranksInDay, softDeleteStop, stopRanksInDay, stopsOfPlan, updateStop,
-  updateStopInDay,
+  catalogPlaceIdBySlug, catalogPlacesByIds, insertStop, ranksInDay, softDeleteStop, stopRanksInDay,
+  stopsOfPlan, updateStop, updateStopInDay,
 } from "@/lib/engine/db";
-import type { InsertRow } from "@/lib/engine/db";
+import type { Db, InsertRow } from "@/lib/engine/db";
+import { cardToPlace } from "@/lib/engine/catalogPlace";
+import { catalogPlaceCards } from "@/lib/engine/trip";
+import type { Place } from "@/data/places";
 import { rankBetween, rankForInsert } from "@/lib/engine/rank";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
@@ -32,6 +35,8 @@ type Row = {
   transfer_target_label: string | null; visited_at: string | null;
   legacy_added_by: string | null; updated_at: string;
   custom_place_id: string | null;
+  /** uuid ของแถวคลัง — ใช้ประกอบ side-map `places` · ต่างจาก `place_id` ที่ส่งออกซึ่งเป็น slug */
+  catalog_place_id: string | null;
   event_kind: string | null; schedule_bound: string | null;
   fixed_start_time: string | null; fixed_end_time: string | null; day_offset: number;
   title: string | null; title_en: string | null; icon: string | null;
@@ -132,6 +137,44 @@ async function guard(req: NextRequest, tripId: string) {
   return null;
 }
 
+/**
+ * side-map `slug → Place` ของสถานที่ที่จุดแวะชุดนี้อ้างถึง — `E6-AC13` · P1 · 2 ก.ย. 2026
+ *
+ * ## 🔴 ทำไมเป็นคิวรีที่สอง ไม่ใช่ขยาย `STOP_COLS`
+ * `STOP_COLS` **ป้อนขาเขียนด้วย** (`db.ts:1184` — `insert(row).select(STOP_COLS)`)
+ * → ขยาย embed = **การเพิ่มจุดแวะทุกครั้งลากคลังเต็มใบกลับมาด้วย ตลอดไป** เพื่อฟีเจอร์ฝั่งอ่าน
+ * · 🎯 ผมเกือบเลือกทางนั้นเพราะมองมันเป็น *"คอลัมน์ของ GET"* ซึ่งเป็นบทบาทที่ใช้ล่าสุด **ไม่ใช่บทบาททั้งหมด**
+ * · ⚠️ *"คิวรีที่สองแพงเพราะเพิ่ม round trip"* เป็นเหตุผลที่**วางผิดชั้น** — ทั้งสองยิงจากเซิร์ฟเวอร์
+ *   ข้าง ๆ ฐาน · นั่นคือราคาของ เซิร์ฟเวอร์↔ฐาน ไม่ใช่ เบราว์เซอร์↔เซิร์ฟเวอร์
+ *
+ * ## 🔴 คิวรีล้ม → `{}` ไม่ใช่ 502 — และมันไม่ใช่การกลืน error เงียบ ๆ
+ * จุดแวะคือเนื้อของคำขอ · side-map คือ *ส่วนเสริม* ที่ไคลเอนต์ออกแบบมาให้ขาดได้อยู่แล้ว
+ * (`parseStopsPayload` → `places: {}` → ชื่อตกไปทาง resolve เดิม)
+ * · **ทำให้ทั้งคำขอล้มเพราะส่วนเสริมล้ม = เปลี่ยนการเสื่อมบางส่วน ให้กลายเป็นล่มทั้งหน้า**
+ * · 🔴 **แต่ต้องดังที่ log** ไม่งั้นมันคือ *"เขียวที่ไม่ได้แปลว่าใช้ได้"* อีกใบ
+ *
+ * ## 🔴 แถวที่ไม่มี slug ไม่ถูกใส่ลงแมป — `cardToPlace` คืน `null` ให้ (เหตุผลอยู่ที่นั่น)
+ * โดยย่อ: `legacy_slug` nullable → คีย์ `""` จะทำให้สถานที่ที่ไม่มี slug **ทุกใบทับกันที่คีย์เดียว**
+ */
+async function placesOfStops(db: Db, rows: Row[]): Promise<Record<string, Place>> {
+  const ids = [...new Set(rows.map((r) => r.catalog_place_id).filter((v): v is string => v !== null))];
+  if (ids.length === 0) return {};
+
+  const { data, error } = await catalogPlacesByIds(db, ids as [string, ...string[]]);
+  if (error) {
+    console.error("[stops] อ่านคลังสำหรับ side-map ไม่ได้ — คืน places ว่าง", error.message);
+    return {};
+  }
+
+  const out: Record<string, Place> = {};
+  // ตัวเลือกชื่อตาม `locale`/`priority` อยู่ใน `catalogPlaceCards` ใบเดียว — ที่นี่แค่ *ประกอบ*
+  for (const card of catalogPlaceCards(data ?? [])) {
+    const place = cardToPlace(card);
+    if (place) out[place.id] = place;
+  }
+  return out;
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params;
   const stop = await guard(req, tripId);
@@ -147,13 +190,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ trip
   if (error) return NextResponse.json({ error: error.message }, { status: 502 });
 
   // 🔴 `order_index` คำนวณจากตำแหน่ง **ในวันนั้น** ไม่ใช่ทั้งแผน — UI เรียงต่อวัน
+  const rows = (data ?? []) as unknown as Row[];
   const perDay = new Map<string, number>();
-  const out = ((data ?? []) as unknown as Row[]).map((r) => {
+  const stops = rows.map((r) => {
     const n = perDay.get(r.trip_day_id) ?? 0;
     perDay.set(r.trip_day_id, n + 1);
     return toDto(r, n);
   });
-  return NextResponse.json(out, { headers: { "Cache-Control": "private, no-store" } });
+
+  return NextResponse.json(
+    { stops, places: await placesOfStops(db, rows) },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
 }
 
 /** เพิ่มจุดแวะ — `{ planId, tripDayId, placeId?, atIndex?, kind?, ... }` */

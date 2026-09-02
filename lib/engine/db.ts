@@ -209,7 +209,27 @@ export function catalogPlaceById(db: Db, id: string) {
  * ```
  */
 export function catalogPlacesByIds(db: Db, ids: readonly [string, ...string[]]) {
-  return engineTable(db, "catalog_places").select("*").in("id", [...ids]);
+  /**
+   * 🔴 **แก้ 2 ก.ย. 2026 — เดิมเป็น `select("*")` ซึ่งคืนแถวที่ *ไม่มีชื่อ***
+   * `db.ts:152` (ห่างขึ้นไปไม่ถึง 40 บรรทัด) เตือนเรื่องนี้ไว้เองแล้วว่า
+   * **`catalog_places` ไม่มีคอลัมน์ชื่อเลยสักคอลัมน์** — ชื่ออยู่ `catalog_place_names` แยกตาม locale
+   * 🎯 **คำเตือนถูกเขียน *ก่อน* ฟังก์ชันนี้ และฟังก์ชันนี้ก็ยังพลาดข้อเดียวกัน** —
+   *    เพราะตอนเขียน ผมกำลังตอบคำถาม *"ยิงทีเดียวได้หลายใบไหม"* ไม่ใช่ *"แถวที่ได้ใช้งานได้ไหม"*
+   * ⚠️ **ไม่มีใครเห็นเพราะยังไม่มีใครเรียก** — เขียนล่วงหน้าให้ `E8` · ผู้เรียกรายแรกคือ `E6-AC13`
+   *
+   * 🔴 **ไม่ใส่ `!inner` โดยตั้งใจ** — นี่คือ *resolve* ไม่ใช่ *browse* (เหตุผลเดียวกับ `picker_hidden` ข้างบน)
+   * · P3 ไล่ migration ยืนยันว่า `city_id` เป็น `not null` → `!inner` ทำแถวหายไม่ได้ **วันนี้**
+   *   **แต่เส้นทาง resolve ไม่ควรมีตัวกรองที่ทำแถวหายได้อยู่ตั้งแต่แรก** ไม่ว่ามันจะยิงโดนหรือไม่
+   *   · ถ้าวันหนึ่ง `city_id` เปิดให้ null ได้ ตัวกรองนั้นจะเริ่มกินแถวเงียบ ๆ โดยไม่มีใครแก้บรรทัดนี้
+   *
+   * 📌 รูปที่ select ต้องตรงกับ `RawCatalogPlace` ใน `trip.ts` เพราะผลถูกส่งต่อให้ `catalogPlaceCards()`
+   *    — **ตัวเลือกชื่อตาม `locale`/`priority` อยู่ที่นั่นใบเดียว ห้ามเขียนซ้ำที่ผู้เรียก**
+   */
+  return engineTable(db, "catalog_places")
+    .select(
+      "id, legacy_slug, category, source, lat, lng, address_local, maps_query, google_place_id, youtube_query, weather_sensitivity, catalog_cities(legacy_slug, country_id), catalog_place_names(locale, name, priority), catalog_place_descriptions(locale, description)",
+    )
+    .in("id", [...ids]);
 }
 
 /**
@@ -1131,7 +1151,7 @@ export function duplicatePlan(db: Db, tripId: string, sourcePlanId: string, name
 // ───────────────────────────────────────────────────────────────────────────
 
 const STOP_COLS =
-  "id, trip_day_id, kind, rank, dwell_minutes, travel_mode, note, photo_path, intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label, visited_at, legacy_added_by, updated_at, custom_place_id, event_kind, schedule_bound, fixed_start_time, fixed_end_time, day_offset, title, title_en, icon, is_alert, time_is_flexible, flight_no, flight_from_code, flight_to_code, flight_from_en, flight_to_en, layover_baggage, layover_immigration, layover_leaves_airport, layover_terminal_change, place_ref, catalog_places(legacy_slug)";
+  "id, trip_day_id, catalog_place_id, kind, rank, dwell_minutes, travel_mode, note, photo_path, intercity_from, intercity_to, intercity_mode, transfer_target_time, transfer_target_label, visited_at, legacy_added_by, updated_at, custom_place_id, event_kind, schedule_bound, fixed_start_time, fixed_end_time, day_offset, title, title_en, icon, is_alert, time_is_flexible, flight_no, flight_from_code, flight_to_code, flight_from_en, flight_to_en, layover_baggage, layover_immigration, layover_leaves_airport, layover_terminal_change, place_ref, catalog_places(legacy_slug)";
 
 /** จุดแวะของแผน **ที่ยังไม่ถูกลบ** เรียง `(rank, id)` — `D81` ③ */
 export function stopsOfPlan(db: Db, tripId: string, planId: string) {
