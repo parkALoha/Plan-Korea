@@ -42,7 +42,30 @@ function hookSources(): { file: string; source: string }[] {
     .map((f) => ({ file: f, source: readFileSync(join(dir, f), "utf8") }));
 }
 
+/**
+ * 🔴 นับ hook *ทุกชั้น* เพื่อเทียบกับตัวที่สแกนจริง (ชั้นเดียว) — P5 เสนอ · P4 รับ · 29 ส.ค. 2026
+ * เกณฑ์เดิม `> 5` เกิดจากเคส "ย้ายหมดทั้งโฟลเดอร์" จึงมีรูปร่างของเหตุการณ์นั้น
+ * **ไม่ครอบเคสที่ใกล้กว่ามาก: มีคนสร้าง `hooks/trip/` แล้วใส่ hook ใหม่ไว้ในนั้น**
+ */
+function countAllHooks(dir: string): number {
+  let n = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) n += countAllHooks(join(dir, e.name));
+    else if (e.name.endsWith(".ts") || e.name.endsWith(".tsx")) n += 1;
+  }
+  return n;
+}
+
 describe("คีย์แคชที่ผูกกับทริป", () => {
+  it("🔴 ไม่มี hook ซ่อนอยู่ในโฟลเดอร์ย่อย — ตัวสแกนอ่านชั้นเดียว", () => {
+    // เทียบ *สิ่งที่สแกนจริง* กับ *สิ่งที่มีอยู่จริง* แทนการตั้งเลขขั้นต่ำ
+    // → แดงอัตโนมัติวินาทีที่มีคนสร้าง `hooks/trip/` ซึ่งเป็นสิ่งที่ไฟล์นี้กลัวอยู่พอดี
+    expect(
+      hookSources().length,
+      "มี hook อยู่ในโฟลเดอร์ย่อยที่ `readdirSync` ชั้นเดียวมองไม่เห็น — ตัวสแกนกำลังข้ามมันเงียบ ๆ",
+    ).toBe(countAllHooks(join(process.cwd(), "hooks")));
+  });
+
   it("🔴 ตัวเดินไฟล์ต้องเดินถึง hook จริง — ควบคุมข้างล่างพิสูจน์ *ตัวจับคู่* ไม่ใช่ *คลัง*", () => {
     /**
      * 🔴 **ควบคุมฝั่งบวกข้างล่างป้อน *สตริงตายตัว* เข้า `bareCacheKeys` — ไม่ผ่าน `hookSources()`**

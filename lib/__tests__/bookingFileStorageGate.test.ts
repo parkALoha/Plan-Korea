@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +21,14 @@ import { describe, expect, it } from "vitest";
 //    เหลือไฟล์เดียวในรายการ — จุดที่เกณฑ์ `E3-AC4` ปิดได้จริงตามที่ P1 ตั้งเป้าไว้
 const ALLOWED_FILES = ["lib/engine/guardedStorage.ts"];
 
+/**
+ * 🔴 รายชื่อ root ต้องถูก *ยืนยันกับระบบไฟล์* ไม่ใช่เชื่อว่าถูก (P5 ยิงเจอ · P4 ยืนยันเอง · 29 ส.ค. 2026)
+ * เปลี่ยน `"components"` → `"components_MOVED"` root เดียว: 59 ไฟล์หลุดการสแกน · `examined` เหลือ 145
+ * ยังผ่าน `> 50` สบาย ๆ · **เขียว 3/3 ทั้งที่ไม่ได้สแกนทั้งโฟลเดอร์**
+ * 🎯 เกณฑ์ `> 50` เกิดจากเคส "ทุก root ผิด" จึงมีรูปร่างของเหตุการณ์นั้น ไม่ใช่รูปร่างของช่อง
+ */
+const ROOTS = ["hooks", "app", "components", "lib"] as const;
+
 const WRITE_METHOD = /\.storage\.from\([^)]*\)\s*\.\s*(upload|remove|update|move|copy)\s*\(/;
 
 function scan(): { offenders: string[]; examined: number } {
@@ -42,7 +50,7 @@ function scan(): { offenders: string[]; examined: number } {
       if (WRITE_METHOD.test(src)) offenders.push(rel);
     }
   };
-  for (const r of ["hooks", "app", "components", "lib"]) {
+  for (const r of ROOTS) {
     try {
       walk(resolve(root, r));
     } catch {
@@ -75,6 +83,18 @@ describe("E3-AC4 — ห้ามมีจุดเขียน Supabase Storage
      *   (P3 เจอรูปเดียวกันที่ `E6-AC10`: เขียวเพราะ marker เหลือศูนย์ ไม่ใช่เพราะบันเดิลสะอาด)
      */
     expect(scan().examined, "ตัวเดินไฟล์ไม่เจอไฟล์เลย — โฟลเดอร์ถูกย้าย/เปลี่ยนชื่อ ไม่ใช่ 'ไม่มีผู้ละเมิด'").toBeGreaterThan(50);
+  });
+
+  it("🔴 ทุก root ในรายชื่อต้องเป็นโฟลเดอร์จริง — ไม่ใช่ชื่อที่ `walk()` กลืนเงียบ", () => {
+    // ถาม *ระบบไฟล์* ว่า "ที่ที่เราบอกว่าจะไป มีจริงไหม" แทนถามผลเดินว่า "เดินได้เยอะไหม"
+    // `walk()` อยู่ใน try/catch ที่กลืน ENOENT โดยตั้งใจ → root ที่พิมพ์ผิดจะหายเงียบทีละใบ
+    const root = resolve(process.cwd());
+    for (const r of ROOTS) {
+      expect(
+        statSync(resolve(root, r), { throwIfNoEntry: false })?.isDirectory() ?? false,
+        `root "${r}" ไม่ใช่โฟลเดอร์ที่มีอยู่จริง — การสแกนข้ามมันไปเงียบ ๆ`,
+      ).toBe(true);
+    }
   });
 
   it("ไม่มีไฟล์ไหนนอกรายการที่อนุญาตเรียก storage.from(...).upload/remove/update/move/copy ตรงๆ", () => {
