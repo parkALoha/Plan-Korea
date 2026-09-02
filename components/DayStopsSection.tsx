@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cityCenter, Place } from "@/data/places";
-import type { City, Day } from "@/data/itinerary";
+import type { City, Day, DayEvent } from "@/data/itinerary";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import { DayCityPicker } from "@/components/DayCityPicker";
 import type { CatalogCity } from "@/hooks/useTripCatalogCities";
@@ -34,6 +34,7 @@ import { TravelModeRow } from "./TravelModeRow";
 export function DayStopsSection({
   day,
   stops,
+  eventsSplit,
   customPlaces,
   hotel,
   startHotel,
@@ -64,6 +65,10 @@ export function DayStopsSection({
   day: Day;
   /** stops for this day only, already sorted by order_index */
   stops: TripStop[];
+  /** เหตุการณ์ของวันที่แบ่ง ก่อน/หลัง จุดแวะมาแล้ว — ผู้เรียกที่อ่านข้อมูลจากฐานเป็นคนแบ่งด้วย
+   *  `splitDayEvents()` แล้วส่งลงมา · ทริปเกาหลีเดิม (ไฟล์สถิตย์) ไม่ต้องส่ง — `useDaySchedule`
+   *  จะตกไปใช้ `day.events` เอง */
+  eventsSplit?: { before: DayEvent[]; after: DayEvent[] };
   customPlaces: CustomPlace[];
   /** ที่พักคืนนี้ = จุดจบของวัน */
   hotel: TripHotel | null;
@@ -180,7 +185,7 @@ export function DayStopsSection({
     lastPlace,
     showStartAnchorRow,
     showEndAnchorRow,
-  } = useDaySchedule({ day, stops, customPlaces, hotel, startHotel, returnTravelMode, startTime });
+  } = useDaySchedule({ day, stops, eventsSplit, customPlaces, hotel, startHotel, returnTravelMode, startTime });
 
   // วันที่ล็อกแล้ว = ลงตัวแล้ว ไม่ต้องกางให้เกะกะตอนไล่ดูทั้ง 11 วันบนมือถือ (เฟส 17)
   // ยุบอยู่ = ไม่ mount ทั้งลิสต์และแผนที่ของวันนั้น ได้ performance มาฟรีๆ ด้วย

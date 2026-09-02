@@ -36,6 +36,7 @@ import { useHiddenPlaces } from "@/hooks/useHiddenPlaces";
 import { useOvernightOverrides } from "@/hooks/useOvernightOverrides";
 import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
+import { splitDayEvents } from "@/lib/engine/dayEvents";
 import { useTripWeather } from "@/hooks/useTripWeather";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { BottomNav } from "@/components/BottomNav";
@@ -283,13 +284,39 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   // บอกไปตรงๆ ครั้งเดียวเหนือลิสต์วัน ดีกว่าปล่อยให้เดาเอง
   const { byDay: weatherByDay, daysUntilFirstDay } = useTripWeather(itinerary);
 
-  const stopsByDay = useMemo(() => {
-    const map: Record<string, TripStop[]> = {};
+  /**
+   * 🔴 **แถว `kind='event'` ต้องไม่ปนอยู่ในลิสต์จุดแวะ** (P3 เจอ · P1 ส่งต่อ · P2 ทำ · 2 ก.ย. 2026)
+   *
+   * โครงเดิมของเว็บทริปเป็น **สองอาเรย์** (`day.events[]` กับ `stops[]`) → ตัวเรนเดอร์รวมเองเป็นสามส่วน
+   * · `E7` ยุบทั้งสองเข้า `trip_stops` ใบเดียว ซึ่ง **บังคับให้มีลำดับเดียว** และกฎการรวมไม่ได้ถูกย้ายมา
+   * → เหตุการณ์ (เที่ยวบิน · เช็คเอาต์) ไหลไปกองท้ายวันตาม `rank` · ผู้ใช้เห็น
+   *   `🧳 เช็คเอาต์ออกจากโรงแรม 05:45` **โผล่ท้ายวัน** หลังจุดแวะตอนเย็น
+   *
+   * 🔴 **กรองอย่างเดียวไม่พอ และเกือบเป็นบั๊กชนิดเดียวกับที่กำลังแก้** — ถ้ากรองทิ้งเฉย ๆ
+   * เหตุการณ์จะ *หายจากหน้าแผนทั้งใบ* · ที่แสดงผลมีอยู่แล้ว (`DayEventsPanel` ใน `DayStopsSection`)
+   * แต่มันอ่านจาก `useDaySchedule` ซึ่งต้องได้ `eventsSplit` ป้อนเข้าไป — **ไม่มีใครป้อนให้**
+   * → จึงส่งทั้ง *จุดแวะที่กรองแล้ว* และ *เหตุการณ์ที่แบ่งแล้ว* ลงไปคู่กัน
+   *
+   * 📌 **กรองที่ต้นทาง ไม่ใช่ที่จุดเรนเดอร์** — `stopsByDay` ถูกใช้อีกหลายที่ (DnD · ตัวนับ ·
+   *    `lastStopPlaceForDay` · `selectedPlaceIdsByCity`) · กรองแค่ตอนแสดงจะทำให้ทุกตัวนั้นนับผิดเงียบ ๆ
+   * 📌 **ดัชนีไม่ต้องแปลง** — `atIndex` ถูกแก้ที่เซิร์ฟเวอร์แล้ว (`stopRanksInDay` · `4f825fa`)
+   *    ให้นับเฉพาะแถวจุดแวะ ซึ่งตรงกับสิ่งที่ผู้เรียกทุกตัวเชื่ออยู่แล้ว
+   */
+  const dayEventsSplit = useMemo(() => {
+    const rowsByDay: Record<string, TripStop[]> = {};
     for (const stop of stops) {
-      (map[stop.day_id] ??= []).push(stop);
+      (rowsByDay[stop.day_id] ??= []).push(stop);
     }
+    const map: Record<string, ReturnType<typeof splitDayEvents<TripStop>>> = {};
+    for (const [dayId, rows] of Object.entries(rowsByDay)) map[dayId] = splitDayEvents(rows);
     return map;
   }, [stops]);
+
+  const stopsByDay = useMemo(() => {
+    const map: Record<string, TripStop[]> = {};
+    for (const [dayId, split] of Object.entries(dayEventsSplit)) map[dayId] = split.stops;
+    return map;
+  }, [dayEventsSplit]);
 
   // place ที่ถูกเพิ่มลงวันไหนก็ได้ของเมืองนั้นแล้ว — กันไม่ให้โชว์ซ้ำใน sidebar ให้เลือกอีก
   const selectedPlaceIdsByCity = useMemo(() => {
@@ -648,6 +675,11 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                   key={day.id}
                   day={day}
                   stops={stopsByDay[day.id] ?? []}
+                  eventsSplit={
+                    dayEventsSplit[day.id]
+                      ? { before: dayEventsSplit[day.id].before, after: dayEventsSplit[day.id].after }
+                      : undefined
+                  }
                   customPlaces={customPlaces}
                   hotel={hotelForDay(day.id)}
                   startHotel={hotelBeforeDay(day.id)}
