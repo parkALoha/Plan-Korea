@@ -21,7 +21,7 @@ function isLocked(event: DayEvent): boolean {
  * เฟส 15: แยก "ตั๋วที่ล็อกแล้ว" ออกจาก "เวลาที่เป็นคำแนะนำ" ให้เห็นด้วยตา แทนที่จะเหมาว่าล็อกหมดทั้งแผง
  *
  * เฟส 28: แถวในแผงนี้ใช้**โครงเดียวกับ `SortableStopRow` เป๊ะๆ** — ช่องซ้ายสุดขนาดเท่าที่จับลาก
- * (`h-10 w-7`) · คอลัมน์เวลา `w-12 sm:w-14` · รูป/ไอคอน `h-10 w-10` · ชื่อ `font-semibold` ·
+ * (`h-10 w-7`) · คอลัมน์เวลา `w-12 sm:w-14` · รูป/ไอคอน `h-20 w-20` · ชื่อ `font-semibold` ·
  * บรรทัดรายละเอียดย่อหน้า `pl-10 sm:pl-14` เท่าบรรทัดโน้ต · คั่นด้วย `divide-y divide-line`
  * เหตุผล: วันบิน (11/21 ต.ค.) เคยเป็นตัวหนังสือล้วนคนละหน้าตากับทั้งเว็บ กดอะไรไม่ได้เลย
  * ทั้งที่ "สนามบินไหน อยู่ตรงไหน" คือสิ่งที่ต้องรู้ที่สุดของวันนั้น
@@ -99,11 +99,11 @@ export function DayEventsPanel({
                     <PlaceThumb
                       query={placeQueryKey(place)}
                       category={place.category}
-                      className="h-10 w-10 shrink-0"
+                      className="h-20 w-20 shrink-0"
                     />
                   ) : (
                     // ไอคอนในกรอบขนาดเท่ารูปย่อ — แบบเดียวกับแถว intercity/hotel/transfer ที่ไม่มีรูป
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+                    <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-3xl">
                       {event.icon}
                     </span>
                   )}

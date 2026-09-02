@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Place } from "@/data/places";
@@ -18,6 +18,28 @@ import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
 import { TransferAdvicePanel } from "./TransferAdvicePanel";
 import { INTERCITY_MODE_LABEL, intercityModeIconOf, type IntercityMode } from "./IntercityEditModal";
+
+/* กฎการจัดรูปโน้ตอยู่ใน NoteBody (บุลเล็ต/ลำดับ/ป้ายเวลา) — แต่ก่อนบอกไว้ที่ placeholder ที่เดียว
+   ซึ่งหายทันทีที่พิมพ์ตัวแรก คนพิมพ์จึงไม่มีทางรู้ว่า "-" หรือ "09:30" ทำอะไรได้ ต้องอยู่ตลอดเวลาพิมพ์ */
+const NOTE_FORMAT_HINT = "- บุลเล็ต · 1. ลำดับ · 09:30 ป้ายเวลา";
+
+/** ความสูงสูงสุดของช่องพิมพ์โน้ต (px) — เกินนี้ให้เลื่อนในช่องแทนดันแถวอื่นตกจอ */
+const NOTE_MAX_H = 240;
+
+/* โตตาม *ความสูงจริงของข้อความ* ไม่ใช่จำนวน "\n" — ของเดิมนับบรรทัดที่กด Enter เอง
+   พิมพ์ยาวรวดเดียวบนมือถือแล้วตัวหนังสือวนบรรทัด ช่องยังสูงเท่าเดิม มองไม่เห็นของที่พิมพ์ */
+function growNote(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, NOTE_MAX_H)}px`;
+  el.style.overflowY = el.scrollHeight > NOTE_MAX_H ? "auto" : "hidden";
+}
+
+/** กัน blur ตอนกดปุ่มในโหมดแก้โน้ต — ไม่งั้น onBlur ของ textarea จะบันทึก/ปิดก่อนที่ onClick จะได้ทำงาน
+ *  (ผลคือปุ่ม "ยกเลิก" กดไม่ติดเลย เพราะแถวถูกเรนเดอร์ใหม่ไปแล้วระหว่าง mousedown→mouseup) */
+function keepFocus(e: ReactMouseEvent) {
+  e.preventDefault();
+}
 
 const DWELL_STEP_MINUTES = 15;
 const MIN_DWELL_MINUTES = 15;
@@ -256,7 +278,7 @@ export function SortableStopRow({
 
         {stop.kind === "intercity" ? (
           <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+            <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-3xl">
               {intercityModeIconOf(stop.intercity_mode)}
             </span>
             <span className="min-w-0 flex-1">
@@ -277,7 +299,7 @@ export function SortableStopRow({
             disabled={!sched.place}
             className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+            <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-3xl">
               🏨
             </span>
             <span className="min-w-0 flex-1">
@@ -297,7 +319,7 @@ export function SortableStopRow({
             disabled={!sched.place}
             className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+            <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-3xl">
               {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
                 ? "🚉"
                 : "✈️"}
@@ -326,7 +348,7 @@ export function SortableStopRow({
                 <PlaceThumb
                   query={placeQueryKey(sched.place)}
                   category={sched.place.category}
-                  className="h-10 w-10 shrink-0"
+                  className="h-20 w-20 shrink-0"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold text-content hover:underline">
@@ -374,12 +396,27 @@ export function SortableStopRow({
         ) : editingNote ? (
           <div className="flex flex-wrap items-center gap-1.5">
             {/* textarea ไม่ใช่ input — โน้ตหลายอันเป็นแพลนย่อยของสถานที่นั้น ต้องขึ้นบรรทัดใหม่/ทำบุลเล็ตได้
-                Enter = ขึ้นบรรทัด, Cmd/Ctrl+Enter = บันทึก (Enter เดี่ยวเคยบันทึกทันที เลยพิมพ์หลายบรรทัดไม่ได้เลย) */}
+                Enter = ขึ้นบรรทัด, Cmd/Ctrl+Enter = บันทึก (Enter เดี่ยวเคยบันทึกทันที เลยพิมพ์หลายบรรทัดไม่ได้เลย)
+                มือถือไม่มีคีย์ลัดพวกนี้เลย — ท่าบันทึกที่นั่นคือ onBlur ข้างล่าง */}
             <textarea
               autoFocus
-              rows={Math.min(10, Math.max(2, noteDraft.split("\n").length))}
+              rows={2}
+              ref={growNote}
               value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
+              onChange={(e) => {
+                setNoteDraft(e.target.value);
+                growNote(e.currentTarget);
+              }}
+              onBlur={() => {
+                /* มือถือไม่มี ⌘↵ — แตะออกนอกช่องคือท่าบันทึกท่าเดียวที่ใช้ได้จริงตรงนั้น
+                   ปุ่มบันทึก/ยกเลิก/ลบ กัน blur ด้วย onMouseDown ไว้แล้ว จึงไม่ชน */
+                if (noteDraft === (stop.note ?? "")) {
+                  setEditingNote(false);
+                  return;
+                }
+                onUpdateNote(noteDraft.trim() || null);
+                setEditingNote(false);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -392,9 +429,10 @@ export function SortableStopRow({
                 }
               }}
               placeholder={"จดได้ยาวๆ ขึ้นบรรทัดใหม่ได้ เช่น\n- สั่งบิบิมบับหม้อหิน\n10:30 ต่อคิวหน้าร้าน"}
-              className="min-w-0 flex-1 basis-full resize-y rounded-lg border border-line px-2 py-1.5 text-sm leading-relaxed text-content focus:border-maple focus:outline-none"
+              className="min-w-0 flex-1 basis-full resize-none overflow-hidden rounded-lg border border-line px-2 py-1.5 text-sm leading-relaxed text-content focus:border-maple focus:outline-none"
             />
             <button
+              onMouseDown={keepFocus}
               onClick={() => {
                 onUpdateNote(noteDraft.trim() || null);
                 setEditingNote(false);
@@ -404,6 +442,7 @@ export function SortableStopRow({
               บันทึก
             </button>
             <button
+              onMouseDown={keepFocus}
               onClick={() => {
                 setNoteDraft(stop.note ?? "");
                 setEditingNote(false);
@@ -414,6 +453,7 @@ export function SortableStopRow({
             </button>
             {stop.note && (
               <button
+                onMouseDown={keepFocus}
                 onClick={() => {
                   onUpdateNote(null);
                   setNoteDraft("");
@@ -424,6 +464,12 @@ export function SortableStopRow({
                 ลบ
               </button>
             )}
+            <p className="basis-full text-[11px] leading-snug text-content-soft/70">
+              {NOTE_FORMAT_HINT}
+              {/* คีย์ลัดมีจริงเฉพาะบนคีย์บอร์ด — บนมือถือท่าบันทึกคือแตะออกนอกช่อง บอกคนละอย่างกัน */}
+              <span className="hidden sm:inline"> · ⌘/Ctrl+↵ บันทึก · Esc ยกเลิก</span>
+              <span className="sm:hidden"> · แตะนอกช่องเพื่อบันทึก</span>
+            </p>
           </div>
         ) : stop.note ? (
           /* div ไม่ใช่ button — ข้างในมีปุ่ม "ดูทั้งหมด" ของ NoteBody อยู่ ซ้อน button ในกันไม่ได้ */
