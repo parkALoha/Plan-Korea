@@ -69,6 +69,26 @@ describe("clearDeviceData() — ความครบของที่เก็
     expect(idb.clearCalls, "IndexedDB ไม่ถูกล้าง — ข้อมูลทริปของคนก่อนอยู่ครบ").toBe(1);
   });
 
+  /**
+   * 🔴 **เคสที่บังคับ *ลำดับ* ให้เป็นสัญญา ไม่ใช่คำเตือน** (P2 ชี้ว่าเขาพึ่งมัน · 2 ก.ย. 2026)
+   * `HomeScreen` เรียกด้วย `void clearDeviceData()` ในเอฟเฟกต์ sync → **มันไม่รอ**
+   * `clearAllCaches()` อยู่ก่อน `await` ตัวแรกจึงรันทันที → ชื่อพาสปอร์ตหายในจังหวะเดียวกับโค้ดเดิม
+   *
+   * ⚠️ **เคสนี้จงใจ *ไม่* `await`** — ถ้า `await` มันจะเขียวไม่ว่าลำดับข้างในจะเป็นอย่างไร
+   * 🎯 สลับให้ `await clearOfflineStore()` ขึ้นก่อนเมื่อไหร่ → เคสนี้แดง **เคสอื่นทุกใบยังเขียว**
+   *    ซึ่งเป็นสิ่งเดียวที่กันไม่ให้เหตุผลของ P2 ตายเงียบตอนมีคนจัดระเบียบฟังก์ชันนี้
+   */
+  it("🔴 ไม่ await → localStorage ต้องถูกล้าง **ไปแล้ว** ทันที (ลำดับเป็นสัญญา)", async () => {
+    expect(appKeysLeft().length, "ไม่มีของก่อนล้าง = เคสนี้ไม่ได้วัดอะไร").toBeGreaterThan(0);
+    const { clearDeviceData } = await import("@/lib/auth/deviceData");
+    const pending = clearDeviceData();                    // ← จงใจไม่ await
+    expect(
+      appKeysLeft(),
+      "localStorage ยังไม่ถูกล้างในจังหวะ sync — `clearAllCaches()` ถูกเลื่อนไปหลัง await แล้ว",
+    ).toEqual([]);
+    await pending;
+  });
+
   it("ไม่แตะคีย์ของแอปอื่น", async () => {
     const { clearDeviceData } = await import("@/lib/auth/deviceData");
     await clearDeviceData();
