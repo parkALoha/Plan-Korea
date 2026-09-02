@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteFirstLine, noteLines } from "@/components/NoteBody";
+import { itemsToNote, noteFirstLine, noteItems, noteLines } from "@/components/NoteBody";
 
 describe("noteLines", () => {
   it("ตัดบรรทัดว่างทิ้ง และเก็บบรรทัดที่มีเนื้อหาไว้ตามลำดับ", () => {
@@ -22,5 +22,54 @@ describe("noteFirstLine", () => {
   it("เอาบรรทัดแรกแบบไม่มีสัญลักษณ์บุลเล็ต และต่อ … เมื่อยังมีต่อ", () => {
     expect(noteFirstLine("- สั่งบิบิมบับ\nต่อคิวหน้าร้าน")).toBe("สั่งบิบิมบับ …");
     expect(noteFirstLine("สั่งบิบิมบับ")).toBe("สั่งบิบิมบับ");
+  });
+});
+
+/* ตัวแก้โน้ตแบบ "ทีละข้อ" อ่านด้วย noteItems และเขียนกลับด้วย itemsToNote —
+   สองตัวนี้อยู่คนละฝั่งของข้อมูลที่ผู้ใช้พิมพ์เอง ถ้าไม่ครบคู่กันคือโน้ตหาย */
+describe("noteItems ↔ itemsToNote", () => {
+  it("อ่านโน้ตเก่าที่คั่นด้วย ' · ' เป็นสองข้อ เท่ากับที่ตาเห็นบนจอ", () => {
+    /* ถ้าอ่านตาม \n อย่างเดียวจะได้ข้อเดียว ทั้งที่จอโชว์ 2 บุลเล็ต — คนแก้จะเจอช่องเดียว */
+    expect(noteItems("จิบกาแฟที่ OFF COURSE · เดินดูตึกวินเทจ")).toEqual([
+      { marker: "• ", text: "จิบกาแฟที่ OFF COURSE" },
+      { marker: "• ", text: "เดินดูตึกวินเทจ" },
+    ]);
+  });
+
+  it("แยกสัญลักษณ์นำหน้าออกจากเนื้อ เพื่อให้ช่องพิมพ์มีแต่เนื้อ", () => {
+    expect(noteItems("- สั่งบิบิมบับ\n1. ต่อคิวก่อน\nเดินเล่นต่อ")).toEqual([
+      { marker: "- ", text: "สั่งบิบิมบับ" },
+      { marker: "1. ", text: "ต่อคิวก่อน" },
+      { marker: "", text: "เดินเล่นต่อ" },
+    ]);
+  });
+
+  it("เขียนกลับเป็นบรรทัดละข้อ และรวมบุลเล็ตทุกแบบเป็น '- '", () => {
+    expect(itemsToNote(noteItems("จิบกาแฟ · เดินดูตึก"))).toBe("- จิบกาแฟ\n- เดินดูตึก");
+  });
+
+  it("ข้อที่เป็นตัวเลขไล่ใหม่ตามลำดับปัจจุบัน หลังลบข้อกลางทิ้ง", () => {
+    /* ลบข้อ 2 ออก แล้วต้องได้ 1. 2. ไม่ใช่ 1. 3. */
+    const items = noteItems("1. ก\n2. ข\n3. ค").filter((_, i) => i !== 1);
+    expect(itemsToNote(items)).toBe("1. ก\n2. ค");
+  });
+
+  it("ทิ้งข้อที่ว่าง ไม่ให้กลายเป็นบรรทัดเปล่าในโน้ต", () => {
+    expect(itemsToNote([
+      { marker: "- ", text: "มีเนื้อ" },
+      { marker: "- ", text: "   " },
+    ])).toBe("- มีเนื้อ");
+  });
+
+  it("ข้อความบรรทัดเดียวธรรมดา วิ่งกลับมาเหมือนเดิม ไม่มีสัญลักษณ์งอกเอง", () => {
+    /* เคสที่พบบ่อยที่สุด — เปิดแก้แล้วกดบันทึกโดยไม่แตะอะไร ต้องไม่เปลี่ยนหน้าตาโน้ต */
+    const note = "เดินถ่ายรูปหน้าโบสถ์ยามบ่าย";
+    expect(itemsToNote(noteItems(note))).toBe(note);
+  });
+
+  it("เนื้อทุกข้อรอดจากการวิ่งกลับไปกลับมา (เทียบเฉพาะเนื้อ ไม่เทียบสัญลักษณ์)", () => {
+    const note = "09:30 ต่อคิว\n- สั่งบิบิมบับ\nจิบชา · ชมวิว";
+    const textOf = (n: string) => noteItems(n).map((i) => i.text);
+    expect(textOf(itemsToNote(noteItems(note)))).toEqual(textOf(note));
   });
 });

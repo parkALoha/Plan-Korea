@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Place } from "@/data/places";
@@ -12,7 +12,7 @@ import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { InsertBetweenRow } from "./InsertBetweenRow";
-import NoteBody from "./NoteBody";
+import NoteBody, { itemsToNote, noteItems, type NoteItem } from "./NoteBody";
 import { PhotoLightbox } from "./PhotoLightbox";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
@@ -21,7 +21,7 @@ import { INTERCITY_MODE_LABEL, intercityModeIconOf, type IntercityMode } from ".
 
 /* กฎการจัดรูปโน้ตอยู่ใน NoteBody (บุลเล็ต/ลำดับ/ป้ายเวลา) — แต่ก่อนบอกไว้ที่ placeholder ที่เดียว
    ซึ่งหายทันทีที่พิมพ์ตัวแรก คนพิมพ์จึงไม่มีทางรู้ว่า "-" หรือ "09:30" ทำอะไรได้ ต้องอยู่ตลอดเวลาพิมพ์ */
-const NOTE_FORMAT_HINT = "- บุลเล็ต · 1. ลำดับ · 09:30 ป้ายเวลา";
+const NOTE_FORMAT_HINT = "ขึ้นต้นด้วย 09:30 จะได้ป้ายเวลา";
 
 /** ความสูงสูงสุดของช่องพิมพ์โน้ต (px) — เกินนี้ให้เลื่อนในช่องแทนดันแถวอื่นตกจอ */
 const NOTE_MAX_H = 240;
@@ -121,7 +121,54 @@ export function SortableStopRow({
     opacity: isDragging ? 0.5 : 1,
   };
   const [editingNote, setEditingNote] = useState(false);
-  const [noteDraft, setNoteDraft] = useState(stop.note ?? "");
+  /* โน้ตเก็บใน DB เป็น text ก้อนเดียวเหมือนเดิม แต่ *ตอนแก้* เป็นรายการทีละข้อ —
+     คนใช้จริงคิดเป็น "ข้อ 1 ข้อ 2" ไม่ได้คิดเป็นก้อนข้อความที่ต้องกด Enter เอง */
+  const [noteDraft, setNoteDraft] = useState<NoteItem[]>(() => noteItems(stop.note ?? ""));
+  /* เขียนลงฐานเฉพาะตอนมีการแก้จริง — ถ้าเทียบด้วยข้อความจะเจอโน้ตเก่าที่คั่นด้วย " · "
+     ถูกเขียนใหม่เป็นบรรทัดทุกครั้งที่แค่เปิดดูแล้วปิด (ผลเหมือนเดิมบนจอ แต่เป็นการเขียนที่ไม่มีใครสั่ง) */
+  const [noteDirty, setNoteDirty] = useState(false);
+  /* ช่องที่เพิ่งถูกเพิ่มต้องได้โฟกัสเอง ไม่งั้นกด "+ เพิ่มข้อ" แล้วต้องเอื้อมไปแตะช่องอีกที
+     ใช้ ref + callback ref แทน useEffect เพราะ setState ใน effect ผิดกฎ React Compiler */
+  const focusItemRef = useRef<number | null>(null);
+
+  const openNoteEditor = () => {
+    const items = noteItems(stop.note ?? "");
+    setNoteDraft(items.length ? items : [{ marker: "", text: "" }]);
+    setNoteDirty(false);
+    setEditingNote(true);
+    focusItemRef.current = Math.max(0, items.length - 1);
+  };
+  const closeNoteEditor = () => {
+    setNoteDirty(false);
+    setEditingNote(false);
+  };
+  const commitNote = (items: NoteItem[]) => {
+    onUpdateNote(itemsToNote(items) || null);
+    closeNoteEditor();
+  };
+  const addNoteItem = (at: number) => {
+    /* ข้อใหม่เป็นบุลเล็ตเสมอ — คนกด "เพิ่มข้อ" คือกำลังทำรายการ ไม่ใช่เขียนย่อหน้าต่อ
+       และถ้าของเดิมมีข้อเดียวที่ยังไม่มีสัญลักษณ์ ให้มันกลายเป็นบุลเล็ตด้วย
+       ไม่งั้นจะได้ย่อหน้า 1 อัน + บุลเล็ต 1 อัน ซึ่งไม่ใช่สิ่งที่คนกดปุ่มขอ */
+    const base =
+      noteDraft.length === 1 && !noteDraft[0].marker && noteDraft[0].text.trim()
+        ? [{ marker: "- ", text: noteDraft[0].text }]
+        : [...noteDraft];
+    base.splice(at, 0, { marker: "- ", text: "" });
+    focusItemRef.current = at;
+    setNoteDirty(true);
+    setNoteDraft(base);
+  };
+  const removeNoteItem = (i: number) => {
+    const next = noteDraft.filter((_, j) => j !== i);
+    focusItemRef.current = Math.max(0, i - 1);
+    setNoteDirty(true);
+    setNoteDraft(next.length ? next : [{ marker: "", text: "" }]);
+  };
+  const setNoteItemText = (i: number, text: string) => {
+    setNoteDirty(true);
+    setNoteDraft(noteDraft.map((it, j) => (j === i ? { ...it, text } : it)));
+  };
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(false);
@@ -394,81 +441,121 @@ export function SortableStopRow({
             />
           ) : null
         ) : editingNote ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {/* textarea ไม่ใช่ input — โน้ตหลายอันเป็นแพลนย่อยของสถานที่นั้น ต้องขึ้นบรรทัดใหม่/ทำบุลเล็ตได้
-                Enter = ขึ้นบรรทัด, Cmd/Ctrl+Enter = บันทึก (Enter เดี่ยวเคยบันทึกทันที เลยพิมพ์หลายบรรทัดไม่ได้เลย)
-                มือถือไม่มีคีย์ลัดพวกนี้เลย — ท่าบันทึกที่นั่นคือ onBlur ข้างล่าง */}
-            <textarea
-              autoFocus
-              rows={2}
-              ref={growNote}
-              value={noteDraft}
-              onChange={(e) => {
-                setNoteDraft(e.target.value);
-                growNote(e.currentTarget);
-              }}
-              onBlur={() => {
-                /* มือถือไม่มี ⌘↵ — แตะออกนอกช่องคือท่าบันทึกท่าเดียวที่ใช้ได้จริงตรงนั้น
-                   ปุ่มบันทึก/ยกเลิก/ลบ กัน blur ด้วย onMouseDown ไว้แล้ว จึงไม่ชน */
-                if (noteDraft === (stop.note ?? "")) {
-                  setEditingNote(false);
-                  return;
-                }
-                onUpdateNote(noteDraft.trim() || null);
-                setEditingNote(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  onUpdateNote(noteDraft.trim() || null);
-                  setEditingNote(false);
-                }
-                if (e.key === "Escape") {
-                  setNoteDraft(stop.note ?? "");
-                  setEditingNote(false);
-                }
-              }}
-              placeholder={"จดได้ยาวๆ ขึ้นบรรทัดใหม่ได้ เช่น\n- สั่งบิบิมบับหม้อหิน\n10:30 ต่อคิวหน้าร้าน"}
-              className="min-w-0 flex-1 basis-full resize-none overflow-hidden rounded-lg border border-line px-2 py-1.5 text-sm leading-relaxed text-content focus:border-maple focus:outline-none"
-            />
-            <button
-              onMouseDown={keepFocus}
-              onClick={() => {
-                onUpdateNote(noteDraft.trim() || null);
-                setEditingNote(false);
-              }}
-              className="shrink-0 rounded-lg bg-pine px-2.5 py-1 text-xs font-medium text-cream hover:bg-pine-dark"
-            >
-              บันทึก
-            </button>
-            <button
-              onMouseDown={keepFocus}
-              onClick={() => {
-                setNoteDraft(stop.note ?? "");
-                setEditingNote(false);
-              }}
-              className="shrink-0 rounded-lg px-2 py-1 text-xs text-content-soft hover:bg-surface-soft"
-            >
-              ยกเลิก
-            </button>
-            {stop.note && (
+          /* แก้โน้ตทีละ "ข้อ" ไม่ใช่ก้อนข้อความก้อนเดียว — ของเดิมเป็น textarea ช่องเดียว
+             คนใช้ต้องรู้เองว่ากด Enter คือขึ้นข้อใหม่ และลบข้อกลาง ๆ ต้องเลือกทั้งบรรทัดเอง
+             ที่เก็บใน DB ยังเป็น text บรรทัดละข้อเหมือนเดิม (ดู itemsToNote ใน NoteBody) */
+          <div
+            className="rounded-lg border border-line bg-surface p-1.5"
+            onBlur={(e) => {
+              /* บันทึกเมื่อโฟกัสออกจาก *ทั้งกล่อง* ไม่ใช่ออกจากช่องใดช่องหนึ่ง
+                 ไม่งั้นแค่ย้ายจากข้อ 1 ไปข้อ 2 ก็ยิงบันทึกแล้ว
+                 ปุ่มข้างในกัน blur ด้วย onMouseDown จึงไม่เข้าเงื่อนไขนี้เลย */
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+              if (noteDirty) commitNote(noteDraft);
+              else closeNoteEditor();
+            }}
+          >
+            <ol className="space-y-1">
+              {noteDraft.map((item, i) => (
+                <li key={i} className="flex items-start gap-1.5">
+                  <span className="w-4 shrink-0 pt-1.5 text-center text-[11px] tabular-nums text-content-soft/60">
+                    {i + 1}
+                  </span>
+                  <textarea
+                    rows={1}
+                    ref={(el) => {
+                      growNote(el);
+                      if (el && focusItemRef.current === i) {
+                        focusItemRef.current = null;
+                        el.focus();
+                        el.setSelectionRange(el.value.length, el.value.length);
+                      }
+                    }}
+                    value={item.text}
+                    onChange={(e) => {
+                      setNoteItemText(i, e.target.value);
+                      growNote(e.currentTarget);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        commitNote(noteDraft);
+                        return;
+                      }
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addNoteItem(i + 1);
+                        return;
+                      }
+                      /* ลบข้อว่างด้วย Backspace — ท่าที่คนพิมพ์เร็วคาดหวังจากรายการทุกที่
+                         (กันไว้ไม่ให้ลบข้อสุดท้ายทิ้ง ไม่งั้นกล่องจะว่างจนไม่มีที่ให้พิมพ์) */
+                      if (e.key === "Backspace" && !item.text && noteDraft.length > 1) {
+                        e.preventDefault();
+                        removeNoteItem(i);
+                        return;
+                      }
+                      if (e.key === "Escape") closeNoteEditor();
+                    }}
+                    placeholder="เช่น 10:30 ต่อคิวหน้าร้าน"
+                    className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-line px-2 py-1 text-sm leading-relaxed text-content focus:border-maple focus:outline-none"
+                  />
+                  <button
+                    onMouseDown={keepFocus}
+                    onClick={() => removeNoteItem(i)}
+                    title="ลบข้อนี้"
+                    aria-label={`ลบข้อ ${i + 1}`}
+                    className="shrink-0 rounded-lg px-1.5 py-1 text-sm text-content-soft/60 hover:bg-maple-soft hover:text-maple-dark"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <button
                 onMouseDown={keepFocus}
-                onClick={() => {
-                  onUpdateNote(null);
-                  setNoteDraft("");
-                  setEditingNote(false);
-                }}
-                className="shrink-0 rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
+                onClick={() => addNoteItem(noteDraft.length)}
+                className="shrink-0 rounded-lg border border-dashed border-line px-2 py-1 text-xs text-content-soft hover:border-pine hover:text-pine"
               >
-                ลบ
+                + เพิ่มข้อ
               </button>
-            )}
-            <p className="basis-full text-[11px] leading-snug text-content-soft/70">
+              <span className="flex-1" />
+              <button
+                onMouseDown={keepFocus}
+                onClick={() => commitNote(noteDraft)}
+                className="shrink-0 rounded-lg bg-pine px-2.5 py-1 text-xs font-medium text-cream hover:bg-pine-dark"
+              >
+                บันทึก
+              </button>
+              <button
+                onMouseDown={keepFocus}
+                onClick={closeNoteEditor}
+                className="shrink-0 rounded-lg px-2 py-1 text-xs text-content-soft hover:bg-surface-soft"
+              >
+                ยกเลิก
+              </button>
+              {stop.note && (
+                <button
+                  onMouseDown={keepFocus}
+                  onClick={() => {
+                    onUpdateNote(null);
+                    setNoteDraft([{ marker: "", text: "" }]);
+                    closeNoteEditor();
+                  }}
+                  className="shrink-0 rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
+                >
+                  ลบทั้งหมด
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-content-soft/70">
               {NOTE_FORMAT_HINT}
-              {/* คีย์ลัดมีจริงเฉพาะบนคีย์บอร์ด — บนมือถือท่าบันทึกคือแตะออกนอกช่อง บอกคนละอย่างกัน */}
-              <span className="hidden sm:inline"> · ⌘/Ctrl+↵ บันทึก · Esc ยกเลิก</span>
-              <span className="sm:hidden"> · แตะนอกช่องเพื่อบันทึก</span>
+              {/* คีย์ลัดมีจริงเฉพาะบนคีย์บอร์ด — บนมือถือท่าบันทึกคือแตะออกนอกกล่อง บอกคนละอย่างกัน */}
+              <span className="hidden sm:inline">
+                {" "}
+                · Enter ขึ้นข้อใหม่ · ⌘/Ctrl+↵ บันทึก · Esc ยกเลิก
+              </span>
+              <span className="sm:hidden"> · แตะนอกกล่องเพื่อบันทึก</span>
             </p>
           </div>
         ) : stop.note ? (
@@ -477,14 +564,12 @@ export function SortableStopRow({
             role="button"
             tabIndex={0}
             onClick={() => {
-              setNoteDraft(stop.note ?? "");
-              setEditingNote(true);
+              openNoteEditor();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                setNoteDraft(stop.note ?? "");
-                setEditingNote(true);
+                openNoteEditor();
               }
             }}
             className="cursor-pointer rounded-lg border-l-2 border-pine-soft py-0.5 pl-2 text-left text-xs text-content-soft hover:text-content"
@@ -494,7 +579,7 @@ export function SortableStopRow({
           </div>
         ) : (
           <button
-            onClick={() => setEditingNote(true)}
+            onClick={openNoteEditor}
             className="py-1.5 text-xs text-content-soft/60 hover:text-content-soft"
           >
             + โน้ต

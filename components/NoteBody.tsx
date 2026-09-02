@@ -44,6 +44,34 @@ export function noteLines(note: string): string[] {
     });
 }
 
+/** หนึ่ง "ข้อ" ของโน้ต — `marker` คือสัญลักษณ์นำหน้าที่ผู้ใช้พิมพ์ไว้เอง ("- " / "1. " / "")
+ *  แยกออกจาก `text` เพื่อให้ตัวแก้ไขให้พิมพ์เฉพาะเนื้อ ไม่ต้องมาดูแลสัญลักษณ์เอง */
+export type NoteItem = { marker: string; text: string };
+
+/** แตกโน้ตเป็น "ข้อ" ตามที่ *ตาเห็นบนจอ* ไม่ใช่ตามที่เก็บใน DB
+ *  (โน้ตเก่าที่คั่นด้วย " · " แสดงผลเป็น 2 บุลเล็ต — ตัวแก้ไขต้องเห็นเป็น 2 ข้อเหมือนกัน
+ *  ไม่งั้นคนแก้จะเจอ 1 ช่องทั้งที่จอโชว์ 2 บรรทัด) */
+export function noteItems(note: string): NoteItem[] {
+  return noteLines(note).map((raw) => {
+    const m = raw.match(BULLET) ?? raw.match(NUMBERED);
+    return m ? { marker: m[0], text: raw.slice(m[0].length) } : { marker: "", text: raw };
+  });
+}
+
+/** ประกอบกลับเป็นข้อความบรรทัดละข้อ — เก็บลง DB เป็น text เหมือนเดิม ไม่ต้อง migrate
+ *  · บุลเล็ตทุกแบบ (– — • *) เขียนกลับเป็น "- " ให้เป็นรูปเดียว
+ *  · ข้อที่เป็นตัวเลขไล่ใหม่ตามลำดับปัจจุบัน — ลบข้อ 1 ทิ้งแล้วต้องไม่เหลือ "2. 3." */
+export function itemsToNote(items: NoteItem[]): string {
+  let n = 0;
+  return items
+    .filter((i) => i.text.trim())
+    .map((i) => {
+      if (NUMBERED.test(i.marker)) return `${++n}. ${i.text.trim()}`;
+      return i.marker ? `- ${i.text.trim()}` : i.text.trim();
+    })
+    .join("\n");
+}
+
 /** พรีวิวที่พื้นที่แคบมาก (การ์ดในคลัง / การ์ดบนแผนที่) — เอาบรรทัดแรกพอ ที่เหลือต่อท้ายด้วย … */
 export function noteFirstLine(note: string): string {
   const lines = noteLines(note);
