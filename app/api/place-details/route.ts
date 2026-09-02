@@ -157,7 +157,17 @@ async function resolveFromGoogle(
       address_local: local.addressLocal,
       locale: local.nameLocal ? locale : null,
       fetched_at: new Date().toISOString(),
-    });
+    },
+      {
+        /**
+         * 🔴 **`ignoreDuplicates: true` = `ON CONFLICT DO NOTHING` → ต้องการแค่สิทธิ์ `insert`**
+         * `D87` ③ (ผู้ใช้เลือกเอง 2 ก.ย. 2026): **เขียนได้ ทับไม่ได้** → `authenticated` ไม่มี `update`
+         * · `upsert` แบบเดิมต้องการ `update` เมื่อชนคีย์ → **จะได้ 403 ทุกครั้งที่แคชมีอยู่แล้ว**
+         * 🎯 *"คนแรกเขียน แล้วไม่มีใครทับได้"* จึงไม่ใช่แค่นโยบายในฐาน — **บรรทัดนี้คือที่ที่มันเป็นจริง**
+         */
+        ignoreDuplicates: true,
+      },
+    );
     noteCacheFailure("place_details_cache/write", cacheWriteErr);
   }
 
