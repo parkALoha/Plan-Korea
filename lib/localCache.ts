@@ -1,3 +1,4 @@
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 /**
  * แคชข้อมูลจาก Supabase ลง localStorage เพื่อให้หน้าขึ้นทันทีตอนเปิด — และยังอ่านได้ตอนเน็ตหลุด (เฟส 18)
  *
@@ -69,13 +70,58 @@ export function readCache<T>(key: string): T | null {
   }
 }
 
+/**
+ * 🔴 **`E6-AC7` ครึ่งฝั่งนักพัฒนา — ที่นี่เคยเงียบสนิท ทั้งที่ backlog ติ๊กว่าปิดแล้ว** (P1 · 2 ก.ย. 2026)
+ *
+ * `backlog` เขียนว่าครึ่งนี้ปิดโดย `cacheGuard.test.ts` · **แต่ไฟล์นั้นทดสอบ `noteCacheFailure`
+ * *ในฐานะฟังก์ชัน* — ไม่ได้ทดสอบว่ามีใครเรียกมันตรงจุดที่สำคัญ** และ `localCache.ts`
+ * **ไม่เคยอยู่ในรายชื่อผู้เรียกเลย** (ผู้เรียกจริงคือ route แคช + hooks ของแพลตฟอร์ม)
+ * 🎯 ***ด่านที่ทดสอบเครื่องมือ ไม่ได้ทดสอบการใช้เครื่องมือ*** — และแคชในเครื่องคือที่ที่โควตาเต็มจริง
+ *
+ * ## ทำไมความเงียบตรงนี้แพงกว่าที่อื่น
+ * `localStorage` เต็ม → `setItem` โยน → เดิมกลืนทิ้ง → **ผู้ใช้เปิดออฟไลน์แล้วข้อมูลไม่ครบ
+ * โดยไม่มีอะไรบอกสาเหตุ** · และมันไม่หายเอง (`D17` — เพดาน ~5 MB ไม่มีทางออกแบบ native อีกแล้ว)
+ *
+ * 📌 **ยังไม่ใช่ครึ่งฝั่งผู้ใช้** — `onCacheFull` ข้างล่างคือ *ตะขอ* ให้ UI มาเกาะ · ตัว UI เป็นโซน P2
+ */
+type CacheFullListener = (key: string) => void;
+const cacheFullListeners = new Set<CacheFullListener>();
+
+/**
+ * บอกเมื่อเขียนแคชไม่ลงเพราะที่เก็บเต็ม · คืนฟังก์ชันถอนการสมัคร
+ * 🔴 **มีไว้ให้ UI บอกผู้ใช้ — ไม่ใช่ให้ log** · `console.error` ครอบเฉพาะฝั่งนักพัฒนา
+ */
+export function onCacheFull(listener: CacheFullListener): () => void {
+  cacheFullListeners.add(listener);
+  return () => void cacheFullListeners.delete(listener);
+}
+
+/** เคยเขียนไม่ลงเพราะเต็มไหม — สำหรับ UI ที่ mount ทีหลังกว่าตอนที่มันเกิด */
+let cacheEverFull = false;
+export function hasCacheEverBeenFull(): boolean {
+  return cacheEverFull;
+}
+
+/** สำหรับเทสต์ — คืนสภาพให้เคสถัดไปเริ่มจากศูนย์ */
+export function resetCacheFullState(): void {
+  cacheEverFull = false;
+  cacheFullListeners.clear();
+}
+
 export function writeCache(key: string, value: unknown) {
   if (typeof window === "undefined") return;
   sweepLegacyCaches();
   try {
     window.localStorage.setItem(PREFIX + key, JSON.stringify(value));
-  } catch {
-    // เต็มโควตา (รูป base64 ของคนอื่นกินไปหมด ฯลฯ) — ข้ามไป ยังใช้งานออนไลน์ได้ปกติ
+  } catch (err) {
+    // 🔴 **ไม่กลืนเงียบอีกต่อไป** — ฝั่งนักพัฒนาได้ยินผ่าน `noteCacheFailure`
+    //    (ดังครั้งเดียวต่อจุด ไม่ใช่ทุกคำขอ) · ฝั่งผู้ใช้ได้ยินผ่าน `onCacheFull`
+    noteCacheFailure("localStorage/write", {
+      code: (err as { name?: string } | null)?.name,
+      message: (err as { message?: string } | null)?.message,
+    });
+    cacheEverFull = true;
+    for (const l of cacheFullListeners) l(key);
   }
 }
 
