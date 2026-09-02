@@ -10,7 +10,7 @@ import { showToast } from "@/lib/toast";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
-import { parseStopsPayload } from "@/lib/engine/stopsPayload";
+import { parseStopsPayload, shouldCacheSideMap } from "@/lib/engine/stopsPayload";
 import type { Place } from "@/data/places";
 
 /**
@@ -101,6 +101,20 @@ export function useStops(tripId: string | null, planId: string | null) {
     if (!reportDayBridgeDropIfAny(rawRows.length, mapped.length)) {
       writeCache(`stops:${planId}`, mapped);
     }
+    /**
+     * 🔴 **คีย์แยกใบ ไม่ยัดรวมกับ `stops:<planId>`** (`E6-AC13`)
+     * คีย์เดิมเก็บ `TripStop[]` มาตั้งแต่ต้น · ยัด `places` เข้าไป = ผู้ใช้ที่อัปเดตโค้ดตอนออนไลน์
+     * แล้วออฟไลน์ทันที **มีแคชรูปเก่าที่โค้ดใหม่อ่านไม่ออก** และต้องมีโค้ดแปลงรุ่นที่ลบไม่ได้ตลอดกาล
+     * (ไม่มีวันรู้ว่าเครื่องสุดท้ายอัปเดตหรือยัง) · **แยกคีย์ = แคชเก่าอ่านได้โดยนิยาม**
+     *
+     * 🔴 **`{}` ห้ามทับของเดิม** — เป็นสัญญาณของการเสื่อม ไม่ใช่ข้อมูล
+     * route คืน `places: {}` เมื่อคิวรีคลังล้ม (`console.error` ฝั่งเซิร์ฟเวอร์ · จุดแวะยังมาครบ)
+     * → ทับแคชด้วยมัน = **คลังล่มหนึ่งครั้ง แล้วผู้ใช้เสียชื่อสถานที่ตอนออฟไลน์ไปจนกว่าจะออนไลน์อีกครั้ง**
+     * · รูปเดียวกับกฎ *ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ* บรรทัดบน — คนละสาเหตุ เหตุผลเดียวกัน
+     */
+    if (shouldCacheSideMap(payload.places)) {
+      writeCache(`stopPlaces:${planId}`, payload.places);
+    }
   }, [planId, mapRows]);
 
   useEffect(() => {
@@ -114,6 +128,10 @@ export function useStops(tripId: string | null, planId: string | null) {
 
     // ไม่มี `await` เหลือแล้วหลัง `E6-AC11` ก้าวที่ 3 — ไม่มีการแข่งกันให้ยกเลิก (`cancelled` ถูกถอด)
     function init() {
+      const cachedPlaces = readCache<Record<string, Place>>(`stopPlaces:${planId}`);
+      // ไม่มีแคช = ไม่มี side-map (เสื่อมไปที่ `PLACES` + `customPlaces`) ไม่ใช่ error
+      if (cachedPlaces) setCatalogPlaces(cachedPlaces);
+
       const cached = readCache<TripStop[]>(`stops:${planId}`);
       if (cached) {
         setStops(sortStops(cached));

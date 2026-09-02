@@ -42,3 +42,19 @@ export function parseStopsPayload<T>(raw: unknown): StopsPayload<T> | null {
   if (!Array.isArray(o.stops)) return null;
   return { stops: o.stops as T[], places: isPlaceMap(o.places) ? o.places : {} };
 }
+
+/**
+ * เขียน side-map ลงแคชได้ไหม — **`{}` คือสัญญาณของการเสื่อม ไม่ใช่ข้อมูล**
+ *
+ * 🔴 route คืน `places: {}` เมื่อคิวรีคลังล้ม (จุดแวะยังมาครบ · `console.error` ฝั่งเซิร์ฟเวอร์)
+ * ทับแคชด้วยมัน = **คลังล่มหนึ่งครั้ง แล้วผู้ใช้เสียชื่อสถานที่ตอนออฟไลน์ไปจนกว่าจะออนไลน์อีกครั้ง**
+ * · รูปเดียวกับกฎ *ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ* — คนละสาเหตุ เหตุผลเดียวกัน
+ * ⚠️ **อยู่ที่นี่ ไม่ใช่ใน `hooks/useStops.ts` — และไม่ใช่เรื่องการจัดระเบียบ**
+ *    ไฟล์ hook ลาก `lib/supabase` เข้ามา → `createClient` ต้องการ WebSocket ที่ Node 20 ไม่มี
+ *    → เทสต์ที่ import จากที่นั่น **ล้มตอนโหลด suite** และ vitest รายงานว่า *"no tests"*
+ *    ซึ่งอ่านผ่านตาได้ง่ายมากว่าเป็นสีเขียว (ผมเจอกับตัวตอนเขียนเคสนี้เอง)
+ *    · รูปเดียวกับที่ `classifyLegacyDayPlan` · `hydrateThenFetch` · `dayBridge` ถูกแยกออกมา
+ */
+export function shouldCacheSideMap(places: Record<string, Place>): boolean {
+  return Object.keys(places).length > 0;
+}
