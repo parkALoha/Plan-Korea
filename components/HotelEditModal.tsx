@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import { cityNameThOf } from "@/components/cityMeta";
-import { CITY_LOCALE, cityCenter } from "@/data/places";
+import { cityCenter } from "@/data/places";
+import { cityLocaleOf } from "@/components/placeCity";
 import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
 import { useSystemMode } from "@/hooks/useSystemMode";
@@ -75,13 +76,26 @@ export function HotelEditModal({
   // ภาษาท้องถิ่นของเมืองที่พักอยู่ — ขอชื่อ/ที่อยู่ภาษานั้น + อังกฤษ + เบอร์โทรมาพร้อมพิกัดในคำขอเดียว
   //
   // 🔴 เดิมมี `as Place["city"]` ตรงนี้ — ลบแล้ว (P1 ชี้ 27 ส.ค. 2026) `leg.city: City` มาจาก
-  // `HotelLeg` ซึ่งคำนวณจาก `day.overnightCity ?? day.city` และ `Day[]` ทั้งหมดเป็นข้อมูลสถิตย์ใน
-  // `ITINERARY` (data/itinerary.ts) ไม่มีเส้นทางไหนที่ leg.city มาจากฐาน/ผู้ใช้เลยตอนนี้ — `as` เดิม
-  // จึงไม่จำเป็นตั้งแต่แรก (ลบแล้ว tsc ยังผ่าน ยืนยันว่า City ⊆ Place["city"] อยู่แล้วโดยไม่ต้องคาสต์)
-  // ⚠️ ถ้าวันไหน leg.city เริ่มมาจากฐานจริง (เช่น hotel legs ผูกกับ trip_days ใน schema ใหม่)
-  // ต้องกลับมาเช็ค `Object.hasOwn(CITY_LOCALE, leg.city)` ก่อนอินเด็กซ์ แบบเดียวกับ `data/emergency.ts`
-  // ไม่ใช่ใส่ `as` กลับเข้ามาเฉยๆ — `as` ไม่ได้ทำให้ค่าปลอดภัย มันแค่ทำให้ tsc เงียบ
-  const locale = CITY_LOCALE[leg.city];
+  /**
+   * 🔴 **เงื่อนไขที่คอมเมนต์เดิมทำนายไว้ *มาถึงแล้ว* — และไม่มีใครกลับมา** (P2 ไล่เจอ 2 ก.ย. 2026)
+   *
+   * ของเดิมเขียนไว้ว่า *"ไม่มีเส้นทางไหนที่ `leg.city` มาจากฐานเลยตอนนี้ · ⚠️ ถ้าวันไหนเริ่มมาจากฐานจริง
+   * ต้องกลับมาเช็ค `Object.hasOwn` ก่อนอินเด็กซ์"* — **ถูกต้องทุกตัวอักษร ทั้งข้อเท็จจริงและเงื่อนไข**
+   * แล้วบน branch `platform` สายนี้เป็นจริงไปแล้ว:
+   * ```
+   * TripPlanScreen:137  usePlatformItinerary(...)   ← วันมาจากฐาน (คลัง 42 เมือง)
+   * TripPlanScreen:281  useHotelSchedule(itinerary)
+   * useHotelSchedule:9  deriveHotelLegs(itinerary)  → HotelLeg.city
+   * ```
+   * 🎯 **คอมเมนต์เขียนวันหมดอายุของตัวเองไว้ล่วงหน้า และมันยังไม่พอ** — เพราะไม่มีใครไล่หาคอมเมนต์
+   * ที่รอเงื่อนไขอยู่ (`§3.34` — ของที่ควรมีคือ *assertion* ที่แดงเองวันที่เงื่อนไขเป็นจริง)
+   *
+   * ⚠️ **ผลกระทบวัดแล้ว ไม่ใช่เดา และไม่ใช่บั๊กร้ายแรง:** `app/api/geocode/route.ts:77` กรอง
+   * `locale` ที่ไม่รู้จักทิ้งเป็น `null` อยู่แล้ว → เมืองนอก 6 ค่าได้ `EMPTY_LOCALIZED`
+   * **ไม่พัง แค่ไม่ได้ชื่อ/ที่อยู่ภาษาท้องถิ่นกับเบอร์โทร** · ที่แก้คือให้โค้ดพูดความจริง
+   * และเลิกยิงสตริง `"undefined"` ออกไปในคิวรี
+   */
+  const locale = cityLocaleOf(leg.city);
 
   // แนะนำสถานที่ตามที่พิมพ์แบบ debounce 300ms bias ผลลัพธ์ให้ใกล้เมืองของ leg นี้
   useEffect(() => {
@@ -120,7 +134,7 @@ export function HotelEditModal({
     setStatus("loading");
     try {
       const res = await fetch(
-        `/api/geocode?placeId=${encodeURIComponent(placeId)}&locale=${locale}`
+        `/api/geocode?placeId=${encodeURIComponent(placeId)}${locale ? `&locale=${locale}` : ""}`
       );
       const data = await res.json();
       if (data.lat == null || data.lng == null) {
@@ -147,7 +161,7 @@ export function HotelEditModal({
     setStatus("loading");
     try {
       const res = await fetch(
-        `/api/geocode?query=${encodeURIComponent(address)}&locale=${locale}`
+        `/api/geocode?query=${encodeURIComponent(address)}${locale ? `&locale=${locale}` : ""}`
       );
       const data = await res.json();
       if (data.lat == null || data.lng == null) {
