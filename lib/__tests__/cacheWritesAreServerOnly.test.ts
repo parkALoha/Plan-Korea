@@ -40,79 +40,90 @@ const CACHE_TABLES = [
 
 const WRITE_VERBS = "upsert|insert|update|delete";
 
+/**
+ * 🔴 **ไม่ถามว่า *ใครพาชื่อตารางไป* — ถามแค่ว่าชื่อโผล่แล้วมีคำกริยาเขียนตามมาไหม** (P4 หัก · แก้ 2 ก.ย. 2026)
+ *
+ * ฉบับแรกของไฟล์นี้บังคับรูป `.from("<ชื่อ>")` · **แต่ท่าประจำบ้านคือ `engineTable(db, "<ชื่อ>")`
+ * ซึ่งใช้จริง 51 จุด** → ด่านมองไม่เห็นเลยสักจุด
+ * 🎯 **ผลคือด่านจับคนที่เขียน *ผิด* สไตล์บ้าน และปล่อยคนที่เขียน *ถูก* สไตล์บ้าน** —
+ * กลับด้านกับสิ่งที่ควรเป็น · และทิศแดงรอบแรกยิงด้วย `.from(` ซึ่งเป็นท่าที่ด่านเห็นอยู่แล้ว
+ * **จึงพิสูจน์แค่ว่าด่านทำงานกับท่าที่มันเห็น ไม่ได้พิสูจน์ความครอบคลุม**
+ *
+ * ✅ รูปนี้ครอบ `.from` · `engineTable` · **และตัวห่อที่ยังไม่มีใครเขียน** ด้วยคำถามเดียวกัน
+ * 🔴 **เพดานที่ยังเหลือ (เขียนไว้ ไม่ซ่อน):** ชื่อที่ผ่านตัวแปรก่อน — `const T = "x"; engineTable(db, T)`
+ *    **ยังหลุด** · เป็นเพดานของตัวสแกนฝั่งดิสก์ทุกใบ · ชั้นที่ปิดเรื่องนั้นคือ `E2-AC11` ซึ่งถามฐาน
+ *
+ * ⚠️ **ปรับให้ *ดังเกิน* ดีกว่า *เงียบเกิน* โดยตั้งใจ** — หน้าต่าง 120 ตัวอักษรอาจจับผิดได้ถ้าโค้ด
+ *    อ่านแคชแล้วเขียนตารางอื่นติดกัน · **แดงผิดมีคนไปดู · เขียวผิดไม่มีใครไปดู**
+ */
+const WRITE_NEAR = 120;
+
 function appSources(): string[] {
   return execFileSync("git", ["ls-files", "app", "lib"], { cwd: ROOT, encoding: "utf8" })
     .split("\n")
     .filter((f) => /\.tsx?$/.test(f) && !f.includes("__tests__"));
 }
 
-/** ตารางที่โค้ดแอป **เขียน** (คำกริยาใดก็ได้) · `stripTsComments` ของกลาง ไม่เขียนตัวถอดเอง */
-function tablesWritten(): string[] {
-  const hits = new Set<string>();
-  const re = new RegExp(
-    String.raw`\.from\(\s*["'\`]([a-z_]+)["'\`]\s*\)[\s\S]{0,200}?\.(?:${WRITE_VERBS})\(`,
-    "g",
+function writeProbe(table: string): RegExp {
+  return new RegExp(
+    String.raw`["'\`]` + table + String.raw`["'\`][\s\S]{0,${WRITE_NEAR}}?\.(?:${WRITE_VERBS})\(`,
   );
+}
+
+/** ตารางแคชที่โค้ดแอป **เขียน** — ไม่สนว่าเข้าถึงด้วยท่าไหน */
+function cacheTablesWritten(): string[] {
+  const hits = new Set<string>();
   for (const f of appSources()) {
-    for (const m of stripTsComments(readFileSync(join(ROOT, f), "utf8")).matchAll(re)) {
-      hits.add(m[1]);
-    }
+    const src = stripTsComments(readFileSync(join(ROOT, f), "utf8"));
+    for (const t of CACHE_TABLES) if (writeProbe(t).test(src)) hits.add(t);
   }
   return [...hits].sort();
 }
 
-/** ตารางที่โค้ดแอป **อ่าน** — ใช้เป็นตัวควบคุมว่าสแกนเนอร์เห็นตารางแคชจริง */
-function tablesRead(): string[] {
+/** ตารางแคชที่ชื่อ **โผล่ในซอร์สเลย** — ตัวควบคุมว่าสแกนเนอร์เห็นไฟล์และชื่อถูกต้อง */
+function cacheTablesMentioned(): string[] {
   const hits = new Set<string>();
-  const re = /\.from\(\s*["'`]([a-z_]+)["'`]\s*\)[\s\S]{0,200}?\.select\(/g;
   for (const f of appSources()) {
-    for (const m of stripTsComments(readFileSync(join(ROOT, f), "utf8")).matchAll(re)) {
-      hits.add(m[1]);
-    }
+    const src = stripTsComments(readFileSync(join(ROOT, f), "utf8"));
+    for (const t of CACHE_TABLES) if (src.includes(t)) hits.add(t);
   }
   return [...hits].sort();
 }
 
 describe("Q3 ก้าวที่ 1 — โค้ดแอปต้องไม่เขียนตารางแคช", () => {
   /**
-   * ⚠️ **ตัวควบคุม ① — ทดสอบ *ตัวจับ* กับตัวอย่างสังเคราะห์ ไม่ใช่กับคลังโค้ด**
-   *
-   * 🔴 **ทำไมไม่ใช้คลังโค้ดเป็นตัวควบคุมเหมือนฉบับก่อน:** วัดแล้ว — `.from("<สตริง>")` ตามด้วย
-   * คำกริยาเขียน มี **0 จุดทั้งรีโป** เพราะชั้น DAL เรียกผ่าน `engineTable(db, name)` ซึ่งชื่อตาราง
-   * เป็น **ตัวแปร** → regex ที่อิงสตริงมองไม่เห็นตามนิยาม
-   * 🎯 **ถ้าเขียนตัวควบคุมเป็น *"ต้องเจอการเขียนในคลัง > 0"* มันจะแดงตลอดกาลโดยไม่มีบั๊กอะไรเลย**
-   *
-   * ⚠️ **ตัวควบคุมนี้อ่อนกว่าฉบับก่อนโดยเนื้อแท้ และผมไม่กลบข้อนั้น** — มันพิสูจน์ว่า *รูปแบบถูก*
-   * ไม่ได้พิสูจน์ว่า *คลังโค้ดถูกสแกนจริง* · **ตัวควบคุม ② ข้างล่างคือใบที่พิสูจน์ครึ่งหลัง**
-   * · 🔴 **ต้องมีทั้งคู่ ใบเดียวไม่พอ** — รูปถูกแต่ไม่ได้อ่านไฟล์ กับ อ่านไฟล์แต่รูปผิด ให้ผลเหมือนกัน
+   * ⚠️ **ตัวควบคุม ① — ตัวจับต้องเห็น *ทุกท่าที่รีโปนี้ใช้จริง* ไม่ใช่แค่ท่าที่นึกออก**
+   * 🔴 ฉบับแรกตกม้าตายตรงนี้: จับเฉพาะ `.from("<ชื่อ>")` ขณะที่ท่าประจำบ้าน `engineTable(db, "<ชื่อ>")`
+   *    ใช้จริง **51 จุด** → ด่านปล่อยคนที่เขียนถูกสไตล์ผ่านเงียบ ๆ (P4 หัก)
+   * ✅ จึงต้องมีเคสนี้ **ต่อท่า** ไม่ใช่เคสรวม — ท่าใหม่ที่เพิ่มเข้ามาวันหลังต้องมาเติมที่นี่
    */
-  it("เครื่องวัดทำงาน ①: ตัวจับต้อง match การเขียน และต้องไม่ match การอ่าน", () => {
-    const re = new RegExp(
-      String.raw`\.from\(\s*["'\`]([a-z_]+)["'\`]\s*\)[\s\S]{0,200}?\.(?:${WRITE_VERBS})\(`,
-    );
-    expect(re.test('await db.from("place_photo_cache").upsert({ a: 1 })'), "ตัวจับไม่เห็นการเขียน").toBe(true);
-    expect(re.test('await db.from("place_photo_cache").insert({ a: 1 })'), "ตัวจับไม่เห็น insert").toBe(true);
-    expect(re.test('await db.from("place_photo_cache").select("*")'), "ตัวจับนับการอ่านเป็นการเขียน").toBe(false);
+  it("เครื่องวัดทำงาน ①: ตัวจับเห็นทุกท่าเข้าถึง และไม่นับการอ่านเป็นการเขียน", () => {
+    const re = writeProbe("place_photo_cache");
+    expect(re.test('await db.from("place_photo_cache").insert({ a: 1 })'), "ท่า .from ดิบ").toBe(true);
+    expect(re.test('await engineTable(db, "place_photo_cache").insert({ a: 1 })'), "ท่าประจำบ้าน engineTable").toBe(true);
+    expect(re.test('await engineTable(db, "place_photo_cache").upsert(r, {})'), "engineTable + upsert").toBe(true);
+    expect(re.test('await wrap(db, "place_photo_cache").delete()'), "ตัวห่อที่ยังไม่มีใครเขียน").toBe(true);
+    expect(re.test('await db.from("place_photo_cache").select("*")'), "การอ่านต้องไม่ถูกนับเป็นการเขียน").toBe(false);
   });
 
   /**
-   * ⚠️ **ตัวควบคุม ②** — พิสูจน์ว่าสแกนเนอร์ *เห็นตารางแคช* จริง
-   * 🔴 **ถ้าชื่อตารางพิมพ์ผิดหรือถูก rename เคสหลักจะเขียวเพราะหาไม่เจอ ไม่ใช่เพราะไม่มี**
-   * (รูปเดียวกับเคส `MISSING` ของ `E2-AC11` ที่ถามฐาน)
+   * ⚠️ **ตัวควบคุม ②** — พิสูจน์ว่าสแกนเนอร์ *อ่านไฟล์จริง* และ **ชื่อใน `CACHE_TABLES` สะกดถูก**
+   * 🔴 ถ้าชื่อผิดหรือถูก rename เคสหลักจะเขียวเพราะ **หาไม่เจอ** ไม่ใช่เพราะ **ไม่มี**
+   * · รูปเดียวกับเคส `MISSING` ของ `E2-AC11` ที่ถามฐาน
+   * 🎯 **และภายใต้ดีไซน์ใหม่ ตัวควบคุมนี้ตรงประเด็นกว่าเดิม** — ตัวจับอิง *ชื่อตาราง* ล้วน
+   *    ดังนั้น *"ชื่อโผล่ในซอร์สไหม"* คือเงื่อนไขจำเป็นของเคสหลักโดยตรง ไม่ใช่ของข้างเคียง
    */
-  it("เครื่องวัดทำงาน: สแกนเจอการ *อ่าน* ตารางแคชอย่างน้อยหนึ่งใบ", () => {
-    const read = tablesRead().filter((t) => CACHE_TABLES.includes(t));
+  it("เครื่องวัดทำงาน ②: ชื่อตารางแคชโผล่ในซอร์สจริงอย่างน้อยหนึ่งใบ", () => {
     expect(
-      read,
-      `สแกนไม่เจอการอ่านแคชเลย — ชื่อตารางใน CACHE_TABLES อาจพิมพ์ผิดหรือถูก rename\n` +
-        `  🔴 ถ้าเป็นแบบนั้น เคสหลักข้างล่างจะเขียวโดยไม่ได้ตรวจอะไร`,
+      cacheTablesMentioned(),
+      "ไม่เจอชื่อตารางแคชในซอร์สเลย — สะกดผิด · ถูก rename · หรือสแกนเนอร์ไม่ได้อ่านไฟล์\n" +
+        "  🔴 ถ้าเป็นแบบนั้น เคสหลักข้างล่างจะเขียวโดยไม่ได้ตรวจอะไร",
     ).not.toEqual([]);
   });
 
   it("🔴 ไม่มีโค้ดแอปจุดไหนเขียนตารางแคช", () => {
-    const written = tablesWritten().filter((t) => CACHE_TABLES.includes(t));
     expect(
-      written,
+      cacheTablesWritten(),
       "โค้ดแอปเขียนตารางแคช — `route` รันด้วยตัวตนของผู้ใช้ ⇒ สิทธิ์ที่ route มี ผู้ใช้มีเท่ากัน\n" +
         "  ⇒ เปิดทางให้ผู้ใช้ยิง PostgREST ใส่ของปลอมลงตารางที่ทุกคนอ่าน\n" +
         "  ✅ ตัวเขียนที่ถูกต้องคืองานเบื้องหลังที่ถือ `service_role` และอยู่นอก `app/` (`D38`)",
