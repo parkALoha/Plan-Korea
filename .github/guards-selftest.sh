@@ -448,10 +448,48 @@ d="$(mk)"; mkmigsql "$d" "$GUARDBLK
 create policy p on public.place_photo_cache for select using (true);"
 check "cache-lockdown จับ create policy บนตารางแคช" fail "$d"
 
-# ㊲ grant ให้ authenticated -> ต้องโดนจับ
+# ㊲ grant ให้ authenticated บนตาราง **locked** (ไม่ใช่ D87) -> ต้องโดนจับ
+# 🔴 เดิมเคสนี้ใช้ travel_time_cache — วันนี้ (D87 ③) ตารางนั้นย้ายไป insert-only แล้ว
+#    grant insert to authenticated กลายเป็น *ถูกต้อง* ไม่ใช่ของที่ต้องจับอีกต่อไป
+#    → ใช้ place_details_local_cache แทน (ยังอยู่ locked ทุกตัวอักษร ไม่มีมติให้แตะ)
 d="$(mk)"; mkmigsql "$d" "$GUARDBLK
-grant insert on public.travel_time_cache to authenticated;"
-check "cache-lockdown จับ grant ให้ authenticated" fail "$d"
+grant insert on public.place_details_local_cache to authenticated;"
+check "cache-lockdown จับ grant ให้ authenticated (ตาราง locked)" fail "$d"
+
+# ㊲a 🎯 เคสควบคุมฝั่งบวกของ `D87` — select+insert ให้ authenticated บนตาราง insert-only ต้องผ่าน
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+grant select, insert on public.travel_time_cache to authenticated;"
+check "cache-lockdown ไม่ฟ้อง select+insert ให้ authenticated บนตาราง insert-only (D87)" pass "$d"
+
+# ㊲b update บนตาราง insert-only -> ต้องโดนจับ (D87 ③ ปฏิเสธการทับ)
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+grant update on public.travel_time_cache to authenticated;"
+check "cache-lockdown จับ grant update บนตาราง insert-only" fail "$d"
+
+# ㊲c delete บนตาราง insert-only -> ต้องโดนจับ (D87 ③ ปฏิเสธการลบ)
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+grant delete on public.place_photo_cache to authenticated;"
+check "cache-lockdown จับ grant delete บนตาราง insert-only" fail "$d"
+
+# ㊲d anon บนตาราง insert-only -> ต้องโดนจับ (D87 ③ ให้แค่ authenticated)
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+grant select on public.place_details_cache to anon;"
+check "cache-lockdown จับ grant ให้ anon บนตาราง insert-only" fail "$d"
+
+# ㊲e policy ที่ไม่ระบุ `to` บนตาราง insert-only -> ต้องโดนจับ (default = public)
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+create policy p on public.place_photo_cache for select using (true);"
+check "cache-lockdown จับ policy ไม่ระบุ to (default public) บนตาราง insert-only" fail "$d"
+
+# ㊲f policy for select to authenticated บนตาราง insert-only -> ต้องผ่าน (รูปเดียวกับ D87)
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+create policy p on public.place_photo_cache for select to authenticated using (true);"
+check "cache-lockdown ไม่ฟ้อง policy select to authenticated บนตาราง insert-only" pass "$d"
+
+# ㊲g policy for update to authenticated บนตาราง insert-only -> ต้องโดนจับ
+d="$(mk)"; mkmigsql "$d" "$GUARDBLK
+create policy p on public.travel_time_cache for update to authenticated using (true);"
+check "cache-lockdown จับ policy for update บนตาราง insert-only" fail "$d"
 
 # ㊳ ปิด RLS -> ต้องโดนจับ
 d="$(mk)"; mkmigsql "$d" "$GUARDBLK

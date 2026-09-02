@@ -1,0 +1,20 @@
+# ตารางที่ `authenticated` **เขียนได้ (select+insert) แต่ทับ/ลบไม่ได้** — `D87` ③ (2 ก.ย. 2026)
+#
+# 🔴 รายชื่ออยู่ในไฟล์เพื่อให้ **การเพิ่มตารางเข้ารายการ = การขยายสิทธิ์ ที่มีคน review เห็น**
+#    เหมือน `.github/no-policy-tables` ทุกประการ ต่างกันแค่ *กฎ* ที่ผูกกับรายการนี้
+#
+# ✅ อนุญาต: `grant select, insert … to authenticated` · `create policy … for select/insert to authenticated`
+# 🔴 ห้ามเสมอไม่ว่าตารางในรายการนี้: `update` · `delete` · grant/policy ให้ `anon`/`public`
+#    · ปิด RLS · policy ที่ไม่ระบุ `to authenticated` ชัดเจน (ไม่ระบุ = default `public` ใน Postgres)
+#
+# ⚠️ ผู้ใช้เลือกทางเลือก ③ (เขียนได้ ทับไม่ได้) แทน ① (ทับได้) หรือ ② (background job เท่านั้น)
+#    เหตุผล: ความเสียหายจำกัดที่ "ต้องเป็นคนแรก" ซึ่งควบคุมยากกว่าการเขียนทับได้ตลอดเวลา
+#    · เป็นรูปเดียวกับที่เว็บทริปจริงใช้อยู่แล้ว (`main` · `0010_travel_time_cache.sql:15-20`)
+# 📌 ราคาที่ยอมรับแล้ว: ค่าที่เขียนผิดครั้งแรกจะค้างอยู่จนกว่า `service_role` จะลบ (ไม่มีใครทับ/ลบแทนได้)
+#
+# ดูเหตุผลเต็มที่ `docs/engine/handoff-2026-09-02-p1.md` หัวข้อ `D87` และ migration
+# `supabase-platform/pending-review/20260902160000_d87_cache_insert_only.sql`
+
+place_details_cache
+place_photo_cache
+travel_time_cache

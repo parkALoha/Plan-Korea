@@ -3,12 +3,14 @@
 # 🔴 รายชื่ออยู่ในไฟล์เพื่อให้ **การถอดตารางออกจากรายการ = การปิดการป้องกัน ที่มีคน review เห็น**
 #    ถ้าฝังไว้ในสคริปต์ การลบบรรทัดเดียวจะกลายเป็นการแก้โค้ดที่ไม่มีใครสังเกต
 #
-# ⚠️ แคช 4 ใบนี้ **ไม่มี policy สักตัวโดยตั้งใจ** + `revoke all from public, anon, authenticated`
-#    ผลข้างเคียงที่ตั้งใจ: ไม่มีใครเขียนได้เลยจากฝั่ง client · ฝั่งเซิร์ฟเวอร์ยังเป็น `Q3` ที่เปิดอยู่
-#    → migration ใหม่ที่เผลอ `create policy` หรือ `grant … to authenticated` บนตารางพวกนี้
-#      จะเปิดรูกลับ **เงียบสนิท** เพราะไม่มีอะไรฟ้อง
+# 🔴 แก้ 2 ก.ย. 2026 (P6 · `D87` ③ ผู้ใช้ตัดสิน) — เดิมไฟล์นี้มี 4 ตาราง ตอนนี้เหลือ 1
+#    สามใบ (`place_details_cache` · `place_photo_cache` · `travel_time_cache`) ย้ายไป
+#    `.github/insert-only-cache-tables` แล้ว เพราะ `D87` อนุญาตให้ `authenticated` select+insert ได้
+#    (ทับไม่ได้ ลบไม่ได้) — **ไม่ใช่การปิดการป้องกัน เป็นคำตอบของ `Q3` ที่ค้างมา 8 วัน**
+#    ดูเหตุผลเต็มที่ `docs/engine/handoff-2026-09-02-p1.md` หัวข้อ `D87`
+#
+# ⚠️ `place_details_local_cache` **ไม่ได้อยู่ใน `D87`** — ถือชื่อเฉพาะบุคคล (`name_local`/
+#    `address_local`) ที่แยกออกมาเพราะ ToS ของ Google คนละแบบจากข้อมูลอีก 3 ใบ (`D77`)
+#    ยังไม่มีมติให้ client แตะ ต้องคง **ไม่มี policy สักตัว** ไว้จนกว่าจะมีมติแยกต่างหาก
 
-place_details_cache
 place_details_local_cache
-place_photo_cache
-travel_time_cache
