@@ -8,7 +8,8 @@ import type { City, Day, DayEvent } from "@/data/itinerary";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import { DayCityPicker } from "@/components/DayCityPicker";
 import type { CatalogCity } from "@/hooks/useTripCatalogCities";
-import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
+import type { TripHotel, TripStop } from "@/lib/supabase";
+import type { PlaceSources } from "@/lib/resolvePlace";
 import type { TravelMode } from "@/lib/schedule";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -35,7 +36,7 @@ export function DayStopsSection({
   day,
   stops,
   eventsSplit,
-  customPlaces,
+  placeSources,
   hotel,
   startHotel,
   returnTravelMode,
@@ -69,7 +70,7 @@ export function DayStopsSection({
    *  `splitDayEvents()` แล้วส่งลงมา · ทริปเกาหลีเดิม (ไฟล์สถิตย์) ไม่ต้องส่ง — `useDaySchedule`
    *  จะตกไปใช้ `day.events` เอง */
   eventsSplit?: { before: DayEvent[]; after: DayEvent[] };
-  customPlaces: CustomPlace[];
+  placeSources: PlaceSources;
   /** ที่พักคืนนี้ = จุดจบของวัน */
   hotel: TripHotel | null;
   /** ที่พักคืนก่อนหน้า = จุดเริ่มของวัน (วันย้ายเมืองจะคนละที่กับ hotel) */
@@ -185,7 +186,7 @@ export function DayStopsSection({
     lastPlace,
     showStartAnchorRow,
     showEndAnchorRow,
-  } = useDaySchedule({ day, stops, eventsSplit, customPlaces, hotel, startHotel, returnTravelMode, startTime });
+  } = useDaySchedule({ day, stops, eventsSplit, placeSources, hotel, startHotel, returnTravelMode, startTime });
 
   // วันที่ล็อกแล้ว = ลงตัวแล้ว ไม่ต้องกางให้เกะกะตอนไล่ดูทั้ง 11 วันบนมือถือ (เฟส 17)
   // ยุบอยู่ = ไม่ mount ทั้งลิสต์และแผนที่ของวันนั้น ได้ performance มาฟรีๆ ด้วย
@@ -385,7 +386,7 @@ export function DayStopsSection({
         <DayEventsPanel
           events={eventsBeforeStops}
           hotelPlace={startHotelPlace}
-          customPlaces={customPlaces}
+          placeSources={placeSources}
         />
       )}
 
@@ -684,7 +685,7 @@ export function DayStopsSection({
           events={eventsAfterStops}
           heading="✈️ ต่อจากนั้น"
           hotelPlace={startHotelPlace}
-          customPlaces={customPlaces}
+          placeSources={placeSources}
         />
       )}
 

@@ -92,7 +92,7 @@ function setup(opts: { lockedDays?: string[]; stops?: TripStop[] } = {}) {
   const { result } = renderHook(() =>
     useTripDnd({
       itinerary: ITINERARY,
-      customPlaces: [],
+      placeSources: { customPlaces: [] },
       stops,
       stopsByDay: { [d1.id]: stops },
       who: "ao",

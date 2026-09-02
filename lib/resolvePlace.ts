@@ -31,9 +31,42 @@ function parseHotelPlaceId(placeId: string): Place | null {
   };
 }
 
-export function resolvePlace(placeId: string, customPlaces: CustomPlace[]): Place | null {
+/**
+ * แหล่งที่ `resolvePlace` ค้นได้ · **ก้อนเดียว ไม่ใช่พารามิเตอร์เรียงกัน** — `E6-AC13`
+ *
+ * 🔴 **ทำไมเป็นอ็อบเจกต์ ไม่ใช่ `(placeId, customPlaces, catalog)`**
+ * แหล่งที่สี่จะมาแน่ (ที่พักจาก `trip_hotels` · จุดหมายจาก `E7`) · พารามิเตอร์เรียงกันทำให้
+ * **ผู้เรียก 16 จุดต้องแก้ทุกครั้งที่เพิ่มแหล่ง** ส่วนอ็อบเจกต์เพิ่มคีย์ได้โดยไม่แตะใคร
+ */
+export type PlaceSources = {
+  customPlaces: CustomPlace[];
+  /**
+   * side-map จาก `GET …/stops` (`E6-AC13`) — คีย์คือ `place_id` เดียวกับที่ `StopDto` ใช้
+   * · `undefined`/`{}` = **ยังไม่มี ไม่ใช่ "ไม่มีสถานที่"** · route เสื่อมมาทางนี้เมื่อคิวรีคลังล้ม
+   */
+  catalog?: Record<string, Place>;
+};
+
+/**
+ * ## 🔴 ลำดับค้นวันนี้ — `PLACES` สถิตย์ยัง**มาก่อน** คลัง และนั่นคือของชั่วคราว
+ * `PLACES` มี 72 รายการที่ `id` **รูปเดียวกับ `catalog_places.legacy_slug` เป๊ะ** (`busan-bay101`)
+ * → สำหรับ 72 ตัวนั้น **side-map จะไม่ถูกใช้เลย** ตราบใดที่สถิตย์ยังมาก่อน
+ * · 🎯 แปลว่าเกณฑ์ของ `AC1` (*ถอด `data/places.ts` ออกจากบันเดิล*) **ยังวัดไม่ได้จนกว่าจะสลับ**
+ * · ⚠️ **การสลับเปลี่ยนคำตอบจริงเวลา id ชน** (เนื้อในคลังกับในไฟล์ไม่จำเป็นต้องตรงกัน — เช่น
+ *   `mapsQuery` ในไฟล์เขียนด้วยมือว่า `"Bay 101 Busan"` ส่วนคลังอาจเป็น `null`)
+ *   → **รอมติ P1 ก่อน ไม่สลับเงียบ ๆ** · คอมมิตนี้จึงไม่เปลี่ยนพฤติกรรมของ 72 ตัวนั้นเลยสักตัว
+ * · ✅ ที่ได้แล้ววันนี้: **สถานที่คลังที่ *ไม่* อยู่ใน 72 ตัวนั้น resolve ได้เป็นครั้งแรก**
+ *   (ญี่ปุ่น/ไทย/เมืองอื่น) ซึ่งก่อนหน้านี้คืน `null` เสมอ
+ */
+export function resolvePlace(placeId: string, sources: PlaceSources): Place | null {
+  const { customPlaces, catalog } = sources;
+
   const known = PLACES.find((p) => p.id === placeId);
   if (known) return known;
+
+  // 🔴 `Object.hasOwn` ไม่ใช่ของประดับ — `catalog["constructor"]` คืนของจาก prototype ซึ่ง truthy
+  //    (รูปเดียวกับ `categoryMetaOf` · `countryOfCitySlug`) · `place_id` มาจากฐาน ควบคุมค่าไม่ได้
+  if (catalog && Object.hasOwn(catalog, placeId)) return catalog[placeId];
 
   // สนามบิน/สถานีของแถว kind="transfer" — อยู่นอก PLACES เพื่อไม่ให้โผล่ในคลังสถานที่
   // แต่ต้อง resolve ได้ ไม่งั้น computeSchedule ถือว่าแถวนั้นไม่มีพิกัด แล้วเวลาเดินทางหายไปทั้งช่วง

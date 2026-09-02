@@ -16,13 +16,13 @@ import { categoryMetaOf } from "@/components/categoryMeta";
 import { placeCityNameThOf } from "@/components/placeCity";
 import type { Day } from "@/data/itinerary";
 import { cityNameThOf } from "@/components/cityMeta";
-import { resolvePlace } from "@/lib/resolvePlace";
-import type { CustomPlace, TripStop } from "@/lib/supabase";
+import { resolvePlace, type PlaceSources } from "@/lib/resolvePlace";
+import type { TripStop } from "@/lib/supabase";
 import { showUndoToast } from "@/lib/toast";
 
 interface UseTripDndArgs {
   itinerary: Day[];
-  customPlaces: CustomPlace[];
+  placeSources: PlaceSources;
   stops: TripStop[];
   stopsByDay: Record<string, TripStop[]>;
   who: string;
@@ -61,7 +61,7 @@ interface UseTripDndArgs {
 // (ลากจัดลำดับภายในวันเดียวกันก็ยังผ่าน context เดียวกันนี้)
 export function useTripDnd({
   itinerary,
-  customPlaces,
+  placeSources,
   stops,
   stopsByDay,
   who,
@@ -103,7 +103,7 @@ export function useTripDnd({
   /** ป้ายชื่อสั้นๆ ของจุดแวะ ใช้ในข้อความ toast — แถวพิเศษ (ข้ามเมือง/ที่พัก/สนามบิน) resolve ไม่ได้ ใช้คำกลางๆ */
   function stopLabel(stopId: string) {
     const placeId = stops.find((s) => s.id === stopId)?.place_id;
-    const place = placeId ? resolvePlace(placeId, customPlaces) : null;
+    const place = placeId ? resolvePlace(placeId, placeSources) : null;
     return place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : "จุดแวะนี้";
   }
 
@@ -133,7 +133,7 @@ export function useTripDnd({
       // ลากการ์ดจากคลังมาวางในวัน — ถ้าคนละเมืองแค่เตือน (เผื่อวันเดินทางที่แวะได้สองเมือง) ไม่บล็อกเงียบๆ
       if (!targetDayId) return;
       const targetDay = itinerary.find((d) => d.id === targetDayId);
-      const place = resolvePlace(activeData.placeId, customPlaces);
+      const place = resolvePlace(activeData.placeId, placeSources);
       if (!targetDay || !place) return;
       const prevPlace = lastStopPlaceForDay(targetDayId);
       addStop(
@@ -199,7 +199,7 @@ export function useTripDnd({
     // ย้ายข้ามวัน — คนละเมืองก็แค่เตือนเหมือนกัน (ทริปทางผ่านบางทีก็เที่ยว 2 เมืองในวันเดียวได้จริง)
     const targetDay = itinerary.find((d) => d.id === targetDayId);
     const movingStop = stops.find((s) => s.id === stopId);
-    const place = movingStop ? resolvePlace(movingStop.place_id, customPlaces) : null;
+    const place = movingStop ? resolvePlace(movingStop.place_id, placeSources) : null;
     if (!targetDay || !place) return;
     const sourceDayId = activeData.dayId;
     Promise.resolve(moveStopToDay(stopId, targetDayId)).then(() => {
@@ -216,9 +216,9 @@ export function useTripDnd({
     if (!activeDrag) return null;
     const placeId = activeDrag.kind === "place" ? activeDrag.placeId : stops.find((s) => s.id === activeDrag.stopId)?.place_id;
     if (!placeId) return null;
-    const place = resolvePlace(placeId, customPlaces);
+    const place = resolvePlace(placeId, placeSources);
     return place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : null;
-  }, [activeDrag, customPlaces, stops]);
+  }, [activeDrag, placeSources, stops]);
 
   return { sensors, handleDragStart, handleDragEnd, activeDragLabel };
 }

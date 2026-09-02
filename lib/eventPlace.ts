@@ -1,7 +1,6 @@
 import type { DayEvent } from "@/data/itinerary";
 import type { Place } from "@/data/places";
-import type { CustomPlace } from "@/lib/supabase";
-import { resolvePlace } from "@/lib/resolvePlace";
+import { resolvePlace, type PlaceSources } from "@/lib/resolvePlace";
 
 /** `DayEvent.placeId` ที่หมายถึง "ที่พักที่ตื่นมาจากคืนก่อนหน้า" — พิกัดมาจาก `trip_hotels` ตอน render
  *  ไม่ใช่ค่าคงที่ใน `data/itinerary.ts` จึงต้องส่ง `hotelPlace` เข้ามาให้ */
@@ -18,9 +17,9 @@ export const EVENT_HOTEL_PLACE_ID = "@hotel";
 export function resolveEventPlace(
   event: DayEvent,
   hotelPlace: Place | null,
-  customPlaces: CustomPlace[]
+  sources: PlaceSources
 ): Place | null {
   if (!event.placeId) return null;
   if (event.placeId === EVENT_HOTEL_PLACE_ID) return hotelPlace;
-  return resolvePlace(event.placeId, customPlaces);
+  return resolvePlace(event.placeId, sources);
 }

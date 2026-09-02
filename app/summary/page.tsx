@@ -9,7 +9,7 @@ import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
 import type { Day } from "@/data/itinerary";
 import { immigrationCountryOf } from "@/lib/immigrationCountry";
 import { splitDayEvents } from "@/lib/engine/dayEvents";
-import type { CustomPlace, TripBooking, TripHotel, TripStop } from "@/lib/supabase";
+import type { TripBooking, TripHotel, TripStop } from "@/lib/supabase";
 import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
 import { resolveEventPlace } from "@/lib/eventPlace";
 import {
@@ -21,7 +21,7 @@ import {
 import { haversineKm } from "@/lib/geo";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { looksLatin } from "@/lib/latinScript";
-import { resolvePlace } from "@/lib/resolvePlace";
+import { resolvePlace, type PlaceSources } from "@/lib/resolvePlace";
 import { weekdayHoursLabel } from "@/lib/openingHours";
 import { useLang, type Lang, type TKey } from "@/lib/i18n";
 import {
@@ -96,7 +96,7 @@ function formatMinutes(total: number, lang: Lang = "th") {
 function SummaryDayCard({
   day,
   stops,
-  customPlaces,
+  placeSources,
   hotel,
   startHotel,
   returnTravelMode,
@@ -109,7 +109,7 @@ function SummaryDayCard({
 }: {
   day: Day;
   stops: TripStop[];
-  customPlaces: CustomPlace[];
+  placeSources: PlaceSources;
   hotel: TripHotel | null;
   startHotel: TripHotel | null;
   returnTravelMode: TravelMode | null;
@@ -151,7 +151,7 @@ function SummaryDayCard({
     stops: dayStops,
     // 🔴 วันจากฐานไม่มี `day.events` — ส่งผลการแบ่งจาก `trip_stops` เข้าไปแทน (`B6`)
     eventsSplit: { before: evBefore, after: evAfter },
-    customPlaces, hotel, startHotel, returnTravelMode, startTime,
+    placeSources, hotel, startHotel, returnTravelMode, startTime,
   });
 
   const travelMinutes =
@@ -214,7 +214,7 @@ function SummaryDayCard({
           </div>
           <div className="divide-y divide-line">
             {allEvents.map((event, i) => {
-              const place = resolveEventPlace(event, startHotelPlace, customPlaces);
+              const place = resolveEventPlace(event, startHotelPlace, placeSources);
               // แถวเตือน/เดดไลน์ใช้คู่สี panel-maple เหมือนเดิม — ในแถวนั้นปล่อยให้สีตัวอักษรไหลลงมา
               // จากตัวแถว ไม่ทับด้วย text-content ไม่งั้นจะได้ครีมบนครีมตอนธีมมืด
               const alert = event.alert === true;
@@ -574,8 +574,14 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   );
   const { items: checklistItems, loaded: checklistLoaded } = useChecklist(tripId);
   const { plans, activePlanId, loaded: plansLoaded } = usePlans(tripId);
-  const { stops, loaded: stopsLoaded } = useStops(tripId, activePlanId);
+  const { stops, catalogPlaces, loaded: stopsLoaded } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
+  /** แหล่งค้นสถานที่ก้อนเดียว (`E6-AC13`) — memo เพราะ identity เข้า deps ของ `useDaySchedule` */
+  const placeSources = useMemo(
+    () => ({ customPlaces, catalog: catalogPlaces }),
+    [customPlaces, catalogPlaces]
+  );
+
   const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
   const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides(tripId);
 
@@ -613,11 +619,11 @@ export function SummaryContent({ tripId }: { tripId: string }) {
     const queries = new Set<string>();
     for (const stop of stops) {
       if (stop.kind === "intercity" || stop.kind === "hotel") continue;
-      const place = resolvePlace(stop.place_id, customPlaces);
+      const place = resolvePlace(stop.place_id, placeSources);
       if (place && !looksLatin(place.nameEn)) queries.add(placeQueryKey(place));
     }
     return Array.from(queries);
-  }, [en, immigrationView, stops, customPlaces]);
+  }, [en, immigrationView, stops, placeSources]);
   const namesEn = usePlaceNamesEn(nonLatinQueries);
 
   const overallLoaded =
@@ -659,7 +665,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
       checklistItems,
       daySettings,
       overnightOverrides,
-      customPlaces,
+      placeSources,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -818,7 +824,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
             hotelLegs={hotelLegs}
             hotels={hotels}
             stopsByDay={stopsByDay}
-            customPlaces={customPlaces}
+            placeSources={placeSources}
           />
         ) : dayPlanReady && immigrationPick.kind === "tie" ? (
           /* 🔴 **เสมอกัน → ไม่แสดงชีต *แต่บอกเหตุผล*** (P3 เสนอ · P1 รับ · 30 ส.ค. 2026)
@@ -996,7 +1002,7 @@ export function SummaryContent({ tripId }: { tripId: string }) {
               key={day.id}
               day={day}
               stops={stopsByDay[day.id] ?? []}
-              customPlaces={customPlaces}
+              placeSources={placeSources}
               hotel={hotelForDay(day.id)}
               startHotel={hotelBeforeDay(day.id)}
               returnTravelMode={(daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null}

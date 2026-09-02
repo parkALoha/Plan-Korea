@@ -11,6 +11,7 @@ import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 import { parseStopsPayload } from "@/lib/engine/stopsPayload";
+import type { Place } from "@/data/places";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -29,6 +30,9 @@ import { parseStopsPayload } from "@/lib/engine/stopsPayload";
 /** อ้างอิงคงที่ — คืน `[]` ใหม่ทุกครั้งจะทำให้ผู้เรียกที่ใช้ `useMemo` คำนวณใหม่ทุก render */
 const EMPTY_STOPS: TripStop[] = [];
 
+/** identity คงที่ — `useMemo` ของผู้เรียกที่ขึ้นกับ side-map จะได้ไม่ re-run ทุกรอบ render */
+const EMPTY_CATALOG: Record<string, Place> = {};
+
 function sortStops(stops: TripStop[]) {
   return [...stops].sort((a, b) =>
     a.day_id === b.day_id ? a.order_index - b.order_index : a.day_id.localeCompare(b.day_id)
@@ -40,6 +44,14 @@ type StopDto = Omit<TripStop, "day_id" | "plan_id"> & { trip_day_id: string };
 /** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
 export function useStops(tripId: string | null, planId: string | null) {
   const [stops, setStops] = useState<TripStop[]>([]);
+  /**
+   * side-map จาก `/stops` (`E6-AC13`) — **ไม่แคช และตั้งใจไม่แคชในคอมมิตนี้**
+   * 🔴 คีย์แคชเดิม `stops:<planId>` เก็บ `TripStop[]` มาตั้งแต่ต้น · ยัด `places` รวมเข้าไป
+   * = ผู้ใช้ที่อัปเดตโค้ดตอนออนไลน์แล้วออฟไลน์ทันที มีแคชรูปเก่าที่โค้ดใหม่อ่านไม่ออก
+   * → คีย์แยก (`stopPlaces:<planId>`) มาทีหลังพร้อมเคสของมัน · **ตอนนี้ออฟไลน์ = ไม่มี side-map**
+   *   ซึ่งเสื่อมไปที่ `PLACES` สถิตย์ + `customPlaces` (ที่แคชอยู่แล้ว) ไม่ใช่หน้าพัง
+   */
+  const [catalogPlaces, setCatalogPlaces] = useState<Record<string, Place>>(EMPTY_CATALOG);
 
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
   const tripIdRef = useRef<string | null>(null);
@@ -80,6 +92,8 @@ export function useStops(tripId: string | null, planId: string | null) {
     );
     if (!payload) return;
     const rawRows = payload.stops;
+    // 🔴 ว่าง = `{}` ที่ identity คงที่ ไม่ใช่อ็อบเจกต์ใหม่ทุกครั้ง (ดู `EMPTY_CATALOG`)
+    setCatalogPlaces(Object.keys(payload.places).length > 0 ? payload.places : EMPTY_CATALOG);
     const mapped = sortStops(mapRows(rawRows));
     setStops(mapped);
     // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — state ในเครื่องอัปเดตได้ปกติ (จะถูกต้องเองเมื่อ
@@ -415,6 +429,8 @@ export function useStops(tripId: string | null, planId: string | null) {
     //    `react-hooks/set-state-in-effect` ห้ามอันหลัง เพราะมันทำให้ render ซ้อน
     //    (กฎเดียวกับที่จับงานของ P2 เมื่อคืน) · ค่าที่คำนวณได้ ไม่ต้องเก็บเป็น state
     stops: planId ? stops : EMPTY_STOPS,
+    /** สถานที่จากคลังที่จุดแวะของแผนนี้อ้างถึง — ป้อน `resolvePlace(id, { customPlaces, catalog })` */
+    catalogPlaces,
     loaded,
     addStop,
     insertStopAt,

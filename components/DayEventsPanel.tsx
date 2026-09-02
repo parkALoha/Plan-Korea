@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { DayEvent } from "@/data/itinerary";
 import type { Place } from "@/data/places";
-import type { CustomPlace } from "@/lib/supabase";
+import type { PlaceSources } from "@/lib/resolvePlace";
 import { resolveEventPlace } from "@/lib/eventPlace";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { LayoverBadges } from "./LayoverBadges";
@@ -33,12 +33,12 @@ export function DayEventsPanel({
   events,
   heading = "✈️ ตารางบิน/เวลาตายตัวของวันนี้",
   hotelPlace = null,
-  customPlaces,
+  placeSources,
 }: {
   events: DayEvent[];
   heading?: string;
   /** สถานที่ที่เก็บใน Supabase — ต้องส่งมา ไม่งั้นแถวที่อ้าง `home-base` จะ resolve ไม่เจอ */
-  customPlaces: CustomPlace[];
+  placeSources: PlaceSources;
   /** ที่พักที่ตื่นมาจากคืนก่อนหน้า — รองรับ `placeId: "@hotel"` (แถวเช็คเอาต์เช้าวันกลับ)
    *  null = ยังไม่ได้ตั้งที่พักคืนนั้น แถวนั้นแสดงเป็นแถวธรรมดาที่กดไม่ได้ */
   hotelPlace?: Place | null;
@@ -63,7 +63,7 @@ export function DayEventsPanel({
       <div className="divide-y divide-line border-t border-line">
         {events.map((event, i) => {
           const locked = isLocked(event);
-          const place = resolveEventPlace(event, hotelPlace, customPlaces);
+          const place = resolveEventPlace(event, hotelPlace, placeSources);
           // สีพื้นของแถวเหมือนเดิมทุกประการ — เดดไลน์ที่พลาดไม่ได้กับช่วงต่อเครื่องต้องเด้งออกมาจากแถวปกติ
           // แถวเตือนคุมสีตัวอักษรจากตัวแถว ข้างในจึงไม่ทับด้วย text-content (ครีมบนครีมตอนธีมมืด)
           const alert = event.alert === true;

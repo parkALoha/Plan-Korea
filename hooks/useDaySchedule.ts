@@ -3,8 +3,8 @@
 import { useCallback, useMemo } from "react";
 import { CITY_LOCALE, type Place } from "@/data/places";
 import type { Day, DayEvent } from "@/data/itinerary";
-import type { CustomPlace, TripHotel, TripStop } from "@/lib/supabase";
-import { resolvePlace } from "@/lib/resolvePlace";
+import type { TripHotel, TripStop } from "@/lib/supabase";
+import { resolvePlace, type PlaceSources } from "@/lib/resolvePlace";
 import {
   computeSchedule,
   estimateTravelMinutesBetween,
@@ -31,7 +31,7 @@ import { countryOfCitySlug } from "@/data/emergency";
 export function useDaySchedule({
   day,
   stops,
-  customPlaces,
+  placeSources,
   hotel,
   startHotel,
   returnTravelMode,
@@ -48,7 +48,7 @@ export function useDaySchedule({
    *    `dayBridge.ts` เตือนไว้เองว่า *"ถ้าแต่ละตัวแปลงเอง มันจะแปลงไม่เหมือนกันสักวัน"*
    */
   eventsSplit?: { before: DayEvent[]; after: DayEvent[] };
-  customPlaces: CustomPlace[];
+  placeSources: PlaceSources;
   hotel: TripHotel | null;
   startHotel: TripHotel | null;
   returnTravelMode: TravelMode | null;
@@ -57,18 +57,18 @@ export function useDaySchedule({
 }) {
   const mealCount = useMemo(
     () =>
-      stops.filter((s) => resolvePlace(s.place_id, customPlaces)?.category === "restaurant").length,
-    [stops, customPlaces]
+      stops.filter((s) => resolvePlace(s.place_id, placeSources)?.category === "restaurant").length,
+    [stops, placeSources]
   );
 
   const placesById = useMemo(() => {
     const map = new Map<string, Place>();
     for (const stop of stops) {
-      const place = resolvePlace(stop.place_id, customPlaces);
+      const place = resolvePlace(stop.place_id, placeSources);
       if (place) map.set(stop.place_id, place);
     }
     return map;
-  }, [stops, customPlaces]);
+  }, [stops, placeSources]);
 
   // ที่พักหัว-ท้ายวัน: ออกจากที่พักคืนก่อน (startHotel) ตอนเช้า แล้วกลับไปนอนที่พักคืนนี้ (hotel) ตอนค่ำ
   // ใช้ hotelAnchorId (อิงพิกัด) เป็น id ของจุด เพื่อให้แคชเวลาเดินทางคีย์เดียวกับ useHotelDistance

@@ -109,8 +109,18 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     updatePhoto,
     removeStop,
     restoreStop,
+    catalogPlaces,
   } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
+  /**
+   * แหล่งค้นสถานที่ก้อนเดียว (`E6-AC13`) — `useMemo` เพราะ identity ของมันเข้า deps ของ
+   * `useDaySchedule`/`useTripDnd` · สร้างใหม่ทุก render = memo ข้างในนั้นตายทั้งชุด
+   */
+  const placeSources = useMemo(
+    () => ({ customPlaces, catalog: catalogPlaces }),
+    [customPlaces, catalogPlaces]
+  );
+
   const { placeNotes, stashNote, clearNote } = usePlaceNotes(tripId, activePlanId);
   const {
     settings: daySettings,
@@ -364,9 +374,9 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     (dayId: string) => {
       const dayStops = stopsByDay[dayId];
       if (!dayStops || dayStops.length === 0) return null;
-      return resolvePlace(dayStops[dayStops.length - 1].place_id, customPlaces);
+      return resolvePlace(dayStops[dayStops.length - 1].place_id, placeSources);
     },
-    [stopsByDay, customPlaces]
+    [stopsByDay, placeSources]
   );
 
   // บริบทตอนกด "+ แทรกร้านตรงนี้" ระหว่างจุดแวะ 2 จุด — เก็บวัน/ตำแหน่งที่จะแทรก + จุดศูนย์กลางค้นหา
@@ -454,7 +464,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
 
   const { sensors, handleDragStart, handleDragEnd, activeDragLabel } = useTripDnd({
     itinerary,
-    customPlaces,
+    placeSources,
     stops,
     stopsByDay,
     who,
@@ -481,7 +491,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     // จุดก่อนหน้าตำแหน่งที่จะแทรก ใช้เดาโหมดเดินทางเข้าแบบเดียวกับจุดแวะปกติ
     const dayStops = stopsByDay[dayId] ?? [];
     const prevStop = atIndex > 0 ? dayStops[atIndex - 1] : undefined;
-    const prevPlace = prevStop ? resolvePlace(prevStop.place_id, customPlaces) : null;
+    const prevPlace = prevStop ? resolvePlace(prevStop.place_id, placeSources) : null;
     insertHotelAt(
       dayId,
       atIndex,
@@ -502,7 +512,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
    *  ที่จะเอาจุดแวะออก ถ้าไม่ฝากด้วย ฟีเจอร์นี้จะใช้ได้แต่บนจอใหญ่ */
   async function handleRemoveStop(stopId: string) {
     const stop = stops.find((s) => s.id === stopId);
-    const place = stop ? resolvePlace(stop.place_id, customPlaces) : null;
+    const place = stop ? resolvePlace(stop.place_id, placeSources) : null;
     const label = place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : "จุดแวะนี้";
     const stashed = stop
       ? await stashNote(stop.place_id, stop.note ?? null, stop.photo_url ?? null)
@@ -680,7 +690,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                       ? { before: dayEventsSplit[day.id].before, after: dayEventsSplit[day.id].after }
                       : undefined
                   }
-                  customPlaces={customPlaces}
+                  placeSources={placeSources}
                   hotel={hotelForDay(day.id)}
                   startHotel={hotelBeforeDay(day.id)}
                   returnTravelMode={
@@ -745,7 +755,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                 const prevPlace = lastStopPlaceForDay(dayId);
                 // coords มาจาก NearbyPlacesModal ตอนสร้าง custom place ใหม่ — ใช้แทน resolvePlace
                 // เพราะ customPlaces state ยังไม่ทันมีสถานที่นี้ (รอ realtime echo) ส่วนสถานที่จากคลังปกติ resolve ได้เลย
-                const newPlace = coords ?? resolvePlace(placeId, customPlaces);
+                const newPlace = coords ?? resolvePlace(placeId, placeSources);
                 addStopWithStashedNote(
                   dayId,
                   placeId,
@@ -819,7 +829,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
             // จุดก่อนหน้าคือจุดสุดท้ายของวันตอนนี้ (ปุ่มอยู่ท้ายการ์ด) — เดาโหมดเดินทางแบบเดียวกับจุดแวะปกติ
             const prevPlace =
               transferContext.atIndex > 0 ? lastStopPlaceForDay(transferContext.dayId) : null;
-            const airport = resolvePlace(input.placeId, customPlaces);
+            const airport = resolvePlace(input.placeId, placeSources);
             insertTransferAt(
               transferContext.dayId,
               transferContext.atIndex,

@@ -6,12 +6,11 @@ import { cityNameEnOf } from "@/components/cityMeta";
 import type { Place } from "@/data/places";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel, TripStop } from "@/lib/supabase";
-import { resolvePlace } from "@/lib/resolvePlace";
+import { resolvePlace, type PlaceSources } from "@/lib/resolvePlace";
 import { looksLatin } from "@/lib/latinScript";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { usePlaceNamesEn } from "@/hooks/usePlaceNamesEn";
 import { readPersonalValue, writePersonalValue } from "@/hooks/personalLocalValue";
-import type { CustomPlace } from "@/lib/supabase";
 
 /** 🔴 **ชื่อในพาสปอร์ต — ต้องถูกล้างตอน `signOut`** · เหตุผลเต็มอยู่ใน `hooks/personalLocalValue.ts`
  *  เดิมเขียนด้วย `localStorage.setItem("trip-passport-names")` ตรง ๆ → อยู่นอก `trip-cache:`
@@ -79,7 +78,7 @@ export function ImmigrationSheet({
   hotelLegs,
   hotels,
   stopsByDay,
-  customPlaces,
+  placeSources,
 }: {
   country: ImmigrationCountry;
   /**
@@ -92,7 +91,7 @@ export function ImmigrationSheet({
   hotelLegs: HotelLeg[];
   hotels: Record<string, TripHotel>;
   stopsByDay: Record<string, TripStop[]>;
-  customPlaces: CustomPlace[];
+  placeSources: PlaceSources;
 }) {
   // อ่าน localStorage ตอน initial state ได้ตรงๆ เพราะคอมโพเนนต์นี้อยู่ใต้ Suspense ของ /summary
   // ที่ใช้ useSearchParams = subtree ทั้งก้อนเรนเดอร์ฝั่ง client ล้วน ไม่มี HTML จากเซิร์ฟเวอร์ให้ mismatch
@@ -115,11 +114,11 @@ export function ImmigrationSheet({
     for (const day of days) {
       map[day.id] = (stopsByDay[day.id] ?? [])
         .filter((s) => s.kind !== "intercity")
-        .map((s) => resolvePlace(s.place_id, customPlaces))
+        .map((s) => resolvePlace(s.place_id, placeSources))
         .filter((p): p is Place => p != null);
     }
     return map;
-  }, [days, stopsByDay, customPlaces]);
+  }, [days, stopsByDay, placeSources]);
 
   // สถานที่ที่เพิ่มเองระหว่างทางเก็บชื่อที่ Google คืนมาเป็นภาษาไทย (custom_places.name_en เป็น null
   // ดู NearbyPlacesModal) — เอกสารที่ยื่นเจ้าหน้าที่เลยมี "ตลาดปลาจากัลชิ" ปนอยู่ · ขอชื่ออังกฤษของ

@@ -84,13 +84,13 @@ describe("🔴 E6-AC12 ① — ค่าสังเคราะห์ต้อ�
    * · รูปเดียวกับ `noHotel` ที่ "ไม่มีใครส่งมา" แล้ว `hotelLegs` อ่านมันจริง (นับวันบินเป็นคืนที่ต้องมีโรงแรม)
    */
   it("โรงแรมสังเคราะห์ (`hotel@lat,lng`) ต้องมี `city === null`", () => {
-    const hotel = resolvePlace("hotel@37.5,127.0", []);
+    const hotel = resolvePlace("hotel@37.5,127.0", { customPlaces: [] });
     expect(hotel, "resolve ไม่ออก — รูปของ id เปลี่ยน เคสนี้กำลังจะ no-op").not.toBeNull();
     expect(hotel!.city, 'ค่าที่ "ไม่ได้ใช้จริง" คือค่าที่จะมีคนอ่านวันหนึ่ง').toBeNull();
   });
 
   it("และมันต้อง *เดินผ่าน* เส้นทางไม่รู้จักจริง ไม่ใช่แค่เก็บ null ไว้เฉย ๆ", () => {
-    const hotel = resolvePlace("hotel@37.5,127.0", [])!;
+    const hotel = resolvePlace("hotel@37.5,127.0", { customPlaces: [] })!;
     expect(placeCityNameThOf(hotel.city)).toBe(UNSET_CITY_NAME_TH);
     expect(cityLocaleOf(hotel.city)).toBeNull();
   });

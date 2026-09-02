@@ -20,7 +20,7 @@ describe("hotelAnchorId", () => {
  *  ถือว่าแถวนั้นไม่มีพิกัด แล้วเวลาเดินทางเข้า/ออกที่พักหายไปเงียบๆ โดยไม่มีใคร error */
 describe("resolvePlace กับ id ที่พัก", () => {
   it("อ่านพิกัดกลับจาก id ที่ hotelAnchorId สร้างไว้ได้", () => {
-    const place = resolvePlace(hotelAnchorId({ lat: 35.1545767, lng: 129.0573613 }), []);
+    const place = resolvePlace(hotelAnchorId({ lat: 35.1545767, lng: 129.0573613 }), { customPlaces: [] });
     expect(place).not.toBeNull();
     // hotelAnchorId ปัดเหลือ 5 ตำแหน่ง — คลาดได้ไม่เกินระดับเมตร ซึ่งไม่มีผลกับเวลาเดินทาง
     expect(place!.lat).toBeCloseTo(35.1545767, 4);
@@ -28,7 +28,7 @@ describe("resolvePlace กับ id ที่พัก", () => {
   });
 
   it("id ปกติที่ไม่ใช่ที่พักไม่ถูกตีความผิด", () => {
-    expect(resolvePlace("ไม่มีอยู่จริง", [])).toBeNull();
-    expect(resolvePlace("hotel@พัง", [])).toBeNull();
+    expect(resolvePlace("ไม่มีอยู่จริง", { customPlaces: [] })).toBeNull();
+    expect(resolvePlace("hotel@พัง", { customPlaces: [] })).toBeNull();
   });
 });

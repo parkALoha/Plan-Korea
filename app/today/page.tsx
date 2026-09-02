@@ -205,12 +205,19 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
   const { plans, activePlanId, loaded: plansLoaded } = usePlans(tripId);
   const {
     stops,
+    catalogPlaces,
     loaded: stopsLoaded,
     markVisited,
     unmarkVisited,
     updatePhoto,
   } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
+  /** แหล่งค้นสถานที่ก้อนเดียว (`E6-AC13`) — memo เพราะ identity เข้า deps ของ `useDaySchedule` */
+  const placeSources = useMemo(
+    () => ({ customPlaces, catalog: catalogPlaces }),
+    [customPlaces, catalogPlaces]
+  );
+
   const { overnightOverrides, loaded: overnightLoaded } = useOvernightOverrides(tripId);
   const { settings: daySettings, loaded: daySettingsLoaded } = useDaySettings(tripId, activePlanId);
 
@@ -308,7 +315,7 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
       // 🔴 วันจากฐานไม่มี `day.events` — ส่งผลการแยกจาก `trip_stops` เข้าไปแทน (`B6`)
       //    ส่งเป็น *ผลการแบ่งแล้ว* ไม่ใช่อาเรย์ดิบ เพราะกฎการแบ่งอยู่ที่ `dayEvents.ts` ที่เดียว
       eventsSplit: { before: dayEventsBefore, after: dayEventsAfter },
-      customPlaces,
+      placeSources,
       hotel: endHotel,
       startHotel,
       returnTravelMode: (daySettings[day.id]?.return_travel_mode as TravelMode | null) ?? null,
@@ -667,7 +674,7 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
               </h2>
               <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface-raised">
                 {allEvents.map((event, i) => {
-                  const place = resolveEventPlace(event, startHotelPlace, customPlaces);
+                  const place = resolveEventPlace(event, startHotelPlace, placeSources);
                   const alert = event.alert === true;
                   const row = (
                     <>
