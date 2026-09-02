@@ -10,6 +10,7 @@ import { showToast } from "@/lib/toast";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
+import { parseStopsPayload } from "@/lib/engine/stopsPayload";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -64,10 +65,21 @@ export function useStops(tripId: string | null, planId: string | null) {
   const reload = useCallback(async () => {
     const tripId = tripIdRef.current;
     if (!supabaseConfigured || !tripId || !planId) return;
-    const rawRows = await fetchReadJson<StopDto[]>(
-      `/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`
+    /**
+     * 🔴 **อ่านผ่าน `parseStopsPayload` ไม่ใช่ `as StopDto[]` ตรง ๆ** (`E6-AC13` · 2 ก.ย. 2026)
+     * `AC13` กำลังจะเปลี่ยนคำตอบของ route นี้เป็น `{ stops, places }` — **อาเรย์ → อ็อบเจกต์**
+     * ไคลเอนต์ที่เปิดค้างตอน deploy จะอ่านอ็อบเจกต์ด้วยโค้ดที่คาดอาเรย์ → `rawRows.length` เป็น
+     * `undefined` → **จุดแวะหายทั้งวันโดยไม่มี error** · ต่อสายฝั่งอ่านไว้ก่อน route เปลี่ยน
+     * จึงไม่มีหน้าต่างที่สองฝั่งไม่ตรงกันเลย ไม่ใช่แค่หน้าต่างที่แคบลง
+     * · 📌 วันนี้ route ยังคืนอาเรย์ → `payload.places` เป็น `{}` เสมอ และยังไม่มีใครอ่านมัน
+     */
+    const payload = parseStopsPayload<StopDto>(
+      await fetchReadJson<unknown>(
+        `/api/engine/trips/${tripId}/stops?planId=${encodeURIComponent(planId)}`
+      )
     );
-    if (!rawRows) return;
+    if (!payload) return;
+    const rawRows = payload.stops;
     const mapped = sortStops(mapRows(rawRows));
     setStops(mapped);
     // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — state ในเครื่องอัปเดตได้ปกติ (จะถูกต้องเองเมื่อ
