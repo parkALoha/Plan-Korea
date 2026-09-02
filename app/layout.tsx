@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { SystemModeBanner } from "@/components/SystemModeBanner";
+import { DeviceOwnerStamp } from "@/components/DeviceOwnerStamp";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { ToastHost } from "@/components/ToastHost";
 import { SystemModeProvider } from "@/hooks/useSystemMode";
@@ -33,6 +34,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="th" className={`${thaiSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-cream">
+        {/* 🔴 ต้องอยู่นอก `SystemModeProvider` และมาก่อนทุกอย่าง — ตราเจ้าของเป็นของทั้งเครื่อง
+            ไม่ใช่ของทริปใดทริปหนึ่ง และไม่ขึ้นกับโหมดของระบบ (`E6-AC14`) */}
+        <DeviceOwnerStamp />
         <ServiceWorkerRegistrar />
         <OfflineBanner />
         {/* ครอบทั้ง banner และ children — ทั้งคู่อ่านโหมดผ่าน useSystemMode() (banner เป็นคนแรก
