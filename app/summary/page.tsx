@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type Place } from "@/data/places";
@@ -49,6 +49,7 @@ import { useChecklist } from "@/hooks/useChecklist";
 import { usePlans } from "@/hooks/usePlans";
 import { useStops } from "@/hooks/useStops";
 import { useCustomPlaces } from "@/hooks/useCustomPlaces";
+import { useTripMeta } from "@/hooks/useTripMeta";
 import { usePlaceDetails } from "@/hooks/usePlaceDetails";
 import { usePlaceNamesEn } from "@/hooks/usePlaceNamesEn";
 import { useDaySettings } from "@/hooks/useDaySettings";
@@ -525,46 +526,23 @@ export function SummaryContent({ tripId }: { tripId: string }) {
   const { lang, setLang, t } = useLang();
   const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
   const searchParams = useSearchParams();
-  // 🔴 เดิม t("summaryTitle")/t("tripDates") ฝังชื่อ+ช่วงวันของทริปเกาหลีตายตัว — หน้านี้มีปุ่ม "หน้าสำหรับ
-  // ตม." อยู่บนตัวมันเอง ยื่นให้คนนอกดูจริง เปิดทริปที่สอง ("P2 boundary test single day") แล้วเห็นชื่อ/
-  // วันที่ของทริปแรก (P1 27 ส.ค. 2026) — ดึงชื่อ+วันที่จริงจาก /api/engine/trips เหมือน TripHeader.tsx
-  // (ยังไม่มี route ดึงทริปเดียวโดยตรง) เก็บคู่กับ tripId ที่ผลนั้นเป็นของ แล้ว derive ตอน render แทน
-  // setState ตรงๆ ในเอฟเฟกต์ กัน set-state-in-effect (แพทเทิร์นเดียวกับ usePlacePhotos.ts)
-  // 📌 start_date/end_date ถูกเพิ่มเข้า select ของ tripsForUser() แล้ว (27 ส.ค. 2026 f89ecd8)
-  const [tripResult, setTripResult] = useState<{
-    forTripId: string;
-    title: string | null;
-    startDate: string | null;
-    endDate: string | null;
-  } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/engine/trips")
-      .then((r) => r.json())
-      .then((rows: { id: string; title: string; start_date: string; end_date: string }[]) => {
-        if (cancelled) return;
-        const match = rows.find((r) => r.id === tripId);
-        setTripResult({
-          forTripId: tripId,
-          title: match?.title ?? null,
-          startDate: match?.start_date ?? null,
-          endDate: match?.end_date ?? null,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setTripResult({ forTripId: tripId, title: null, startDate: null, endDate: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tripId]);
-  const tripTitle = tripResult?.forTripId === tripId ? tripResult.title : undefined;
+  /**
+   * 🔴 **เดิมยิง `fetch("/api/engine/trips")` ตรง ๆ ในเอฟเฟกต์ที่นี่ — ไม่ผ่านชั้นแคชเลย**
+   * ผู้ใช้ทดสอบออฟไลน์จริง (เซิร์ฟเวอร์ดับสนิท) แล้วพบว่า **ทุกอย่างรอด ยกเว้นหัวทริป**:
+   * `📋 เกาหลี ต.ค. 2026 · 11 – 21 ต.ค.` กลายเป็น `📋 ทริปนี้` และช่วงวันหายไป
+   * → ย้ายไป `useTripMeta` ซึ่ง hydrate จากเครื่องก่อนแล้วให้ของสดทับ (เหตุผลเต็มอยู่ในไฟล์นั้น)
+   * · 📌 เหตุผลเดิมที่ต้องดึงทั้งรายการ (*"ยังไม่มี route ดึงทริปเดียวโดยตรง"*) **ยังจริง** — มันอธิบาย
+   *   ว่าทำไมต้องยิง endpoint นี้ **แต่ไม่เคยอธิบายว่าทำไมไม่แคช** และไม่มีใครสังเกตจนผู้ใช้เจอเอง
+   * ⚠️ `components/TripHeader.tsx` **ยังมีบล็อกเดิมอยู่** (คัดลอกกันมา) — โซน P2 · แจ้งแล้ว
+   */
+  const tripMeta = useTripMeta(tripId);
+  const tripTitle = tripMeta?.title ?? undefined;
   // `?for=immigration` = เลย์เอาต์เอกสารสำหรับ ตม./K-ETA (บังคับอังกฤษเสมอ ไม่ว่าปุ่มภาษาจะเลือกอะไร)
   const immigrationView = searchParams.get("for") === "immigration";
   const en = lang === "en";
   const tripDateRange =
-    tripResult?.forTripId === tripId && tripResult.startDate && tripResult.endDate
-      ? tripDateRangeLabel(tripResult.startDate, tripResult.endDate, lang)
+    tripMeta?.startDate && tripMeta.endDate
+      ? tripDateRangeLabel(tripMeta.startDate, tripMeta.endDate, lang)
       : null;
   const { hotels, loaded: hotelsLoaded } = useHotels();
   const { bookings, loaded: bookingsLoaded } = useBookings();
