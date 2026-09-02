@@ -536,6 +536,59 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(data ?? [], "ถูกปฏิเสธแต่มีแถวเกิดขึ้นจริง = ปฏิเสธที่ผิวแต่เขียนลงไปแล้ว").toEqual([]);
   });
 
+  /**
+   * 🔴 **`E5-AC10` — เส้นทางที่สองของการเพิ่มจุดแวะ: *คลังสถิตย์* (slug)**
+   * เจ้าของ: P1-Lead · 2 ก.ย. 2026
+   *
+   * เกณฑ์ของ `E5-AC10` เขียนไว้เองว่า **"ห้ามติ๊กผ่านทั้งข้อโดยวัดแค่ทางเดียว"**
+   * · ไล่แล้ววันนี้: `stopsPOST` ถูกยิงในไฟล์นี้ **3 จุด และทั้งสามใช้ uuid ของ custom place**
+   * 🎯 **ทางคลังไม่เคยถูกยิงผ่าน route เลยสักครั้ง** — ทั้งที่ fixture (`placeSlug`) มีอยู่แล้วในไฟล์นี้
+   *
+   * ## 🔴 สองกิ่งนี้แยกกันที่ `route.ts:263-266` และเลือกผิดกิ่งได้เงียบ
+   * ```ts
+   * const { data: cat } = await catalogPlaceIdBySlug(db, placeId);
+   * if (cat) row.catalog_place_id = cat.id;
+   * else if (UUID.test(placeId)) row.custom_place_id = placeId;
+   * ```
+   * · **ถ้าคลังหา slug ไม่เจอ** → ตกกิ่งสอง → `UUID.test("exp-123")` เป็นเท็จ → **ไม่มีคอลัมน์ไหนถูกตั้ง**
+   *   → `check (num_nonnulls(catalog_place_id, custom_place_id) = 1)` ปฏิเสธ → `400 "ไม่รู้จักสถานที่"`
+   * 🎯 **เคสนี้จึงพิสูจน์ทั้ง *สะพาน slug→id ทำงาน* และ *ลงคอลัมน์ถูกใบ*** — สองอย่างที่ทางuuid ตอบไม่ได้
+   */
+  it("🔴 E5-AC10 — เพิ่มจุดแวะด้วย slug ของคลัง ต้องลง `catalog_place_id` ไม่ใช่ `custom_place_id`", async () => {
+    const res = await postAs(aCookies, tripA, stopsPOST, {
+      planId: aPlan, tripDayId: aDay, placeId: placeSlug,
+    });
+    expect(
+      res.status,
+      `เพิ่มจุดแวะด้วย slug คลังควร 201 · 400 = สะพาน slug→catalog_place_id ไม่ทำงาน: ${await res.clone().text()}`,
+    ).toBe(201);
+
+    // 🔴 ยืนยันที่ฐาน ไม่เชื่อแค่ status — 201 บอกว่า "แถวเกิด" ไม่ได้บอกว่า "ลงคอลัมน์ถูกใบ"
+    const stopId = ((await res.json()) as { id: string }).id;
+    const { data, error } = await admin
+      .from("trip_stops")
+      .select("catalog_place_id, custom_place_id")
+      .eq("id", stopId)
+      .single();
+    if (error) throw new Error(`admin อ่าน trip_stops: ${error.message}`);
+    expect(data.catalog_place_id, "slug ของคลังไม่ได้ลง catalog_place_id").not.toBeNull();
+    expect(
+      data.custom_place_id,
+      "🔴 slug ของคลังไปลง custom_place_id — กิ่งเลือกผิด และ FK จะไม่ฟ้องเพราะคอลัมน์นี้รับ uuid ใดก็ได้",
+    ).toBeNull();
+  });
+
+  /**
+   * ⚠️ **เคสควบคุมของเคสบน** — ถ้า route ตอบ `201` ให้ `placeId` ทุกตัว
+   * เคสบนจะเขียวโดยไม่พิสูจน์ว่าสะพาน slug ทำงาน
+   */
+  it("slug ที่ไม่มีในคลังต้องถูกปฏิเสธ — ไม่ใช่ผ่านแล้วได้แถวเปล่า", async () => {
+    const res = await postAs(aCookies, tripA, stopsPOST, {
+      planId: aPlan, tripDayId: aDay, placeId: `ไม่มีสลักนี้-${stamp}`,
+    });
+    expect(res.status, "รับ slug ที่ไม่มีในคลัง = แถวที่ไม่มีใครรู้ว่าชี้ที่ไหน").not.toBe(201);
+  });
+
   function postTrip(cookies: Cookie[], body: unknown): Promise<Response> {
     jar.cookies = cookies;
     const req = new NextRequest("http://localhost:3300/api/engine/trips", {
