@@ -1,3 +1,26 @@
+-- ┌─────────────────────────────────────────────────────────────────────────────┐
+-- │ 🔴 ยังไม่ย้ายเข้า `supabase/migrations/` — ด่านผ่านแล้ว แต่ *เทสต์* ยังไม่ผ่าน │
+-- └─────────────────────────────────────────────────────────────────────────────┘
+-- (P1 · 2 ก.ย. 2026 · หลัง P6 แก้ `cache-lockdown` ใน `08cac2a` ให้ไฟล์นี้ผ่าน)
+--
+-- ## ทำไมไฟล์นี้เคย "ผ่านทุกอย่าง" ทั้งที่งานยังไม่ครบ
+-- policy 6 ตัวข้างล่างเคยตั้งชื่อเป็นสตริงมีช่องว่าง (`"auth reads travel time cache"`)
+-- · `policyMapOrdered()` ใน `schemaPins.test.ts:95` จับชื่อด้วย `(\S+)` → **ชื่อที่มีช่องว่าง
+--   ไม่ match เลย** → พินทุกตัวในไฟล์นั้นมองไม่เห็น policy พวกนี้ → **เขียวเพราะไม่ถูกมอง**
+-- 🎯 เปลี่ยนชื่อเป็นแบบเดียวกับทั้งรีโป (`<table>_<verb>`) แล้วพินเห็นทันที และ **แดง 3 ตัว**
+--    · ตัวเลข `0-policy` ขยับ `4/4 → 1/1` — นั่นคือหลักฐานว่าพินเห็นจริง ไม่ใช่แค่แดงเฉย ๆ
+--
+-- ## งานที่เหลือจริง (พินเขียนเองว่า "นี่คือรายการงานที่เหลือ ไม่ใช่บั๊ก")
+--   ① `rlsMatrix.test.ts` — ต้องมีเคสยิงถึง **6 คู่ (ตาราง, verb)** ที่ policy พวกนี้เปิด
+--      place_details_cache {select,insert} · place_photo_cache {select,insert}
+--      travel_time_cache {select,insert}
+--   ② `schemaPins.test.ts` — รายชื่อ policy (63 → 69) + fingerprint เงื่อนไข ต้องไล่กิ่งก่อนอัปเดต
+--   ③ แล้วค่อยรัน migration นี้ (ต้องได้อนุมัติจากผู้ใช้ — แตะฐานด้วย credential จริง)
+-- ⚠️ ①② อยู่โซน P4 · ③ เป็นสิทธิ์ของผู้ใช้เท่านั้น — **ไม่ใช่ของที่ P1 เดินต่อคนเดียวได้**
+--
+-- 🔴 ห้ามย้ายไฟล์นี้เข้า `migrations/` ก่อน ① เสร็จ — `schemaPins` อ่าน *ไฟล์* ไม่ใช่ฐาน
+--    ย้ายเมื่อไหร่ หัว branch แดงให้ทั้ง 8 เซสชันทันที โดยที่ฐานยังไม่ถูกแตะสักแถว
+
 -- `D87` — แคชสามใบ: ให้ผู้ใช้ที่ล็อกอินแล้ว **เขียนได้ แต่ทับของเดิมไม่ได้**
 -- เจ้าของ: P1-Lead · 2 ก.ย. 2026 · **ผู้ใช้ตัดสินทางเลือกที่ ③ ด้วยตัวเอง**
 --
@@ -62,12 +85,12 @@ grant select, insert on public.travel_time_cache   to authenticated;
 -- 🔴 แคชสามใบนี้ **ไม่มีข้อมูลของผู้ใช้สักคอลัมน์** — เป็นข้อเท็จจริงสาธารณะจาก Google
 --    (เวลาเดินทางระหว่างสองจุด · เวลาเปิด-ปิดร้าน · รหัสรูป) → `using (true)` จึงไม่ได้เปิดอะไรของใคร
 --    ⚠️ **ถ้าวันหนึ่งมีคอลัมน์ที่ผูกกับผู้ใช้ ต้องกลับมาแก้ policy นี้ทันที** — เหตุผลข้างบนจะหมดอายุ
-create policy "auth reads travel time cache"     on public.travel_time_cache   for select to authenticated using (true);
-create policy "auth inserts travel time cache"   on public.travel_time_cache   for insert to authenticated with check (true);
-create policy "auth reads place details cache"   on public.place_details_cache for select to authenticated using (true);
-create policy "auth inserts place details cache" on public.place_details_cache for insert to authenticated with check (true);
-create policy "auth reads place photo cache"     on public.place_photo_cache   for select to authenticated using (true);
-create policy "auth inserts place photo cache"   on public.place_photo_cache   for insert to authenticated with check (true);
+create policy travel_time_cache_select        on public.travel_time_cache   for select to authenticated using (true);
+create policy travel_time_cache_insert        on public.travel_time_cache   for insert to authenticated with check (true);
+create policy place_details_cache_select      on public.place_details_cache for select to authenticated using (true);
+create policy place_details_cache_insert      on public.place_details_cache for insert to authenticated with check (true);
+create policy place_photo_cache_select        on public.place_photo_cache   for select to authenticated using (true);
+create policy place_photo_cache_insert        on public.place_photo_cache   for insert to authenticated with check (true);
 
 do $verify$
 declare n int;
