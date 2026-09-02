@@ -3,7 +3,9 @@ import { lookupPlace, type GoogleOpeningHours, type GoogleReview } from "@/lib/g
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { knownPlaceLocales } from "@/lib/engine/countries";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { supabaseConfigured } from "@/lib/supabase";
+import { createServerSupabase } from "@/lib/auth/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
 const RATE_LIMIT_PER_MINUTE = 300;
@@ -102,10 +104,11 @@ function rowToResponse(row: CacheRow, nameLocal: string | null, addressLocal: st
 
 /** แคชไว้แล้วแต่ยังไม่มีชื่อท้องถิ่น (หรือเป็นคนละภาษากับที่ขอ) → เติมให้ครั้งเดียวแล้วเก็บลงแถวเดิม
  *  แถวเก่าทั้งหมดที่มีอยู่ก่อนเฟส 14 จะค่อยๆ ถูกเติมเองเมื่อถูกเรียกใช้ ไม่ต้อง backfill ทั้งตาราง */
-async function backfillLocalName(row: CacheRow, locale: Locale) {
+async function backfillLocalName(db: SupabaseClient,
+  row: CacheRow, locale: Locale) {
   const fresh = await fetchLocalName(row.maps_query, locale);
   if (fresh.nameLocal && supabaseConfigured) {
-    const { error: backfillErr } = await supabase
+    const { error: backfillErr } = await db
       .from("place_details_cache")
       .update({ name_local: fresh.nameLocal, address_local: fresh.addressLocal, locale })
       .eq("maps_query", row.maps_query);
@@ -116,6 +119,7 @@ async function backfillLocalName(row: CacheRow, locale: Locale) {
 
 /** ยิง Google ใหม่ทั้งชุดสำหรับสถานที่ที่ยังไม่เคยแคช แล้วเก็บลง place_details_cache */
 async function resolveFromGoogle(
+  db: SupabaseClient,
   query: string,
   live: boolean,
   locale: Locale | null
@@ -145,7 +149,7 @@ async function resolveFromGoogle(
   const local = locale ? await fetchLocalName(query, locale) : { nameLocal: null, addressLocal: null };
 
   if (supabaseConfigured && googlePlaceId) {
-    const { error: cacheWriteErr } = await supabase.from("place_details_cache").upsert({
+    const { error: cacheWriteErr } = await db.from("place_details_cache").upsert({
       maps_query: query,
       google_place_id: googlePlaceId,
       opening_hours: openingHours,
@@ -195,6 +199,8 @@ async function resolveFromGoogle(
  *   และอ่าน place_details_cache ด้วย `.in()` ครั้งเดียวแทน 34 ครั้ง
  */
 export async function GET(req: NextRequest) {
+  /** 🔴 client ของ *ผู้ใช้* — `D87` ③ ให้สิทธิ์ `authenticated` เท่านั้น · คีย์ `anon` ยังถูก revoke อยู่ */
+  const db = await createServerSupabase();
   const limited = rateLimitGuard(req, "place-details", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;
 
@@ -210,7 +216,7 @@ export async function GET(req: NextRequest) {
     if (queries.length === 0) {
       return NextResponse.json({ error: "missing queries" }, { status: 400 });
     }
-    const results = await resolveMany(queries, locale);
+    const results = await resolveMany(db, queries, locale);
     return NextResponse.json({ results });
   }
 
@@ -218,19 +224,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "missing query" }, { status: 400 });
   }
 
-  const results = await resolveMany([query], locale, live);
+  const results = await resolveMany(db, [query], locale, live);
   return NextResponse.json(results[query]);
 }
 
 /** แกนกลางที่ใช้ร่วมกันทั้งแบบเดี่ยวและแบบกลุ่ม — อ่านแคชทีเดียวด้วย `.in()` แล้วยิง Google เฉพาะที่ยังไม่มี */
 async function resolveMany(
+  db: SupabaseClient,
   queries: string[],
   locale: Locale | null,
   live = false
 ): Promise<Record<string, PlaceDetailsResponse>> {
   const cachedRows = new Map<string, CacheRow>();
   if (supabaseConfigured) {
-    const { data, error: cacheReadErr } = await supabase
+    const { data, error: cacheReadErr } = await db
       .from("place_details_cache")
       .select(CACHE_COLUMNS)
       .in("maps_query", queries);
@@ -241,11 +248,11 @@ async function resolveMany(
   const entries = await Promise.all(
     queries.map(async (q): Promise<[string, PlaceDetailsResponse]> => {
       const row = cachedRows.get(q);
-      if (!row) return [q, await resolveFromGoogle(q, live, locale)];
+      if (!row) return [q, await resolveFromGoogle(db, q, live, locale)];
 
       const needsLocalName = locale != null && row.locale !== locale;
       const local = needsLocalName
-        ? await backfillLocalName(row, locale)
+        ? await backfillLocalName(db, row, locale)
         : { nameLocal: row.name_local, addressLocal: row.address_local };
 
       const result = rowToResponse(row, local.nameLocal, local.addressLocal);

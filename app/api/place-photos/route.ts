@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { lookupPlace } from "@/lib/googlePlaces";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { supabaseConfigured } from "@/lib/supabase";
+import { createServerSupabase } from "@/lib/auth/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
 const RATE_LIMIT_PER_MINUTE = 300;
@@ -31,11 +33,12 @@ function toPhotoUrls(names: string[]): string[] {
  * · ไคลเอนต์เดิมที่ไม่รู้จักฟิลด์นี้ทำงานเหมือนเดิมทุกประการ
  */
 async function resolveMany(
+  db: SupabaseClient,
   queries: string[]
 ): Promise<{ results: Record<string, string[]>; errors: Record<string, string> }> {
   const cachedNames = new Map<string, string[]>();
   if (supabaseConfigured) {
-    const { data, error: cacheReadErr } = await supabase
+    const { data, error: cacheReadErr } = await db
       .from("place_photo_cache")
       .select("maps_query, photo_names")
       .in("maps_query", queries);
@@ -59,7 +62,7 @@ async function resolveMany(
 
       const photoNames: string[] = place?.photos?.slice(0, 6).map((p) => p.name) ?? [];
       if (supabaseConfigured && photoNames.length > 0) {
-        const { error: cacheWriteErr } = await supabase.from("place_photo_cache").upsert({
+        const { error: cacheWriteErr } = await db.from("place_photo_cache").upsert({
           maps_query: query,
           photo_names: photoNames,
           fetched_at: new Date().toISOString(),
@@ -91,6 +94,8 @@ async function resolveMany(
 //
 // รับได้ 2 แบบเหมือน /api/place-details: `?query=` ทีละที่ · `?queries=a|b|c` ทีเดียวทั้งชุด (เฟส 19)
 export async function GET(req: NextRequest) {
+  /** 🔴 client ของ *ผู้ใช้* — `D87` ③ ให้สิทธิ์ `authenticated` เท่านั้น · คีย์ `anon` ยังถูก revoke อยู่ */
+  const db = await createServerSupabase();
   const limited = rateLimitGuard(req, "place-photos", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;
 
@@ -102,7 +107,7 @@ export async function GET(req: NextRequest) {
     if (queries.length === 0) {
       return NextResponse.json({ error: "missing queries" }, { status: 400 });
     }
-    const { results, errors } = await resolveMany(queries);
+    const { results, errors } = await resolveMany(db, queries);
     // ส่ง `errors` เฉพาะตอนมีจริง — ไม่งั้นทุกคำขอปกติจะพกฟิลด์ว่างไปด้วย
     return NextResponse.json(
       Object.keys(errors).length > 0 ? { results, errors } : { results }
@@ -114,7 +119,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "missing query" }, { status: 400 });
   }
 
-  const { results, errors } = await resolveMany([query]);
+  const { results, errors } = await resolveMany(db, [query]);
   const reason = errors[query];
   return NextResponse.json(
     reason ? { photos: results[query] ?? [], error: reason } : { photos: results[query] ?? [] }

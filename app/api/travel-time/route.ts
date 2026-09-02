@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchRealTravelTime } from "@/lib/travelProvider";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { supabaseConfigured } from "@/lib/supabase";
+import { createServerSupabase } from "@/lib/auth/server";
 import { TRAVEL_MODES, type TravelMode } from "@/lib/schedule";
 
 // ยิงเป็นชุดตอนเปิดหน้าแผน (1 ครั้งต่อคู่จุดที่เลือกโหมดแล้ว) — เผื่อไว้สำหรับทริปที่จุดแวะแน่นกว่านี้
@@ -30,6 +31,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "missing or invalid mode" }, { status: 400 });
   }
 
+  /**
+   * 🔴 **client ของ *ผู้ใช้* ไม่ใช่ client ที่ถือคีย์ `anon`** — `D87` ③ (2 ก.ย. 2026)
+   * migration ให้สิทธิ์ `select, insert` กับ **`authenticated` เท่านั้น** (`revoke all … from anon` ยังอยู่)
+   * → ถ้ายังใช้ `@/lib/supabase` (คีย์ `anon`) **grant นั้นไม่มีผลเลยสักบรรทัด**
+   * · ⚠️ **ผู้เยี่ยมชมที่ไม่ล็อกอินยังเรียก route นี้ได้** — แค่แคชอ่านไม่ได้/เขียนไม่ลง
+   *   → เสื่อมเท่าสภาพวันนี้ (ซึ่งล้มทั้งคู่อยู่แล้ว) **ไม่แย่ลง**
+   * 🔴 **และตอนนี้ยังไม่มีผลจนกว่า migration จะลงฐาน** — จอดที่ `pending-review/` รอด่านของ P6
+   */
+  const supabase = await createServerSupabase();
   if (supabaseConfigured) {
     const { data: cached, error: cacheReadErr } = await supabase
       .from("travel_time_cache")
