@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CATEGORY_EMOJI, type Place } from "@/data/places";
+import { type Place } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import { cityMetaOf, cityNameEnOf, cityNameThOf } from "@/components/cityMeta";
 import type { Day } from "@/data/itinerary";
 import { immigrationCountryOf } from "@/lib/immigrationCountry";
@@ -324,7 +325,7 @@ function SummaryDayCard({
                     stopHotel ? ` · ${(en && stopHotel.name_en) || stopHotel.hotel_name}` : ""
                   }`
                 : sched.place
-                  ? `${CATEGORY_EMOJI[sched.place.category]} ${
+                  ? `${categoryMetaOf(sched.place.category).emoji} ${
                       en ? placeNameEn(sched.place, namesEn) : sched.place.nameTh
                     }`
                   : t("noPlaceData");

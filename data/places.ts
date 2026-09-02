@@ -12,6 +12,21 @@ export type Category =
    *  ใน PlaceSidebar) มีไว้ให้แถว kind="transfer" resolve เป็น Place ได้ ดู data/transferPoints.ts */
   | "transport";
 
+/**
+ * เมืองที่ **เรามีข้อมูลประกอบให้** (ชื่อไทย · ภาษาท้องถิ่น) — *ไม่ใช่* ชุดค่าที่ `Place["city"]` เป็นได้
+ * 🔴 นี่คือเส้นแบ่งทั้งหมดของ `E6-AC12`: **ยูเนียนอธิบาย *สิ่งที่เรารู้* ไม่ได้จำกัด *สิ่งที่ฐานส่งมา***
+ * เพิ่มเมืองที่นี่ = เพิ่มข้อมูลประกอบ · เมืองที่ไม่อยู่ที่นี่ยังใช้งานได้ปกติ แค่ตกลง fallback
+ */
+export type KnownPlaceCity =
+  | "hanoi"
+  | "busan"
+  | "sokcho"
+  | "gangneung"
+  | "seoul"
+  | "suwon"
+  | "bangkok"
+  | "hcmc";
+
 export type Place = {
   id: string;
   nameTh: string;
@@ -23,11 +38,26 @@ export type Place = {
   nameLocal?: string;
   /** ที่อยู่ในภาษาท้องถิ่น — บนแท็กซี่เกาหลี ที่อยู่ใช้ได้ดีกว่าชื่อร้าน เพราะคนขับป้อนเข้านำทางได้ตรงๆ */
   addressLocal?: string;
-  /** เมืองที่สถานที่นี้อยู่ · `bangkok`/`hcmc` มีไว้ให้สนามบินต้นทาง/ต่อเครื่องใน `TRANSFER_POINTS`
-   *  เท่านั้น (ไม่มีวันไหนใน `ITINERARY` เป็นเมืองพวกนี้ — `Day["city"]` ยังเป็น 6 เมืองเดิม)
-   *  จึงไม่มีวันถูกส่งเข้า `cityCenter()` ที่หารด้วยจำนวนสถานที่ในเมืองนั้น */
-  city: "hanoi" | "busan" | "sokcho" | "gangneung" | "seoul" | "suwon" | "bangkok" | "hcmc";
-  category: Category;
+  /**
+   * slug ของเมืองที่สถานที่นี้อยู่ · `null` = **ไม่รู้** (ไม่ใช่ "ยังไม่กรอก" และไม่ใช่ค่าเริ่มต้น)
+   *
+   * 🔴 **เคยเป็นยูเนียนปิด 8 เมือง — เปิดเป็น `string | null` เมื่อ 2 ก.ย. 2026 (`E6-AC12`)**
+   * คลังมี 42 เมืองและโตเกียวพิมพ์ไม่ได้ตามยูเนียนเดิม → ทุกผู้ผลิตค่าจึง `cast` เข้ามาแทน
+   * **`tsc` ไม่ได้แค่จับไม่ได้ — มัน *รับรอง* ว่าคีย์นั้นมีอยู่เสมอ เพราะเราบอกมันเองว่าเป็นยูเนียน**
+   * (กลไกเดียวกับที่ทำให้ `DayJumpBar` ทั้งหน้าไม่ขึ้น 28 ส.ค. — `CITY_META[x]` เป็น `undefined`)
+   *
+   * ⚠️ **ห้าม index แมปที่คีย์เป็นเมืองด้วยค่านี้ตรง ๆ** — ใช้ accessor ที่มี fallback เสมอ
+   * (`cityLocaleOf` · `placeCityNameThOf` ใน `components/placeCity.ts`) · รูปเดียวกับ `cityMetaOf`
+   * · `bangkok`/`hcmc` ยังมีอยู่ใน `TRANSFER_POINTS` เหมือนเดิม — ไม่มีวันไหนใน `ITINERARY` เป็นเมืองนั้น
+   */
+  city: string | null;
+  /**
+   * หมวดของสถานที่ · `KNOWN_CATEGORIES` คือชุดที่เรามีหน้าตาให้ **ไม่ใช่ชุดที่เป็นไปได้ทั้งหมด**
+   * 🔴 เปิดเป็น `string` เมื่อ 2 ก.ย. 2026 (`E6-AC12`) — `catalog_places.category` /
+   * `custom_places.category` ในฐานเป็น `length 1..40` **ไม่ใช่ enum** (P1 วัดฐานเอง 29 ส.ค. 2026)
+   * ⚠️ ใช้ `categoryMetaOf()` เสมอ ห้าม `CATEGORY_*[category]` ตรง ๆ เมื่อค่ามาจากฐาน
+   */
+  category: string;
   descriptionTh: string;
   lat: number;
   lng: number;
@@ -58,7 +88,7 @@ export const CITY_LOCALE = {
   // สนามบินต้นทาง/ต่อเครื่องเท่านั้น ไม่มีวันไหนของทริปเป็นเมืองนี้
   bangkok: "th",
   hcmc: "vi",
-} as const satisfies Record<Place["city"], "ko" | "vi" | "th">;
+} as const satisfies Record<KnownPlaceCity, "ko" | "vi" | "th">;
 
 /**
  * 🔴 **`isKoreanCity()` ถูกลบ 27 ส.ค. 2026 — ไม่มีผู้เรียกเหลือแล้วสักที่ (P1)**

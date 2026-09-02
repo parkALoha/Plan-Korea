@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CATEGORY_EMOJI } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
 import type { Place } from "@/data/places";
 import type { Day } from "@/data/itinerary";
 import type { TripHotel, TripStop } from "@/lib/supabase";
@@ -71,7 +71,7 @@ function stopRowLabel(
     const hotel = hotelForStop(stop.place_id, endHotel, startHotel);
     return `🏨 แวะที่พัก${hotel ? ` · ${hotel.hotel_name}` : ""}`;
   }
-  return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "ไม่พบข้อมูลสถานที่";
+  return place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : "ไม่พบข้อมูลสถานที่";
 }
 
 /** วันในทริปที่ตรงกับวันที่ todayIso ตามนาฬิกาเครื่อง — ก่อนทริปคืนวันแรก, หลังทริปคืนวันสุดท้าย */
@@ -799,7 +799,7 @@ export function TodayPageContent({ tripId }: { tripId: string }) {
                         <div className="text-xl font-bold leading-tight text-content">
                           {nextStop.kind === "hotel"
                             ? stopRowLabel(nextStop, nextSched.place, endHotel, startHotel)
-                            : `${CATEGORY_EMOJI[nextSched.place.category]} ${nextSched.place.nameTh}`}
+                            : `${categoryMetaOf(nextSched.place.category).emoji} ${nextSched.place.nameTh}`}
                         </div>
                         <div className="mt-0.5 text-lg font-semibold tabular-nums text-panel-maple-ink">
                           {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}

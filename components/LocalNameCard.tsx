@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Place } from "@/data/places";
-import { CITY_LOCALE } from "@/data/places";
+import { cityLocaleOf } from "@/components/placeCity";
 
 /**
  * การ์ด "ให้คนขับแท็กซี่ดู" (เฟส 14) — ชื่อ + ที่อยู่ภาษาท้องถิ่นตัวใหญ่ กดคัดลอกได้
@@ -29,8 +29,10 @@ export function LocalNameCard({
   // ไม่มีชื่อท้องถิ่น = ไม่ต้องโชว์การ์ดเลย ดีกว่าโชว์การ์ดว่างๆ ให้เกะกะ
   if (!nameLocal && !addressLocal) return null;
 
-  const locale = CITY_LOCALE[place.city];
-  const localeLabel = { ko: "เกาหลี", vi: "เวียดนาม", th: "ไทย" }[locale];
+  const locale = cityLocaleOf(place.city);
+  // 🔴 เมืองที่ไม่รู้จัก → ไม่มีภาษาให้เอ่ยชื่อ · ใช้ป้ายกลาง ๆ แทนการเดาภาษา (`E6-AC12`)
+  //    ชื่อท้องถิ่นยังโชว์ได้ตามปกติ — ป้ายบอก *ภาษาอะไร* ไม่ใช่เงื่อนไขว่าจะโชว์หรือไม่
+  const localeLabel = locale ? { ko: "เกาหลี", vi: "เวียดนาม", th: "ไทย" }[locale] : "ท้องถิ่น";
 
   async function copy(text: string, which: "name" | "address") {
     try {

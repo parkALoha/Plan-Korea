@@ -73,6 +73,16 @@ export function estimateTravelMinutesBetween(
 /** ค่าที่ใช้เมื่อไม่รู้หมวด — เท่ากับค่าที่โค้ดเดิมใช้ตอนไม่มี `place` (60) ไม่ได้เปลี่ยนพฤติกรรมเดิม */
 export const DWELL_MINUTES_FALLBACK = 60;
 
+/**
+ * เวลาแวะของหมวดที่ **ไม่รู้จัก** → `undefined` ให้ผู้เรียกตกลง `DWELL_MINUTES_FALLBACK`
+ * 🔴 `Object.hasOwn` ไม่ใช่ของประดับ — index ตรง ๆ ด้วย `"constructor"` คืนของจาก prototype
+ *    ซึ่งเป็น **ฟังก์ชัน** → `cursor += fn` = `NaN` ทั้งวัน · รูปเดียวกับ `categoryMetaOf`
+ */
+export function dwellMinutesOf(category: string): number | undefined {
+  if (!Object.hasOwn(DEFAULT_DWELL_MINUTES, category)) return undefined;
+  return DEFAULT_DWELL_MINUTES[category as Category];
+}
+
 export const DEFAULT_DWELL_MINUTES: Partial<Record<Category, number>> = {
   culture: 75,
   nature: 90,
@@ -188,7 +198,7 @@ export function computeSchedule(
     //    (หมวดจากฐานไม่ถูกจำกัดด้วย `CHECK` ดูหัวตาราง) · เดิมเคสหลังให้ `undefined` → `cursor += undefined` → `NaN` ทั้งวัน
     const resolvedDwellMinutes =
       stop.dwellMinutes ??
-      (place ? DEFAULT_DWELL_MINUTES[place.category] : undefined) ??
+      (place ? dwellMinutesOf(place.category) : undefined) ??
       DWELL_MINUTES_FALLBACK;
     cursor += resolvedDwellMinutes;
     const departureMinutes = cursor;

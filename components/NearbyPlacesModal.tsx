@@ -61,7 +61,8 @@ function resultKey(r: NearbyResult): string {
 
 function resultToPreviewPlace(
   r: NearbyResult,
-  city: Place["city"],
+  /** 🔴 `string` ไม่ใช่ `Place["city"]` — โมดัลนี้เปิดจากเมืองที่รู้เสมอ (`E6-AC12`) */
+  city: string,
   kind: NearbyKind,
 ): Place | null {
   if (r.lat == null || r.lng == null) return null;
@@ -95,7 +96,8 @@ export function NearbyPlacesModal({
   onAddedToLibrary,
 }: {
   kind?: NearbyKind;
-  city: Place["city"];
+  /** เมืองที่กำลังเปิดโมดัลอยู่ — มีค่าเสมอจากฝั่งผู้เรียก (ไม่ใช่ `Place["city"]` ที่ยอม `null`) */
+  city: string;
   center: { lat: number; lng: number };
   addedBy?: string;
   onClose: () => void;

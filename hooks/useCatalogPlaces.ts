@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
 import { get as storeGet, set as storeSet } from "@/lib/engine/offlineStore";
-import type { Category, Place } from "@/data/places";
+import type { Place } from "@/data/places";
 
 /** รูปที่ `GET /api/engine/places` คืนมา (P1 28 ส.ค. 2026, `25723c0`) */
 type CatalogPlaceRow = {
@@ -57,8 +57,8 @@ function toPlace(row: CatalogPlaceRow): Place {
     nameEn: row.nameEn,
     nameLocal: row.nameLocal ?? undefined,
     addressLocal: row.addressLocal ?? undefined,
-    city: (row.citySlug ?? "") as Place["city"],
-    category: row.category as Category,
+    city: row.citySlug,
+    category: row.category,
     // 🔴 `description` เป็น null ได้ และเป็นสภาพปกติ ไม่ใช่บั๊ก — วัดแล้ว: ปูซาน 23/23 มี · ญี่ปุ่น 0/57 ·
     //    ไทย 0/37 (P1 seed คำบรรยายไทยได้แค่เกาหลี+ฮานอย) · การ์ดต้องอ่านออกแม้ไม่มีคำบรรยาย
     descriptionTh: row.description ?? "",

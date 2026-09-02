@@ -67,8 +67,8 @@ function customPlaceToPlace(cp: CustomPlace): Place {
     id: cp.id,
     nameTh: cp.name_th,
     nameEn: cp.name_en ?? cp.name_th,
-    city: cp.city as Place["city"],
-    category: cp.category as Place["category"],
+    city: cp.city,
+    category: cp.category,
     descriptionTh: cp.description ?? "",
     lat: cp.lat,
     lng: cp.lng,
@@ -203,16 +203,25 @@ function PlaceSidebarContent({
 
   // จัดคลังเป็นหมวดๆ (วัฒนธรรม/ธรรมชาติ/ตลาด-ของกิน ฯลฯ) แทนที่จะโชว์รวมกันเป็น grid เดียว
   const groupedVisibleCards = useMemo(() => {
-    const byCategory = new Map<Category, { place: Place; isCustom: boolean }[]>();
+    const byCategory = new Map<string, { place: Place; isCustom: boolean }[]>();
     for (const card of visibleCards) {
       const list = byCategory.get(card.place.category) ?? [];
       list.push(card);
       byCategory.set(card.place.category, list);
     }
-    return CATEGORY_ORDER.map((category) => ({
-      category,
-      cards: byCategory.get(category) ?? [],
-    })).filter((group) => group.cards.length > 0);
+    /**
+     * 🔴 **หมวดที่ไม่อยู่ใน `CATEGORY_ORDER` ต้องไม่หายไปเงียบ ๆ** (`E6-AC12` · 2 ก.ย. 2026)
+     * `Place["category"]` เลิกเป็นยูเนียนปิดแล้ว → คลัง/สถานที่ที่เพิ่มเองส่งหมวดอะไรมาก็ได้
+     * เดิมโค้ดนี้วน `CATEGORY_ORDER` อย่างเดียว → **สถานที่ที่หมวดไม่รู้จักจะไม่ถูกเรนเดอร์เลย
+     * และไม่มี error อะไรทั้งสิ้น** — ผู้ใช้เพิ่มสถานที่แล้วมันหายไปจากคลัง
+     * 🎯 **`tsc` มองไม่เห็นข้อนี้ ต่อให้ชนิดถูกทุกบรรทัด** — มันคือการหล่นหายจาก *ลำดับ* ไม่ใช่จาก *ชนิด*
+     * · ท้ายลิสต์เสมอ (ไม่แทรกกลาง) และใช้ป้ายของ `UNSET_CATEGORY_META` ผ่าน `categoryMetaOf`
+     */
+    const known = new Set<string>(CATEGORY_ORDER);
+    const leftovers = [...byCategory.keys()].filter((c) => !known.has(c)).sort();
+    return [...CATEGORY_ORDER, ...leftovers]
+      .map((category) => ({ category, cards: byCategory.get(category) ?? [] }))
+      .filter((group) => group.cards.length > 0);
   }, [visibleCards]);
 
   // droppable ของคลังทั้งก้อน — ลากจุดแวะจากแพลนทริปมาปล่อยตรงนี้ = คืนสถานที่นั้นกลับคลัง (เอาออกจากวัน)

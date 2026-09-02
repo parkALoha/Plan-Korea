@@ -11,8 +11,9 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { CATEGORY_EMOJI, type Place } from "@/data/places";
-import { PLACE_CITY_NAME_TH } from "@/data/cityNames";
+import { type Place } from "@/data/places";
+import { categoryMetaOf } from "@/components/categoryMeta";
+import { placeCityNameThOf } from "@/components/placeCity";
 import type { Day } from "@/data/itinerary";
 import { cityNameThOf } from "@/components/cityMeta";
 import { resolvePlace } from "@/lib/resolvePlace";
@@ -103,7 +104,7 @@ export function useTripDnd({
   function stopLabel(stopId: string) {
     const placeId = stops.find((s) => s.id === stopId)?.place_id;
     const place = placeId ? resolvePlace(placeId, customPlaces) : null;
-    return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : "จุดแวะนี้";
+    return place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : "จุดแวะนี้";
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -146,7 +147,7 @@ export function useTripDnd({
         // การเด้งกล่อง "แน่ใจไหม" ขวางทุกครั้งจึงผิดมากกว่าถูก) แทน window.confirm เดิม — เฟส 20.2
         if (place.city !== targetDay.city && stopId) {
           showUndoToast(
-            `"${place.nameTh}" อยู่ที่${PLACE_CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
+            `"${place.nameTh}" อยู่ที่${placeCityNameThOf(place.city)} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
             () => removeStop(stopId)
           );
         }
@@ -204,7 +205,7 @@ export function useTripDnd({
     Promise.resolve(moveStopToDay(stopId, targetDayId)).then(() => {
       if (place.city !== targetDay.city) {
         showUndoToast(
-          `"${place.nameTh}" อยู่ที่${PLACE_CITY_NAME_TH[place.city]} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
+          `"${place.nameTh}" อยู่ที่${placeCityNameThOf(place.city)} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
           () => moveStopToDay(stopId, sourceDayId)
         );
       }
@@ -216,7 +217,7 @@ export function useTripDnd({
     const placeId = activeDrag.kind === "place" ? activeDrag.placeId : stops.find((s) => s.id === activeDrag.stopId)?.place_id;
     if (!placeId) return null;
     const place = resolvePlace(placeId, customPlaces);
-    return place ? `${CATEGORY_EMOJI[place.category]} ${place.nameTh}` : null;
+    return place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : null;
   }, [activeDrag, customPlaces, stops]);
 
   return { sensors, handleDragStart, handleDragEnd, activeDragLabel };

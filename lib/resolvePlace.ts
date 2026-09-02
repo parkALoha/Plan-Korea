@@ -15,7 +15,13 @@ function parseHotelPlaceId(placeId: string): Place | null {
     id: placeId,
     nameTh: "ที่พัก",
     nameEn: "Accommodation",
-    city: "seoul", // ไม่ได้ใช้จริง — แถวที่พักไม่เคยถูกกรองตามเมือง แต่ type บังคับให้ใส่
+    /**
+     * 🔴 `null` = **ไม่รู้** · เคยเป็น `"seoul"` พร้อมคอมเมนต์ว่า *"ไม่ได้ใช้จริง"* จนถึง 2 ก.ย. 2026
+     * → **โรงแรมที่โตเกียวประกาศตัวว่าอยู่โซล** และคอมเมนต์นั้นตรวจไม่ได้ · หมดอายุได้เงียบ ๆ
+     * 🎯 รูปเดียวกับ `noHotel` ที่ *"ไม่มีใครส่งมา"* แล้วมีคนอ่านจริงภายหลัง (นับวันบินเป็นคืนที่ต้องมีโรงแรม)
+     * — **ค่าที่ใส่เพราะ type บังคับ คือค่าที่จะมีคนอ่านวันหนึ่ง** · `E6-AC12` เปิดชนิดให้พูดว่า "ไม่รู้" ได้
+     */
+    city: null,
     category: "transport",
     descriptionTh: "แวะที่พัก (เช็คอิน / ฝากกระเป๋า / พัก)",
     lat,
@@ -48,8 +54,8 @@ export function resolvePlace(placeId: string, customPlaces: CustomPlace[]): Plac
     id: custom.id,
     nameTh: custom.name_th,
     nameEn: custom.name_en ?? custom.name_th,
-    city: custom.city as Place["city"],
-    category: custom.category as Place["category"],
+    city: custom.city,
+    category: custom.category,
     descriptionTh: custom.description ?? "",
     lat: custom.lat,
     lng: custom.lng,

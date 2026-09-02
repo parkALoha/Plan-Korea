@@ -1,6 +1,5 @@
 "use client";
 
-import { type Category } from "@/data/places";
 import { categoryMetaOf } from "@/components/categoryMeta";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
 import { photoUrlAtWidth } from "@/lib/photoUrl";
@@ -16,7 +15,8 @@ export function PlaceThumb({
   rounded = "rounded-lg",
 }: {
   query: string;
-  category: Category;
+  /** 🔴 `string` ไม่ใช่ `Category` — ค่าจากฐานเป็นอะไรก็ได้ (`E6-AC12`) · ข้างในใช้ `categoryMetaOf` อยู่แล้ว */
+  category: string;
   className?: string;
   rounded?: string;
 }) {

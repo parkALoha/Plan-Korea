@@ -15,7 +15,9 @@ import {
  * ## ทำไมเคสนี้ถึงมีอยู่
  * `Category` เป็น union ในโค้ด **แต่ฐานไม่มี `CHECK` กันเลยสักตาราง** — P1 วัด `pg_constraint` จริง
  * (29 ส.ค. 2026): `catalog_places.category` · `custom_places.category` รับสตริงอะไรก็ได้ยาว ≤ 40
- * และ `hooks/useCatalogPlaces.ts:61` `cast` มันเข้า union ตรง ๆ (`row.category as Category`)
+ * และ `hooks/useCatalogPlaces.ts` เคย `cast` มันเข้า union ตรง ๆ (`row.category as Category`)
+ * 🔴 **`cast` นั้นถูกถอดออกแล้ว 2 ก.ย. 2026 (`E6-AC12`) — `Place["category"]` เป็น `string` แล้ว**
+ *    เคสในไฟล์นี้ยังจำเป็นเหมือนเดิมทุกตัวอักษร: ชนิดเปิดกว้างขึ้น *ไม่ได้* แปลว่าตารางมีทุกคีย์
  * → **คีย์ที่ไม่มีใน `DEFAULT_DWELL_MINUTES` เกิดขึ้นได้จริง ไม่ใช่ความเสี่ยงเชิงทฤษฎี**
  *
  * ## 🔴 ทำไมตารางนี้ร้ายกว่าตารางหน้าตาเดียวกันใบอื่น

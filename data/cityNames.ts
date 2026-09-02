@@ -18,7 +18,7 @@
  * ⚠️ `import type` จาก `@/data/itinerary` ที่นี่ **ไม่ลากอะไรมา** — ชนิดถูกลบทิ้งตอนคอมไพล์
  */
 import type { Day } from "@/data/itinerary";
-import type { Place } from "@/data/places";
+import type { KnownPlaceCity } from "@/data/places";
 
 export const CITY_NAME_TH: Record<Day["city"], string> = {
   hanoi: "ฮานอย",
@@ -45,7 +45,7 @@ export const CITY_NAME_EN: Record<Day["city"], string> = {
  * ของทริปไปหาว่าพิกัดหนึ่งอยู่เมืองไหน — เติมกรุงเทพ/โฮจิมินห์เข้าไปในนั้นจะทำให้ช่วงเมืองบนแผนที่
  * รายวันเพี้ยน ส่วนตัวนี้ใช้เฉพาะตอนต้องเอ่ยชื่อเมืองของ `Place` ที่อาจเป็นสนามบินนอกเกาหลี
  */
-export const PLACE_CITY_NAME_TH: Record<Place["city"], string> = {
+export const PLACE_CITY_NAME_TH: Record<KnownPlaceCity, string> = {
   ...CITY_NAME_TH,
   bangkok: "กรุงเทพ",
   hcmc: "โฮจิมินห์",
