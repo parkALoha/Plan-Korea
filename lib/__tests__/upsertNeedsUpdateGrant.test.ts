@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { stripTsComments } from "./_helpers";
 
 /**
  * `E3-AC9` ① — **`.upsert()` ต้องมี `update` grant รองรับ ไม่งั้นเขียนไม่ลงและเงียบ**
@@ -33,10 +34,15 @@ function tablesUpserted(): string[] {
     .filter((f) => /\.tsx?$/.test(f) && !f.includes("__tests__"));
   const hits = new Set<string>();
   for (const f of files) {
-    const src = readFileSync(join(ROOT, f), "utf8")
-      // 🔴 ตัดคอมเมนต์ก่อนนับ — ผมนับผู้เรียก `cityCenter` ผิดวันนี้เพราะนับคอมเมนต์ที่ตัวเองเพิ่งเขียน
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    /**
+     * 🔴 **ใช้ `stripTsComments` ของกลาง ไม่เขียนเอง** — ด่าน `check-naive-strip` จับฉบับแรกของผมได้
+     * ผมเขียน `.replace(/^\s*\/\/.*$/gm, "")` ซึ่ง **ยิงจริงแล้วไม่กิน `https://`** (anchor `^\s*` กันไว้)
+     * · 🔴 **แต่มันไม่ตัดคอมเมนต์ *ท้ายบรรทัด*** — `const a = 1; // …` รอดทั้งบรรทัด
+     *   → คอมเมนต์ที่พูดถึง `.upsert()` ต่อท้ายโค้ดจะถูกนับเป็นจุดเรียก **เงียบ ๆ**
+     * 🎯 **ด่านจับด้วยเหตุผลที่ผิด (กลัวกิน URL) แต่ผลลัพธ์ถูก — ของกลางครอบเคสที่ผมพลาดจริง**
+     * · ผมจึงไม่ใส่ตัวเองลง `naive-strip-allowed` ทั้งที่ทำได้ · **allowlist แก้ให้ด่านเงียบ ไม่ได้แก้ให้โค้ดถูก**
+     */
+    const src = stripTsComments(readFileSync(join(ROOT, f), "utf8"));
     for (const m of src.matchAll(/\.from\(\s*["'`]([a-z_]+)["'`]\s*\)[\s\S]{0,200}?\.upsert\(/g)) {
       hits.add(m[1]);
     }
