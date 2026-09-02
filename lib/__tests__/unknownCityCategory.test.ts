@@ -105,9 +105,39 @@ describe("🔴 E6-AC12 — หมวดที่ไม่รู้จักต�
    * `tsc` มองไม่เห็น เพราะชนิดถูกทุกบรรทัด · accessor ก็ช่วยไม่ได้ เพราะไม่มี lookup ตรงไหนผิด
    * ⚠️ ตรวจ *ซอร์ส* ไม่ใช่ผลเรนเดอร์ — ครอบแค่ว่า "มีทางให้หมวดนอกลำดับโผล่" ไม่ใช่ว่ามันสวย
    */
-  it("PlaceSidebar ต้องมีถังรับหมวดนอก CATEGORY_ORDER", () => {
+  /**
+   * 🔴 **แก้ 2 ก.ย. 2026 ภายในวันเดียวกับที่เขียน — เกณฑ์เดิมผูกกับ *ชื่อตัวแปรของผมเอง***
+   * ฉบับแรกเช็ค `toContain("leftovers")` · P2 รับงานนี้ไปทำต่อในโซนเขา แล้วยุบเป็นถังเดียว
+   * (หมวดแปลกสองตัวจะได้ป้าย `"📍 อื่น ๆ"` เหมือนกันเป๊ะสองกลุ่มติดกัน — อ่านเป็นบั๊ก)
+   * **พฤติกรรมดีขึ้น · เคสของผมแดง** เพราะมันวัด *ชื่อ* ไม่ได้วัด *คุณสมบัติ*
+   * 🎯 รูปเดียวกับที่ทีมเจอกับ `useLegacyDayPlanGate` ใน `GATES` เมื่อเช้านี้เป๊ะ —
+   *    **เกณฑ์ที่ผูกกับชื่อ ต้องมาแก้ทุกครั้งที่ชื่อเปลี่ยน · เกณฑ์ที่ผูกกับคุณสมบัติไม่ต้อง**
+   * ✅ คุณสมบัติที่แท้จริงคือ **รายชื่อกลุ่มต้อง derive จาก *ข้อมูล* ไม่ใช่จาก `CATEGORY_ORDER` อย่างเดียว**
+   *    → ตัววัดคือ "มีการวนคีย์ที่พบจริงในข้อมูล" ซึ่งจริงกับทั้งสองฉบับ และเป็นเท็จกับโค้ดเดิมที่บั๊ก
+   * ⚠️ **นี่คือตัวแทนระดับซอร์ส ไม่ใช่การพิสูจน์ว่าจอแสดงอะไร** — ครอบแค่ว่า *มีทางให้มันโผล่*
+   */
+  /**
+   * 🔴 เคสควบคุมของตัววัด — **ยิงกับสตริง ไม่ใช่กับไฟล์ของ P2**
+   * ไฟล์นั้นเป็นงานที่เขากำลังพิมพ์อยู่ · การแก้มันชั่วคราวเพื่อทดสอบทิศแดง = แตะงานคนอื่นบนทรีร่วม
+   * → พิสูจน์ว่าตัววัดแยกแยะได้จริงด้วยตัวอย่างทั้งสองฝั่งแทน (ฉบับบั๊ก · ฉบับที่ใช้ได้สองแบบ)
+   */
+  it("เคสควบคุม — ตัววัดต้องแยก 'วน CATEGORY_ORDER อย่างเดียว' ออกจาก 'derive จากข้อมูล'", () => {
+    const derivesFromData = (src: string) => /byCategory\.keys\(\)/.test(src);
+    const buggy = "return CATEGORY_ORDER.map((c) => ({ c, cards: byCategory.get(c) ?? [] }));";
+    const fixedSeparate = "const leftovers = [...byCategory.keys()].filter((c) => !known.has(c));";
+    const fixedOneBucket = "cards: [...byCategory.keys()].filter((c) => !known.has(c)).flatMap(…)";
+    expect(derivesFromData(buggy), "ฉบับบั๊กต้องถูกจับ").toBe(false);
+    expect(derivesFromData(fixedSeparate)).toBe(true);
+    expect(derivesFromData(fixedOneBucket)).toBe(true);
+  });
+
+  it("PlaceSidebar ต้อง derive กลุ่มจากข้อมูล ไม่ใช่จาก CATEGORY_ORDER อย่างเดียว", () => {
     const src = readFileSync(join(process.cwd(), "components/PlaceSidebar.tsx"), "utf8");
-    expect(src, "จัดกลุ่มด้วย CATEGORY_ORDER อย่างเดียว = หมวดที่ไม่รู้จักหายเงียบ").toContain("leftovers");
-    expect(src).toContain("...CATEGORY_ORDER, ...leftovers");
+    expect(src, "อ่านไฟล์ไม่ออก — เคสนี้กำลังจะ no-op").toContain("CATEGORY_ORDER");
+    expect(
+      /byCategory\.keys\(\)/.test(src),
+      "จัดกลุ่มด้วย CATEGORY_ORDER อย่างเดียว = สถานที่ที่หมวดไม่รู้จักหายจากคลังเงียบ ๆ\n" +
+        "  → ต้องมีการวนคีย์ที่พบจริงในข้อมูล (ถังท้าย/กลุ่มเพิ่ม แล้วแต่ UX ที่เจ้าของโซนเลือก)"
+    ).toBe(true);
   });
 });
