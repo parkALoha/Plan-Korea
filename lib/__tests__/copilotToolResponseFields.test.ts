@@ -1,6 +1,8 @@
-import { readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { stripTsComments } from "./_helpers";
 
 import { getBookings } from "@/lib/copilot/getBookings";
 import { TOOL_RESPONSE_FIELDS, unknownFields, type ToolName } from "@/lib/copilot/toolSchemas";
@@ -123,6 +125,39 @@ describe("ฟิลด์ใน response ของ tool ฝั่ง Copilot", (
     expect(Object.hasOwn(poisoned, "totalPrice")).toBe(true);
 
     expect(unknownFields(tool, poisoned)).toEqual(["totalPrice"]);
+  });
+
+  /**
+   * 🔴 **เพิ่ม 2 ก.ย. 2026 — ปิดช่องที่ผมสร้างเอง** (P5)
+   * `E8-AC4a` (P8 จด `65722cb` ตามถ้อยคำที่ผมเสนอ) เขียนว่า
+   * *"ไม่มีไฟล์ใดใน `lib/copilot/` แตะ service role key **หรือสร้าง Supabase client ของตัวเอง**"*
+   * แล้วอ้างด่านเดียวคือ `authNoServiceRole.test.ts` — **ซึ่งไม่ได้ตรวจวรรคหลังเลยสักบรรทัด**
+   * (`grep -c "createClient|createServerSupabase|createBrowserClient"` ในไฟล์นั้น = **0**)
+   * 🎯 **หลักฐานครอบแคบกว่าเกณฑ์ — และผมเป็นคนเขียนถ้อยคำที่กว้างเกินหลักฐานเอง**
+   *
+   * ## ทำไมวรรคนี้สำคัญพอที่จะมีด่านของตัวเอง
+   * `authNoServiceRole` ตอบว่า *"ไม่มีใครถือคีย์ที่มีสิทธิ์เกิน"* · **ไม่ได้ตอบว่า *"tool เขียนด้วยตัวตนของใคร"***
+   * tool ที่สร้าง client เองด้วย anon key **ไม่ถือคีย์ต้องห้ามสักตัว** แต่ก็ไม่ใช่ตัวตนของผู้ใช้ที่เรียกมันแล้ว
+   * → RLS จะตัดสินด้วย session อื่น (หรือไม่มี session เลย) **ซึ่งคือสิ่งที่ `E8-AC4` ทั้งข้อมีไว้กัน**
+   */
+  it("🔴 ไม่มีไฟล์ใดใน lib/copilot/ สร้าง Supabase client เอง — tool ต้องรับ Db ของผู้ใช้เข้ามา", () => {
+    const CONSTRUCTORS = /\b(createClient|createServerClient|createBrowserClient|createServerSupabase)\s*\(/;
+    const files = readdirSync(COPILOT_DIR).filter((f) => f.endsWith(".ts"));
+    // ③ จักรวาลต้องไม่ว่าง · ④ นับจากดิสก์ ไม่ใช่จากทะเบียนที่เคสอื่นใช้
+    expect(files.length, "ไม่มีไฟล์ใน lib/copilot/ เลย — โฟลเดอร์ถูกย้าย ไม่ใช่ 'ไม่มีผู้ละเมิด'").toBeGreaterThan(0);
+
+    const offenders = files.filter((f) =>
+      // 🔴 ตัดคอมเมนต์ก่อนเสมอ — ไม่งั้นย่อหน้าที่ *อธิบาย* ข้อห้ามจะกลายเป็นผู้ละเมิด
+      //    (บทเรียนจาก `authNoServiceRole` ที่มีเคสด้านลบข้อนี้ไว้เอง)
+      CONSTRUCTORS.test(stripTsComments(readFileSync(join(COPILOT_DIR, f), "utf8"))),
+    );
+    expect(offenders, `ไฟล์พวกนี้สร้าง client เอง: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  it("ด้านบวก: ตัวจับต้องจับ constructor ได้จริง และต้องไม่จับคำที่อยู่ในคอมเมนต์", () => {
+    const CONSTRUCTORS = /\b(createClient|createServerClient|createBrowserClient|createServerSupabase)\s*\(/;
+    expect(CONSTRUCTORS.test(stripTsComments('const db = createClient(url, key);'))).toBe(true);
+    expect(CONSTRUCTORS.test(stripTsComments('// ห้ามเรียก createClient() ในโฟลเดอร์นี้'))).toBe(false);
   });
 
   it("tripwire: ทิศกลับของทะเบียนยังลงไม่ได้ — เคสนี้ต้องแดงเองวันที่ wrapper ครบ", () => {
