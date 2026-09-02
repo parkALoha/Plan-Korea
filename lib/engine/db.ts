@@ -181,6 +181,35 @@ export function browseCatalogPlaces(db: Db, opts: { cityId?: string; countryId?:
  * **แถวสนามบินในแผนของผู้ใช้จะกลายเป็นแถวที่ "ไม่รู้จักสถานที่" ทั้งที่ข้อมูลอยู่ครบ**
  * · `picker_hidden` แปลว่า *"ไม่โผล่ในลิสต์ให้เลือก"* **ไม่ได้แปลว่า "ไม่มีอยู่"**
  */
+/**
+ * ตัวไหนใน `slugs` เป็นสถานที่ของ **คลังสาธารณะ** จริง — คืนเฉพาะตัวที่พิสูจน์ได้
+ *
+ * 🔴 **มีไว้ตอบคำถามเดียว: "id นี้แคชลงตารางกลางได้ไหม"** (`E3-AC6` · P1 · 2 ก.ย. 2026)
+ * `travel_time_cache` ใช้ `from_place_id` เป็น **คีย์** และตารางนั้นใช้ร่วมกันทั้งระบบ
+ * → ค่าที่ไม่ใช่ของสาธารณะจะกลายเป็นข้อมูลของทริปหนึ่งที่ทุกคนอ่านได้ทันทีที่เปิดสิทธิ์ (`D87`)
+ * · ของจริงที่เคยไหลเข้าไป: `hotel@<lat>,<lng>` (พิกัดที่พัก) และ `custom_places.id`
+ *
+ * 🎯 **บัญชี*ขาว* ไม่ใช่บัญชี*ดำ* — และความต่างนี้คือทั้งหมดของฟังก์ชันนี้**
+ * ถ้าถามว่า *"หน้าตาเป็นของส่วนตัวไหม"* เราต้องมีรายการรูปแบบที่ส่วนตัว **ซึ่งจะผิดเงียบ
+ * วันที่มีรูปแบบ id ใหม่โผล่มา** · ถามว่า *"พิสูจน์ได้ไหมว่าสาธารณะ"* แล้วรูปใหม่ตกไปเอง
+ * · ⚠️ **ตรวจด้วยรูปร่างไม่ได้เลย** — `custom_places.id` เป็น UUID ซึ่งเข้าเงื่อนไข
+ *   `^[a-z0-9-]+$` เหมือน slug ทุกประการ (P4 ชี้ว่าด่านที่ตรวจ *รูปร่าง* พลาดเสมอ)
+ *
+ * ⚠️ **ล้มแล้วต้องได้เซตว่าง ไม่ใช่โยน** — ผู้เรียกอ่านว่า "แคชไม่ได้" แล้วยิงต้นทางตรง
+ *   คือ fail-closed: แพงขึ้น แต่ไม่มีทางรั่ว · ตรงข้ามกับการปล่อยผ่านเวลาตรวจไม่ได้
+ */
+export async function catalogPublicSlugs(db: Db, slugs: string[]): Promise<Set<string>> {
+  const wanted = slugs.filter((s) => s.length > 0);
+  if (wanted.length === 0) return new Set();
+  const { data, error } = await engineTable(db, "catalog_places")
+    .select("legacy_slug")
+    .in("legacy_slug", wanted);
+  if (error || !data) return new Set();
+  return new Set(
+    data.map((r) => (r as { legacy_slug: string | null }).legacy_slug).filter((s): s is string => !!s)
+  );
+}
+
 export function catalogPlaceById(db: Db, id: string) {
   return engineTable(db, "catalog_places").select("*").eq("id", id).maybeSingle();
 }

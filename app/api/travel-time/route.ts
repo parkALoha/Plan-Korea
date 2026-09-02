@@ -4,7 +4,7 @@ import { rateLimitGuard } from "@/lib/rateLimit";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabaseConfigured } from "@/lib/supabase";
 import { createServerSupabase } from "@/lib/auth/server";
-import { cacheKeySaltConfigured, hashPlaceKey } from "@/lib/engine/cacheKey";
+import { catalogPublicSlugs } from "@/lib/engine/db";
 import { TRAVEL_MODES, type TravelMode } from "@/lib/schedule";
 
 // ยิงเป็นชุดตอนเปิดหน้าแผน (1 ครั้งต่อคู่จุดที่เลือกโหมดแล้ว) — เผื่อไว้สำหรับทริปที่จุดแวะแน่นกว่านี้
@@ -46,22 +46,30 @@ export async function GET(req: NextRequest) {
    * 🔴 **คีย์ต้องเป็น hash — ค่าดิบคือพิกัดที่พัก/UUID ทริป** (`E3-AC6` · ดู `lib/engine/cacheKey.ts`)
    * ไม่มี salt = **ไม่แคชเลย** ไม่ใช่ถอยไปเขียนคีย์ดิบ · เงียบไม่ได้ จึงมี `console.error`
    */
-  const canCache = supabaseConfigured && cacheKeySaltConfigured();
-  if (supabaseConfigured && !cacheKeySaltConfigured()) {
-    console.error(
-      "travel_time_cache: ข้ามการแคชทั้งหมดเพราะยังไม่ได้ตั้ง TRAVEL_CACHE_KEY_SALT — " +
-        "ทุกคำขอจะยิง Google ตรง (ดังโดยตั้งใจ ดีกว่าเขียนคีย์ที่ย้อนกลับได้)"
-    );
-  }
-  const fromKey = canCache ? hashPlaceKey(originPlaceId) : "";
-  const toKey = canCache ? hashPlaceKey(destPlaceId) : "";
+  /**
+   * 🔴 **แคชได้ก็ต่อเมื่อ *ทั้งสองปลาย* พิสูจน์ได้ว่าเป็นสถานที่ของคลังสาธารณะ** (`E3-AC6`)
+   * `from_place_id` เป็น **คีย์** ของตารางที่ใช้ร่วมกันทั้งระบบ → ค่าที่ไม่สาธารณะ
+   * กลายเป็นข้อมูลของทริปหนึ่งที่ทุกคนอ่านได้ทันทีที่ `D87` เปิดสิทธิ์
+   * · ของจริงที่ไหลเข้ามาทางนี้: `hotel@<lat>,<lng>` · `custom_places.id`
+   *
+   * 🎯 **ถามว่า "พิสูจน์ได้ไหมว่าสาธารณะ" ไม่ใช่ "หน้าตาเหมือนของส่วนตัวไหม"**
+   * อย่างหลังต้องมีรายการรูปแบบที่ส่วนตัว ซึ่งจะผิด **เงียบ** วันที่มีรูปใหม่
+   * 📌 ทางที่ปฏิเสธ: hash คีย์ด้วย salt — ลดระดับได้ **แต่ไม่ปิด** เพราะผู้โจมตีใช้
+   *    route นี้เองเป็นเครื่อง hash แล้วเทียบก่อน/หลังในตารางได้ (P4 ชี้ · 2 ก.ย. 2026)
+   *    → เลิกทางนั้นแล้ว **อย่าเอากลับมาโดยคิดว่ามันปิดช่อง**
+   */
+  const publicSlugs = supabaseConfigured
+    ? await catalogPublicSlugs(supabase, [originPlaceId, destPlaceId])
+    : new Set<string>();
+  const canCache =
+    supabaseConfigured && publicSlugs.has(originPlaceId) && publicSlugs.has(destPlaceId);
 
   if (canCache) {
     const { data: cached, error: cacheReadErr } = await supabase
       .from("travel_time_cache")
       .select("duration_minutes, distance_meters")
-      .eq("from_place_id", fromKey)
-      .eq("to_place_id", toKey)
+      .eq("from_place_id", originPlaceId)
+      .eq("to_place_id", destPlaceId)
       .eq("travel_mode", mode)
       .maybeSingle();
     noteCacheFailure("travel_time_cache/read", cacheReadErr);
@@ -87,8 +95,8 @@ export async function GET(req: NextRequest) {
 
   if (canCache) {
     const { error: cacheWriteErr } = await supabase.from("travel_time_cache").upsert({
-      from_place_id: fromKey,
-      to_place_id: toKey,
+      from_place_id: originPlaceId,
+      to_place_id: destPlaceId,
       travel_mode: mode,
       duration_minutes: result.durationMinutes,
       distance_meters: result.distanceMeters,
