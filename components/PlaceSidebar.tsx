@@ -5,7 +5,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Category, Place, cityCenter, placesByCity } from "@/data/places";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
-import { categoryMetaOf } from "@/components/categoryMeta";
+import { groupPlaceCards } from "@/components/placeGrouping";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
@@ -17,9 +17,6 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { PlaceCard } from "./PlaceCard";
 import { PlaceDetailModal } from "./PlaceDetailModal";
 import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
-
-/** คีย์ของถังท้าย — ไม่ใช่หมวดจริง จึงตั้งชื่อให้ชนกับหมวดในฐานไม่ได้ */
-const UNGROUPED_KEY = "__ungrouped";
 
 const CATEGORY_ORDER: Category[] = [
   "restaurant",
@@ -205,50 +202,15 @@ function PlaceSidebarContent({
   const hiddenCards = allCardsForCity.filter(({ place }) => hiddenPlaceIds.has(place.id));
 
   // จัดคลังเป็นหมวดๆ (วัฒนธรรม/ธรรมชาติ/ตลาด-ของกิน ฯลฯ) แทนที่จะโชว์รวมกันเป็น grid เดียว
-  const groupedVisibleCards = useMemo(() => {
-    const byCategory = new Map<string, { place: Place; isCustom: boolean }[]>();
-    for (const card of visibleCards) {
-      const list = byCategory.get(card.place.category) ?? [];
-      list.push(card);
-      byCategory.set(card.place.category, list);
-    }
-    /**
-     * 🔴 **หมวดที่ไม่อยู่ใน `CATEGORY_ORDER` ต้องไม่หายไปเงียบ ๆ** (`E6-AC12` · 2 ก.ย. 2026)
-     * `Place["category"]` เลิกเป็นยูเนียนปิดแล้ว → คลัง/สถานที่ที่เพิ่มเองส่งหมวดอะไรมาก็ได้
-     * เดิมโค้ดนี้วน `CATEGORY_ORDER` อย่างเดียว → **สถานที่ที่หมวดไม่รู้จักจะไม่ถูกเรนเดอร์เลย
-     * และไม่มี error อะไรทั้งสิ้น** — ผู้ใช้เพิ่มสถานที่แล้วมันหายไปจากคลัง
-     * 🎯 **`tsc` มองไม่เห็นข้อนี้ ต่อให้ชนิดถูกทุกบรรทัด** — มันคือการหล่นหายจาก *ลำดับ* ไม่ใช่จาก *ชนิด*
-     * · ท้ายลิสต์เสมอ (ไม่แทรกกลาง)
-     *
-     * 🔴 **แก้ 2 ก.ย. 2026 (P2 — UX เป็นโซนนี้ · P3 เขียนเองว่าเคสเขาบังคับแค่ "ต้องมีทางให้มันโผล่"):**
-     * ฉบับแรกแยก *แต่ละ* หมวดที่ไม่รู้จักเป็นคนละกลุ่ม แล้วให้ป้ายด้วย `categoryMetaOf(category)`
-     * ซึ่งคืน `UNSET_CATEGORY_META` ให้ทุกคีย์ที่ไม่รู้จัก → **หมวดแปลกสองตัว = สองกลุ่มที่หัวข้อ
-     * เหมือนกันเป๊ะ ("📍 อื่น ๆ") วางติดกัน** · ผู้ใช้อ่านว่าบั๊ก ไม่ได้อ่านว่าฟีเจอร์
-     * 🎯 `categoryMetaOf` ถูกสำหรับ *ค่าเดี่ยว* — เอาไปใช้เป็น *คีย์ของกลุ่ม* เป็นคนละหน้าที่
-     * → **ยุบเป็นถังเดียว** ตรงกับ `ChecklistPanel` (กอง "อื่น ๆ" ใบเดียวท้ายรายการ ไม่ขึ้นเมื่อว่าง)
-     *   **สองหน้าจอมีพฤติกรรมเดียวกัน สำคัญกว่าความละเอียดของหมวดที่เราไม่รู้จักอยู่ดี**
-     * · ทางที่ปฏิเสธ: โชว์สตริงดิบจากฐานเป็นป้าย (`"onsen"`) — สลัก DB ไม่ใช่ข้อความที่ผู้ใช้ควรเห็น
-     */
-    const known = new Set<string>(CATEGORY_ORDER);
-    const unset = categoryMetaOf(null);
-    const groups = CATEGORY_ORDER.map((category) => ({
-      key: category as string,
-      emoji: categoryMetaOf(category).emoji,
-      label: categoryMetaOf(category).label,
-      cards: byCategory.get(category) ?? [],
-    }));
-    groups.push({
-      key: UNGROUPED_KEY,
-      emoji: unset.emoji,
-      label: unset.label,
-      // ถังท้ายรับ *ทุก* หมวดที่ไม่รู้จัก รวมเป็นกองเดียว — เรียงตามหมวดให้ผลคงที่ระหว่างรอบวาด
-      cards: [...byCategory.keys()]
-        .filter((c) => !known.has(c))
-        .sort()
-        .flatMap((c) => byCategory.get(c) ?? []),
-    });
-    return groups.filter((group) => group.cards.length > 0);
-  }, [visibleCards]);
+  /**
+   * 🔴 **การ์ดที่หมวดไม่อยู่ใน `CATEGORY_ORDER` ต้องไม่หายไปเงียบ ๆ** — ตรรกะและเหตุผลเต็มอยู่ที่
+   * `components/placeGrouping.ts` ซึ่งแยกเป็นฟังก์ชันล้วนเพื่อให้เกณฑ์ผูกกับ *พฤติกรรม*
+   * แทนที่จะ `grep` หาชื่อตัวแปรในไฟล์นี้ (เกณฑ์แบบหลังแดงใส่การปรับปรุงโค้ดมาแล้วสองรอบ)
+   */
+  const groupedVisibleCards = useMemo(
+    () => groupPlaceCards(visibleCards, CATEGORY_ORDER),
+    [visibleCards]
+  );
 
   // droppable ของคลังทั้งก้อน — ลากจุดแวะจากแพลนทริปมาปล่อยตรงนี้ = คืนสถานที่นั้นกลับคลัง (เอาออกจากวัน)
   const { setNodeRef: setLibraryDroppableRef, isOver: isLibraryOver } = useDroppable({
