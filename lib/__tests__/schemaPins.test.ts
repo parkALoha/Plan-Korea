@@ -86,15 +86,34 @@ describe("ความครบของ matrix — ตรวจตัวรา�
    * · ⚠️ **ยังไม่ใช่สภาพของฐาน** — มันคือสภาพของ*ไฟล์เมื่อรันครบ* · ใครแก้ policy จากแดชบอร์ด ด่านนี้ไม่เห็น
    *   (ตัวที่ตอบเรื่องฐานคือ `client_writable_timestamps()` และเมทริกซ์สด)
    */
+  /**
+   * ตัวจับคำสั่ง policy · **`/g` มีสถานะ จึงคืนตัวใหม่ทุกครั้ง ไม่ใช่ค่าคงที่ที่ใช้ร่วม**
+   * · ชื่อ: `"…"` (มีช่องว่างได้) **หรือ** identifier เปล่า — ลำดับสำคัญ ถ้าสลับ `\S+` จะกิน `"` ตัวแรกแล้วหยุด
+   */
+  const POLICY_RE = () =>
+    /(create|drop)\s+policy\s+(?:if\s+exists\s+)?("[^"]+"|\S+)\s+on\s+(?:public|storage)\.(\w+)([\s\S]*?);/g;
+
+  /**
+   * 🔴 **แก้ 2 ก.ย. 2026 — สองรูที่คนละชนิด เจอพร้อมกันเพราะวัดสองทาง (P4)**
+   *
+   * **① ชื่อ policy ที่เป็นสตริงมีช่องว่างมองไม่เห็นเลย** — `(\S+)` หยุดที่ช่องว่างแรก
+   * `drop policy if exists "anyone can read booking-files" on storage.objects …` **ไม่ match**
+   * → 4 policy บนไฟล์ตั๋วทริปจริงหลุดจากพินทุกตัว · `D87` เขียนเตือนเรื่องนี้ไว้ในตัว migration เอง
+   *
+   * **② นับ policy ที่อยู่ใน *คอมเมนต์*** — ฉบับเดิมอ่านซอร์สดิบ
+   * วัดจริง: ดิบ 97 · ตัดคอมเมนต์ 92 → **5 ตัวเป็นข้อความในคอมเมนต์ ไม่ใช่คำสั่ง**
+   *
+   * 🎯 **สองรูนี้ผลักตัวเลขคนละทาง (① นับขาด · ② นับเกิน) จึงกลบกันได้บางส่วน** —
+   * นั่นคือเหตุผลที่ *ยอดรวมตัวเดียว* ไม่เคยดูผิดปกติ และไม่มีใครเห็นมาสองสัปดาห์
+   */
   function policyMapOrdered(): Map<string, string> {
-    const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
     const out = new Map<string, string>();
     // 🔴 ครอบ `storage.` ด้วย (27 ส.ค. · P4 เจอตอนรีวิว d2241fd · P1 GO) — ฉบับเดิมจับเฉพาะ `public.`
     //    → policy บน storage.objects (booking_files_* ตั้งแต่ 25 ส.ค. · trip_covers_*) **มองไม่เห็นโดยพินทุกตัว**
     //    policy คุ้มไฟล์ตั๋วทริปจริงแก้เงียบได้สองวันโดยไม่มีพินไหนแดง · key = `objects.<policy>`
-    const re = /(create|drop)\s+policy\s+(?:if\s+exists\s+)?(\S+)\s+on\s+(?:public|storage)\.(\w+)([\s\S]*?);/g;
-    for (const m of src.matchAll(re)) {
-      const key = `${m[3]}.${m[2]}`;
+    for (const m of src.matchAll(POLICY_RE())) {
+      const key = `${m[3]}.${m[2].replace(/^"|"$/g, "")}`;
       if (m[1] === "drop") out.delete(key);
       else out.set(key, stripComments(m[4]).replace(/\s+/g, " ").trim().toLowerCase());
     }
@@ -111,6 +130,29 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     }
     return verbs.sort();
   }
+
+  /**
+   * 🔴 **ควบคุมตัวแจง — จักรวาลมาจาก *คนละ derivation* กับตัวที่ runner ใช้** (P4 · 2 ก.ย. 2026)
+   *
+   * ตัวหลักจับทั้งคำสั่ง (ชื่อ + ตาราง + เนื้อ จนถึง `;`) · ตัวเทียบนับแค่ **คำว่า `create|drop policy`**
+   * → รูปของ *ชื่อ* ที่ตัวหลักอ่านไม่ออก ทำให้สองเลขต่างกันทันที
+   *
+   * 🎯 **นี่คือด่านที่จะจับรอบหน้า ไม่ใช่การแก้รอบนี้** — รอบนี้แก้ด้วยมือหลังมีคนสังเกต
+   * · ถ้ามีเคสนี้อยู่ก่อน `"anyone can read booking-files"` จะแดงตั้งแต่วันที่มันถูกเพิ่ม
+   * ⚠️ **ห้ามแก้เคสนี้ให้ผ่านด้วยการปรับตัวเทียบให้เหมือนตัวหลัก** — สองตัวต้องพังคนละแบบ ไม่งั้นมันไม่ใช่การควบคุม
+   */
+  it("🔴 ตัวแจง policy ต้องเห็นทุกคำสั่งที่มีอยู่ — เทียบกับการนับที่พังคนละแบบ", () => {
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+    const parsed = [...src.matchAll(POLICY_RE())].length;
+    const found = (src.match(/\b(?:create|drop)\s+policy\b/gi) ?? []).length;
+    expect(parsed, `ตัวแจงเห็น ${parsed} · มีอยู่จริง ${found} — ส่วนต่างคือ policy ที่ชื่อรูปแปลก แล้วพินทุกตัวมองไม่เห็นมัน`).toBe(found);
+  });
+
+  /** ⚠️ ควบคุมว่า *เครื่องวัดรันจริง* — จักรวาลว่างทำให้เคสข้างบนผ่านฟรี */
+  it("เครื่องวัดทำงาน: มีคำสั่ง policy ให้ตรวจมากกว่า 0", () => {
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+    expect((src.match(/\b(?:create|drop)\s+policy\b/gi) ?? []).length).toBeGreaterThan(0);
+  });
 
   it("🔴 ตารางที่ **จงใจไม่มี** policy DELETE ต้องไม่มีต่อไป — เพิ่มเมื่อไหร่ต้องเป็นการตัดสินใจ", () => {
     // `D18`: ไม่มี policy = เข้าไม่ถึงจาก client เลย ไม่ใช่แค่ซ่อนปุ่ม
