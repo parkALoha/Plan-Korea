@@ -75,11 +75,14 @@ describe("หน้าที่เรนเดอร์วัน ต้องใ
    * เป็น `usePlatformItinerary` → **คนตอบคำถามเดียวกันเปลี่ยนตัว ไม่ใช่คำถามหายไป**
    * 🎯 **ผมเขียนเกณฑ์นี้ผูกกับ *ชื่อ* จึงต้องมาแก้ตอนชื่อเปลี่ยน — เกณฑ์ที่ผูกกับ *คำถาม* ไม่ต้อง**
    *    (และนี่คือใบที่สองในคอมมิตเดียวกัน · อีกใบคือ `noLegacyItineraryRender.test.ts`)
+   * 🔴 **แก้ 2 ก.ย. 2026 — `useLegacyDayPlanGate` ถูกลบทั้งไฟล์ (P3 · P1 อนุมัติ)** รายการจึงเหลือตัวเดียว
+   * มันไม่มีผู้เรียกเลยตั้งแต่ `B6` (`git grep` ที่ `HEAD` เจอแต่คอมเมนต์) — **ด่านที่ไม่มีใครเรียก ไม่ใช่ด่าน**
+   * 🎯 **รายการที่สั้นลง = ด่านเข้มขึ้น** ไม่ใช่หลวมลง · ยืนยันแล้วว่ายังเขียวก่อน commit
    * ⚠️ **ส่วนที่ยังบังคับเหมือนเดิมทุกตัวอักษร: ห้ามใช้ `useTripDaysGate`** — มันถามว่า "มีวันไหม"
    *    ซึ่งเลิกเป็นตัวแทนของ "หน้านี้เรนเดอร์ทริปนี้ได้ไหม" ตั้งแต่ `create_trip_makes_days` ลง
    *    · การ "รวมให้เหลือด่านเดียว" ยังดูเหมือนการทำความสะอาดที่สมเหตุสมผลมากเหมือนเดิม
    */
-  const ACCEPTED_GATES = ["useLegacyDayPlanGate(", "usePlatformItinerary("];
+  const ACCEPTED_GATES = ["usePlatformItinerary("];
   for (const page of ["app/today/page.tsx", "app/summary/page.tsx"]) {
     it(`${page} มีด่านที่ถามว่า "เรนเดอร์ทริปนี้ได้ไหม" และไม่ใช่ useTripDaysGate`, () => {
       const src = readFileSync(join(process.cwd(), page), "utf8");
@@ -93,7 +96,7 @@ describe("หน้าที่เรนเดอร์วัน ต้องใ
 
   it("🔴 เคสควบคุม — ตัวตรวจต้องจับ 'ไม่มีด่านเลย' ได้ ไม่ใช่ผ่านเสมอ", () => {
     // รายการที่กว้างขึ้นมีราคา: ถ้าไม่มีเคสนี้ `some(...)` อาจกลายเป็นจริงเสมอโดยไม่มีใครรู้
-    const gates = ["useLegacyDayPlanGate(", "usePlatformItinerary("];
+    const gates = ["usePlatformItinerary("];
     expect(gates.some((g) => "export default function P(){return null}".includes(g))).toBe(false);
     expect(gates.some((g) => "const x = usePlatformItinerary(id, true);".includes(g))).toBe(true);
   });

@@ -17,6 +17,17 @@ import { stripTsComments } from "./_helpers";
  * ## สิ่งที่มันตรวจจริง — **ทะเบียนที่ *ผิดได้***
  * แบ่ง hook ที่ยิง `/api/engine/` เป็นสองฝั่ง แล้วบังคับ**ทั้งสองทิศ**:
  * · ไม่อยู่ในรายการ → **ต้องแคช**   · อยู่ในรายการ → **ต้องไม่แคช**
+ * 🔴 **เคส ⑧ เพิ่ม 2 ก.ย. 2026 (P1 ขอ · P3 ทำ): ชื่อในทะเบียนต้องยัง *มีคนเรียก* จริง**
+ * ⚠️ **ไม่ใช่ว่าไฟล์นี้ไม่เคยมีด่านกันความล้า — เคส ⑥ มีมาก่อนแล้ว และมันถามคนละคำถามแค่ *หนึ่ง* คำถาม:**
+ * ```
+ * ⑥  ชื่อในทะเบียนยังเป็นไฟล์ที่ยิง `/api/engine/` อยู่ไหม   ← ถามว่า **ยังมีอยู่ไหม**
+ * ⑧  แล้วมี *ใครเรียกมัน* หรือเปล่า                          ← ถามว่า **ยังถูกใช้ไหม**
+ * ```
+ * · `useLegacyDayPlanGate.ts` จดไว้พร้อมเหตุผลที่เขียนเองว่า *"จะตายไปกับ `B6`"* · `B6` ลงแล้วมันตายจริง
+ *   **แต่มันผ่าน ⑥ ได้สบาย ๆ เพราะไฟล์ยังอยู่และยังมี `fetch('/api/engine/…')` อยู่ในตัว**
+ * 🎯 **ด่านกันความล้าที่ขาดไปหนึ่งคำถาม อ่านจากผลรันแล้วเหมือนด่านที่ครบทุกประการ** — เขียวเท่ากัน
+ * · ⚠️ **ต้องตัดคอมเมนต์ก่อนนับผู้เรียก** — ชื่อ hook ที่ตายแล้วยังอยู่ในคอมเมนต์ของ `/today`+`/summary`
+ *   `grep` ดิบตอบว่า *"ยังมีคนใช้"* (3 บรรทัด ทั้งสามเป็นคอมเมนต์) · **นี่คือกลไกที่ทำให้มันรอดมาได้**
  * 🔴 ทิศที่สองคือสิ่งที่ทำให้ทะเบียนนี้ไม่กลายเป็นแหล่งความจริงใบที่สอง — `useSystemMode` เริ่มแคชเมื่อไหร่
  * **ด่านต้องแดง** ไม่ใช่ผ่านเงียบ · และ hook ใหม่ที่ยังไม่มีใครตัดสิน **ตกทันที** ไม่ใช่รอดเพราะไม่มีใครสังเกต
  *
@@ -40,8 +51,6 @@ const NOT_CACHED_BY_DECISION: Readonly<Record<string, string>> = {
     "ธง read-only — ค่าที่ค้างเก่า **แย่กว่าไม่มีธง** (mobile-arch §11.28 ①) · แคชคือบั๊ก ไม่ใช่ฟีเจอร์",
   "useTripDaysGate.ts":
     "fail-open เป็น `ready` อยู่แล้วเมื่อเช็คไม่สำเร็จ → ออฟไลน์ไม่ถูกบล็อก · แคชแล้ว *แย่ลง* เพราะคำตัดสิน `empty` ที่ค้างจะยืนยันผิดหลังมีวันจริง",
-  "useLegacyDayPlanGate.ts":
-    "คืน `unsupported` ทุกทริปโดยออกแบบ (lib/engine/legacyDayPlan.ts) · จะตายไปกับ `B6`",
   "useTripMembers.ts":
     "ผู้บริโภคเดียวคือแถวอวาตาร์ใน `TripHeader` — chrome ไม่ใช่เนื้อทริป · ออฟไลน์แล้วหายไปเฉย ๆ ไม่ทำให้เข้าใจผิด · และมันถือ *ชื่อคนอื่น* เก็บลงเครื่องโดยไม่มีคนขอไม่คุ้ม",
 };
@@ -58,6 +67,32 @@ export function fetchesEngineApi(strippedCode: string): boolean {
  */
 export function readsFromCache(strippedCode: string): boolean {
   return /\bstoreGet\b|\breadCache\b|\breadTripCache\b|\bhydrateThenFetch\b/.test(strippedCode);
+}
+
+/**
+ * ผู้เรียกของ hook ชื่อ `name` — **ตัดคอมเมนต์ก่อน** ไม่งั้นชื่อที่ตายแล้วจะดูเหมือนยังถูกใช้
+ * 🔴 ไม่นับไฟล์นิยามของตัวมันเอง และไม่นับ `lib/__tests__/` (ทะเบียนอ้างถึงชื่อพวกนี้เป็นสตริงอยู่แล้ว —
+ *    ถ้านับเข้าไปด้วย **ทะเบียนจะยืนยันตัวเอง** ซึ่งคือสิ่งที่เคสนี้มีไว้กันพอดี)
+ */
+function callSitesOf(name: string): string[] {
+  const re = new RegExp(`\\b${name}\\s*\\(`);
+  return SCAN_DIRS.flatMap((d) => tsFilesUnder(join(ROOT, d)))
+    .filter((f) => f.slice(f.lastIndexOf("/") + 1).replace(/\.tsx?$/, "") !== name)
+    .filter((f) => re.test(stripTsComments(readFileSync(f, "utf8"))))
+    .map((f) => f.slice(ROOT.length + 1));
+}
+
+const SCAN_DIRS = ["app", "components", "hooks", "lib"];
+
+function tsFilesUnder(dir: string): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === "__tests__" || e.name === "node_modules" || e.name === ".next") continue;
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...tsFilesUnder(p));
+    else if (/\.tsx?$/.test(e.name)) out.push(p);
+  }
+  return out;
 }
 
 type Hook = { file: string; code: string };
@@ -134,5 +169,27 @@ describe("🔴 E6-AC4 — พื้นผิวที่ดึงข้อมู
     const decided = hooks.filter((h) => h.file in NOT_CACHED_BY_DECISION);
     expect(cached.length, "ไม่มี hook ไหนแคชเลย — ตัวจับ `readsFromCache` น่าจะเพี้ยน").toBeGreaterThan(5);
     expect(decided.length, "รายการ 'ตัดสินแล้วว่าไม่แคช' ไม่แมตช์ไฟล์จริงสักตัว — เคส ⑤ กำลังตรวจเซตว่าง").toBeGreaterThan(0);
+  });
+
+  it("⑧ 🔴 ทะเบียนต้อง *หด* ด้วย — ไฟล์ที่ไม่มีใครเรียกแล้ว ต้องไม่ค้างอยู่ในรายการ", () => {
+    // 🔴 เคสควบคุม **มาก่อน** ข้อสรุป — ถ้าตัวนับผู้เรียกพัง ทุกชื่อจะดู "ตาย" หรือ "เป็น" พร้อมกัน
+    //    และทั้งสองทางให้ผลที่อ่านเหมือนกันจากบรรทัดล่าง
+    expect(
+      callSitesOf("usePlatformItinerary").length,
+      "ตัวนับผู้เรียกหาอะไรไม่เจอเลย — ตัวเดินไฟล์/regex พัง ไม่ใช่ 'ไม่มีใครเรียก'"
+    ).toBeGreaterThan(0);
+    expect(callSitesOf("useHookThatDoesNotExistAnywhere")).toEqual([]);
+
+    const dead = Object.keys(NOT_CACHED_BY_DECISION)
+      .map((file) => ({ file, name: file.replace(/\.tsx?$/, "") }))
+      .filter(({ name }) => callSitesOf(name).length === 0)
+      .map(({ file }) => file);
+    expect(
+      dead.sort(),
+      "ไฟล์พวกนี้ถูกจดไว้ว่า 'ตัดสินแล้วว่าไม่แคช' **แต่ไม่มีใครเรียกมันแล้ว**\n" +
+        "  🔴 ทะเบียนที่ชี้ไปหาของที่ไม่มีคนใช้ = ทะเบียนที่ล้า และไม่มีอะไรอื่นจับข้อนี้ได้เลย\n" +
+        "  → ลบไฟล์ที่ตายแล้ว + ถอนชื่อออกจากรายการ **ในคอมมิตเดียวกัน** (แยกเมื่อไหร่ ทะเบียนล้าช่วงนั้น)\n" +
+        "  · ถ้ามันควรอยู่ต่อทั้งที่ยังไม่มีผู้เรียก (เช่นกำลังจะต่อสาย) — บอก P1 ก่อน อย่าเงียบ ๆ ปิดเคสนี้"
+    ).toEqual([]);
   });
 });

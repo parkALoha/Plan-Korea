@@ -106,10 +106,13 @@ describe("🔴 E7-AC9 — ไม่มีหน้าไหนมีทางเ
    * 🎯 **เกณฑ์ที่ถูกคือ *"มีประตูสักตัวก่อนเรนเดอร์วัน"* ไม่ใช่ *"เรียกฟังก์ชันชื่อนี้"*** —
    *    ผมเขียนเกณฑ์เดิมผูกกับ **ชื่อ** จึงต้องมาแก้ตอนชื่อเปลี่ยน · เกณฑ์ที่ผูกกับ *คุณสมบัติ* ไม่ต้อง
    *    (รูปเดียวกับ `waiting-on-user.md §3.10`: กฎที่ผูกกับ *เครื่องมือ* ไม่ถูกใช้กับเครื่องมือถัดไป)
+   * 🔴 **แก้ 2 ก.ย. 2026 — ลบ `useLegacyDayPlanGate` ทั้งไฟล์** (0 ผู้เรียกตั้งแต่ `B6`) → `GATES` เหลือตัวเดียว
+   *    ⚠️ **สิ่งที่ทำให้มันดู *ยังมีชีวิต* คือคอมเมนต์ในสองหน้านี้ที่เอ่ยชื่อมัน** — `grep` ดิบเจอ 3 บรรทัด
+   *    ทั้งสามเป็นคอมเมนต์ · เคสข้างล่างรอดเพราะ `stripComments` มาก่อน `includes` **ไม่ใช่เพราะเราระวัง**
    * ⚠️ **แก้เกณฑ์ ไม่ใช่ลบเคส** — ตรงกับ *"ทะเบียนต้องผิดได้"* ของ P4 · P1 อนุมัติล่วงหน้าไว้แล้ว
    */
   it("🔴 ① สองหน้ายังมีประตูก่อนเรนเดอร์วัน — ถอดด่านออกเงียบ ๆ ไม่ได้", () => {
-    const GATES = ["useLegacyDayPlanGate", "usePlatformItinerary"];
+    const GATES = ["usePlatformItinerary"];
     const missing = PAGES.filter((p) => {
       const src = stripComments(read(p));
       return !GATES.some((g) => src.includes(g));
@@ -124,7 +127,7 @@ describe("🔴 E7-AC9 — ไม่มีหน้าไหนมีทางเ
 
   it("🔴 ① เคสควบคุมของประตู — ตัวตรวจต้องจับ 'ไม่มีประตูเลย' ได้จริง", () => {
     // ถ้าไม่มีเคสนี้ `GATES.some(...)` ที่กว้างขึ้นอาจกลายเป็น "ผ่านเสมอ" โดยไม่มีใครรู้
-    const GATES = ["useLegacyDayPlanGate", "usePlatformItinerary"];
+    const GATES = ["usePlatformItinerary"];
     const noGate = "export default function Page() { return <div>{days.map(d => d.id)}</div>; }";
     expect(GATES.some((g) => stripComments(noGate).includes(g))).toBe(false);
     expect(GATES.some((g) => stripComments("const s = usePlatformItinerary(id, true);").includes(g))).toBe(true);
