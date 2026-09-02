@@ -85,8 +85,21 @@ export function cardToPlace(card: CatalogNameCard): Place | null {
     descriptionTh: card.description ?? "",
     lat: card.lat,
     lng: card.lng,
-    // ⚠️ `mapsQuery` ว่าง = ลิงก์แผนที่พาไปหน้าเปล่า → ตกไปที่ชื่อ ซึ่งค้นได้จริง
-    mapsQuery: card.mapsQuery ?? nameEn,
+    /**
+     * 🔴 **ต่อชื่อเมืองท้ายเสมอ — ไม่ใช่ `?? nameEn` เปล่า ๆ** (P3 ชี้ · P1 ไล่ migration ยืนยัน · 2 ก.ย. 2026)
+     * `"Bay 101"` เฉย ๆ ใน Google Maps พาไปผิดที่ได้ทั่วโลก · `PLACES` ที่เขียนมือใส่เมืองไว้เสมอ
+     * (`mapsQuery: "Bay 101 Busan"`) — **ทางสำรองต้องได้รูปเดียวกัน ไม่งั้นการย้ายมาใช้คลังคือการถดถอย**
+     *
+     * ## 🎯 และของจริงแคบกว่าที่กลัว **แต่แคบมาโดนช่องที่เราเปิดไว้เองพอดี**
+     * `20260828120000_e4_catalog_maps_query.sql` เติม `maps_query` ให้แล้วในรูป
+     * `ชื่อ || ' ' || ชื่อเมือง` **พร้อม assert ว่าไม่เหลือแถวว่าง** (บรรทัด 107 · ไม่ครบ = rollback)
+     * · 🔴 **แต่ขอบเขตของมันคือ `co.supported and p.source <> 'transfer'`**
+     *   → **แถว `transfer` (สนามบิน/สถานี) ไม่ถูกเติม** และ `catalogPlacesByIds` **ไม่กรอง `transfer` ออกโดยตั้งใจ**
+     *     (นี่คือ resolve ไม่ใช่ browse — สนามบินคือจุดแวะจริง)
+     * 🎯 **ทางสำรองนี้จึงไม่ใช่ของเผื่อ — มันรับแถวกลุ่มที่ผมเลือกเองว่าจะไม่กรองทิ้ง**
+     * · ⚠️ ใช้ `citySlug` (`busan`) ไม่ใช่ชื่อเมือง เพราะการ์ดไม่มีชื่อเมือง — Maps ค้นด้วย slug ได้อยู่แล้ว
+     */
+    mapsQuery: card.mapsQuery ?? [nameEn, card.citySlug].filter(Boolean).join(" "),
     googlePlaceId: card.googlePlaceId ?? null,
     youtubeQuery: card.youtubeQuery ?? nameEn,
   };

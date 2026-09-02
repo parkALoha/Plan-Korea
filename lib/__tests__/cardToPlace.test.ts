@@ -88,9 +88,23 @@ describe("cardToPlace — ฟิลด์ที่ว่างได้จริ
     expect(cardToPlace({ ...base, nameTh: "อ่าว 101" })?.descriptionTh).toBe("");
   });
 
-  /** ลิงก์แผนที่ที่ว่าง = พาไปหน้าเปล่า → ตกไปที่ชื่อซึ่งค้นได้จริง */
-  it("ไม่มี mapsQuery → ใช้ชื่ออังกฤษแทน ไม่ปล่อยว่าง", () => {
+  /**
+   * 🔴 **ชื่อเปล่า ๆ ไม่พอ — ต้องมีเมืองต่อท้าย** (P3 ชี้)
+   * `"Bay 101"` ใน Google Maps พาไปผิดที่ได้ทั่วโลก · `PLACES` เขียนมือใส่เมืองไว้เสมอ
+   * → **ทางสำรองที่ให้แค่ชื่อ = การย้ายมาใช้คลังเป็นการถดถอย** ทั้งที่ตั้งใจให้ดีขึ้น
+   *
+   * 📌 กลุ่มที่พึ่งทางสำรองนี้จริงคือ **แถว `transfer`** — `20260828120000` เติม `maps_query`
+   * เฉพาะ `co.supported and source <> 'transfer'` · และ `catalogPlacesByIds` ไม่กรอง `transfer`
+   * ออกโดยตั้งใจ (resolve ไม่ใช่ browse) → **สนามบิน/สถานีเดินมาถึงบรรทัดนี้จริง**
+   */
+  it("ไม่มี mapsQuery → ชื่ออังกฤษ + เมือง ไม่ใช่ชื่อเปล่า", () => {
     const p = cardToPlace({ ...base, nameTh: "อ่าว 101", nameEn: "Bay 101" });
+    expect(p?.mapsQuery).toBe("Bay 101 busan");
+  });
+
+  /** ⚠️ ไม่มีเมือง → ต้องไม่ได้สตริงที่มีช่องว่างห้อยท้าย (`"Bay 101 "`) */
+  it("ไม่มีทั้ง mapsQuery และเมือง → ชื่อล้วน ไม่มีช่องว่างห้อย", () => {
+    const p = cardToPlace({ ...base, nameEn: "Bay 101", citySlug: null });
     expect(p?.mapsQuery).toBe("Bay 101");
   });
 });
