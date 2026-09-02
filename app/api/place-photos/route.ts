@@ -4,6 +4,7 @@ import { rateLimitGuard } from "@/lib/rateLimit";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabaseConfigured } from "@/lib/supabase";
 import { createServerSupabase } from "@/lib/auth/server";
+import { catalogPublicMapsQueries } from "@/lib/engine/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // เพดานสูงไว้ก่อนเผื่อของเก่า — ตั้งแต่เฟส 19 หน้าแผนรวมคำขอเหลือ 1-2 ครั้งต่อการเปิดหน้า (ดู ?queries=)
@@ -37,11 +38,20 @@ async function resolveMany(
   queries: string[]
 ): Promise<{ results: Record<string, string[]>; errors: Record<string, string> }> {
   const cachedNames = new Map<string, string[]>();
-  if (supabaseConfigured) {
+  /**
+   * 🔴 **แคชได้เฉพาะคิวรีที่พิสูจน์ได้ว่าเป็นของคลังสาธารณะ** (`E3-AC6` · เหมือน `place_details_cache`)
+   * ตารางนี้คีย์ด้วย `maps_query` เช่นกัน → สำหรับสถานที่ที่ผู้ใช้เพิ่มเอง มันคือ **ข้อความที่เขาพิมพ์**
+   * ⚠️ ไม่ผ่านประตู = ยังตอบผู้ใช้ปกติ **แค่ยิง Google ทุกครั้ง ไม่แตะแคชกลาง**
+   */
+  const publicQueries = supabaseConfigured
+    ? await catalogPublicMapsQueries(db, queries)
+    : new Set<string>();
+
+  if (publicQueries.size > 0) {
     const { data, error: cacheReadErr } = await db
       .from("place_photo_cache")
       .select("maps_query, photo_names")
-      .in("maps_query", queries);
+      .in("maps_query", [...publicQueries]);
     noteCacheFailure("place_photo_cache/read", cacheReadErr);
     for (const row of (data ?? []) as { maps_query: string; photo_names: string[] }[]) {
       cachedNames.set(row.maps_query, row.photo_names);
@@ -61,7 +71,7 @@ async function resolveMany(
       }
 
       const photoNames: string[] = place?.photos?.slice(0, 6).map((p) => p.name) ?? [];
-      if (supabaseConfigured && photoNames.length > 0) {
+      if (publicQueries.has(query) && photoNames.length > 0) {
         const { error: cacheWriteErr } = await db.from("place_photo_cache").upsert({
           maps_query: query,
           photo_names: photoNames,

@@ -1,7 +1,15 @@
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
--- ║ 🔴🔴 หยุด — `grant select to authenticated` ในไฟล์นี้เปิดรูรั่วจริง (P1 · 2 ก.ย.) ║
+-- ║ ⚠️ อ่านให้จบก่อนรัน — ไฟล์นี้เคยเปิดรูรั่วจริง และเพิ่งถูกปิดวันเดียวกัน (P1 · 2 ก.ย.) ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
--- **อย่ารันไฟล์นี้ตามที่มันเขียนอยู่** · พบหลังเขียนไฟล์ ตอนไล่ `E3-AC6` ครึ่งที่เหลือ
+-- **สถานะ: ปิดครบแล้ว — รันได้เมื่อผู้ใช้อนุมัติ** (ดู "สถานะ 2 ก.ย. (ค่ำ)" ข้างล่าง)
+-- 🔴 **แต่มันปลอดภัยเพราะ *ของสองอย่างที่ต้องอยู่ครบ* ไม่ใช่เพราะไฟล์นี้เขียนดี:**
+--    ① ประตูฝั่งเขียนใน route ทั้งสามใบ  ② การล้างแถวเก่าในไฟล์นี้ (ก่อน `grant`)
+--    **ถอดข้อใดข้อหนึ่งออก รูรั่วกลับมาทันที** — ส่วนที่เหลือของหัวข้อนี้คือรูรั่วนั้นคืออะไร
+--
+-- 📌 บันทึกไว้ทั้งท่อนโดยตั้งใจ **ไม่ลบทิ้งหลังแก้เสร็จ** — คนที่มารื้อประตูฝั่ง route วันหลัง
+--    จะไม่ได้เปิดไฟล์นี้ **เหตุผลของ policy อยู่คนละไฟล์กับสิ่งที่ทำให้มันจริง**
+--
+-- ── ต่อไปนี้คือรูรั่วเดิม (พบตอนไล่ `E3-AC6` ครึ่งที่เหลือ) ──────────────────
 --
 -- `travel_time_cache.from_place_id` เป็น `text` และ **ค่ามาจาก query string ตรง ๆ ไม่มีตรวจชนิด**
 --   app/api/travel-time/route.ts:19-20  อ่าน `originPlaceId`/`destPlaceId` จาก searchParams
@@ -45,31 +53,21 @@
 --        → จ่าย Google ทุกครั้ง · `useHotelDistance` อยู่ในหน้ารายละเอียดสถานที่ซึ่งเปิดบ่อย
 --        📌 ถ้าบิลแรงเกินรับ ทางถัดไปคือแคชแยกสโคปรายทริป (คอลัมน์ `trip_id` + policy) **ไม่ใช่กลับไป hash**
 --
--- 🔴 **ยังเหลือ 2 ข้อ ก่อนไฟล์นี้จะรันได้:**
---   ① **ล้างแถวเก่าที่คีย์ยังเป็นค่าดิบ** — การแก้ข้างบนคุ้มเฉพาะแถว *ใหม่*
---      แถวเดิมใน `travel_time_cache` ยังถือ `hotel@<lat>,<lng>` อยู่ · เปิด `select` เมื่อไหร่รั่วทันที
---      ✅ ลบทิ้งได้ปลอดภัย — แคชสร้างใหม่เองจาก Google (เสียแค่ค่าเรียกรอบแรก)
---      📌 ต้องอยู่ในไฟล์นี้ **ก่อน** `grant` ไม่ใช่คนละไฟล์ ไม่งั้นมีหน้าต่างที่แถวเก่าอ่านได้
---      🔴 **และต้องมี `do $verify$` ในไฟล์เดียวกัน assert ว่าเหลือ 0 แถวที่คีย์ยังเป็นรูปดิบ** (P4 · รับ)
---         เหตุผล: *"ผมลบแล้ว"* กับ *"ไม่เหลือแล้ว"* เป็นคนละประโยค · **migration รันครั้งเดียว
---         ถ้าไม่ assert ตอนนั้น ไม่มีใครได้ตรวจอีกเลย** — ใช้รูปเดียวกับ `do $verify$` ที่ไฟล์นี้มีอยู่แล้ว
---         ⚠️ เงื่อนไขต้องไม่ใช่แค่ `like 'hotel@%'` — นั่นคือรายการของรูปที่ *รู้แล้ว*
---            ✅ ใช้ *บัญชีขาว* ให้ตรงกับฝั่งโค้ด: เหลือได้เฉพาะคีย์ที่มีใน `catalog_places.legacy_slug`
---   ③ 🔴 **`backfillLocalName()` ใช้ `.update()` ซึ่งไฟล์นี้ *ไม่ได้ให้สิทธิ์*** (P1 พบ 2 ก.ย. เย็น)
---      `app/api/place-details/route.ts:114` → `.update({name_local, address_local, locale})`
---      ไฟล์นี้ให้แค่ `select, insert` → **หลัง migration ลง การเติมชื่อท้องถิ่นจะล้มทุกครั้ง**
---      ⚠️ **ไม่ fatal — `noteCacheFailure` กลืนแล้ว log** → ฟีเจอร์ตายเงียบ ผู้ใช้เห็นชื่ออังกฤษแทนชื่อท้องถิ่น
---      🔴 **ห้ามแก้ด้วยการเติม `update` เข้าไปเฉย ๆ** — นั่นคือสิ่งที่ไฟล์นี้ตั้งใจไม่ให้ (เขียนทับแถวของคนอื่นได้)
---      ทางที่ต้องเลือก: เก็บ `locale` ตั้งแต่ตอน `insert` แล้วเลิก backfill · หรือยอมให้ฟีเจอร์นี้หายไป
---      📌 **ยังไม่ตัดสิน** — แต่ต้องตัดสินก่อนรัน ไม่ใช่ค้นพบตอนผู้ใช้ทัก
---   ② **`place_details_cache` — ✅ ประตูฝั่งเขียนลงแล้ว (2 ก.ย. เย็น)**
---      `catalogPublicMapsQueries()` + ประตูใน `resolveMany`/`resolveFromGoogle`
---      → คิวรีที่ไม่ได้อยู่ในคลังไม่ถูกอ่านและไม่ถูกเขียนแคชกลางอีก · ยังตอบผู้ใช้ปกติ แค่ยิง Google ทุกครั้ง
---      **หมายเหตุเดิมที่ทำให้มันยาก (ยังจริง แต่ปิดด้วยการไม่ให้เข้าตารางแล้ว):**
---      ตัวแถวถือ `name_local`/`address_local` ที่ Google ตอบกลับ → **บอกได้เองว่าเป็นที่ไหน**
---      · `lib/placeQuery.ts:19` คืน `mapsQuery` ตรง ๆ เมื่อไม่มี Google id
---        → สำหรับสถานที่ที่ผู้ใช้เพิ่มเอง นั่นคือ **ข้อความที่เขาพิมพ์** (ชื่อ/ที่อยู่)
---      🔴 ยังไม่มีคำตอบ — ต้องตัดสินแยก
+-- ## สถานะ 2 ก.ย. 2026 (ค่ำ) — **ครบแล้วทั้งสามข้อ · ไฟล์นี้พร้อมให้ผู้ใช้ตัดสินใจรัน**
+--   ✅ ① **ล้างแถวเก่า + `do $verify$` แบบบัญชีขาว อยู่ในไฟล์นี้แล้ว ก่อน `grant`**
+--        พร้อม **ทิศบวก**: ถ้า `catalog_places` ว่าง ให้ระเบิด — ไม่งั้นการลบทุกแถวจะอ่านเหมือน "สะอาด"
+--   ✅ ② **ประตูฝั่งเขียนครบ *ทั้งสามใบ*** — `travel_time_cache` · `place_details_cache` · `place_photo_cache`
+--        🔴 ใบที่สามเกือบหลุด: `place_photo_cache` ก็คีย์ด้วย `maps_query` เหมือนกัน
+--           **ตอนปิด `place_details_cache` ผมไม่ได้ตรวจมัน** — เจอตอนกลับมาเขียน SQL ล้างแถว
+--   ✅ ③ **เรื่อง `backfillLocalName` ใช้ `.update()` — ตัดสินแล้ว: ไม่ให้สิทธิ์ `update` และยอมรับผล**
+--        🔴 **และผมเขียนผลกระทบไว้เกินจริงตอนแรก ขอแก้:**
+--        `backfillLocalName` `return fresh` **ไม่ว่าการเขียนกลับจะล้มหรือไม่** (`route.ts:118`)
+--        → **ผู้ใช้ยังได้ชื่อท้องถิ่นที่ถูกต้องเสมอ** · สิ่งที่เสียคือ *การเก็บมันไว้ใช้ซ้ำ*
+--        🎯 **ผลจริงคือ *ต้นทุน* ไม่ใช่ *ความถูกต้อง*** — คำขอข้ามภาษาจะยิง Google ซ้ำทุกครั้ง
+--        · ทำไมไม่เติม `update`: มันคือสิ่งที่ไฟล์นี้ตั้งใจไม่ให้ — **`update` = เขียนทับแถวของคนอื่นได้**
+--          และตารางนี้ไม่มีคอลัมน์เจ้าของให้ policy เกาะ → จำกัดเป็นรายแถวไม่ได้เลย
+--        · ทางที่ปฏิเสธ: แยกแถวต่อ locale (ต้องเปลี่ยน primary key ของตารางที่ใช้งานอยู่ — แพงกว่าผลที่ได้)
+--        📌 ถ้าต้นทุนตรงนี้สูงเกินรับ **ให้กลับมาที่คีย์ ไม่ใช่ที่ `grant`**
 --
 -- ## ทางที่ต้องตัดสินก่อน (P1 ยังไม่เลือกให้ — เป็นการตัดสินใจเชิงดีไซน์)
 --   (ก) ไม่แคชคีย์ที่ถือข้อมูลส่วนตัว (hotel@ / custom UUID) — แคบสุด เสีย cache hit บางส่วน
@@ -155,15 +153,73 @@ begin
   end if;
 end $guard$;
 
+-- ══ ล้างแถวที่คีย์ไม่ได้พิสูจน์ว่าสาธารณะ — **ต้องมาก่อน `grant` ในไฟล์เดียวกัน** ══
+-- 🔴 **ประตูฝั่งโค้ด (`catalogPublicSlugs`/`catalogPublicMapsQueries`) คุ้มเฉพาะแถว *ใหม่***
+--    แถวที่อยู่มาก่อนยังถือ `hotel@<lat>,<lng>` และข้อความที่ผู้ใช้พิมพ์เอง
+--    → เปิด `select` เมื่อไหร่ รั่วทันทีโดยที่ประตูใหม่ไม่เกี่ยวเลย
+-- 🔴 **แยกไฟล์ไม่ได้** — ถ้าล้างคนละ migration จะมีหน้าต่างที่ `grant` ลงแล้วแต่ยังไม่ล้าง
+--
+-- ✅ ใช้ **บัญชีขาว** ให้ตรงกับฝั่งโค้ด ไม่ใช่ `like 'hotel@%'`
+--    (P4 เสนอบัญชีดำ · P1 เปลี่ยนเป็นขาว: บัญชีดำคือรายการของรูปที่ *รู้แล้ว* — และถ้าสองฝั่ง
+--     ใช้คนละแบบ มันจะเถียงกันเงียบ ๆ วันที่มีรูปใหม่)
+-- ⚠️ ลบปลอดภัย: แคชสร้างใหม่เองจาก Google · เสียแค่ค่าเรียกรอบแรกของแถวที่ถูกลบ
+
+delete from public.travel_time_cache t
+ where not exists (select 1 from public.catalog_places c where c.legacy_slug = t.from_place_id)
+    or not exists (select 1 from public.catalog_places c where c.legacy_slug = t.to_place_id);
+
+delete from public.place_details_cache d
+ where not exists (select 1 from public.catalog_places c where c.maps_query = d.maps_query);
+
+delete from public.place_photo_cache p
+ where not exists (select 1 from public.catalog_places c where c.maps_query = p.maps_query);
+
+do $purged$
+declare n int;
+begin
+  -- 🎯 *"ผมลบแล้ว"* กับ *"ไม่เหลือแล้ว"* เป็นคนละประโยค (P4)
+  --    migration รันครั้งเดียว — **ถ้าไม่ assert ตรงนี้ ไม่มีใครได้ตรวจอีกเลย**
+  select count(*) into n from public.travel_time_cache t
+   where not exists (select 1 from public.catalog_places c where c.legacy_slug = t.from_place_id)
+      or not exists (select 1 from public.catalog_places c where c.legacy_slug = t.to_place_id);
+  if n > 0 then raise exception 'travel_time_cache ยังเหลือ % แถวที่คีย์ไม่ใช่ของคลัง', n; end if;
+
+  select count(*) into n from public.place_details_cache d
+   where not exists (select 1 from public.catalog_places c where c.maps_query = d.maps_query);
+  if n > 0 then raise exception 'place_details_cache ยังเหลือ % แถวที่คีย์ไม่ใช่ของคลัง', n; end if;
+
+  select count(*) into n from public.place_photo_cache p
+   where not exists (select 1 from public.catalog_places c where c.maps_query = p.maps_query);
+  if n > 0 then raise exception 'place_photo_cache ยังเหลือ % แถวที่คีย์ไม่ใช่ของคลัง', n; end if;
+
+  -- 🔴 **ทิศบวก — กันเคสที่ผ่านเพราะ *ไม่มีอะไรให้ตรวจ*** (`E3-AC6` · ตระกูลเดียวกับ `P-33` ข้อ 3)
+  --    ถ้าคลังว่าง เงื่อนไขข้างบนจะเป็นจริงหลังลบทุกแถวทิ้ง แล้วอ่านเหมือน "สะอาด"
+  select count(*) into n from public.catalog_places where legacy_slug is not null or maps_query is not null;
+  if n = 0 then
+    raise exception 'catalog_places ว่าง — การล้างข้างบนลบทุกแถวโดยไม่ได้พิสูจน์อะไรเลย';
+  end if;
+end $purged$;
+
 -- ── grant: อ่านได้ · เพิ่มได้ · **ทับไม่ได้ ลบไม่ได้** ─────────────────────────
 grant select, insert on public.place_details_cache to authenticated;
 grant select, insert on public.place_photo_cache   to authenticated;
 grant select, insert on public.travel_time_cache   to authenticated;
 
 -- ── policy: RLS เปิดอยู่ → grant อย่างเดียวไม่พอ ต้องมี policy ด้วย ───────────
--- 🔴 แคชสามใบนี้ **ไม่มีข้อมูลของผู้ใช้สักคอลัมน์** — เป็นข้อเท็จจริงสาธารณะจาก Google
---    (เวลาเดินทางระหว่างสองจุด · เวลาเปิด-ปิดร้าน · รหัสรูป) → `using (true)` จึงไม่ได้เปิดอะไรของใคร
---    ⚠️ **ถ้าวันหนึ่งมีคอลัมน์ที่ผูกกับผู้ใช้ ต้องกลับมาแก้ policy นี้ทันที** — เหตุผลข้างบนจะหมดอายุ
+-- 🔴 **แก้ 2 ก.ย. 2026 — เหตุผลเดิมตรงนี้ *ผิด* และมันผิดในทิศที่อ่านแล้ววางใจ**
+--    เดิมเขียนว่า *"แคชสามใบนี้ไม่มีข้อมูลของผู้ใช้สักคอลัมน์ → `using (true)` ไม่ได้เปิดอะไรของใคร"*
+--    · **ข้อความส่วน *คอลัมน์* จริง** — เนื้อแถวเป็นข้อเท็จจริงจาก Google ทั้งหมด
+--    · 🔴 **แต่ข้อมูลของผู้ใช้ไม่ได้อยู่ในคอลัมน์ มันอยู่ใน *คีย์***
+--      `travel_time_cache.from_place_id` เคยถือ `hotel@<lat>,<lng>` (พิกัดที่พัก ระดับเมตร)
+--      `place_details_cache.maps_query` / `place_photo_cache.maps_query` ถือ *ข้อความที่ผู้ใช้พิมพ์เอง*
+--      เพราะ `placeQueryKey()` คืน `mapsQuery` ตรง ๆ เมื่อสถานที่ไม่มี `googlePlaceId`
+--    🎯 **คอมเมนต์เดิมเตือนตัวเองไว้ว่า *"ถ้าวันหนึ่งมีคอลัมน์ที่ผูกกับผู้ใช้ ให้กลับมาแก้"* —
+--       และมันไม่เคยดัง เพราะไม่มีคอลัมน์ไหนเพิ่มเลย · **สิ่งที่ผูกกับผู้ใช้เข้ามาทาง *คีย์* ซึ่งไม่มีใครเฝ้า**
+--    ✅ วันนี้ `using (true)` ปลอดภัยได้เพราะ **สองอย่างที่ต้องอยู่ครบ ไม่ใช่เพราะเนื้อแถว:**
+--       ① ประตูฝั่งเขียนใน route (`catalogPublicSlugs` / `catalogPublicMapsQueries`) — ของใหม่เข้าไม่ได้
+--       ② การล้างข้างบน — ของเก่าไม่เหลือ
+--    🔴 **ถอดข้อใดข้อหนึ่งออก policy นี้กลับมาอันตรายทันที** — เขียนไว้ตรงนี้เพราะคนอ่าน policy
+--       จะไม่ได้เปิดไฟล์ route · **เหตุผลของ policy อยู่คนละไฟล์กับสิ่งที่ทำให้มันจริง**
 create policy travel_time_cache_select        on public.travel_time_cache   for select to authenticated using (true);
 create policy travel_time_cache_insert        on public.travel_time_cache   for insert to authenticated with check (true);
 create policy place_details_cache_select      on public.place_details_cache for select to authenticated using (true);
