@@ -107,15 +107,15 @@ function rowToResponse(row: CacheRow, nameLocal: string | null, addressLocal: st
  *  แถวเก่าทั้งหมดที่มีอยู่ก่อนเฟส 14 จะค่อยๆ ถูกเติมเองเมื่อถูกเรียกใช้ ไม่ต้อง backfill ทั้งตาราง */
 async function backfillLocalName(db: SupabaseClient,
   row: CacheRow, locale: Locale) {
-  const fresh = await fetchLocalName(row.maps_query, locale);
-  if (fresh.nameLocal && supabaseConfigured) {
-    const { error: backfillErr } = await db
-      .from("place_details_cache")
-      .update({ name_local: fresh.nameLocal, address_local: fresh.addressLocal, locale })
-      .eq("maps_query", row.maps_query);
-    noteCacheFailure("place_details_cache/backfill", backfillErr);
-  }
-  return fresh;
+  /**
+   * 🔴 **เดิมบรรทัดถัดจากนี้เขียนผลกลับลงแถวเดิม — ถอดออกแล้ว** (`Q3` ก้าวที่ 1)
+   * `update` จาก route = สิทธิ์ที่ผู้ใช้มีเท่ากัน → **เขียนทับแถวของคนอื่นได้**
+   * ซึ่งแรงกว่า `insert` ที่เราถอดไปอีก · งานเบื้องหลังเป็นคนเติมชื่อท้องถิ่นแทน
+   *
+   * ✅ **ผู้ใช้ยังได้ชื่อท้องถิ่นถูกต้องเสมอ** — บรรทัดล่างคืนค่าที่เพิ่งดึงจาก Google
+   *    สิ่งที่เสียคือ *การเก็บไว้ใช้ซ้ำ* → **ต้นทุน ไม่ใช่ความถูกต้อง**
+   */
+  return await fetchLocalName(row.maps_query, locale);
 }
 
 /** ยิง Google ใหม่ทั้งชุดสำหรับสถานที่ที่ยังไม่เคยแคช แล้วเก็บลง place_details_cache */
@@ -123,9 +123,7 @@ async function resolveFromGoogle(
   db: SupabaseClient,
   query: string,
   live: boolean,
-  locale: Locale | null,
-  /** คิวรีนี้พิสูจน์แล้วว่าเป็นของคลังสาธารณะหรือยัง — **ไม่ผ่าน = ห้ามเขียนแคชกลาง** (`E3-AC6`) */
-  cacheable: boolean
+  locale: Locale | null
 ): Promise<PlaceDetailsResponse> {
   const fieldMask = live
     ? "places.id,places.regularOpeningHours,places.currentOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews"
@@ -151,32 +149,20 @@ async function resolveFromGoogle(
   const reviews = place?.reviews?.slice(0, 3) ?? null;
   const local = locale ? await fetchLocalName(query, locale) : { nameLocal: null, addressLocal: null };
 
-  if (cacheable && googlePlaceId) {
-    const { error: cacheWriteErr } = await db.from("place_details_cache").upsert({
-      maps_query: query,
-      google_place_id: googlePlaceId,
-      opening_hours: openingHours,
-      rating,
-      user_rating_count: userRatingCount,
-      primary_type: primaryType,
-      reviews,
-      name_local: local.nameLocal,
-      address_local: local.addressLocal,
-      locale: local.nameLocal ? locale : null,
-      fetched_at: new Date().toISOString(),
-    },
-      {
-        /**
-         * 🔴 **`ignoreDuplicates: true` = `ON CONFLICT DO NOTHING` → ต้องการแค่สิทธิ์ `insert`**
-         * `D87` ③ (ผู้ใช้เลือกเอง 2 ก.ย. 2026): **เขียนได้ ทับไม่ได้** → `authenticated` ไม่มี `update`
-         * · `upsert` แบบเดิมต้องการ `update` เมื่อชนคีย์ → **จะได้ 403 ทุกครั้งที่แคชมีอยู่แล้ว**
-         * 🎯 *"คนแรกเขียน แล้วไม่มีใครทับได้"* จึงไม่ใช่แค่นโยบายในฐาน — **บรรทัดนี้คือที่ที่มันเป็นจริง**
-         */
-        ignoreDuplicates: true,
-      },
-    );
-    noteCacheFailure("place_details_cache/write", cacheWriteErr);
-  }
+  /**
+   * 🔴 **route ไม่เขียนแคชอีกต่อไป — และไม่ควรเขียนได้ด้วย** (`Q3` ก้าวที่ 1 · ผู้ใช้ตัดสิน 2 ก.ย. 2026)
+   *
+   * `route` รันด้วย **ตัวตนของผู้ใช้เอง** → **สิทธิ์อะไรที่ route มี ผู้ใช้มีเท่ากันเสมอ**
+   * ให้ route เขียนแคชได้ = ให้ผู้ใช้ยิง PostgREST ใส่ **ชื่อ/ที่อยู่ปลอม** ของสถานที่จริงได้ตรง ๆ
+   * → ตารางใช้ร่วมกันทั้งระบบ → **ของปลอมของคนเดียว ทุกคนเห็น** และ `ON CONFLICT DO NOTHING`
+   *   ทำให้ **ทับกลับไม่ได้และไม่มีเสียง** (P4 เจอ · เป็นเหตุผลที่ `D87` ถูกถอน)
+   *
+   * ✅ **ตัวเขียนคืองานเบื้องหลังที่ถือ `service_role` และอยู่นอก `app/`** (`D38`)
+   *    จักรวาลของคีย์ = สถานที่ในคลัง — **นับได้ จึงอุ่นล่วงหน้าได้ครบ ไม่ต้องเดา**
+   *
+   * ⚠️ **ถอดทั้งบล็อก ไม่ได้แค่ปิดด้วยเงื่อนไข** — โค้ดที่เขียนไม่ได้แต่หน้าตาเหมือนเขียนได้
+   *    คือของที่คนอ่านจะเชื่อว่าแคชถูกเติมจากเส้นนี้
+   */
 
   return {
     googlePlaceId,
@@ -262,7 +248,7 @@ async function resolveMany(
   const entries = await Promise.all(
     queries.map(async (q): Promise<[string, PlaceDetailsResponse]> => {
       const row = cachedRows.get(q);
-      if (!row) return [q, await resolveFromGoogle(db, q, live, locale, publicQueries.has(q))];
+      if (!row) return [q, await resolveFromGoogle(db, q, live, locale)];
 
       const needsLocalName = locale != null && row.locale !== locale;
       const local = needsLocalName

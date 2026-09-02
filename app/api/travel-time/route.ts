@@ -93,27 +93,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ durationMinutes: null, isReal: false });
   }
 
-  if (canCache) {
-    const { error: cacheWriteErr } = await supabase.from("travel_time_cache").upsert({
-      from_place_id: originPlaceId,
-      to_place_id: destPlaceId,
-      travel_mode: mode,
-      duration_minutes: result.durationMinutes,
-      distance_meters: result.distanceMeters,
-      fetched_at: new Date().toISOString(),
-    },
-      {
-        /**
-         * 🔴 **`ignoreDuplicates: true` = `ON CONFLICT DO NOTHING` → ต้องการแค่สิทธิ์ `insert`**
-         * `D87` ③ (ผู้ใช้เลือกเอง 2 ก.ย. 2026): **เขียนได้ ทับไม่ได้** → `authenticated` ไม่มี `update`
-         * · `upsert` แบบเดิมต้องการ `update` เมื่อชนคีย์ → **จะได้ 403 ทุกครั้งที่แคชมีอยู่แล้ว**
-         * 🎯 *"คนแรกเขียน แล้วไม่มีใครทับได้"* จึงไม่ใช่แค่นโยบายในฐาน — **บรรทัดนี้คือที่ที่มันเป็นจริง**
-         */
-        ignoreDuplicates: true,
-      },
-    );
-    noteCacheFailure("travel_time_cache/write", cacheWriteErr);
-  }
+  /**
+   * 🔴 **route ไม่เขียนแคชอีกต่อไป** (`Q3` ก้าวที่ 1 · ผู้ใช้ตัดสิน 2 ก.ย. 2026)
+   * เหตุผลเดียวกับอีกสอง route: **route รันด้วยตัวตนของผู้ใช้ → สิทธิ์ที่ route มี ผู้ใช้มีเท่ากัน**
+   *
+   * 🔴 **แต่ตารางนี้ต่างจากอีกสองใบ และนั่นคือเหตุผลที่มันอยู่ *ก้าวที่ 2* ไม่ใช่ก้าวที่ 1:**
+   * คีย์คือ **คู่** `(ต้นทาง, ปลายทาง, โหมด)` → จักรวาลเป็นกำลังสองของจำนวนสถานที่
+   * **อุ่นล่วงหน้าทั้งหมดไม่ได้** ต่างจากอีกสองใบที่คีย์เดียวต่อสถานที่ (นับได้ → อุ่นได้ครบ)
+   *
+   * ✅ **รูปที่วางไว้สำหรับก้าวที่ 2 — แยก *การขอ* ออกจาก *เนื้อหา*:**
+   *    แคชไม่โดน → route ใส่ **คำขอ** (คีย์ล้วน ตรวจกับคลังแล้ว) ลงคิว → ตอบผู้ใช้ด้วยค่าประมาณไปก่อน
+   *    งานเบื้องหลังอ่านคิว → ยิง Google → เขียนแคช
+   *    🎯 **ผู้ใช้ขอได้ แต่ใส่เนื้อหาไม่ได้** — ซึ่งเป็นสิ่งเดียวที่ต้องกัน
+   *
+   * 📌 ระหว่างนี้ยิง Google ทุกครั้ง = **พฤติกรรมวันนี้เป๊ะ** เพราะแคชไม่เคยมีสิทธิ์ให้เขียนอยู่แล้ว
+   *    (`E2-AC11` ยืนยันกับฐานจริงว่าแคชไม่มีประตูฝั่งไคลเอนต์สักบาน)
+   */
 
   return NextResponse.json({
     durationMinutes: result.durationMinutes,

@@ -1,7 +1,34 @@
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
--- ║ ⚠️ อ่านให้จบก่อนรัน — ไฟล์นี้เคยเปิดรูรั่วจริง และเพิ่งถูกปิดวันเดียวกัน (P1 · 2 ก.ย.) ║
+-- ║ `Q3` ก้าวที่ 1 — แคช **อ่านอย่างเดียว** · ไม่มีใครฝั่งไคลเอนต์เขียนได้เลย     ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
--- 🔴🔴 **สถานะ 2 ก.ย. 2026 (ดึก) — ห้ามรัน · P4 พบข้อที่ทำให้ดีไซน์ทั้งใบไม่ปลอดภัย**
+-- (ผู้ใช้ตัดสิน 2 ก.ย. 2026 · เดิมชื่อ `..._d87_cache_insert_only.sql` — **ชื่อเดิมไม่จริงแล้ว**)
+--
+-- ## ไฟล์นี้ทำอะไร
+--   ① ล้างแถวที่คีย์ไม่ได้พิสูจน์ว่าเป็นของคลังสาธารณะ (+ `do $verify$` ยืนยันว่าไม่เหลือ)
+--   ② `grant select` ให้ `authenticated` บน **สองตาราง** — `place_details_cache` · `place_photo_cache`
+--   ③ policy `for select` สองใบ · **ไม่มี `insert`/`update`/`delete` เลยสักบรรทัด**
+--   · `travel_time_cache` กับ `place_details_local_cache` **ไม่ถูกแตะ** — ยังล็อกสนิทเหมือนเดิม
+--
+-- ## 🔴 สิ่งที่ต้องมีก่อนไฟล์นี้จะมีประโยชน์ (ไม่ใช่ก่อนจะปลอดภัย)
+--   **ตัวเขียนแคชคืองานเบื้องหลังที่ถือ `service_role` และอยู่นอก `app/`** (`D38`)
+--   · ยังไม่มี → รันไฟล์นี้แล้วแคชจะว่างตลอด → route ยิง Google ทุกครั้ง = **พฤติกรรมวันนี้เป๊ะ**
+--   · 🎯 **จึงรันได้โดยไม่ทำให้อะไรแย่ลง แต่ก็ยังไม่ประหยัดอะไรจนกว่าตัวเขียนจะมี**
+--
+-- ## 🔴 สิ่งที่จะแดงเมื่อรันไฟล์นี้ และมันควรแดง
+--   `E2-AC11` (`rlsMatrix.test.ts:4594`) ยืนยันว่าแคช 4 ใบ **ไม่มีประตูฝั่งไคลเอนต์เลยสักบาน**
+--   → ไฟล์นี้เปิดประตู `select` 2 บาน → **เคสนั้นจะแดง**
+--   ⚠️ **ต้องแก้เคสให้รับ `select` (และเฉพาะ `select`) ก่อนรัน — เป็นการอ่อนลงที่ตั้งใจและมีคนรีวิว**
+--   🎯 **ต่างจากฉบับก่อนตรงนี้เอง:** ฉบับก่อนต้องอ่อนเป็น *"ยอมให้เขียนได้"* · ฉบับนี้อ่อนเป็น
+--      *"ยอมให้อ่านได้"* — และเนื้อที่อ่านได้เป็นข้อมูล Google ของสถานที่สาธารณะล้วน หลังข้อ ① ล้างแล้ว
+--
+-- ## 📌 ก้าวที่ 2 (ยังไม่ทำ) — `travel_time_cache`
+--   คีย์เป็น **คู่** → อุ่นล่วงหน้าครบไม่ได้ → ต้องใช้ **คิวคำขอ**: route ใส่คีย์ลงคิว (ตรวจกับคลังแล้ว)
+--   งานเบื้องหลังอ่านคิว → ยิง Google → เขียนแคช · **ผู้ใช้ขอได้ แต่ใส่เนื้อหาไม่ได้**
+--
+-- ════════════════════════════════════════════════════════════════════════════
+-- ## ประวัติ: ฉบับก่อนหน้า (`D87`) ให้ `insert` ด้วย และทำไมมันถูกถอน
+-- **เก็บไว้ทั้งท่อนโดยตั้งใจ** — คนที่จะเพิ่ม `insert` กลับเข้ามาวันหลัง ต้องอ่านเจอว่าทำไมมันเคยถูกถอน
+-- 🔴🔴 **(ต่อไปนี้อธิบายดีไซน์ที่ *ไม่ได้ใช้แล้ว* — อย่าอ่านเป็นสถานะปัจจุบัน)**
 --    เมื่อไม่กี่ชั่วโมงก่อน P1 เขียนตรงนี้เองว่า *"ปิดครบแล้ว รันได้"* — **ถอนคำนั้น**
 --
 --    ## ปัญหา: `route` ไม่ใช่ผู้เขียนคนเดียว และไม่เคยเป็น
@@ -259,63 +286,76 @@ begin
   end if;
 end $purged$;
 
--- ── grant: อ่านได้ · เพิ่มได้ · **ทับไม่ได้ ลบไม่ได้** ─────────────────────────
-grant select, insert on public.place_details_cache to authenticated;
-grant select, insert on public.place_photo_cache   to authenticated;
-grant select, insert on public.travel_time_cache   to authenticated;
+-- ── grant: **อ่านอย่างเดียว** · ไม่มีเขียนเลยสักบิต ────────────────────────────
+-- 🔴 **แก้ 2 ก.ย. 2026 (ดึก) — ผู้ใช้เลือกทาง `Q3` ② แบบสองก้าว · ก้าวที่ 1 คือไฟล์นี้**
+--    ฉบับก่อนหน้าให้ `select, insert` กับสามตาราง · **ถอน `insert` ทั้งหมด**
+--    เหตุผลอยู่ในหัวไฟล์: `insert` ให้ `authenticated` = ให้ผู้ใช้ยิง PostgREST ใส่ของปลอมได้ตรง ๆ
+--
+-- 🎯 **สองตาราง ไม่ใช่สาม — และความต่างคือ *นับคีย์ได้หรือไม่* ไม่ใช่ *ปลอดภัยกว่าหรือไม่***
+--    `place_details_cache` · `place_photo_cache`  → คีย์เดียวต่อสถานที่ → **อุ่นล่วงหน้าได้ครบ**
+--    `travel_time_cache`   → คีย์เป็น *คู่* (ต้นทาง,ปลายทาง,โหมด) → **อุ่นครบไม่ได้ตามนิยาม**
+--    → `travel_time_cache` **อยู่ก้าวที่ 2** (คิวคำขอ) · ไฟล์นี้ไม่แตะมันเลย มันยังล็อกสนิทเหมือนเดิม
+grant select on public.place_details_cache to authenticated;
+grant select on public.place_photo_cache   to authenticated;
 
--- ── policy: RLS เปิดอยู่ → grant อย่างเดียวไม่พอ ต้องมี policy ด้วย ───────────
--- 🔴 **แก้ 2 ก.ย. 2026 — เหตุผลเดิมตรงนี้ *ผิด* และมันผิดในทิศที่อ่านแล้ววางใจ**
---    เดิมเขียนว่า *"แคชสามใบนี้ไม่มีข้อมูลของผู้ใช้สักคอลัมน์ → `using (true)` ไม่ได้เปิดอะไรของใคร"*
---    · **ข้อความส่วน *คอลัมน์* จริง** — เนื้อแถวเป็นข้อเท็จจริงจาก Google ทั้งหมด
---    · 🔴 **แต่ข้อมูลของผู้ใช้ไม่ได้อยู่ในคอลัมน์ มันอยู่ใน *คีย์***
---      `travel_time_cache.from_place_id` เคยถือ `hotel@<lat>,<lng>` (พิกัดที่พัก ระดับเมตร)
---      `place_details_cache.maps_query` / `place_photo_cache.maps_query` ถือ *ข้อความที่ผู้ใช้พิมพ์เอง*
---      เพราะ `placeQueryKey()` คืน `mapsQuery` ตรง ๆ เมื่อสถานที่ไม่มี `googlePlaceId`
---    🎯 **คอมเมนต์เดิมเตือนตัวเองไว้ว่า *"ถ้าวันหนึ่งมีคอลัมน์ที่ผูกกับผู้ใช้ ให้กลับมาแก้"* —
---       และมันไม่เคยดัง เพราะไม่มีคอลัมน์ไหนเพิ่มเลย · **สิ่งที่ผูกกับผู้ใช้เข้ามาทาง *คีย์* ซึ่งไม่มีใครเฝ้า**
---    ✅ วันนี้ `using (true)` ปลอดภัยได้เพราะ **สองอย่างที่ต้องอยู่ครบ ไม่ใช่เพราะเนื้อแถว:**
---       ① ประตูฝั่งเขียนใน route (`catalogPublicSlugs` / `catalogPublicMapsQueries`) — ของใหม่เข้าไม่ได้
---       ② การล้างข้างบน — ของเก่าไม่เหลือ
---    🔴 **ถอดข้อใดข้อหนึ่งออก policy นี้กลับมาอันตรายทันที** — เขียนไว้ตรงนี้เพราะคนอ่าน policy
---       จะไม่ได้เปิดไฟล์ route · **เหตุผลของ policy อยู่คนละไฟล์กับสิ่งที่ทำให้มันจริง**
-create policy travel_time_cache_select        on public.travel_time_cache   for select to authenticated using (true);
-create policy travel_time_cache_insert        on public.travel_time_cache   for insert to authenticated with check (true);
-create policy place_details_cache_select      on public.place_details_cache for select to authenticated using (true);
-create policy place_details_cache_insert      on public.place_details_cache for insert to authenticated with check (true);
-create policy place_photo_cache_select        on public.place_photo_cache   for select to authenticated using (true);
-create policy place_photo_cache_insert        on public.place_photo_cache   for insert to authenticated with check (true);
+-- ── policy: RLS เปิดอยู่ → grant อย่างเดียวไม่พอ ────────────────────────────────
+-- 🔴 **`using (true)` ปลอดภัยที่นี่ด้วยเหตุผลที่ *ต่างจากฉบับก่อน* — อ่านให้จบก่อนลอกไปใช้**
+--    ฉบับก่อนอ้างว่า *"เนื้อแถวไม่มีข้อมูลผู้ใช้"* ซึ่ง **ถูกครึ่งเดียว** (คีย์ต่างหากที่มี)
+--    ฉบับนี้ปลอดภัยเพราะ **ของสามอย่างที่ต้องอยู่ครบ:**
+--      ① **ไม่มีใครฝั่งไคลเอนต์เขียนได้เลย** → ของปลอมเข้าไม่ได้ตั้งแต่แรก
+--      ② การล้างข้างบน → แถวเก่าที่คีย์เป็นข้อมูลผู้ใช้ (`hotel@…` · ข้อความที่ผู้ใช้พิมพ์) ไม่เหลือ
+--      ③ ตัวเขียนเดียวคืองานเบื้องหลัง ซึ่งเขียนเฉพาะคีย์ที่มาจาก `catalog_places`
+--    🔴 **ถอดข้อใดข้อหนึ่งออก `using (true)` กลับมาอันตรายทันที** — โดยเฉพาะ ① ที่อยู่คนละไฟล์
+create policy place_details_cache_select on public.place_details_cache for select to authenticated using (true);
+create policy place_photo_cache_select   on public.place_photo_cache   for select to authenticated using (true);
 
 do $verify$
 declare n int;
 begin
-  -- 🔴 เกณฑ์เชิงผลลัพธ์ ไม่ใช่ "คำสั่งรันผ่าน" — และ **ห้ามมี update/delete หลุดเข้ามา**
+  -- 🔴 **เกณฑ์เชิงผลลัพธ์ ไม่ใช่ "คำสั่งรันผ่าน"** — ถามฐานว่าตอนนี้สิทธิ์เป็นยังไงจริง ๆ
+  --    ⚠️ เขียนเป็น *ห้ามมี* + *ต้องมีเท่านี้* คู่กัน · อย่างแรกอย่างเดียวผ่านได้ด้วยการไม่ให้อะไรเลย
   select count(*) into n
     from information_schema.role_table_grants
-   where grantee = 'authenticated'
-     and table_name in ('place_details_cache','place_photo_cache','travel_time_cache')
-     and privilege_type in ('UPDATE','DELETE');
+   where grantee in ('authenticated','anon','PUBLIC')
+     and table_name in ('place_details_cache','place_photo_cache','travel_time_cache','place_details_local_cache')
+     and privilege_type <> 'SELECT';
   if n > 0 then
-    raise exception '🔴 authenticated ได้ update/delete บนแคช % รายการ — ขัดกับทางเลือก ③ ที่ผู้ใช้เลือก', n;
+    raise exception '🔴 ฝั่งไคลเอนต์ได้สิทธิ์ที่ไม่ใช่ SELECT บนแคช % รายการ — ก้าวที่ 1 ห้ามมีการเขียนเลย', n;
+  end if;
+
+  -- `travel_time_cache` + `place_details_local_cache` ต้องยังล็อกสนิท — ไฟล์นี้ไม่แตะมัน
+  select count(*) into n
+    from information_schema.role_table_grants
+   where grantee in ('authenticated','anon','PUBLIC')
+     and table_name in ('travel_time_cache','place_details_local_cache');
+  if n > 0 then
+    raise exception '🔴 travel_time_cache/place_details_local_cache ได้สิทธิ์ฝั่งไคลเอนต์ % รายการ — ไฟล์นี้ไม่ควรแตะสองใบนี้', n;
   end if;
 
   select count(*) into n
     from information_schema.role_table_grants
    where grantee = 'authenticated'
-     and table_name in ('place_details_cache','place_photo_cache','travel_time_cache')
-     and privilege_type in ('SELECT','INSERT');
-  if n <> 6 then
-    raise exception 'คาด select+insert 6 รายการ (3 ตาราง × 2) ได้ % — ไม่ครบ', n;
+     and table_name in ('place_details_cache','place_photo_cache')
+     and privilege_type = 'SELECT';
+  if n <> 2 then
+    raise exception 'คาด SELECT 2 รายการ (2 ตาราง) ได้ % — ไม่ตรงกับที่ประกาศ', n;
   end if;
 
   select count(*) into n from pg_policies
    where schemaname = 'public'
-     and tablename in ('place_details_cache','place_photo_cache','travel_time_cache');
-  if n <> 6 then
-    raise exception 'คาด policy 6 ใบ ได้ % — grant ผ่านแต่ policy ไม่ครบ = ยังเขียนไม่ลง', n;
+     and tablename in ('place_details_cache','place_photo_cache','travel_time_cache','place_details_local_cache');
+  if n <> 2 then
+    raise exception 'คาด policy 2 ใบ ได้ % — grant กับ policy ต้องตรงกัน', n;
   end if;
 
-  raise notice 'D87: grant select+insert 6 · policy 6 · update/delete 0 — ครบตามทางเลือก ③';
+  -- 🔴 **ทิศบวก** — กันเคสที่ทุกข้อข้างบนผ่านเพราะ *ไม่มีอะไรอยู่เลย*
+  select count(*) into n from pg_policies
+   where schemaname = 'public' and tablename = 'place_details_cache' and cmd = 'SELECT';
+  if n <> 1 then
+    raise exception 'ไม่มี policy SELECT บน place_details_cache — route จะอ่านแคชไม่ได้เลย';
+  end if;
+
+  raise notice 'Q3 ก้าวที่ 1: SELECT 2 · policy 2 · เขียนฝั่งไคลเอนต์ 0 — ครบตามทางที่ผู้ใช้เลือก';
 end $verify$;
 
 commit;
