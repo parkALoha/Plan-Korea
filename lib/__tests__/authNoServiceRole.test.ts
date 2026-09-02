@@ -55,6 +55,8 @@ const SKIP_DIRS = new Set([
 const ALLOWED_ENV: Record<string, string> = {
   CRON_SECRET: "app/api/keep-alive — ความลับฝั่งเซิร์ฟเวอร์ ใช้ยืนยันว่า cron เป็นคนเรียก ไม่ใช่คีย์ฐานข้อมูล",
   GOOGLE_MAPS_API_KEY: "คีย์ Google ฝั่งเซิร์ฟเวอร์ · ไม่มีสิทธิ์อะไรกับ Supabase เลย",
+  TRAVEL_CACHE_KEY_SALT:
+    "salt สำหรับ hash คีย์ travel_time_cache (lib/engine/cacheKey.ts · E3-AC6) — ไม่ใช่ credential ของ Supabase และไม่ให้สิทธิ์อะไรเพิ่มกับใครเลย · หน้าที่เดียวคือทำให้คีย์แคชเดาย้อนไม่ได้ · หักล้างคำอ้างนี้ได้โดยดูว่าไม่มีที่ไหนส่งมันเข้า createClient",
   NODE_ENV: "ตัวแปรของ build tool",
 };
 

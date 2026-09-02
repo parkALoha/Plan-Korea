@@ -4,6 +4,7 @@ import { rateLimitGuard } from "@/lib/rateLimit";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { supabaseConfigured } from "@/lib/supabase";
 import { createServerSupabase } from "@/lib/auth/server";
+import { cacheKeySaltConfigured, hashPlaceKey } from "@/lib/engine/cacheKey";
 import { TRAVEL_MODES, type TravelMode } from "@/lib/schedule";
 
 // ยิงเป็นชุดตอนเปิดหน้าแผน (1 ครั้งต่อคู่จุดที่เลือกโหมดแล้ว) — เผื่อไว้สำหรับทริปที่จุดแวะแน่นกว่านี้
@@ -40,12 +41,27 @@ export async function GET(req: NextRequest) {
    * 🔴 **และตอนนี้ยังไม่มีผลจนกว่า migration จะลงฐาน** — จอดที่ `pending-review/` รอด่านของ P6
    */
   const supabase = await createServerSupabase();
-  if (supabaseConfigured) {
+
+  /**
+   * 🔴 **คีย์ต้องเป็น hash — ค่าดิบคือพิกัดที่พัก/UUID ทริป** (`E3-AC6` · ดู `lib/engine/cacheKey.ts`)
+   * ไม่มี salt = **ไม่แคชเลย** ไม่ใช่ถอยไปเขียนคีย์ดิบ · เงียบไม่ได้ จึงมี `console.error`
+   */
+  const canCache = supabaseConfigured && cacheKeySaltConfigured();
+  if (supabaseConfigured && !cacheKeySaltConfigured()) {
+    console.error(
+      "travel_time_cache: ข้ามการแคชทั้งหมดเพราะยังไม่ได้ตั้ง TRAVEL_CACHE_KEY_SALT — " +
+        "ทุกคำขอจะยิง Google ตรง (ดังโดยตั้งใจ ดีกว่าเขียนคีย์ที่ย้อนกลับได้)"
+    );
+  }
+  const fromKey = canCache ? hashPlaceKey(originPlaceId) : "";
+  const toKey = canCache ? hashPlaceKey(destPlaceId) : "";
+
+  if (canCache) {
     const { data: cached, error: cacheReadErr } = await supabase
       .from("travel_time_cache")
       .select("duration_minutes, distance_meters")
-      .eq("from_place_id", originPlaceId)
-      .eq("to_place_id", destPlaceId)
+      .eq("from_place_id", fromKey)
+      .eq("to_place_id", toKey)
       .eq("travel_mode", mode)
       .maybeSingle();
     noteCacheFailure("travel_time_cache/read", cacheReadErr);
@@ -69,10 +85,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ durationMinutes: null, isReal: false });
   }
 
-  if (supabaseConfigured) {
+  if (canCache) {
     const { error: cacheWriteErr } = await supabase.from("travel_time_cache").upsert({
-      from_place_id: originPlaceId,
-      to_place_id: destPlaceId,
+      from_place_id: fromKey,
+      to_place_id: toKey,
       travel_mode: mode,
       duration_minutes: result.durationMinutes,
       distance_meters: result.distanceMeters,
