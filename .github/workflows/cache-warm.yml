@@ -2,20 +2,27 @@ name: cache-warm
 
 # `Q3` ก้าวที่ 2 — ตัวรัน "อุ่นแคช" ที่ถือ service_role และอยู่นอกเส้นทาง request (P1 ขอ · P6 ทำ)
 #
-# 🔴 ยังเป็น `workflow_dispatch` เท่านั้น ห้ามเปิด `schedule` จนกว่า:
-#    ① P1 เขียนตัวเรียก Google API + ตัวเขียนแคชเสร็จ (ตอนนี้มีแค่ `lib/engine/cacheWarmList.ts`
-#       ซึ่งเป็นตรรกะเลือกคีย์ล้วน ไม่มีผลข้างเคียง — ยังไม่มี entry point ให้ workflow นี้เรียก)
-#    ② ตกลงกันเรื่องเพดานต่อรอบ/ความถี่ที่สอดคล้องกับ rate limit ฝั่ง Google
-#    เปิด schedule ตอนนี้ = รันทุกครั้งที่กด dispatch ใส่สคริปต์ที่ยังไม่มีจริง → step จะ fail เฉยๆ
-#    (ตั้งใจให้ fail แบบนั้น ไม่ใช่ปล่อยให้ดูเหมือนสำเร็จ)
+# 🔴 แก้ 3 ก.ย. 2026 — ตัวเขียนของ P1 เสร็จแล้ว (`lib/engine/cacheWarmWrite.ts` +
+#    `lib/__tests__/cacheWarmRun.test.ts`) ต่อสายจริงแล้ว **แต่ยังเป็น `workflow_dispatch` เท่านั้น**
+#    ห้ามเปิด `schedule` จนกว่า:
+#    ① **ผู้ใช้อนุมัติให้รันครั้งแรก** — ตัวรันนี้ยิง Google จริงและเขียนฐานจริง ไม่เคยถูกรันสักครั้ง
+#       P1 เสนอให้เริ่มด้วย `limit: 3` (ค่า default ของ dispatch input) เพื่อดูรายงานก่อนปล่อยเต็ม
+#    ② ตกลงกันเรื่องความถี่ที่สอดคล้องกับ rate limit ฝั่ง Google (ยังไม่ตัดสิน)
+#    ③ TTL ยังไม่มีมติ — ตัวเขียนนี้เติมเฉพาะคีย์ที่ *ขาด* เท่านั้น ไม่รีเฟรชของเก่า
 #
 # 🔴 อย่าใส่ `CRON_SECRET`/เรียกผ่าน Next.js API — service_role key ต้องอยู่ที่เดียวกับที่มันอยู่แล้ว
-#    (secret ของ job `rls` ใน `ci.yml`) ไม่ใช่โผล่ในที่ที่สาม (ดูเหตุผลเต็มใน handoff/PLAN ที่ P1 ขอ)
+#    (secret ของ job `rls` ใน `ci.yml`) ไม่ใช่โผล่ในที่ที่สาม
+#
+# ⚠️ **ต้องมี secret `GOOGLE_MAPS_API_KEY` (คีย์จริง ไม่ใช่ placeholder ที่ job `verify` ใช้) —
+#    ยังไม่ยืนยันว่ามีอยู่ใน repo secrets** เจ้าของ repo ต้องเพิ่มก่อนรันจริงครั้งแรก
 
 on:
-  workflow_dispatch: {}
-  # schedule:
-  #   - cron: "*/30 * * * *"   # TODO: เปิดพร้อมตัวเรียก Google — ตัดสินความถี่จาก TTL จริง ไม่ใช่เดา
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "เพดานจำนวนคีย์ที่จะอุ่นรอบนี้ (P1 เสนอ 3 สำหรับรันครั้งแรก)"
+        required: false
+        default: "3"
 
 jobs:
   warm:
@@ -40,25 +47,27 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
 
-      # 🔴 TODO(P1): ยังไม่มีสคริปต์นี้จริง — เติมเมื่อ warmTargets() มีตัวเรียก Google + ตัวเขียนแล้ว
-      #    ต้อง: (1) เรียก warmTargets() จาก lib/engine/cacheWarmList.ts พร้อม limit ต่อรอบ
-      #          (2) whitelist self-check ก่อนเขียนทุกแถว (service_role มี BYPASSRLS — ห้ามเชื่อ select ที่อ่านมา)
-      #          (3) rate-limit การยิง Google (sleep ระหว่างคำขอ ไม่ใช่ยิงพร้อมกันหมด)
-      - name: อุ่นแคช (ยังไม่มีสคริปต์ - placeholder)
+      # 🔴 CACHE_WARM_RUN=1 ต้องตั้งชัดเจน — ค่าตั้งต้นของไฟล์เทสต์คือ "ไม่ทำงาน" โดยตั้งใจ
+      #    CACHE_WARM_LIMIT ใช้ envInt() (trim แล้วเช็คว่าง) ไม่ใช่ `??` — GH Actions ให้ input
+      #    ที่เว้นว่างเป็นสตริงว่าง ไม่ใช่ undefined (P6 พิสูจน์แล้วกับ CACHE_MAX_MISSING_* ของ heartbeat)
+      - name: อุ่นแคช (CACHE_WARM_RUN=1)
         id: warm
-        run: |
-          echo "🔴 ยังไม่มี lib/engine/cacheWarm.ts (ตัวเรียก Google + ตัวเขียน) — รอ P1"
-          exit 1
+        run: npx vitest run lib/__tests__/cacheWarmRun.test.ts
         env:
+          CACHE_WARM_RUN: "1"
+          CACHE_WARM_LIMIT: ${{ github.event.inputs.limit }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
-      # 🔴 post-check ตามที่ P1 เสนอ — ใช้ได้แล้วหลัง grant execute (ข้อยกเว้นที่ 7 · `62c1f93`)
-      #    ถ้า cron เผลอเปิดสิทธิ์อะไรระหว่างทาง (เช่น bug เขียนผิดตาราง) ด่านนี้จับก่อนจบ job
-      - name: post-check — service_role ไม่ได้เปิดสิทธิ์อะไรเกิน (assert_cache_lockdown)
-        if: always()
-        run: |
-          echo "🔴 TODO: เรียก app.assert_cache_lockdown() ผ่าน RPC เมื่อมีตัวเขียนจริงให้ทดสอบคู่กัน"
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+      # 🔴 แก้ 3 ก.ย. 2026 (P6) — post-check ที่เคยวางแผนไว้ (`admin.rpc("assert_cache_lockdown")`)
+      #    **เรียกไม่ได้จริง** ไม่ว่าจะมี `grant execute ... to service_role` (ข้อยกเว้นที่ 7) หรือไม่
+      #    ยิงทดสอบจริงแล้วได้ `PGRST` error: "Could not find the function public.assert_cache_lockdown
+      #    ... in the schema cache" — เพราะ `app` schema **ไม่ถูก expose ผ่าน PostgREST เลยโดยตั้งใจ**
+      #    (`guards.sh` ยืนยันเอง: "✅ api-config: ไม่มี db_pre_request · schema app ไม่ถูก expose")
+      #    grant แค่เปิดสิทธิ์ระดับ SQL — ไม่ได้เปิดเส้นทาง REST ให้เรียกถึง ด่านสองอย่างนี้คนละชั้น
+      # 🎯 ไม่มี `pg` connection string ใน CI/`.env.local` (P4 วัดไว้แล้วตอนสร้าง fixture lock)
+      #    → ไม่มีทางเรียกฟังก์ชันใน schema `app` จากที่นี่ได้เลยตอนนี้ ไม่ใช่แค่ยังไม่ได้เขียนโค้ด
+      # 📌 ทางที่เป็นไปได้ถ้าอยากได้ post-check จริง: (ก) เพิ่ม thin wrapper ใน schema `public` ที่เรียก
+      #    `app.assert_cache_lockdown()` ต่อ (ข) เพิ่ม pg connection string เป็น secret แล้วใช้ `pg` แทน
+      #    supabase-js — ทั้งคู่เป็นการตัดสินใจเรื่อง surface ใหม่ ส่งให้ P1 ตัดสิน ไม่ทำเองตรงนี้
