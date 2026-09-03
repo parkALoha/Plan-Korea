@@ -198,6 +198,24 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
           : { kind: "unsupported" },
   [tripCatalogCities, isPlatformTrip, platformItinerary]);
 
+  /* `unreadable` มีสองทางเข้า และหน้าจอบอกไม่ได้ว่าทางไหน — ตั้งใจให้เหมือนกัน เพราะ
+     **ผู้ใช้ทำอย่างเดียวกันทั้งสองกรณี** (ต่อเน็ตแล้วลองใหม่) · ข้อความสองแบบจะสร้างความสับสนเปล่า
+     🔴 แต่ *คนไล่บั๊ก* ต้องแยกได้ — และมันเสียเวลาจริงไปแล้วหนึ่งรอบ (P3 เจอ · 3 ก.ย. 2026):
+     `DayPlanUnavailableNotice` ถูกเรนเดอร์จาก 3 หน้า → **ข้อความบนจอระบุหน้าไม่ได้ และระบุสาเหตุก็ไม่ได้**
+     ⇒ บอกเฉพาะฝั่งนักพัฒนา · ผู้ใช้ไม่เห็นความต่างสักตัวอักษร
+     📌 อยู่ในเอฟเฟกต์ไม่ใช่ในเนื้อ render — `console.warn` ตอน render เป็น side effect (`react-hooks/purity`)
+        และจะดังซ้ำทุกรอบที่ re-render · ที่นี่ดังเมื่อ *สถานะเปลี่ยน* เท่านั้น */
+  const catalogStatus = tripCatalogCities.status;
+  const itineraryStatus = platformItinerary.status;
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (catalogStatus !== "error" && !(isPlatformTrip && itineraryStatus === "error")) return;
+    console.warn(
+      `[dayPlan] unreadable · catalogCities=${catalogStatus} · platformItinerary=${itineraryStatus}` +
+        ` · isPlatformTrip=${isPlatformTrip}`,
+    );
+  }, [catalogStatus, itineraryStatus, isPlatformTrip]);
+
   // ห่อ `useMemo` เพราะค่าเป็นเงื่อนไข — ปล่อยลอยแล้ว React Compiler รักษา memo ที่ต่อจากมันไม่ได้
   // (แบบเดียวกับ `platformCityIdByDayId` · `allCardsForCity` ใน `PlaceSidebar`)
   const itinerary = useMemo(
