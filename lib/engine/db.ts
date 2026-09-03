@@ -283,14 +283,40 @@ export async function catalogKeyRows(db: Db) {
   }
 }
 
-/** คีย์ที่มีแถวอยู่แล้วใน `place_details_cache` */
-export async function cachedDetailKeys(db: Db) {
+/**
+ * **อายุแคชสูงสุด — ผู้ใช้ตัดสิน 3 ก.ย. 2026: 30 วัน**
+ *
+ * 🔴 **ก่อนหน้านี้แคชไม่มีวันหมดอายุเลย** — เก็บแล้วเก็บเลย · P6 จดไว้ใน `4f26483`
+ *    ว่า heartbeat ตรวจ *ความครบ* ไม่ได้ตรวจ *ความสด* · ใบนี้ปิดครึ่งหลัง
+ *
+ * 🎯 **สองฟิลด์ที่เอกสารของเราเองจัดว่าเน่าเร็วที่สุดคือเวลาเปิด-ปิดกับเรตติ้ง**
+ *    · 30 วันยังห่างจากทริป 11–21 ต.ค. พอที่ข้อมูลจะสดตอนใช้จริง
+ *    · ราคาคือเรียก Google เพิ่มประมาณเดือนละรอบต่อคีย์
+ *
+ * ⚠️ **ตัวเลขนี้เป็นการแลก ไม่ใช่ค่าที่ถูกต้องทางเทคนิค** — เปลี่ยนได้ แต่ต้องเป็นการเลือก
+ */
+export const CACHE_MAX_AGE_DAYS = 30;
+
+function freshSince(maxAgeDays: number): string {
+  return new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+}
+
+/**
+ * คีย์ที่มีแถว **ที่ยังสด** อยู่ใน `place_details_cache`
+ *
+ * 🔴 **แถวที่เก่ากว่า `maxAgeDays` ถูกนับว่า "ยังไม่มี" โดยตั้งใจ** — ไม่ใช่บั๊ก
+ *    ⇒ มันจะกลับไปอยู่ในรายการที่ต้องอุ่นเอง **โดยไม่ต้องแก้ `warmTargets` เลยสักบรรทัด**
+ * 🎯 นี่คือเหตุผลที่ TTL ลงที่ *ตัวอ่าน* ไม่ใช่ที่ *ตัวเลือกเป้าหมาย* —
+ *    ตัวเลือกเป้าหมายถามว่า "อะไรยังไม่มีแคชที่ใช้ได้" ซึ่งเป็นคำถามที่ถูกอยู่แล้ว
+ */
+export async function cachedDetailKeys(db: Db, maxAgeDays = CACHE_MAX_AGE_DAYS) {
   const out: string[] = [];
   for (let from = 0; ; from += WARM_PAGE) {
     // 🔴 ตารางแคชไม่อยู่ใน `EngineTable` โดยตั้งใจ → ใช้ `db.from()` ตรงเหมือนที่ `route` ทำ
     const { data, error } = await db
       .from("place_details_cache")
       .select("maps_query")
+      .gte("fetched_at", freshSince(maxAgeDays))
       .range(from, from + WARM_PAGE - 1);
     if (error || !data) return null;
     for (const r of data) out.push(r.maps_query);
@@ -298,14 +324,22 @@ export async function cachedDetailKeys(db: Db) {
   }
 }
 
-/** คีย์ที่มีแถวอยู่แล้วใน `place_photo_cache` */
-export async function cachedPhotoKeys(db: Db) {
+/**
+ * คีย์ที่มีแถว **ที่ยังสด** อยู่ใน `place_photo_cache`
+ *
+ * 🔴 **แถวที่เก่ากว่า `maxAgeDays` ถูกนับว่า "ยังไม่มี" โดยตั้งใจ** — ไม่ใช่บั๊ก
+ *    ⇒ มันจะกลับไปอยู่ในรายการที่ต้องอุ่นเอง **โดยไม่ต้องแก้ `warmTargets` เลยสักบรรทัด**
+ * 🎯 นี่คือเหตุผลที่ TTL ลงที่ *ตัวอ่าน* ไม่ใช่ที่ *ตัวเลือกเป้าหมาย* —
+ *    ตัวเลือกเป้าหมายถามว่า "อะไรยังไม่มีแคชที่ใช้ได้" ซึ่งเป็นคำถามที่ถูกอยู่แล้ว
+ */
+export async function cachedPhotoKeys(db: Db, maxAgeDays = CACHE_MAX_AGE_DAYS) {
   const out: string[] = [];
   for (let from = 0; ; from += WARM_PAGE) {
     // 🔴 ตารางแคชไม่อยู่ใน `EngineTable` โดยตั้งใจ → ใช้ `db.from()` ตรงเหมือนที่ `route` ทำ
     const { data, error } = await db
       .from("place_photo_cache")
       .select("maps_query")
+      .gte("fetched_at", freshSince(maxAgeDays))
       .range(from, from + WARM_PAGE - 1);
     if (error || !data) return null;
     for (const r of data) out.push(r.maps_query);

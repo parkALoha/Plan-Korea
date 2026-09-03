@@ -105,12 +105,31 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
           return ok.size === 0 && keys.length > 0 ? null : ok;   // ว่างทั้งที่ถามไป = ถามไม่ได้ → fail-closed
         },
         writeRows: async (rows) => {
+          // 🔴 **ลบแล้วค่อยแทรก — ไม่ใช่ `upsert`** (TTL 30 วัน · ผู้ใช้ตัดสิน 3 ก.ย. 2026)
+          //
+          // ฉบับก่อนหน้าใช้ `upsert({ ignoreDuplicates: true })` = `on conflict do nothing`
+          // · **ถูกต้องตราบใดที่เป้าหมายมีแต่คีย์ที่ยังไม่มีแถว** ซึ่งจริงก่อนมี TTL
+          // 🔴 **พอมี TTL แถวเก่าจะกลับมาเป็นเป้าหมาย แล้วชนของเดิม**
+          //    → `do nothing` **ข้ามเงียบ** → `error` เป็น null → คืน `rows.length`
+          //    ⇒ ***รายงานว่าเขียนสำเร็จ ทั้งที่ไม่มีอะไรถูกเขียน*** · รอบหน้าจ่ายค่า Google ซ้ำอีก
+          //    · ⚠️ **ไม่มีอะไรในรายงานบอกเลย** — ตัวเลข `written` อ่านเหมือนเดิมทุกประการ
+          //
+          // 🔴 **ทำไมไม่ใช้ `upsert` ที่เขียนทับ:** `service_role` มีแค่ `select, insert, delete`
+          //    (ข้อยกเว้นที่ 5) — **ไม่มี `update`** ⇒ `on conflict do update` จะได้ `42501`
+          //    ✅ เลือกลบ+แทรก **แทนการขอสิทธิ์เพิ่ม** — ทางที่ไม่ต้องขอสิทธิ์มีอยู่จริงในใบนี้
+          //
+          // ⚠️ **ลำดับสำคัญ: ดึงจาก Google ให้สำเร็จก่อน แล้วค่อยลบ**
+          //    `warmCache` เรียก `writeRows` หลัง `fetchOne` สำเร็จเท่านั้น
+          //    ⇒ **ไม่มีทางที่เราจะลบของเก่าทิ้งแล้วไม่มีอะไรมาแทน**
+          const fresh = new Date().toISOString();
+          const { error: delErr } = await admin
+            .from("place_details_cache")
+            .delete()
+            .in("maps_query", rows.map((r) => r.maps_query));
+          if (delErr) return null;
           const { error } = await admin
             .from("place_details_cache")
-            .upsert(rows.map((r) => ({ ...r, fetched_at: new Date().toISOString() })), {
-              onConflict: "maps_query",
-              ignoreDuplicates: true,   // ไม่เขียนทับของเดิม — การรีเฟรชยังไม่มีมติ
-            });
+            .insert(rows.map((r) => ({ ...r, fetched_at: fresh })));
           return error ? null : rows.length;
         },
       });
@@ -154,12 +173,31 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
             return ok.size === 0 && keys.length > 0 ? null : ok;
           },
           writeRows: async (rows) => {
+            // 🔴 **ลบแล้วค่อยแทรก — ไม่ใช่ `upsert`** (TTL 30 วัน · ผู้ใช้ตัดสิน 3 ก.ย. 2026)
+            //
+            // ฉบับก่อนหน้าใช้ `upsert({ ignoreDuplicates: true })` = `on conflict do nothing`
+            // · **ถูกต้องตราบใดที่เป้าหมายมีแต่คีย์ที่ยังไม่มีแถว** ซึ่งจริงก่อนมี TTL
+            // 🔴 **พอมี TTL แถวเก่าจะกลับมาเป็นเป้าหมาย แล้วชนของเดิม**
+            //    → `do nothing` **ข้ามเงียบ** → `error` เป็น null → คืน `rows.length`
+            //    ⇒ ***รายงานว่าเขียนสำเร็จ ทั้งที่ไม่มีอะไรถูกเขียน*** · รอบหน้าจ่ายค่า Google ซ้ำอีก
+            //    · ⚠️ **ไม่มีอะไรในรายงานบอกเลย** — ตัวเลข `written` อ่านเหมือนเดิมทุกประการ
+            //
+            // 🔴 **ทำไมไม่ใช้ `upsert` ที่เขียนทับ:** `service_role` มีแค่ `select, insert, delete`
+            //    (ข้อยกเว้นที่ 5) — **ไม่มี `update`** ⇒ `on conflict do update` จะได้ `42501`
+            //    ✅ เลือกลบ+แทรก **แทนการขอสิทธิ์เพิ่ม** — ทางที่ไม่ต้องขอสิทธิ์มีอยู่จริงในใบนี้
+            //
+            // ⚠️ **ลำดับสำคัญ: ดึงจาก Google ให้สำเร็จก่อน แล้วค่อยลบ**
+            //    `warmCache` เรียก `writeRows` หลัง `fetchOne` สำเร็จเท่านั้น
+            //    ⇒ **ไม่มีทางที่เราจะลบของเก่าทิ้งแล้วไม่มีอะไรมาแทน**
+            const fresh = new Date().toISOString();
+            const { error: delErr } = await admin
+              .from("place_photo_cache")
+              .delete()
+              .in("maps_query", rows.map((r) => r.maps_query));
+            if (delErr) return null;
             const { error } = await admin
               .from("place_photo_cache")
-              .upsert(rows.map((r) => ({ ...r, fetched_at: new Date().toISOString() })), {
-                onConflict: "maps_query",
-                ignoreDuplicates: true,
-              });
+              .insert(rows.map((r) => ({ ...r, fetched_at: fresh })));
             return error ? null : rows.length;
           },
         },
