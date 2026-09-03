@@ -1,0 +1,20 @@
+# ตารางแคชที่ `authenticated` มีสิทธิ์ **บางส่วน** — ต่างจาก `no-policy-tables` (ศูนย์ทุกอย่าง)
+#
+# 🔴 รายชื่ออยู่ในไฟล์เพื่อให้ **การเพิ่ม/แก้สิทธิ์ = การขยายสิทธิ์ ที่มีคน review เห็น**
+#    เหมือน `.github/no-policy-tables` ทุกประการ ต่างกันแค่ *กฎ* ที่ผูกกับรายการนี้
+#
+# รูปแบบ: `<table>:<priv1>,<priv2>,...` — privilege ที่ระบุคือสิ่งเดียวที่ `authenticated`
+# ได้รับอนุญาต ไม่มีอะไรมากกว่านั้น (ไม่มี `update`/`delete`/`anon`/`public` เสมอ ไม่ว่าจะระบุอะไร)
+# ปิด RLS ห้ามเสมอ · policy ที่ไม่ระบุ `to authenticated` ชัดเจน (default = public) ห้ามเสมอ
+#
+# 🔴 แก้ 3 ก.ย. 2026 (P6) — ไฟล์นี้แทนที่ `.github/insert-only-cache-tables` เดิม
+#    `D87` ให้ select+insert 3 ใบ ถูก `Q3` ทับภายในวันเดียว: ตอนนี้เหลือ **select อย่างเดียว 2 ใบ**
+#    🎯 **จึงเปลี่ยนจากทิศ "insert-only" ตายตัว เป็น privilege ต่อบรรทัด** — ครั้งก่อนเปลี่ยนดีไซน์
+#    ต้องแก้ logic ใน `check-cache-lockdown.py`, ครั้งนี้แก้แค่ไฟล์นี้พอ ถ้า privilege ที่อนุญาต
+#    เปลี่ยนอีก (เช่น `Q3` ก้าวถัดไปเปิด insert คืนแบบมีประตู) ไม่ต้องแตะโค้ดด่านเลย
+#    ดูเหตุผลเต็มที่ migration `20260902160000_q3_step1_cache_read_only.sql`
+#
+# ⚠️ `travel_time_cache` **ไม่ได้อยู่ในไฟล์นี้** — `Q3` ไม่แตะมัน ยังอยู่ `no-policy-tables` (ศูนย์ทุกอย่าง)
+
+place_details_cache:select
+place_photo_cache:select

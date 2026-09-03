@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""ด่าน — ตารางแคชต้องอยู่ในระดับสิทธิ์ที่ประกาศไว้ ไม่มากไปไม่น้อยไป (P-33 · `D87`)
+"""ด่าน — ตารางแคชต้องอยู่ในระดับสิทธิ์ที่ประกาศไว้ ไม่มากไปไม่น้อยไป (P-33 · `Q3`)
 
-ใช้:  .github/check-cache-lockdown.py <locked-list> <insert-only-list> <migration.sql> [...]
+ใช้:  .github/check-cache-lockdown.py <locked-list> <client-privileges-list> <migration.sql> [...]
 คืน:  0 = ไม่มีใครเปิดสิทธิ์เกินที่ประกาศ · 1 = เจอ statement ที่เปิดเกิน
 
 🔴 ที่มา: P1 เขียนคอมเมนต์ไว้ในไฟล์ migration ว่า
    *"ไม่มี `create policy` ในไฟล์นี้เลยสักบรรทัด และนั่นคือของที่ต้องตรวจว่ายังจริง"*
    **แต่คอมเมนต์ไม่ใช่ด่าน** — ไฟล์นี้คือการทำให้ประโยคนั้นมีคนบังคับ
 
-🔴 แก้ 2 ก.ย. 2026 (P6 · `D87` ③) — เดิมมีระดับเดียว (ศูนย์ policy/grant ทั้งหมด)
-   ตอนนี้มีสองระดับ เพราะผู้ใช้ตัดสินให้แคช 3 ใบ "เขียนได้ ทับไม่ได้":
-   · **locked** — เหมือนเดิมทุกตัวอักษร: ศูนย์ policy · ศูนย์ grant ให้ client · RLS ต้องเปิด
-   · **insert-only** — `select`/`insert` ให้ `authenticated` เท่านั้นผ่านได้ · `update`/`delete`/
-     `anon`/`public`/ปิด RLS ยังห้ามเหมือนเดิม
-   🎯 **การเปลี่ยนคือเปลี่ยนคำถามของด่าน ไม่ใช่เลิกถาม** — ตารางที่ย้ายไป insert-only ยังถูกด่าน
-      คุมอยู่ แค่คำตอบที่ยอมรับได้กว้างขึ้นเฉพาะ select/insert/authenticated
+🔴 แก้ 3 ก.ย. 2026 (P6) — เดิม (2 ก.ย. · `D87` ③) มีระดับที่สองแบบตายตัว ("insert-only":
+   select+insert เท่านั้นผ่านได้) แต่ `Q3` ทับ `D87` ภายในวันเดียว (select อย่างเดียว 2 ตาราง
+   ไม่มี insert เลย) → **ถ้ายังฮาร์ดโค้ด privilege ไว้ในโค้ด ด่านจะแดงใส่มติใหม่ที่ถูกต้อง**
+   ตอนนี้ privilege ที่อนุญาตมาจาก `.github/cache-client-privileges` (รูป `table:priv1,priv2`)
+   ไม่ใช่ค่าคงที่ในโค้ด — ครั้งหน้าที่มติเปลี่ยนอีก แก้แค่ไฟล์รายชื่อ ไม่ต้องแตะ logic
+   · **locked** — ยังเหมือนเดิมทุกตัวอักษร: ศูนย์ policy · ศูนย์ grant ให้ client · RLS ต้องเปิด
+   · **client-privileges** — เฉพาะ privilege ที่ระบุต่อตารางเท่านั้นผ่านได้ ให้ `authenticated`
+     เท่านั้น · `update`/`delete`/`anon`/`public`/ปิด RLS ยังห้ามเสมอไม่ว่าจะระบุ privilege อะไร
 
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ ⚠️ **ขอบเขต: นี่คือครึ่งฝั่งไฟล์ ไม่ใช่ทั้งเรื่อง**                          ║
@@ -59,6 +60,17 @@ def read_tables(path: str) -> list:
             if l.strip() and not l.strip().startswith("#")]
 
 
+def read_privileges(path: str) -> dict:
+    """อ่าน `.github/cache-client-privileges` — รูป `table:priv1,priv2` ต่อบรรทัด"""
+    out = {}
+    for line in read_tables(path):
+        table, _, privs = line.partition(":")
+        table = table.strip()
+        priv_set = {p.strip() for p in privs.split(",") if p.strip()}
+        out[table] = priv_set
+    return out
+
+
 def policy_roles(st: str) -> set:
     """คืนเซตของ role ที่ policy นี้ใช้กับ — **ไม่ระบุ `to` = default `public`** (นิยามของ Postgres)"""
     m = TO_ROLES.search(st)
@@ -86,7 +98,7 @@ def grant_parts(st: str):
 def check_locked(st: str, hit: str, path: str) -> int:
     if st.startswith("create policy") or st.startswith("alter policy"):
         print(f"🔴 cache-lockdown: {path} สร้าง/แก้ policy บน `{hit}` (locked)")
-        print(f"   → ตารางนี้ต้องมี **ศูนย์ policy** (P-33) · ถ้าตั้งใจจริงต้องย้ายไปรายการ insert-only และให้ P1 อนุมัติ")
+        print("   → ตารางนี้ต้องมี **ศูนย์ policy** (P-33) · ถ้าตั้งใจจริงต้องย้ายไป cache-client-privileges และให้ P1 อนุมัติ")
         return 1
     if st.startswith("grant"):
         _, grantee = grant_parts(st)
@@ -102,16 +114,16 @@ def check_locked(st: str, hit: str, path: str) -> int:
     return 0
 
 
-def check_insert_only(st: str, hit: str, path: str) -> int:
+def check_scoped(st: str, hit: str, allowed: set, path: str) -> int:
     if st.startswith("create policy") or st.startswith("alter policy"):
         cmd = policy_cmd(st)
         roles = policy_roles(st)
-        if cmd in ("update", "delete", "all"):
-            print(f"🔴 cache-lockdown: {path} policy บน `{hit}` (insert-only) ครอบคลุม `{cmd}`")
-            print("   → `D87` ③ ยอมแค่ select/insert · update/delete ต้องไม่มี policy เลย")
+        if cmd == "all" or cmd not in allowed:
+            print(f"🔴 cache-lockdown: {path} policy บน `{hit}` ครอบคลุม `{cmd}` — อนุญาตแค่ {sorted(allowed)}")
+            print("   → แก้ `.github/cache-client-privileges` ก่อนถ้าตั้งใจขยายจริง (ต้อง P1 อนุมัติ)")
             return 1
         if roles - {"authenticated"}:
-            print(f"🔴 cache-lockdown: {path} policy บน `{hit}` (insert-only) ให้ role {sorted(roles)}")
+            print(f"🔴 cache-lockdown: {path} policy บน `{hit}` ให้ role {sorted(roles)}")
             print("   → ต้องระบุ `to authenticated` เท่านั้น · ไม่ระบุ `to` = default public = รั่วให้ anon")
             return 1
         return 0
@@ -123,16 +135,16 @@ def check_insert_only(st: str, hit: str, path: str) -> int:
             #    ยังคุมสิทธิ์ service_role ไม่ได้ที่นี่ — service_role มี BYPASSRLS อยู่แล้วโดยนิยาม
             return 0
         if client_roles - {"authenticated"}:
-            print(f"🔴 cache-lockdown: {path} grant บน `{hit}` (insert-only) ให้ {grantee[:60]}")
-            print("   → `D87` ③ ให้ `authenticated` เท่านั้น ไม่ให้ `anon`/`public`")
+            print(f"🔴 cache-lockdown: {path} grant บน `{hit}` ให้ {grantee[:60]}")
+            print("   → อนุญาตแค่ `authenticated` ไม่ให้ `anon`/`public`")
             return 1
-        if privs - {"select", "insert"}:
-            print(f"🔴 cache-lockdown: {path} grant `{sorted(privs)}` บน `{hit}` (insert-only)")
-            print(f"   → `D87` ③ ยอมแค่ select/insert · ผู้รับ: {grantee[:60]}")
+        if privs - allowed:
+            print(f"🔴 cache-lockdown: {path} grant `{sorted(privs)}` บน `{hit}` — อนุญาตแค่ {sorted(allowed)}")
+            print(f"   → ผู้รับ: {grantee[:60]} · แก้ `.github/cache-client-privileges` ก่อนถ้าตั้งใจขยายจริง")
             return 1
         return 0
     if "disable row level security" in st:
-        print(f"🔴 cache-lockdown: {path} ปิด RLS บน `{hit}` (insert-only)")
+        print(f"🔴 cache-lockdown: {path} ปิด RLS บน `{hit}`")
         print("   → RLS ต้องเปิดเสมอ ไม่ว่าจะอยู่ระดับไหน")
         return 1
     return 0
@@ -140,9 +152,9 @@ def check_insert_only(st: str, hit: str, path: str) -> int:
 
 def main(argv) -> int:
     if len(argv) < 3:
-        print("ใช้: check-cache-lockdown.py <locked-list> <insert-only-list> <migration...>")
+        print("ใช้: check-cache-lockdown.py <locked-list> <client-privileges-list> <migration...>")
         return 1
-    locked_file, insert_only_file, paths = argv[0], argv[1], argv[2:]
+    locked_file, priv_file, paths = argv[0], argv[1], argv[2:]
 
     try:
         locked = read_tables(locked_file)
@@ -150,14 +162,18 @@ def main(argv) -> int:
         print(f"🔴 cache-lockdown: เปิด {locked_file} ไม่ได้ — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
         return 1
     try:
-        insert_only = read_tables(insert_only_file)
+        privileges = read_privileges(priv_file)
     except OSError:
-        print(f"🔴 cache-lockdown: เปิด {insert_only_file} ไม่ได้ — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
+        print(f"🔴 cache-lockdown: เปิด {priv_file} ไม่ได้ — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
         return 1
-    if not locked and not insert_only:
-        print(f"🔴 cache-lockdown: {locked_file} และ {insert_only_file} ไม่มีชื่อตารางเลย — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
+    if not locked and not privileges:
+        print(f"🔴 cache-lockdown: {locked_file} และ {priv_file} ไม่มีชื่อตารางเลย — ตรวจไม่ได้ ถือว่าไม่ผ่าน")
         return 1
-    overlap = set(locked) & set(insert_only)
+    for table, privs in privileges.items():
+        if not privs:
+            print(f"🔴 cache-lockdown: {priv_file} — `{table}` ไม่มี privilege ระบุหลัง `:` — รูปแบบต้องเป็น table:priv1,priv2")
+            return 1
+    overlap = set(locked) & set(privileges)
     if overlap:
         print(f"🔴 cache-lockdown: ตาราง {sorted(overlap)} อยู่ทั้งสองรายการพร้อมกัน — นิยามขัดกัน")
         return 1
@@ -173,13 +189,13 @@ def main(argv) -> int:
             if hit_locked:
                 bad += check_locked(st, hit_locked, path)
                 continue
-            hit_insert = next((t for t in insert_only if t in st), None)
-            if hit_insert:
-                bad += check_insert_only(st, hit_insert, path)
+            hit_scoped = next((t for t in privileges if t in st), None)
+            if hit_scoped:
+                bad += check_scoped(st, hit_scoped, privileges[hit_scoped], path)
 
     if bad:
         return 1
-    print(f"✅ cache-lockdown: {len(locked)} ตาราง locked + {len(insert_only)} ตาราง insert-only "
+    print(f"✅ cache-lockdown: {len(locked)} ตาราง locked + {len(privileges)} ตาราง client-scoped "
           "ยังอยู่ในสิทธิ์ที่ประกาศไว้")
     return 0
 

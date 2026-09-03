@@ -409,25 +409,26 @@ if [ "${#mds[@]}" -gt 0 ]; then
   fi
 fi
 
-# ── ตารางแคชต้องอยู่ในระดับสิทธิ์ที่ประกาศไว้ — locked หรือ insert-only (P-33 · D87) ────
+# ── ตารางแคชต้องอยู่ในระดับสิทธิ์ที่ประกาศไว้ — locked หรือ client-scoped (P-33 · Q3) ────
 # 🔴 migration เขียนคอมเมนต์ไว้เองว่า "ไม่มี create policy ในไฟล์นี้เลย และนั่นคือของที่ต้องตรวจ"
 #    **คอมเมนต์ไม่ใช่ด่าน** — ตรงนี้คือคนที่บังคับประโยคนั้น
 # ⚠️ ครึ่งฝั่งไฟล์เท่านั้น · สิทธิ์ที่มาทาง default privileges / role สืบทอด / definer
 #    **มองไม่เห็น** ต้องวัดที่ฐาน (ชุด rlsMatrix) — รายละเอียดในหัว check-cache-lockdown.py
-# 🔴 แก้ 2 ก.ย. 2026 (P6 · D87 ③) — สองรายการ ไม่ใช่รายการเดียว: `no-policy-tables`
-#    (ศูนย์ policy/grant ทั้งหมด) + `insert-only-cache-tables` (select/insert ให้ authenticated ได้)
+# 🔴 แก้ 3 ก.ย. 2026 (P6) — สองรายการ: `no-policy-tables` (ศูนย์ policy/grant ทั้งหมด) +
+#    `cache-client-privileges` (privilege ต่อตาราง เช่น `table:select` — ไม่ใช่ทิศตายตัวอีกแล้ว
+#    หลัง `D87`→`Q3` เปลี่ยนดีไซน์ภายในวันเดียว ดูเหตุผลในหัว check-cache-lockdown.py)
 LOCKDOWN="$(cd "$(dirname "$0")" && pwd)/check-cache-lockdown.py"
 LOCKLIST="${CACHE_TABLES_FILE:-$(cd "$(dirname "$0")" && pwd)/no-policy-tables}"
-INSERTONLYLIST="${CACHE_INSERT_ONLY_FILE:-$(cd "$(dirname "$0")" && pwd)/insert-only-cache-tables}"
+CLIENTPRIVLIST="${CACHE_CLIENT_PRIVILEGES_FILE:-$(cd "$(dirname "$0")" && pwd)/cache-client-privileges}"
 if [ -d "$MIGDIR" ]; then
   lmigs=""
   for f in "$MIGDIR"/*.sql; do [ -e "$f" ] && lmigs="$lmigs $f"; done
   if [ -n "$lmigs" ]; then
-    if [ ! -f "$LOCKDOWN" ] || [ ! -f "$LOCKLIST" ] || [ ! -f "$INSERTONLYLIST" ]; then
+    if [ ! -f "$LOCKDOWN" ] || [ ! -f "$LOCKLIST" ] || [ ! -f "$CLIENTPRIVLIST" ]; then
       echo "🔴 cache-lockdown: หาสคริปต์หรือไฟล์รายชื่อไม่เจอ — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
       fail=1
     # shellcheck disable=SC2086
-    elif ! python3 "$LOCKDOWN" "$LOCKLIST" "$INSERTONLYLIST" $lmigs; then
+    elif ! python3 "$LOCKDOWN" "$LOCKLIST" "$CLIENTPRIVLIST" $lmigs; then
       fail=1
     fi
   fi
