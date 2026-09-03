@@ -18,9 +18,13 @@ name: cache-heartbeat
 # 📌 ปรับเพดานโดยไม่ต้องแก้ไฟล์เทสต์: ตั้ง `CACHE_MAX_MISSING_DETAILS`/`CACHE_MAX_MISSING_PHOTOS`
 #    ใน step ด้านล่าง (ว่าง/ไม่ตั้ง = ใช้ default 141 ของไฟล์เทสต์) — ตั้ง `=0` ได้ทันทีที่ตัวเขียนพร้อม
 #
+# 🔴 แก้ 3 ก.ย. 2026 (P6) — P1 อุ่น `place_details_cache` จริงแล้ว (174/174 · ขาด 0) เพดาน
+#    `_DETAILS` เดิม (141) จึงล้าแล้ว ลดเป็น `0` ตามที่ heartbeat เตือน (วัดซ้ำเองก่อนแก้ ไม่เชื่อรายงาน)
+#    · `place_photo_cache` **ยังไม่ถูกอุ่น** (P1 ตั้งใจรอให้เห็นเลขแยกก่อน — คำขอ Google คนละชนิด)
+#    วัดจริง (3 ก.ย.): คลัง 174 · แคชแล้ว 33 · ขาด 141 เท่าเดิม → `_PHOTOS` ยังคงค่า default (141) ไว้
+#
 # 🔴 ยังเป็น `workflow_dispatch` เท่านั้น — เปิด `schedule` พร้อมกับ `cache-warm.yml`
-#    ยิงจริงวันนี้ (3 ก.ย.) ได้ **141 คีย์ขาดทั้งสองตาราง** = เพดานเริ่มต้นพอดี ผ่านแบบไม่มี headroom
-#    เปิด schedule ตอนนี้ยังไม่มีประโยชน์ (ตัวอุ่นยังไม่มี ทุกรอบจะวัดค่าเดิม)
+#    (ยังรอผู้ใช้ยืนยัน secret `GOOGLE_MAPS_API_KEY` ตาม `cache-warm.yml`)
 
 on:
   workflow_dispatch: {}
@@ -45,14 +49,14 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
 
-      # 🔴 ยิงจริงแล้ว (P6 · 3 ก.ย. 2026) — เขียวตอนนี้ถูกต้อง (ขาด 141 = เพดานเริ่มต้นพอดี)
+      # 🔴 ลด _DETAILS เหลือ 0 แล้ว (P6 · 3 ก.ย. 2026) — place_details_cache อุ่นครบจริง วัดซ้ำเองยืนยัน
       #    RLS_MATRIX_REQUIRED=1 ตามธรรมเนียมไฟล์อื่นทุกไฟล์ในชุดสด — "ข้าม" ต้องกลายเป็น "ล้ม"
-      #    ตั้ง CACHE_MAX_MISSING_* ว่างไว้ = ใช้ default 141 ของไฟล์เทสต์ · ลดเหลือ 0 เมื่อตัวอุ่นพร้อม
+      #    _PHOTOS ยังว่าง = ใช้ default 141 ของไฟล์เทสต์ (photos ยังไม่ถูกอุ่น — วัดจริงตรงกัน)
       - name: จำนวนคีย์ที่ยังไม่ได้อุ่น เทียบเพดาน
         run: npx vitest run lib/__tests__/cacheHeartbeat.test.ts
         env:
           RLS_MATRIX_REQUIRED: "1"
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
-          CACHE_MAX_MISSING_DETAILS: ""
+          CACHE_MAX_MISSING_DETAILS: "0"
           CACHE_MAX_MISSING_PHOTOS: ""
