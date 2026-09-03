@@ -98,7 +98,18 @@ describe("ความครบของ matrix — ตรวจตัวรา�
    *
    * **① ชื่อ policy ที่เป็นสตริงมีช่องว่างมองไม่เห็นเลย** — `(\S+)` หยุดที่ช่องว่างแรก
    * `drop policy if exists "anyone can read booking-files" on storage.objects …` **ไม่ match**
-   * → 4 policy บนไฟล์ตั๋วทริปจริงหลุดจากพินทุกตัว · `D87` เขียนเตือนเรื่องนี้ไว้ในตัว migration เอง
+   *
+   * 🔴 **แก้คำอ้างของตัวเองในวันเดียวกัน — ข้อความคอมมิต `6274da0` เขียนผลกระทบเกินจริง (P4)**
+   * ผมเขียนว่า *"4 policy บนไฟล์ตั๋วทริปจริงหลุดจากพินทุกตัว"* — **ไม่จริง**
+   * วัดแล้ว: คำสั่งที่ชื่อมีเครื่องหมายคำพูด **เป็น `drop policy if exists` ทั้ง 4 ตัว**
+   * และเป็นการถอน policy *เก่า* ที่ไม่มี `create` คู่กันในไฟล์ชุดนี้เลย
+   * ⇒ ตัวแจงเดิมมองไม่เห็นมัน แล้ว `out.delete(key)` ของคีย์ที่ไม่มีอยู่ = **ไม่มีผลต่อแผนที่**
+   * ⇒ policy ที่คุ้มไฟล์ตั๋วจริงวันนี้คือ `objects.booking_files_{select,insert,update,delete}`
+   *    **ชื่อเปล่า ถูกพินเห็นมาตลอด** · แผนที่ก่อน/หลังแก้ **64 คีย์เท่ากันทุกตัว**
+   *
+   * 🎯 **สิ่งที่แก้จริงคือ *ความถูกต้องของตัวแจง* ไม่ใช่ *รูที่เปิดอยู่*** — วันนี้สองรูหักล้างกันพอดี
+   * (ไม่มี `create` คู่ · ผีในคอมเมนต์ก็ลบคีย์ที่ไม่มี) · **`create` ชื่อมีคำพูดตัวแรกที่เข้ามา
+   * จะทำให้แผนที่ผิดทันที** และนั่นคือสิ่งที่เคสควบคุมข้างล่างกันไว้
    *
    * **② นับ policy ที่อยู่ใน *คอมเมนต์*** — ฉบับเดิมอ่านซอร์สดิบ
    * วัดจริง: ดิบ 97 · ตัดคอมเมนต์ 92 → **5 ตัวเป็นข้อความในคอมเมนต์ ไม่ใช่คำสั่ง**
@@ -243,9 +254,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "objects.booking_files_insert",
       "objects.booking_files_select",
       "objects.booking_files_update",
+      "place_details_cache.place_details_cache_select",
       "place_notes.place_notes_insert",
       "place_notes.place_notes_select",
       "place_notes.place_notes_update",
+      // 🔴 เพิ่ม 3 ก.ย. — `Q3` ก้าวที่ 1 (P1 · `20260902160000`) · `for select to authenticated using (true)`
+      //    ✅ ไล่กิ่งแล้ว: `E2-AC11 ①` = **66/66** · ทั้งสองกิ่งมีเคสยิงถึงใน `rlsMatrix:5439`
+      "place_photo_cache.place_photo_cache_select",
       "profiles.profiles_insert",
       "profiles.profiles_select",
       "profiles.profiles_update",
@@ -477,6 +492,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    acquire/release เขียนเฉพาะ app.fixture_lock · holder/assert อ่านอย่างเดียว · ไม่รับ input จากผู้ใช้แอป
       "public.acquire_fixture_lock",
       "public.applied_migrations",
+      // 🔴 เพิ่ม 3 ก.ย. 2026 — wrapper ของ `app.assert_cache_lockdown()` (P1 · `20260903210000`)
+      //    `security definer` **จำเป็น** เพราะผู้เรียกไม่มีสิทธิ์บน schema `app`
+      //    (`grant execute` อย่างเดียวไม่พอ — ผ่านได้ที่ `has_function_privilege` แต่ล้มที่ 42501 ตอนเรียกจริง)
+      //    ✅ ยืนยันด้วยเส้นทางจริง ไม่ใช่คิวรีสิทธิ์: `service_role` 204 · `anon` 401/42501 (P6 ยิงซ้ำได้เท่ากัน)
+      //    🔴 **นี่คือประตูที่ข้อยกเว้นที่ 4 เขียนไว้เองว่ายังเปิดอยู่** — definer ไม่ผ่าน grant ของผู้เรียก
+      //       ⇒ ทะเบียนใบนี้คือที่เดียวที่นับประตูนั้นได้ · ตัวใหม่ที่ไม่เข้าทะเบียน = นับไม่ตรงโดยไม่มีเสียง
+      "public.assert_cache_lockdown",
       "public.assert_engine_dev",
       "public.authorship_columns",
       "public.client_writable_timestamps",
@@ -625,7 +647,13 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ที่เปลี่ยนคือ **เพิ่ม 2 policy ใหม่** (`catalog_country_contacts_select` · `catalog_place_access_select`)
       //    ทั้งคู่เป็น `for select to authenticated using (true)` — รูปเดียวกับคลังกลางอีก 4 ใบเป๊ะ
       //    **ไม่มี policy เดิมตัวไหนถูกแก้เงื่อนไข** (ยืนยันจากรายชื่อข้างบนที่เพิ่มอย่างเดียว ไม่มีตัวหาย)
-      "00c860dfe1d5dd05",
+      // 🔴 อัปเดตรอบ 10 (`00c860dfe1d5dd05` → `ce459030e395fa3a`) — `Q3` ก้าวที่ 1 (P1 · `20260902160000`)
+      //    เพิ่ม 2 policy: `place_details_cache_select` · `place_photo_cache_select`
+      //    (`for select to authenticated using (true)` ทั้งคู่ · ไม่มี policy เขียนสักใบ)
+      // ✅ **ไล่กิ่งแล้วก่อนเปลี่ยนค่านี้ ตามที่บล็อกนี้บังคับ** — หลักฐานคือ `E2-AC11 ①` ขึ้นเป็น
+      //    **66/66** หลังแก้ตัวแจง `it.each` · ทั้งสองกิ่งมีเคสยิงถึงจริงใน `rlsMatrix` (บรรทัด 5439)
+      //    🔴 **ไม่ใช่ "เปลี่ยนค่าให้เขียว"** — ค่านี้ขยับ *หลัง* ตัวนับความครอบคลุมยืนยันว่ามีเคสแล้ว
+      "ce459030e395fa3a",
     );
   });
 
@@ -664,6 +692,34 @@ describe("ความครบของ matrix — ตรวจตัวรา�
           if (new RegExp(`\\.${v}\\(`).test(m[2])) hits.add(`${m[1]}.${v}`);
         }
       }
+      /**
+       * 🔴 **`.from(<ตัวแปรวน>)` ใน `it.each(<ค่าคงที่>)` — ตัวนับมองไม่เห็นมาตลอด** (P4 · 3 ก.ย. 2026)
+       *
+       * ตัวสแกนข้างบนต้องการ `.from("<ชื่อ>")` เป็นสตริง · แต่เมทริกซ์เขียนแบบวนลิสต์ **26 จุด**
+       * (`it.each(CACHES)` · `it.each(CATALOG)` · …) แล้วยิง `A.from(t)` โดย `t` เป็นพารามิเตอร์
+       * 🎯 **ไม่เคยกัดจนวันนี้ เพราะตารางที่ยิงแบบนั้นยังไม่มี policy ให้ต้องครอบ** —
+       *    พอ `Q3` ก้าวที่ 1 เปิด 2 policy ตัวนับก็รายงาน `64/66` **ทั้งที่เคสมีอยู่แล้ว**
+       * 🔴 **ถ้าอ่านว่า "ขาดเคส" แล้วไปเขียนเคสใหม่ = เขียนของซ้ำ แล้วตัวเลขก็ยังไม่ขยับ**
+       *
+       * ⚠️ **หยาบกว่าทางสตริงโดยตั้งใจ:** ผูกกับ *พารามิเตอร์ของ callback* (`async (t) =>` → `.from(t)`)
+       *    แล้วเหมาให้ทุกสมาชิกของลิสต์ · เคสที่ยิงบางสมาชิกแบบมีเงื่อนไข **นับเป็นครอบเหมือนกัน**
+       *    (ที่นี่ตรงกับความจริง — ทุกเคสยิงทุกสมาชิกแล้วค่อยแยกที่ผลลัพธ์)
+       */
+      const arrays = new Map<string, string[]>();
+      for (const m of src.matchAll(/const\s+([A-Z][A-Z_0-9]*)\s*=\s*\[([^\]]*)\]/g)) {
+        const items = [...m[2].matchAll(/["'`]([a-z_0-9]+)["'`]/g)].map((x) => x[1]);
+        if (items.length) arrays.set(m[1], items);
+      }
+      for (const m of src.matchAll(/it\.each\(([A-Z][A-Z_0-9]*)\)\([\s\S]{0,300}?async\s*\(\s*([a-z][a-zA-Z_0-9]*)\s*\)\s*=>([\s\S]{0,2500}?)(?=\n {4}it[.(]|\n {2}\}\))/g)) {
+        const tables = arrays.get(m[1]);
+        if (!tables) continue;
+        for (const e of m[3].matchAll(new RegExp(`\\.from\\(\\s*${m[2]}\\s*\\)([\\s\\S]{0,400}?)(?=\\.from\\(|;|\n\n)`, "g"))) {
+          for (const v of ["select", "insert", "update", "delete"]) {
+            if (new RegExp(`\\.${v}\\(`).test(e[1])) for (const t of tables) hits.add(`${t}.${v}`);
+          }
+        }
+      }
+
       // storage.objects — policy บนบัคเก็ตถูกยิงผ่าน storage API ไม่ใช่ `.from("objects")`
       // เคสอยู่ 3 ไฟล์: booking-files ใน rlsMatrix · trip-covers ใน storageCover + engineCrossUser
       // ⚠️ granularity หยาบกว่าตาราง: นับเป็น objects.<verb> รวมทุกบัคเก็ต (แยกราย bucket จาก call site ไม่ได้)
@@ -693,6 +749,29 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       // storage extractor ต้องเห็นของจริงด้วย — ไม่งั้น objects.* เขียวเพราะเซตว่างของตัวดึง
       expect(ex, "ตัวดึง storage ไม่เห็นการยิงที่มีจริง (download ใน storageCover)").toContain("objects.select");
       expect(ex, "ตัวดึง storage ไม่เห็น upload").toContain("objects.insert");
+    });
+
+    /**
+     * ⚠️ **ควบคุมเส้นทาง `it.each` — ถ้าการแจงลิสต์พังเงียบ ตัวเลข ① จะตกโดยไม่มีใครรู้ว่าเพราะอะไร**
+     *
+     * 🔴 ต้องพิสูจน์ว่าเส้นทางนี้ **เพิ่มของจริง** ไม่ใช่แค่ "รันแล้วไม่ error" —
+     *    เทียบกับการสแกนสตริงล้วน แล้วต้องมีคู่ที่ **เฉพาะเส้นทางใหม่เท่านั้นที่เห็น**
+     * 🎯 ถ้าเมทริกซ์เลิกใช้ `it.each` ทั้งไฟล์จริง ๆ เคสนี้จะแดง — **ตอนนั้นให้ลบเส้นทางนั้นทิ้ง**
+     *    ไม่ใช่ลบเคสนี้ · ทะเบียนที่ถือชื่อที่ตายแล้ว คือทะเบียนที่เริ่มโกหก
+     */
+    it("เครื่องวัดทำงาน: การแจง `it.each(<ค่าคงที่>)` ต้องเห็นคู่ที่การสแกนสตริงล้วนมองไม่เห็น", () => {
+      const src = stripComments(MATRIX_SRC);
+      const literalOnly = new Set<string>();
+      for (const m of src.matchAll(/\.from\(\s*["'`]([a-z_0-9]+)["'`]\s*\)([\s\S]{0,400}?)(?=\.from\(|;|\n\n)/g)) {
+        for (const v of ["select", "insert", "update", "delete"]) {
+          if (new RegExp(`\\.${v}\\(`).test(m[2])) literalOnly.add(`${m[1]}.${v}`);
+        }
+      }
+      const extra = [...exercised()].filter((k) => !literalOnly.has(k) && !k.startsWith("objects."));
+      expect(
+        extra.length,
+        "การแจง `it.each` ไม่ได้เพิ่มคู่ไหนเลย — ตัวแจงพังเงียบ หรือเมทริกซ์เลิกใช้รูปนี้แล้ว",
+      ).toBeGreaterThan(0);
     });
 
     it("🔴 ① ทุก (ตาราง, verb) ที่มี policy ต้องมีเคสยิงถึง", () => {
@@ -1004,7 +1083,12 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     // positive control — effectiveFunctions พัง "ไม่เจอฟังก์ชัน" ต้องไม่กลายเป็น "ผ่านหมด" (subscribers > 0)
     expect(names.length, "ไม่เจอฟังก์ชัน app.* เลย — ตัวช่วยพัง ไม่ใช่ 'ไม่มีฟังก์ชัน'").toBeGreaterThan(15);
     expect(names, "ฟังก์ชัน app.* เพิ่ม/หาย — ตัวใหม่ต้องถูกไล่กิ่งก่อนขึ้นทะเบียน").toEqual([
-      "app.assert_day_has_no_stops", "app.assert_place_not_in_use", "app.assert_trip_has_owner",
+      // 🔴 เพิ่ม 3 ก.ย. 2026 — `app.assert_cache_keys_in_catalog()` (P1 · `20260903220000` · ด่านข้อ ⑥ ของ `E3-AC6`)
+      //    `security invoker` (บรรทัด 35) → **ไม่เข้าทะเบียน definer** · `revoke all from public` · ไม่ grant ให้ใครเลย
+      //    ⇒ เรียกตรงไม่ได้ · ถูก `perform` จาก `app.assert_cache_lockdown()` ตัวเดียว
+      //    ✅ ไล่กิ่งแล้ว: หน้าที่คือ *ทุกแถวในแคชต้องมีคีย์ที่อยู่ในคลัง* · P1 ยิงทิศแดงแล้ว
+      //       (insert คีย์นอกคลัง → โยนพร้อมชื่อแถว → rollback)
+      "app.assert_cache_keys_in_catalog", "app.assert_cache_lockdown", "app.assert_day_has_no_stops", "app.assert_place_not_in_use", "app.assert_trip_has_owner",
       "app.assert_trip_has_plan", "app.booking_file_trip", "app.bootstrap_trip_owner", "app.can_read_trip",
       "app.can_write_trip", "app.default_expiry_minutes", "app.deny_write_when_read_only",
       "app.freeze_created_by", "app.handle_new_user", "app.like_literal", "app.mode_is_active",
@@ -1013,6 +1097,11 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
       //    (ไม่เคยมีอยู่ในฐาน) · ตัวที่สามถูก drop ตอนถอนฟีเจอร์รูปปก (`20260827230000`)
       //    🔴 **ตัวชั่วคราวยังถูกบังคับรีวิวอยู่** — ผ่านลิสต์ ephemeral ในหมุด security definer
       "app.preserve_authorship", "app.promote_plan_if_none_active",
+      // 🔴 เพิ่ม 3 ก.ย. 2026 — `app.assert_cache_lockdown()` (P1 · `20260903120000` + `af70a4e` + `9d93241`)
+      //    ✅ **ไล่กิ่งแล้วก่อนขึ้นทะเบียน**: P4 รีวิวทั้ง 5 ข้อในฟังก์ชันนี้ · พบว่าข้อ ⑤ (ทิศบวก)
+      //       จะ raise บนเส้นทางปกติของ `E9` (คลังมี `google_place_id` 3 แถวจาก `20260902090000`
+      //       ขณะที่ไม่มี migration ไหนใส่ข้อมูลแคชเลย) → P1 เติมตัวแยก "แคชต้องไม่ว่าง" แล้ว
+      //    · ฟังก์ชันอ่านอย่างเดียว · ใช้ `has_table_privilege` จึงไม่ขึ้นกับ enabled roles
       "app.read_only_uncovered_tables", "app.search_norm",
       "app.shares_trip_with", "app.stamp_added_by", "app.stamp_checked_by", "app.stamp_hidden_by",
       // 🔴 เพิ่ม 27 ส.ค. (P1) — `app.trip_cover_trip()` (`20260827220000`) อ่าน `trip_id` จาก path
@@ -1042,7 +1131,21 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     //       เก่า/ใหม่ทีละตัว → **ไม่มี `app.*` ตัวไหน body เปลี่ยนเลยสักตัว** (`can_write_trip` ฯลฯ เหมือนเดิมเป๊ะ)
     //       · ต่างเฉพาะ `public.search_place_names` ซึ่ง **ไม่อยู่ในเซตที่ hash** (กรอง `app.` เท่านั้น)
     //         และต่างเพราะฉบับใหม่ strip คอมเมนต์ *ก่อน* ตัด 4000 ตัวอักษร → **เก็บ body จริงได้มากกว่าเดิม**
-    ).toBe("fa3bd11c82cdf5f1afd787a64bd1b409f53e83362f7a08845eab38537e217dc9");
+    // 🔴 ขึ้นค่ารอบ 4 · 3 ก.ย. 2026 (P4) — **เปลี่ยนเพราะ *เพิ่ม* ฟังก์ชัน ไม่ใช่แก้ body ของตัวเดิม**
+    //    ตัวใหม่: `app.assert_cache_lockdown()` (`20260903120000` · แก้ `af70a4e` · `9d93241`)
+    //    ✅ ไล่แล้วว่าตัวเดิมไม่มีตัวไหน body เปลี่ยน: ทะเบียนชื่อข้างบนต่างกันแค่รายการเดียว
+    //       และรายการนั้นคือตัวใหม่ตัวเดียวกัน · **ถ้าตัวเดิมถูกแก้เงียบ ๆ ทะเบียนชื่อจะไม่ขยับ
+    //       แต่แฮชนี้จะขยับ — นั่นคือเหตุผลที่ทั้งสองพินต้องอยู่คู่กัน**
+    // 🔴 ขึ้นค่ารอบ 5 · 3 ก.ย. 2026 (P4) — **ไล่แล้วว่าเปลี่ยนเพราะตัวเดียว ไม่ใช่แก้เงียบของตัวอื่น**
+    //    วัด: migration ทุกไฟล์ที่ลงหลังพินรอบก่อน (`> 20260903120000`) แตะฟังก์ชัน `app.*` ตัวเดียวคือ
+    //    `app.assert_cache_lockdown` — **5 ไฟล์ · ชื่ออื่น 0 ตัว**
+    //    ตัวที่เปลี่ยน body จริง: `140000` (ตัดแดงปลอม) · `160000` (grant) · `180000` (ยุบรายชื่อตาราง
+    //    ให้เหลือแหล่งเดียว — P6 ชี้ว่ามีสำเนา 2 ใบในไฟล์เดียวที่ดริฟต์จากกันได้ · **ไม่เปลี่ยนเกณฑ์ข้อไหน**)
+    //    🎯 พินใบนี้มีไว้จับ *การแก้ที่ไม่มีใครประกาศ* — จึงต้องไล่ว่าใครเปลี่ยนก่อนขึ้นค่า ไม่ใช่ขึ้นให้เขียว
+    // 🔴 ขึ้นค่ารอบ 6 · 3 ก.ย. 2026 (P4) — ไล่แล้วเช่นเคย · `20260903220000` แตะ **สองตัว เท่านั้น**
+    //    `app.assert_cache_keys_in_catalog` (ตัวใหม่) · `app.assert_cache_lockdown` (เพิ่ม `perform` เรียกตัวใหม่)
+    //    ชื่ออื่น 0 → **ไม่มีฟังก์ชันเดิมถูกแก้เงียบติดมาด้วย**
+    ).toBe("b30c22ec678aba838121c8346b019c54ba1ad3b583998c36692fd3e0afaa17aa");
     // 🔴 ขึ้นค่ารอบ 3 · 27 ส.ค. (P1) — **เปลี่ยนเพราะ *เพิ่ม* ฟังก์ชัน ไม่ใช่ *แก้* body ตัวเดิม**
     //    (ต่างจากรอบ 2 ที่แก้ `read_only_uncovered_tables` · เหมือนรอบ 1 ที่เพิ่มตัวใหม่)
     //    ตัวใหม่คือ `app.trip_cover_trip()` — `20260827220000` มี `create or replace function app.*`
