@@ -512,6 +512,54 @@ d="$(mk)"; mkmigsql "$d" "-- ไม่มี create policy ในไฟล์น
 $GUARDBLK"
 check "cache-lockdown ไม่ฟ้องคำที่อยู่ในคอมเมนต์" pass "$d"
 
+# ── ด่าน cache-registry-drift (P1+P6 · 3 ก.ย. 2026) ───────────────────────────────
+# 🔴 เทียบ `.github/{no-policy-tables,cache-client-privileges}` กับ `assert_cache_lockdown()`
+#    — เรียกสคริปต์ตรงๆ (ไม่ผ่าน guards.sh) เพราะ CLI รับ 2 ไฟล์รายชื่อ + migration หลายไฟล์
+DRIFT_T="$(cd "$(dirname "$0")" && pwd)/check-cache-registry-drift.py"
+driftchk() {  # driftchk <ชื่อ> <pass|fail> <locked-file> <priv-file> <เนื้อ migration>
+  name="$1"; want="$2"; lockedf="$3"; privf="$4"; body="$5"
+  mig="$(mktemp)"; printf '%s\n' "$body" > "$mig"
+  if python3 "$DRIFT_T" "$lockedf" "$privf" "$mig" >/dev/null 2>&1; then got=pass; else got=fail; fi
+  rm -f "$mig"
+  if [ "$got" = "$want" ]; then echo "✅ $name — ได้ $got ตามคาด"; return 0; fi
+  echo "🔴 $name — คาด $want แต่ได้ $got"; rc=1; return 1
+}
+
+# 🔴 ต้องมีคำว่า `assert_cache_lockdown` ในทุกฟิกซ์เจอร์ — ด่านนี้ข้าม (คืน pass ทันที) ถ้าไม่มี
+#    migration ไหนแตะฟังก์ชันนี้เลย ถ้าลืมใส่ ฟิกซ์เจอร์จะ "ผ่าน" ผ่านทางลัดนั้นแทนที่จะทดสอบตรรกะจริง
+REALLOCKED="$(cd "$(dirname "$0")" && pwd)/no-policy-tables"
+REALPRIV="$(cd "$(dirname "$0")" && pwd)/cache-client-privileges"
+DECLARE_MATCH="create or replace function app.assert_cache_lockdown() returns void as \$fn\$
+declare
+  locked     text[] := array['travel_time_cache','place_details_local_cache'];
+  readable   text[] := array['place_details_cache','place_photo_cache'];
+begin end; \$fn\$;"
+
+driftchk "cache-registry-drift: ตรงกับไฟล์จริงวันนี้ ต้องผ่าน" pass "$REALLOCKED" "$REALPRIV" "$DECLARE_MATCH"
+
+# 🔴 ดริฟต์จริง — SQL มีตารางเพิ่มที่ไฟล์ไม่มี ต้องจับ
+driftchk "cache-registry-drift: จับดริฟต์จริง (ตารางเกินในฟังก์ชัน)" fail "$REALLOCKED" "$REALPRIV" \
+"create or replace function app.assert_cache_lockdown() returns void as \$fn\$
+declare
+  locked     text[] := array['travel_time_cache','place_details_local_cache','extra_cache'];
+  readable   text[] := array['place_details_cache','place_photo_cache'];
+begin end; \$fn\$;"
+
+# 🔴 ตัวแจงตาบอด (เปลี่ยนชื่อตัวแปร) — ต้องจับเป็น fail เหมือนกัน แต่คนละข้อความจากดริฟต์จริง
+#    ยืนยันข้อความแยกกันจริงด้วย grep ตรงๆ ไม่ใช่แค่ exit code เดียวกัน
+d_blind="$(mktemp)"; printf '%s\n' "create or replace function app.assert_cache_lockdown() returns void as \$fn\$
+declare
+  cache_locked_tables text[] := array['travel_time_cache','place_details_local_cache'];
+  cache_readable_tables text[] := array['place_details_cache','place_photo_cache'];
+begin end; \$fn\$;" > "$d_blind"
+blind_out="$(python3 "$DRIFT_T" "$REALLOCKED" "$REALPRIV" "$d_blind" 2>&1)"
+rm -f "$d_blind"
+if printf '%s' "$blind_out" | grep -q "ตัวแจงล้า"; then
+  echo "✅ cache-registry-drift: ตัวแจงตาบอด (เปลี่ยนชื่อตัวแปร) ได้ข้อความ 'ตัวแจงล้า' แยกจากดริฟต์จริง"
+else
+  echo "🔴 cache-registry-drift: ตัวแจงตาบอด — คาดข้อความ 'ตัวแจงล้า' ไม่เจอ (อาจไปพูดว่าดริฟต์แทน)"; rc=1
+fi
+
 # ── ด่าน dynamic-from ───────────────────────────────────────────────────────────
 # 🔴 ด่านนี้เจอของจริงตั้งแต่รันครั้งแรก และสอนผมว่าสมมติฐานผมผิด (ดูหัว check-dynamic-from.py)
 DYN="$(cd "$(dirname "$0")" && pwd)/check-dynamic-from.py"

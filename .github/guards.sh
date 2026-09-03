@@ -434,6 +434,23 @@ if [ -d "$MIGDIR" ]; then
   fi
 fi
 
+# ── ทะเบียนไฟล์ (ข้างบน) ต้องพูดตรงกับ app.assert_cache_lockdown() (P1+P6 · 3 ก.ย. 2026) ──
+# 🔴 สองที่ประกาศ "ตารางไหนอยู่กลุ่มไหน" อิสระจากกัน (ไฟล์ตรวจ migration ที่ยังไม่ apply ·
+#    ฟังก์ชันตรวจฐานจริงหลัง apply) — ดริฟต์ได้โดยไม่มีอะไรฟ้อง เกิดจริงแล้วภายในวันเดียว (D87→Q3)
+#    ด่านนี้ไม่ประกาศค่าใหม่ อ่านสองฝั่งมาเทียบเท่านั้น — รายละเอียดในหัว check-cache-registry-drift.py
+DRIFT="$(cd "$(dirname "$0")" && pwd)/check-cache-registry-drift.py"
+if [ -d "$MIGDIR" ]; then
+  if [ -n "$lmigs" ]; then
+    if [ ! -f "$DRIFT" ] || [ ! -f "$LOCKLIST" ] || [ ! -f "$CLIENTPRIVLIST" ]; then
+      echo "🔴 cache-registry-drift: หาสคริปต์หรือไฟล์รายชื่อไม่เจอ — ตรวจไม่ได้ ถือว่าไม่ผ่าน"
+      fail=1
+    # shellcheck disable=SC2086
+    elif ! python3 "$DRIFT" "$LOCKLIST" "$CLIENTPRIVLIST" $lmigs; then
+      fail=1
+    fi
+  fi
+fi
+
 # ── ทุก `D<n>` ที่อ้างถึง ต้องมีนิยามใน docs/engine/README.md ──────────────────────
 # ⚠️ **ขอบเขตแคบ อ่านก่อนนับว่าครอบคลุม:** จับได้แค่ "อ้างถึง D ที่ไม่มีอยู่"
 #    🔴 **จับกล่องที่ค้างเป็นเท็จไม่ได้เลย** ซึ่งคือปัญหาจริงของ `D71`
