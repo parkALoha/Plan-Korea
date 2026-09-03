@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { TripPlan } from "@/lib/supabase";
 import { TripSettingsModal } from "./TripSettingsModal";
 import { InitialAvatar } from "./InitialAvatar";
 import { useMounted } from "@/hooks/useMounted";
 import { useTripMembers } from "@/hooks/useTripMembers";
+import { useTripMeta } from "@/hooks/useTripMeta";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 
 interface TripHeaderProps {
@@ -53,44 +54,17 @@ export function TripHeader({
   const mounted = useMounted();
   const activePlan = plans.find((p) => p.id === activePlanId);
 
-  // 🔴 ชื่อ+วันที่ทริปจริง (P1: /trip/[tripId] ลงแล้ว มีทริปที่สองแล้ว — เปิดทริปที่สองวันนี้หัวจอจะบอกชื่อ
-  // ทริปแรก) — เดิม "🍁 แพลนเที่ยวเกาหลี" ฮาร์ดโค้ด ตามที่เขียนไว้เองใน ux-flows.md §2.1 ว่าต้องดึงเป็น
-  // prop ก่อนถึงจะขยายได้ · ใช้ /api/engine/trips (รายการ) เดียวกับที่ useActiveTripId() เรียกอยู่แล้ว
-  // เพราะยังไม่มี route ดึงทริปเดียวโดยตรง — เก็บคู่กับ tripId ที่ผลนั้นเป็นของ แล้ว derive ตอน render
-  // (แพทเทิร์นเดียวกับ usePlacePhotos.ts) แทน setState ตรงๆ ในเอฟเฟกต์ กัน set-state-in-effect
-  // 📌 start_date/end_date ถูกเพิ่มเข้า select ของ tripsForUser() แล้ว (27 ส.ค. 2026 f89ecd8) —
-  // ดึงมาพร้อมชื่อในคำขอเดียวกันเลย ไม่ต้องยิงซ้ำ
-  const [tripResult, setTripResult] = useState<{
-    forTripId: string;
-    title: string | null;
-    startDate: string | null;
-    endDate: string | null;
-  } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/engine/trips")
-      .then((r) => r.json())
-      .then((rows: { id: string; title: string; start_date: string; end_date: string }[]) => {
-        if (cancelled) return;
-        const match = rows.find((r) => r.id === tripId);
-        setTripResult({
-          forTripId: tripId,
-          title: match?.title ?? null,
-          startDate: match?.start_date ?? null,
-          endDate: match?.end_date ?? null,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setTripResult({ forTripId: tripId, title: null, startDate: null, endDate: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tripId]);
-  const tripTitle = tripResult?.forTripId === tripId ? tripResult.title : undefined;
+  /* ชื่อ+วันที่ทริปจริง — ผ่าน `useTripMeta` ซึ่งอ่านแคชก่อนแล้วค่อยยิงของสด
+     🔴 ของเดิมยิง `fetch("/api/engine/trips")` ตรง ๆ ในเอฟเฟกต์ **ไม่ผ่านชั้นแคชเลย**
+     → ออฟไลน์หัวจอขึ้น "🍁 ทริปนี้" ทั้งที่ชื่อทริปถูกแคชไว้แล้วในเครื่อง (P7 เห็นกับตา 2 ก.ย. 2026)
+     🎯 **"ทริปนี้" ไม่ใช่ความว่าง มันคือตัวแทนที่ดูเหมือนของจริง** — ผู้ใช้แยกไม่ออกว่าเปิดทริปไหนอยู่
+        ต่างจากอวาตาร์ที่หายไปเฉย ๆ ซึ่งซื่อสัตย์ว่าไม่รู้ (`§15.15`)
+     📌 ความหมายของค่าคงเดิมทุกตัว: `undefined` = ยังไม่รู้ (โชว์ "…") · `null` = ไม่เจอทริปนี้ในรายการ */
+  const tripMeta = useTripMeta(tripId);
+  const tripTitle = tripMeta ? tripMeta.title : undefined;
   const tripDateRange =
-    tripResult?.forTripId === tripId && tripResult.startDate && tripResult.endDate
-      ? tripDateRangeLabel(tripResult.startDate, tripResult.endDate)
+    tripMeta?.startDate && tripMeta.endDate
+      ? tripDateRangeLabel(tripMeta.startDate, tripMeta.endDate)
       : null;
 
   // แถวสมาชิก (E5 ข้อ 6) — GET /api/engine/trips/[tripId]/members (P1 27 ส.ค. 2026, b81b42e)
