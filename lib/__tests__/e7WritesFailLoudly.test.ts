@@ -41,8 +41,22 @@ function stripComments(sql: string): string {
     .join("\n");
 }
 
+/**
+ * 🔴 **ฉบับแรกของผมสร้างแบบจำลองของ *ชื่อตาราง* แล้วมันแคบเกินไป** (P4 ยิงหัก · 3 ก.ย. 2026)
+ * ```
+ * เห็น ✅  update foo set · update public.foo set · update only foo set
+ * พลาด 🔴 update legacy.foo set        ← 10 ใน 11 ก้อนอ้าง `legacy.` เป็นสำนวนประจำของไฟล์กลุ่มนี้
+ * พลาด 🔴 update foo <alias> set       ← **มีอยู่จริง**: 00_preflight.sql:61 `update pf_rows r set got = (`
+ * พลาด 🔴 update legacy.foo <alias> set · update "quoted" set
+ * ```
+ * · วัดกับของจริงในทรี `supabase-platform/`: **ฉบับแรกพลาด 5 รูปที่มีอยู่จริง**
+ * 🎯 **ตัวแยกที่สำคัญมีตัวเดียว: `do update` (ปลอดภัย — `INSERT` ล้มดังก่อน) กับ `update` อื่นทั้งหมด**
+ *   → เลิกถามว่า *ตารางมี schema ไหม · มี alias ไหม · มีเครื่องหมายคำพูดไหม* · **เอาคำถามออก ไม่ใช่ตอบให้ครบขึ้น**
+ * ⚠️ **ข้อจำกัดที่เหลืออยู่ (P4 เขียนกำกับมาเอง):** `[^;]{0,120}` — ถ้า `set` อยู่ห่างจาก `update`
+ *   เกิน 120 ตัวอักษรในคำสั่งเดียว จะหลุด · **เป็นเพดานหน้าต่าง ถอดออกไม่ได้โดยไม่แลกกับแดงผิด**
+ */
 const SILENT_FORMS: ReadonlyArray<readonly [string, RegExp]> = [
-  ["update … set", /(^|[^_a-zA-Z])update\s+(?:only\s+)?(?:public\.)?[a-z_]+\s+set\s/i],
+  ["update … set", /(^|[^_a-zA-Z])(?<!\bdo\s)update\s[^;]{0,120}?\sset\s/i],
   ["delete from", /(^|[^_a-zA-Z])delete\s+from\s/i],
 ];
 
@@ -64,11 +78,26 @@ describe("E7 — รูปการเขียนที่เงียบได
    * 🔴 ถ้าไม่มีเคสนี้ regex ที่ match ไม่ได้เลยจะทำให้ทุกไฟล์ "ผ่าน" และอ่านเหมือนสะอาด
    */
   it("🔴 เครื่องวัดต้องจับรูปที่เงียบได้จริง (ทิศบวก)", () => {
+    /**
+     * 🔴 **ฉบับแรกผมเขียนมัลแตนต์เองทั้งสี่ตัว — และทั้งสี่ใช้รูปที่ regex ของผมรับอยู่แล้ว**
+     * 🎯 ***ทิศบวกที่คนเขียน regex เป็นคนเขียนเอง = ทดสอบ regex กับแบบจำลองในหัวของคนคนเดียวกัน
+     *    มันผ่านเสมอตามนิยาม*** (P4 · เขาได้จักรวาลมาจากคำถาม *"SQL เขียน UPDATE ได้กี่รูป"*
+     *    ไม่ใช่ *"regex นี้รับรูปไหน"*)
+     * ✅ **สี่ตัวแรกจึงมาจาก *ของจริงในรีโป* พร้อมที่อยู่** — ไม่ใช่จากหัวผม
+     */
     const mutants = [
-      "update place_details_cache set rating = 1.0 where maps_query = 'x';",
-      "  UPDATE public.trips SET title = 'x';",
+      // ── มาจากรีโปจริง (คนละแหล่งกับคนเขียน regex) ──
+      "  update pf_rows r set got = (",                                   // e7/00_preflight.sql:61
+      "update app.system_mode set allow_maintenance_write = true",        // migrations/ (E3)
+      "update public.%I set %I = $1 where %I = $2 and %I is null',",      // migrations/ (SQL ประกอบสตริง)
+      "update app.system_mode set expires_at = now() - interval '1 second' where only_row",
+      // ── รูปที่ไวยากรณ์ SQL อนุญาต และรีโปยังไม่มีใครใช้ ──
+      "update legacy.trip_stops set rank = 'x';",
+      "update legacy.trip_stops m set rank = 'x';",
+      'update "trip stops" set rank = \'x\';',
+      "  UPDATE ONLY public.trips SET title = 'x';",
       "delete from trip_stops where id = '1';",
-      "  DELETE FROM public.bookings;",
+      "  DELETE FROM legacy.bookings;",
     ];
     for (const m of mutants) {
       const hit = SILENT_FORMS.some(([, re]) => re.test(stripComments(m)));
@@ -78,11 +107,15 @@ describe("E7 — รูปการเขียนที่เงียบได
 
   /** ⚠️ ตัวควบคุมฝั่งลบ — รูปที่ *ดัง* และคอมเมนต์ ต้องไม่ถูกจับ ไม่งั้นด่านจะแดงใส่คนที่ทำถูก */
   it("ต้องไม่จับรูปที่ล้มดัง และไม่จับคอมเมนต์ (ทิศลบ)", () => {
+    /** 🔴 ใบแรกคือบรรทัดจริงจาก `e7/10_trip_destinations.sql:67` — ถ้าจับผิด ด่านจะแดงใส่ไฟล์ที่ไม่มี gate */
     const safe = [
-      "insert into trip_destinations (trip_id, city_id) values (a, b) on conflict (trip_id, city_id) do update set rank = excluded.rank;",
+      "  on conflict (trip_id, city_id) do update set rank = excluded.rank;",   // e7/10:67 (ของจริง)
+      "insert into trip_destinations (trip_id, city_id) values (a, b)\n  on conflict (trip_id, city_id)\n  do update set rank = excluded.rank;",
       "-- ⚠️ ห้ามใช้ update … set ตรงนี้เพราะมันเงียบ",
       "/* delete from x — อธิบายเฉย ๆ */",
       "insert into trips (id) values (a);",
+      "select updated_at, set_x from t;",       // คำที่มี update/set เป็นส่วนของชื่อ
+      "select last_update_set from t;",
     ];
     for (const s of safe) {
       const hit = SILENT_FORMS.some(([, re]) => re.test(stripComments(s)));
