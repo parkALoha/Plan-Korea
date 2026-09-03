@@ -1,6 +1,6 @@
 import type { City } from "@/data/itinerary";
-import { CITY_NAME_TH } from "@/data/cityNames";
-import { cityCenter, type Place } from "@/data/places";
+import { type Place } from "@/data/places";
+import { cityCenterOf, type CityWithCenter } from "@/lib/engine/cityCenter";
 import type { TripHotel } from "@/lib/supabase";
 import { haversineKm } from "@/lib/geo";
 import { isHotelAnchorId } from "@/lib/hotelLegs";
@@ -37,11 +37,24 @@ export type CitySegment<T extends CityPoint> = {
   items: T[];
 };
 
-function isCity(value: string | null | undefined): value is City {
-  return value != null && value in CITY_NAME_TH;
+/**
+ * เมืองนี้อยู่ใน **ทริปนี้** ไหม — ไม่ใช่ "รู้จักไหม"
+ *
+ * 🔴 **แก้ 4 ก.ย. 2026 (`E2-AC16`) — เดิมเช็คกับ `CITY_NAME_TH` ซึ่งมี 6 เมืองเกาหลี**
+ * ทริปแพลตฟอร์มมีเมืองจากคลัง (42 เมือง) → **เมืองนอกเกาหลีถูกมองเป็น `null` ทั้งหมด**
+ * = ทั้งวันยุบเป็นช่วงเดียวไม่มีชิปเมือง · ซึ่ง *ไม่พัง* จึงไม่มีใครเห็น
+ *
+ * ⚠️ ยังทำหน้าที่เดิมไว้ครบ: กันเมืองที่อยู่ **นอกทริป** (สนามบินกรุงเทพ/โฮจิมินห์ใน
+ * `TRANSFER_POINTS`) ไม่ให้กลายเป็นชื่อช่วงบนแผนที่ — แค่เปลี่ยนจักรวาลอ้างอิงจาก
+ * *เมืองที่ไฟล์รู้จัก* เป็น *เมืองที่ทริปนี้ไป* ซึ่งแคบกว่าและตรงคำถามกว่า
+ */
+function isTripCity(
+  value: string | null | undefined,
+  cities: readonly CityWithCenter[],
+): value is City {
+  if (value == null) return false;
+  return cities.some((c) => c.slug === value);
 }
-
-const ALL_CITIES = Object.keys(CITY_NAME_TH) as City[];
 
 /**
  * เดาเมืองจากพิกัด — ใช้กับแถว "แวะที่พัก" ที่ `resolvePlace` ตั้ง city เป็น "seoul" ไว้ตายตัว
@@ -51,19 +64,23 @@ const ALL_CITIES = Object.keys(CITY_NAME_TH) as City[];
  * (และ 56.7 ยังไม่ถึงด่านแข็ง 100) ทั้งวันเลยยุบเหลือช่วงเดียวเหมือนก่อนแก้
  * ต้องหาเมืองจากพิกัดจริงแทน — กลางเมืองแต่ละเมืองห่างกันมากพอจะไม่สับสน
  */
-function cityFromCoords(lat: number, lng: number): City | null {
+function cityFromCoords(
+  lat: number,
+  lng: number,
+  cities: readonly CityWithCenter[],
+): City | null {
   let best: City | null = null;
   let bestKm = Infinity;
-  for (const city of ALL_CITIES) {
-    const center = cityCenter(city);
-    // 🔴 ข้าม `NaN` — `cityCenter` เฉลี่ยจาก `PLACES` และเมืองที่มีสถานที่ 0 แห่งได้ `0/0` (`D54`)
-    //    `haversineKm` กับ `NaN` คืน `NaN` · `NaN < bestKm` เป็นเท็จเสมอ จึงไม่เคยชนะอยู่แล้ว
-    //    **แต่เขียนไว้ให้เห็น** ดีกว่าให้คนถัดไปต้องพิสูจน์เองว่าทำไมมันไม่พัง
-    if (!Number.isFinite(center.lat) || !Number.isFinite(center.lng)) continue;
+  for (const city of cities) {
+    // 🔴 `cityCenterOf` คือที่เดียวที่กรองค่าที่ *ผ่านชนิดแต่ไม่ใช่พิกัด* (`NaN`/`Infinity` จากแคชรูปเก่า)
+    //    ห้ามอ่าน `city.lat` ตรง ๆ ที่นี่ — `haversineKm(NaN)` คืน `NaN` และ `NaN < bestKm`
+    //    เป็นเท็จเสมอ จึงไม่พัง **แต่จะซ่อนว่าเรากำลังเทียบกับขยะ**
+    const center = cityCenterOf(cities, city.slug);
+    if (!center) continue;
     const km = haversineKm(lat, lng, center.lat, center.lng);
     if (km < bestKm) {
       bestKm = km;
-      best = city;
+      best = city.slug as City;
     }
   }
   /**
@@ -147,8 +164,16 @@ export function buildDayCitySegments(input: {
   stops: { id: string; place: Pick<Place, "id" | "lat" | "lng" | "city"> }[];
   startHotel: Pick<TripHotel, "lat" | "lng" | "city"> | null;
   endHotel: Pick<TripHotel, "lat" | "lng" | "city"> | null;
+  /**
+   * เมืองของทริปนี้พร้อมพิกัดที่ **เมืองถือเอง** — จักรวาลอ้างอิงของทั้งไฟล์ (`E2-AC16`)
+   *
+   * 🔴 **บังคับ ไม่ใช่ทางเลือก** — ถ้าปล่อยเป็น optional แล้วมีใครลืมส่ง จะได้ *ทั้งวันไม่มีชิปเมือง*
+   * ซึ่ง **ไม่พังและไม่มีใครสังเกต** · บังคับที่ชนิดแปลว่า `tsc` เป็นคนจับ ไม่ใช่ผู้ใช้
+   * · ลิสต์ว่าง = ไม่รู้จักเมืองไหนเลย → ทุกจุดได้ `city: null` ซึ่งเป็นคำตอบที่ซื่อสัตย์
+   */
+  cities: readonly CityWithCenter[];
 }): CitySegment<DayPoint>[] {
-  const { stops, startHotel, endHotel } = input;
+  const { stops, startHotel, endHotel, cities } = input;
   const points: DayPoint[] = [];
 
   if (startHotel) {
@@ -157,7 +182,7 @@ export function buildDayCitySegments(input: {
       role: "start",
       lat: startHotel.lat,
       lng: startHotel.lng,
-      city: isCity(startHotel.city) ? startHotel.city : null,
+      city: isTripCity(startHotel.city, cities) ? startHotel.city : null,
     });
   }
 
@@ -171,8 +196,8 @@ export function buildDayCitySegments(input: {
       // ส่วน isCity กันเมืองที่อยู่นอกทริป (สนามบินกรุงเทพ/โฮจิมินห์ใน TRANSFER_POINTS) ไม่ให้
       // กลายเป็นชื่อช่วงเมืองบนแผนที่ — ไม่มีวันไหนเที่ยวเมืองพวกนั้น
       city: isHotelAnchorId(stop.place.id)
-        ? cityFromCoords(stop.place.lat, stop.place.lng)
-        : isCity(stop.place.city)
+        ? cityFromCoords(stop.place.lat, stop.place.lng, cities)
+        : isTripCity(stop.place.city, cities)
           ? stop.place.city
           : null,
     });
@@ -192,7 +217,7 @@ export function buildDayCitySegments(input: {
       role: "end",
       lat: endHotel.lat,
       lng: endHotel.lng,
-      city: isCity(endHotel.city) ? endHotel.city : null,
+      city: isTripCity(endHotel.city, cities) ? endHotel.city : null,
     });
   }
 

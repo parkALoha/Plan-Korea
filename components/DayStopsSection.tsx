@@ -673,6 +673,7 @@ export function DayStopsSection({
               startHotel={startHotel}
               endHotel={hotel}
               notesByStopId={notesByStopId}
+              catalogCities={catalogCities}
               intercityModeBeforeStopId={intercityModeBeforeStopId}
               closedStopIds={closedStopIds}
               activeStopId={activeStopId}

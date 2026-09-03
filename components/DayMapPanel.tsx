@@ -20,6 +20,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import { type Place } from "@/data/places";
 import type { TripHotel } from "@/lib/supabase";
+import type { CatalogCity } from "@/hooks/useTripCatalogCities";
 import { TRAVEL_MODE_EMOJI, type ScheduledStop, type TravelMode } from "@/lib/schedule";
 import { googleMapsPlaceUrl } from "@/lib/mapLinks";
 import { placeQueryKey } from "@/lib/placeQuery";
@@ -46,6 +47,14 @@ export type DayMapPanelProps = {
   /** โหมดเดินทางข้ามเมืองของแถว kind="intercity" ที่คั่นอยู่ก่อนจุดแวะนั้น — ใช้เป็นไอคอนคั่นชิปเมือง
    *  (🚌/🚄/🚗) · `ScheduledStop` ไม่มี `kind`/`intercity_*` จึงต้องส่งเข้ามาจาก DayStopsSection */
   intercityModeBeforeStopId?: Record<string, IntercityMode>;
+  /**
+   * เมืองของทริปนี้พร้อมพิกัด — จักรวาลอ้างอิงของการแบ่งช่วงเมือง (`E2-AC16` · 4 ก.ย. 2026)
+   *
+   * 🔴 **เดิมไฟล์นี้ไม่ต้องรับอะไรเลย เพราะ `citySegments` วนตาราง 6 เมืองเกาหลีของมันเอง**
+   * ⇒ ทริปนอกเกาหลี **ไม่มีชิปเมืองสักอัน และแผนที่ไม่เคยแบ่งช่วง** — ไม่พัง จึงไม่มีใครเห็น
+   * · ไม่ส่ง/ว่าง = ไม่รู้จักเมืองไหนเลย → ชิปขึ้นว่า "ช่วงที่ N" ซึ่งซื่อสัตย์กว่าชื่อเมืองที่เดาผิด
+   */
+  catalogCities?: CatalogCity[];
   className?: string;
 };
 
@@ -75,8 +84,9 @@ export function DayMapPanel(props: DayMapPanelProps) {
         stops: resolvedStops.map((s) => ({ id: s.id, place: s.place })),
         startHotel: props.startHotel,
         endHotel: props.endHotel,
+        cities: props.catalogCities ?? [],
       }),
-    [resolvedStops, props.startHotel, props.endHotel]
+    [resolvedStops, props.startHotel, props.endHotel, props.catalogCities]
   );
 
   // ช่วงแรกที่ "มีจุดแวะจริง" ไม่ใช่ index 0 เฉยๆ — วันที่ช่วงแรกมีแต่หมุดโรงแรมออกเดินทาง
@@ -120,6 +130,7 @@ export function DayMapPanel(props: DayMapPanelProps) {
           selectedIndex={selectedIndex}
           onSelect={selectSegment}
           intercityModeBeforeStopId={props.intercityModeBeforeStopId}
+          catalogCities={props.catalogCities}
         />
       )}
       <div className="min-h-0 flex-1 overflow-hidden rounded-lg">
@@ -160,17 +171,26 @@ function SegmentChips({
   selectedIndex,
   onSelect,
   intercityModeBeforeStopId,
+  catalogCities,
 }: {
   segments: CitySegment<DayPoint>[];
   selectedIndex: number | "all";
   onSelect: (next: number | "all") => void;
   intercityModeBeforeStopId?: Record<string, IntercityMode>;
+  catalogCities?: CatalogCity[];
 }) {
   return (
     <div className="mb-1.5 flex flex-wrap items-center gap-1">
       {segments.map((segment, i) => {
         const meta = segment.city ? cityMetaOf(segment.city) : null;
-        const name = segment.city ? cityNameThOf(segment.city) : `ช่วงที่ ${i + 1}`;
+        /* ชื่อเมืองมาจาก **คลังก่อน** แล้วค่อยตกไปที่ตาราง 6 เมืองเกาหลี (`E2-AC16`)
+           🔴 ถ้าถาม `cityNameThOf()` อย่างเดียว เมืองนอกเกาหลีจะได้ป้าย "ยังไม่ระบุเมือง"
+           ทั้งที่เรารู้ชื่อมันอยู่ — **ป้ายที่ผิดแย่กว่าป้ายกลาง ๆ** (`ช่วงที่ N`) เพราะมันอ่านเหมือนของจริง
+           📌 ไอคอน/สี (`cityMetaOf`) ยังตกไป fallback ตามเดิม — คลังไม่มีไอคอนให้ และนั่นซื่อสัตย์กว่าเดา */
+        const fromCatalog = segment.city
+          ? catalogCities?.find((c) => c.slug === segment.city)?.nameTh
+          : undefined;
+        const name = fromCatalog ?? (segment.city ? cityNameThOf(segment.city) : `ช่วงที่ ${i + 1}`);
         const stops = stopCountIn(segment);
         const active = selectedIndex === i;
         // ไอคอนพาหนะของ hop ที่พามาถึงช่วงนี้ — เอาจากจุดแวะแรกของช่วง ถ้าไม่มีแถวข้ามเมืองก็ใช้ →
