@@ -560,6 +560,27 @@ else
   echo "🔴 cache-registry-drift: ตัวแจงตาบอด — คาดข้อความ 'ตัวแจงล้า' ไม่เจอ (อาจไปพูดว่าดริฟต์แทน)"; rc=1
 fi
 
+# 🔴 P1 ขอ (3 ก.ย. 2026) — ปิดประตู "ทางลัดข้าม" ไม่ให้เงียบตลอดไปวันที่มีคนแก้ regex/รูป SQL
+#    รันด่านนี้ใส่ **migration จริงของทรี** (ไม่ใช่ fixture) แล้วยืนยันว่ามันเข้าตรรกะเทียบจริง
+#    (ข้อความ "ตรงกันระหว่างไฟล์กับ") ไม่ใช่ทางลัด "ข้าม (ไม่มีอะไรให้เทียบ)" — ถ้าวันหนึ่งใครแก้
+#    LOCKED_RE/READABLE_RE จนแจงไม่ออกจากของจริง เคสนี้ต้องจับได้ ไม่ใช่รอให้ P1 ยิงมือ
+REALMIGDIR="$(cd "$(dirname "$0")/.." && pwd)/supabase-platform/supabase/migrations"
+if [ -d "$REALMIGDIR" ]; then
+  real_migs=""
+  for f in "$REALMIGDIR"/*.sql; do [ -e "$f" ] && real_migs="$real_migs $f"; done
+  # shellcheck disable=SC2086
+  real_out="$(python3 "$DRIFT_T" "$REALLOCKED" "$REALPRIV" $real_migs 2>&1)"
+  if printf '%s' "$real_out" | grep -q "ตรงกันระหว่างไฟล์กับ"; then
+    echo "✅ cache-registry-drift: migration จริงของทรีเข้าตรรกะเทียบจริง (ไม่ได้ผ่านทางลัดข้าม)"
+  elif printf '%s' "$real_out" | grep -q "ไม่มี migration ไหนแตะ"; then
+    echo "🔴 cache-registry-drift: migration จริงผ่านทางลัด 'ข้าม' — ด่านนี้ไม่ได้ตรวจอะไรบนทรีจริงเลย"; rc=1
+  else
+    echo "🔴 cache-registry-drift: รันกับ migration จริงแล้วไม่เขียว ไม่ใช่สภาพที่คาด — $(printf '%s' "$real_out" | head -1)"; rc=1
+  fi
+else
+  echo "🔴 cache-registry-drift: หา $REALMIGDIR ไม่เจอ — เคสกันทางลัดข้ามรันไม่ได้"; rc=1
+fi
+
 # ── ด่าน dynamic-from ───────────────────────────────────────────────────────────
 # 🔴 ด่านนี้เจอของจริงตั้งแต่รันครั้งแรก และสอนผมว่าสมมติฐานผมผิด (ดูหัว check-dynamic-from.py)
 DYN="$(cd "$(dirname "$0")" && pwd)/check-dynamic-from.py"
