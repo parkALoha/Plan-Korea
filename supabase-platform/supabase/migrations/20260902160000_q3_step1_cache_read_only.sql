@@ -233,9 +233,9 @@ begin
 
   if not exists (
     select 1 from app.project_identity
-    where name = 'engine-dev' and ref = 'pmvxwcimjebogjfimzqy' and environment = 'dev'
+    where name = 'plan-korea-platform' and ref = 'pmvxwcimjebogjfimzqy' and environment = 'dev'
   ) then
-    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ใช่ engine-dev (ตรวจ name+ref+environment)';
+    raise exception 'ผิดโปรเจกต์: app.project_identity มีอยู่ แต่ไม่ตรง (ตรวจ name+ref+environment) — ต้องเป็น plan-korea-platform/pmvxwcimjebogjfimzqy/dev';
   end if;
 end $guard$;
 
