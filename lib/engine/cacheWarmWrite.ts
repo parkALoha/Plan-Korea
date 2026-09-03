@@ -17,6 +17,15 @@ import type { WarmTarget } from "./cacheWarmList";
  * · **ไม่เขียนทับของเดิม** — `warmTargets()` คัดเฉพาะคีย์ที่ยังไม่มีแถวอยู่แล้ว
  *   🔴 การรีเฟรชของเก่าเป็นคนละเรื่องและ **ยังไม่มีมติ** (ต้องมี TTL ก่อน · ดู `README § Q3`)
  */
+/**
+ * 🔴 **แกนร่วมของทุกตารางแคชคือ `maps_query` เท่านั้น** — `warmCache()` ไม่รู้จักคอลัมน์อื่นเลย
+ * เพราะสิ่งเดียวที่มันต้องทำกับแถวคือ **เอาคีย์ไปตรวจบัญชีขาว** · รูปที่เหลือเป็นเรื่องของผู้เรียก
+ * · ✅ ทำให้ `place_details_cache` (7 คอลัมน์) กับ `place_photo_cache` (`photo_names` อย่างเดียว)
+ *   ใช้ตัวเดียวกันได้ **โดยไม่ต้องมีกิ่ง `if table === …` ในตรรกะหลัก**
+ */
+export type WarmRowBase = { maps_query: string };
+
+/** รูปแถวของ `place_details_cache` — ผู้เรียกเป็นคนประกอบ */
 export type WarmRow = {
   maps_query: string;
   google_place_id: string | null;
@@ -27,13 +36,13 @@ export type WarmRow = {
   reviews: unknown;
 };
 
-export type WarmDeps = {
+export type WarmDeps<R extends WarmRowBase = WarmRow> = {
   /** ดึงของสดจาก Google · คืน `null` เมื่อดึงไม่ได้ — ผู้เรียกเป็นคนใส่ `lookupPlace` */
-  fetchOne: (key: string) => Promise<WarmRow | null>;
+  fetchOne: (key: string) => Promise<R | null>;
   /** ถามคลังว่าคีย์ไหน "ยังสาธารณะอยู่" — ผู้เรียกใส่ `catalogPublicMapsQueries` · คืน `null` = ถามไม่ได้ */
   verifyPublic: (keys: string[]) => Promise<Set<string> | null>;
   /** เขียนลงตารางแคช · คืนจำนวนที่เขียนสำเร็จ หรือ `null` เมื่อเขียนไม่ได้ */
-  writeRows: (rows: WarmRow[]) => Promise<number | null>;
+  writeRows: (rows: R[]) => Promise<number | null>;
 };
 
 export type WarmReport = {
@@ -47,9 +56,9 @@ export type WarmReport = {
   aborted: null | "verify-failed" | "write-failed";
 };
 
-export async function warmCache(
+export async function warmCache<R extends WarmRowBase = WarmRow>(
   targets: readonly WarmTarget[],
-  deps: WarmDeps,
+  deps: WarmDeps<R>,
 ): Promise<WarmReport> {
   const report: WarmReport = {
     attempted: targets.length,
@@ -60,7 +69,7 @@ export async function warmCache(
   };
   if (targets.length === 0) return report;
 
-  const fetched: WarmRow[] = [];
+  const fetched: R[] = [];
   for (const t of targets) {
     const row = await deps.fetchOne(t.key);
     if (!row) {

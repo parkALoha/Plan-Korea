@@ -3,7 +3,12 @@ import { testClient } from "./_testClient";
 import { lookupPlace } from "@/lib/googlePlaces";
 import { warmTargets } from "@/lib/engine/cacheWarmList";
 import { warmCache, type WarmRow } from "@/lib/engine/cacheWarmWrite";
-import { catalogKeyRows, cachedDetailKeys, catalogPublicMapsQueries } from "@/lib/engine/db";
+import {
+  catalogKeyRows,
+  cachedDetailKeys,
+  cachedPhotoKeys,
+  catalogPublicMapsQueries,
+} from "@/lib/engine/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -118,6 +123,55 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
       expect(report.aborted, `อุ่นไม่สำเร็จ: ${report.aborted}`).toBeNull();
       // 🔴 หลุดบัญชีขาวต้องเป็น 0 เสมอ — เป้ามาจากคลัง ถ้าไม่ 0 แปลว่ามีคนแก้คลังระหว่างรอบ
       expect(report.droppedNotPublic, "คีย์หลุดบัญชีขาวระหว่างรอบ — คลังถูกแก้ขณะอุ่น").toBe(0);
+
+      // ── รอบที่สอง: `place_photo_cache` ──────────────────────────────────
+      // 🔴 **คำขอคนละชนิดกับ Google** (`places.photos` ไม่ใช่ `places.rating,…`)
+      //    ⇒ ขาดไม่เท่ากันได้ตามธรรมชาติ · นั่นคือเหตุผลที่ P6 แยกเพดานเป็นสองตัว
+      const cachedPhotos = await cachedPhotoKeys(admin);
+      expect(cachedPhotos, "อ่าน place_photo_cache ไม่ได้").not.toBeNull();
+      const photoTargets = warmTargets({
+        catalog: catalog!.map((r) => ({
+          id: r.id,
+          mapsQuery: r.maps_query,
+          googlePlaceId: r.google_place_id,
+        })),
+        cachedKeys: cachedPhotos!,
+        limit: LIMIT,
+      });
+
+      const photoReport = await warmCache<{ maps_query: string; photo_names: string[] }>(
+        photoTargets,
+        {
+          fetchOne: async (key) => {
+            const { place, error } = await lookupPlace(key, "places.photos");
+            const names = place?.photos?.map((ph) => ph.name).filter(Boolean) ?? [];
+            // 🔴 ไม่มีรูป = **ไม่ใช่ความล้มเหลว** แต่ก็ไม่ควรเขียนแถวว่างไว้ให้เข้าใจผิดว่า "อุ่นแล้ว"
+            //    → ข้ามไป · แถวจะยังนับเป็น "ขาด" ซึ่งตรงกับความจริงมากกว่า
+            if (error || names.length === 0) return null;
+            return { maps_query: key, photo_names: names };
+          },
+          verifyPublic: async (keys) => {
+            const ok = await catalogPublicMapsQueries(admin, keys);
+            return ok.size === 0 && keys.length > 0 ? null : ok;
+          },
+          writeRows: async (rows) => {
+            const { error } = await admin
+              .from("place_photo_cache")
+              .upsert(rows.map((r) => ({ ...r, fetched_at: new Date().toISOString() })), {
+                onConflict: "maps_query",
+                ignoreDuplicates: true,
+              });
+            return error ? null : rows.length;
+          },
+        },
+      );
+
+      console.log(`\n📷 อุ่นรูป: เป้า ${photoReport.attempted} · เขียน ${photoReport.written} · ` +
+        `ไม่มีรูป/ล้ม ${photoReport.fetchFailed} · หลุดบัญชีขาว ${photoReport.droppedNotPublic} · ` +
+        `abort ${photoReport.aborted ?? "ไม่มี"}\n`);
+
+      expect(photoReport.aborted, `อุ่นรูปไม่สำเร็จ: ${photoReport.aborted}`).toBeNull();
+      expect(photoReport.droppedNotPublic, "คีย์รูปหลุดบัญชีขาวระหว่างรอบ").toBe(0);
     },
     120_000,
   );
