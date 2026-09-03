@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { chooseSoleTrip } from "@/lib/engine/tripChoice";
-import { readCache, writeCache, clearCache } from "@/lib/localCache";
+// 🔴 ไม่ import `readCache` มาที่นี่โดยตั้งใจ — การอ่าน `lastTripId` ต้องผ่าน `readOwnedCache` เท่านั้น
+//    (`lib/__tests__/lastTripIdOwnerGate.test.ts` บังคับ) · เหลือไว้เฉพาะฝั่ง *เขียน*/*ล้าง* ซึ่งไม่ได้เสิร์ฟข้อมูลให้ใคร
+import { writeCache, clearCache } from "@/lib/localCache";
+import { readDeviceOwner, readOwnedCache } from "@/lib/auth/deviceOwner";
 
 /** localStorage key เก็บ tripId ล่าสุดที่ resolve สำเร็จ (ไม่ว่าจาก route หรือ fallback) — เขียนใน
  *  `useActiveTripId()` เองทุกครั้งที่ได้ `"ready"` ไม่มีฟังก์ชันแยกให้เรียกจากที่อื่น (จุดเดียว ไม่ซ้ำ) */
@@ -46,13 +49,41 @@ export function useActiveTripId(opts: { fromRoute?: string } = {}): ActiveTripSt
       } catch {
         // 🔴 `fetch` ที่ throw คือออฟไลน์จริง (คนละเคสกับ `!res.ok`) — resolveTripId ตัดสินว่าจะแสดงอะไร
         if (cancelled) return;
-        const cachedId = readCache<string>(LAST_TRIP_ID_KEY);
+        /**
+         * 🔴 **`E6-AC14` — กิ่งนี้เป็นกิ่งเดียวที่เสิร์ฟ `lastTripId` โดยไม่มีเซิร์ฟเวอร์มายืนยัน**
+         *
+         * กิ่งออนไลน์ข้างล่างปลอดภัยอยู่แล้ว: `resolveTripId` เทียบ `cachedId` กับ `trips` ที่เซิร์ฟเวอร์
+         * คืนมา (ผ่าน RLS ของผู้ใช้จริง) → id ของเจ้าของคนก่อนถูกคัดออกเอง · **กิ่งนี้ไม่มีตัวเทียบนั้น**
+         *
+         * ## ⚠️ ทำไมสองฝั่งของการเทียบมาจากตราเหมือนกัน — และทำไมมันไม่ใช่ "เทียบค่ากับตัวเอง"
+         * 🎯 **การป้องกันเกิดตอน *ออนไลน์* · ตอนออฟไลน์เราแค่ *ใช้ผล* ของมัน**
+         * ออฟไลน์ B มีตัวตนบนเครื่องนี้ไม่ได้ถ้าไม่เคยล็อกอิน — และการล็อกอิน **ต้องออนไลน์** ซึ่งเป็น
+         * วินาทีที่ `stampDeviceOwner` อัปเดตตราและล้างข้อมูลของ A ไปแล้ว
+         * · 🔴 **สิ่งที่กิ่งนี้กันจริง ๆ คือกรณีตราเป็น `null`** (รอบแรกหลัง deploy · ล้าง `localStorage` มา ·
+         *   ยังไม่เคยผ่าน auth event เลย) = *ไม่รู้ว่าข้อมูลนี้ของใคร* → **ไม่เสิร์ฟ** (fail closed)
+         *   **ถ้าลบการเทียบทิ้งเพราะดู "ไร้ประโยชน์" กิ่งนั้นจะหายไปด้วย**
+         *
+         * ## 🔴 ห้ามเปลี่ยนไปเอา `viewerId` จาก `supabase.auth.getSession()` — วัดแล้ว 2 เหตุ
+         * token หมดอายุ + ออฟไลน์ → คืน `session: null` (**เจ้าของตัวจริงจะไม่เห็นอะไรเลย**)
+         * และ **ใช้เวลา ~25 วินาที** เพราะมัน retry การ refresh → จอค้างก่อนล้มเหลว
+         * · ⚠️ เหตุที่สองยืนอยู่ได้แม้ไลบรารีจะแก้เหตุแรก · รายละเอียดในสัญญาของ `readOwnedCache`
+         */
+        const cachedId = readOwnedCache<string>(LAST_TRIP_ID_KEY, readDeviceOwner());
         setState(cachedId ? { status: "ready", tripId: cachedId } : { status: "offline-first-launch" });
         return;
       }
       if (cancelled) return;
 
-      const cachedId = readCache<string>(LAST_TRIP_ID_KEY);
+      /**
+       * 🔴 กิ่งออนไลน์ก็อ่านผ่านด่านเดียวกัน **ทั้งที่ `resolveTripId` กรอง id ของคนอื่นออกอยู่แล้ว**
+       * เหตุผลไม่ใช่ความปลอดภัยเพิ่ม แต่คือ **ทำให้คุณสมบัติที่ตรวจได้เป็นจริงทั้งไฟล์:**
+       * ***`LAST_TRIP_ID_KEY` ถูกอ่านผ่าน `readOwnedCache` เท่านั้น ไม่มีข้อยกเว้น***
+       * · ถ้าเหลือ `readCache` ดิบไว้สักจุด **ด่านจะต้องรู้ว่าจุดไหน "ถูก" ซึ่งแปลว่าต้องมีทะเบียน**
+       *   และทะเบียนคือสิ่งที่เราเลี่ยงมาทั้งคืน · 🎯 *กฎที่ไม่มีข้อยกเว้น ตรวจด้วยตาได้ · กฎที่มีข้อยกเว้นต้องมีคนดูแล*
+       * · ราคาที่จ่าย: ตราเป็น `null` ตอนออนไลน์ (รอบแรกหลัง deploy) → ทิ้ง `cachedId` ไปหนึ่งครั้ง
+       *   **ไม่ใช่ข้อมูลหาย** — `resolveTripId` ยังมี `trips` จากเซิร์ฟเวอร์ให้เลือกต่อได้ตามปกติ
+       */
+      const cachedId = readOwnedCache<string>(LAST_TRIP_ID_KEY, readDeviceOwner());
       const result = resolveTripId(trips, { fromRoute, cachedId });
       if (result.clearCache) clearCache(LAST_TRIP_ID_KEY);
       else if (result.state.status === "ready") writeCache(LAST_TRIP_ID_KEY, result.state.tripId);
