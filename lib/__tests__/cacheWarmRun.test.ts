@@ -9,7 +9,6 @@ import {
   cachedPhotoKeys,
   catalogPublicMapsQueries,
 } from "@/lib/engine/db";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * **`Q3` ก้าวที่ 2 · ตัวรันจริงของการอุ่นแคช** · P1 · 3 ก.ย. 2026
