@@ -157,6 +157,15 @@ export default defineConfig({
     //    → การเพิ่มบรรทัดนี้ทำให้มัน *พร้อมใช้* ไม่ได้ทำให้มัน *ทำงานเอง* — ต้องตั้ง `FIXTURE_REAPER=1`
     //    ด้วยมือถึงจะกวาดจริง (+ creds) · ตรงกับข้อเท็จจริงที่วัดแล้วว่า **รอบปกติเก็บกวาดครบ**
     //    reaper จึงมีไว้กวาดหลัง process ถูกฆ่ากลางทาง ไม่ใช่ของที่ควรรันทุกรอบ
-    globalSetup: ["./lib/__tests__/fixtureLockGlobal.ts", "./lib/__tests__/fixtureReaper.ts"],
+    // 🔴 **ลำดับใน array นี้มีความหมาย** — vitest รัน teardown **ย้อนลำดับ**
+    //    `catalogFixtureSweep` จึงต้องอยู่ **หลัง** `fixtureLockGlobal`
+    //    ⇒ teardown ของมันรัน *ก่อน* lock ถูกปล่อย ⇒ กวาดขณะยังถือ lock อยู่
+    //    ⚠️ ย้ายขึ้นก่อนเมื่อไหร่ = กวาดตอนไม่มี lock = ชนกับเซสชันอื่นที่เพิ่งเริ่มรอบ
+    //    · 🔴 **และไม่มีอะไรฟ้อง** — มันจะทำงานถูกเกือบทุกครั้ง แล้วผิดตอนสองรอบซ้อนกันพอดี
+    globalSetup: [
+      "./lib/__tests__/fixtureLockGlobal.ts",
+      "./lib/__tests__/fixtureReaper.ts",
+      "./lib/__tests__/catalogFixtureSweep.ts",
+    ],
   },
 });
