@@ -2,27 +2,35 @@ name: cache-warm
 
 # `Q3` ก้าวที่ 2 — ตัวรัน "อุ่นแคช" ที่ถือ service_role และอยู่นอกเส้นทาง request (P1 ขอ · P6 ทำ)
 #
-# 🔴 แก้ 3 ก.ย. 2026 — ตัวเขียนของ P1 เสร็จแล้ว (`lib/engine/cacheWarmWrite.ts` +
-#    `lib/__tests__/cacheWarmRun.test.ts`) ต่อสายจริงแล้ว **แต่ยังเป็น `workflow_dispatch` เท่านั้น**
-#    ห้ามเปิด `schedule` จนกว่า:
-#    ① **ผู้ใช้อนุมัติให้รันครั้งแรก** — ตัวรันนี้ยิง Google จริงและเขียนฐานจริง ไม่เคยถูกรันสักครั้ง
-#       P1 เสนอให้เริ่มด้วย `limit: 3` (ค่า default ของ dispatch input) เพื่อดูรายงานก่อนปล่อยเต็ม
-#    ② ตกลงกันเรื่องความถี่ที่สอดคล้องกับ rate limit ฝั่ง Google (ยังไม่ตัดสิน)
-#    ③ TTL ยังไม่มีมติ — ตัวเขียนนี้เติมเฉพาะคีย์ที่ *ขาด* เท่านั้น ไม่รีเฟรชของเก่า
+# 🔴 แก้ 3 ก.ย. 2026 — ตัวเขียนของ P1 เสร็จแล้ว รันจริงครบทั้งสองตารางแล้ว (174/174 details ·
+#    173/174 photos) **แต่ยังเป็น `workflow_dispatch` เท่านั้น** ห้ามเปิด `schedule` จนกว่า:
+#    ① **ผู้ใช้อนุมัติให้เปิด** — คีย์ `GOOGLE_MAPS_API_KEY` ใส่แล้ว แต่ยังไม่มีใครยิง schedule จริงสักรอบ
+#       (รอบที่กดจะเป็นตัวพิสูจน์ว่าคีย์ใน Secret ใช้ได้จริง — P1 ทดสอบได้แค่คีย์ในเครื่องตัวเอง)
+#    ② ผู้ใช้ตัดสิน TTL แล้ว = **30 วัน** (`CACHE_MAX_AGE_DAYS` ใน `lib/engine/db.ts`) — ดูผลต่อความถี่ข้างล่าง
+#
+# 🎯 **ความถี่ cron — คำนวณจาก TTL ของ P1 (`4053bc6`) ไม่ใช่เดา:**
+#    `CACHE_REFRESH_AFTER_DAYS=20` (ตัวอุ่นเริ่มไล่ต่ออายุ) vs `CACHE_MAX_AGE_DAYS=30` (heartbeat ถือว่าขาด)
+#    ⇒ มีแค่ **10 วัน** ให้ไล่ต่ออายุ 174 คีย์ × 2 ตาราง ก่อนจะเข้าเกณฑ์ "ขาด" ของ heartbeat เอง
+#    ```
+#    174 คีย์ ÷ 10 วัน ≈ 18 คีย์/วัน/ตาราง  →  limit=3 ต่อรอบ  →  ต้องการ ≥ 6 รอบ/วัน
+#    schedule รายชั่วโมง (24 รอบ/วัน) ไล่ครบใน ~2.4 วัน — เกินพอ ราคา ~144 คำขอ Google/วัน
+#    schedule รายวัน (1 รอบ/วัน) ไล่ครบใน 58 วัน — **นานกว่า TTL เอง → แคชไม่มีวันครบ → heartbeat แดงถาวร**
+#    ```
+#    🔴 **ตัวเลข 174 มาจากการวัดวันที่ 3 ก.ย. — ถ้าคลังโตขึ้น สูตรนี้ต้องคิดใหม่ ไม่มีอะไรเตือนอัตโนมัติ**
+#    เมื่อจะเปิด schedule: ใช้ `- cron: "0 * * * *"` (รายชั่วโมง) ไม่ใช่ความถี่ที่ต่ำกว่านั้น
 #
 # 🔴 อย่าใส่ `CRON_SECRET`/เรียกผ่าน Next.js API — service_role key ต้องอยู่ที่เดียวกับที่มันอยู่แล้ว
 #    (secret ของ job `rls` ใน `ci.yml`) ไม่ใช่โผล่ในที่ที่สาม
-#
-# ⚠️ **ต้องมี secret `GOOGLE_MAPS_API_KEY` (คีย์จริง ไม่ใช่ placeholder ที่ job `verify` ใช้) —
-#    ยังไม่ยืนยันว่ามีอยู่ใน repo secrets** เจ้าของ repo ต้องเพิ่มก่อนรันจริงครั้งแรก
 
 on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "เพดานจำนวนคีย์ที่จะอุ่นรอบนี้ (P1 เสนอ 3 สำหรับรันครั้งแรก)"
+        description: "เพดานจำนวนคีย์ที่จะอุ่นรอบนี้ (default 3 — ตรงกับที่คำนวณความถี่ cron ไว้ด้านบน)"
         required: false
         default: "3"
+  # schedule:
+  #   - cron: "0 * * * *"   # TODO: เปิดเมื่อผู้ใช้อนุมัติ — ดูสูตรความถี่ด้านบนก่อนเปลี่ยนเป็นค่าอื่น
 
 jobs:
   warm:
@@ -50,12 +58,17 @@ jobs:
       # 🔴 CACHE_WARM_RUN=1 ต้องตั้งชัดเจน — ค่าตั้งต้นของไฟล์เทสต์คือ "ไม่ทำงาน" โดยตั้งใจ
       #    CACHE_WARM_LIMIT ใช้ envInt() (trim แล้วเช็คว่าง) ไม่ใช่ `??` — GH Actions ให้ input
       #    ที่เว้นว่างเป็นสตริงว่าง ไม่ใช่ undefined (P6 พิสูจน์แล้วกับ CACHE_MAX_MISSING_* ของ heartbeat)
+      # 🔴 แก้ 3 ก.ย. 2026 (P6) — เจอเองก่อนเปิด schedule: `github.event.inputs.limit` **ไม่มีอยู่เลย**
+      #    ตอนถูกยิงจาก `schedule` (มีแค่ `workflow_dispatch` เท่านั้นที่มี `inputs`) → ค่าที่ได้คือ
+      #    สตริงว่าง → `cacheWarmRun.test.ts` ตกไปใช้ default ของมันเอง (`25`) **ไม่ใช่ `3`**
+      #    ⇒ สูตรความถี่ cron ด้านบน (คิดจาก limit=3) จะผิดทันทีที่ schedule เริ่มรัน ถ้าไม่กันตรงนี้
+      #    ใช้ `||` ให้ตกกลับมาที่ `3` เมื่อ `inputs.limit` ว่าง (`schedule`/ทริกเกอร์อื่นที่ไม่มี inputs)
       - name: อุ่นแคช (CACHE_WARM_RUN=1)
         id: warm
         run: npx vitest run lib/__tests__/cacheWarmRun.test.ts
         env:
           CACHE_WARM_RUN: "1"
-          CACHE_WARM_LIMIT: ${{ github.event.inputs.limit }}
+          CACHE_WARM_LIMIT: ${{ github.event.inputs.limit || '3' }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
