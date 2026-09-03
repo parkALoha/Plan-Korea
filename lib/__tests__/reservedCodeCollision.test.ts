@@ -43,7 +43,9 @@ function seededCountryCodes(): { code: string; file: string }[] {
   for (const f of files) {
     const sql = readFileSync(f, "utf-8");
     // จับทุกบล็อก `insert into ... catalog_countries ... values` แล้วอ่านจนถึง `;`
-    const re = /insert\s+into\s+(?:public\.)?catalog_countries\b[^;]*?\bvalues\b([^;]*);/gis;
+    // 🔴 ห้ามใช้ธง `s` (dotAll) — `tsc` ของโปรเจกต์นี้ target ต่ำกว่า ES2018 → `TS1501`
+    //    ใช้ `[^;]` แทน ซึ่งข้ามบรรทัดอยู่แล้วโดยไม่ต้องพึ่งธง
+    const re = /insert\s+into\s+(?:public\.)?catalog_countries\b[^;]*?\bvalues\b([^;]*);/gi;
     for (const m of sql.matchAll(re)) {
       // แถวหนึ่ง = `('xx', ...)` — เอาสตริงแรกของแต่ละวงเล็บ
       for (const row of m[1].matchAll(/\(\s*'([^']+)'/g)) out.push({ code: row[1], file: f });
