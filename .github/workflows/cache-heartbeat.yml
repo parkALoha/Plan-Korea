@@ -1,0 +1,54 @@
+name: cache-heartbeat
+
+# ตอบคำถามเดียว: **แคชกำลังถูกอุ่นจริงไหม** — ไม่ใช่ "cron รันจบไหม" (P6 · 3 ก.ย. 2026)
+#
+# 🎯 "cron ตาย" กับ "cron รันจบแต่โดน Google rate-limit จนเขียนไม่ลงสักแถว" ต้องแดงเหมือนกัน
+#    ทั้งสองอาการ **ผู้ใช้เห็นเหมือนกันทุกประการ** (เว็บทำงานปกติ แค่ช้าและแพง) — ตามที่ P1 ตั้งคำถามไว้
+#    → วัดผลลัพธ์จริง (แถวถูกเขียนเมื่อไหร่) ไม่ใช่ exit code ของ workflow อื่น
+#
+# 🔴 ยังเป็น `workflow_dispatch` เท่านั้น — เปิด `schedule` พร้อมกับ `cache-warm.yml`
+#    เปิดตอนนี้จะแดงตลอดเวลาเพราะยังไม่มีตัวเขียนเลย (ไม่มีประโยชน์ มีแต่ noise)
+#
+# 🔴 ค่า threshold ต้องมาจาก TTL จริงของแคช ไม่ใช่ความรู้สึก (P1 เตือนไว้ตรงๆ)
+#    ตอนนี้ยังไม่มี TTL ตัดสินแล้ว — ใส่ placeholder ไว้ก่อน ห้ามเปิด schedule จนกว่าจะมีเลขจริง
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_staleness_hours:
+        description: "แคชแถวล่าสุดต้องไม่เก่ากว่ากี่ชั่วโมง (placeholder จนกว่าจะมี TTL จริง)"
+        required: false
+        default: "6"
+  # schedule:
+  #   - cron: "0 * * * *"   # TODO: เปิดพร้อม cache-warm.yml เมื่อมี TTL จริงมาตัดสิน threshold
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.12.2'
+          cache: npm
+      - run: npm ci
+
+      - name: ยืนยันว่า secret ชี้ engine-dev ก่อนแตะ DB
+        run: .github/check-ci-target.py
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
+      # 🔴 TODO: เขียนสคริปต์นี้เมื่อมีตัวเขียนแคชจริงให้วัด — วันนี้ยังเป็น placeholder
+      #    ต้อง: select max(fetched_at) จากทั้ง 2 ตาราง (place_details_cache · place_photo_cache)
+      #    ถ้า now() - max(fetched_at) > threshold → exit 1 (ปล่อยให้ GitHub ส่งอีเมลแจ้งความล้มเหลวเอง)
+      #    ⚠️ ตารางว่างสนิท (ยังไม่เคยอุ่นเลย) ต้องถือเป็นแดงเหมือนกัน ไม่ใช่ "ไม่มีอะไรให้วัด = ผ่าน"
+      - name: เช็คว่าแคชถูกอุ่นเมื่อไหร่ล่าสุด (placeholder)
+        run: |
+          echo "🔴 ยังไม่มีสคริปต์วัด fetched_at จริง — รอ P1 ทำตัวเขียนก่อน"
+          exit 1
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+          MAX_STALENESS_HOURS: ${{ github.event.inputs.max_staleness_hours }}

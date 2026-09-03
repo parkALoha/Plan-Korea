@@ -1,0 +1,64 @@
+name: cache-warm
+
+# `Q3` ก้าวที่ 2 — ตัวรัน "อุ่นแคช" ที่ถือ service_role และอยู่นอกเส้นทาง request (P1 ขอ · P6 ทำ)
+#
+# 🔴 ยังเป็น `workflow_dispatch` เท่านั้น ห้ามเปิด `schedule` จนกว่า:
+#    ① P1 เขียนตัวเรียก Google API + ตัวเขียนแคชเสร็จ (ตอนนี้มีแค่ `lib/engine/cacheWarmList.ts`
+#       ซึ่งเป็นตรรกะเลือกคีย์ล้วน ไม่มีผลข้างเคียง — ยังไม่มี entry point ให้ workflow นี้เรียก)
+#    ② ตกลงกันเรื่องเพดานต่อรอบ/ความถี่ที่สอดคล้องกับ rate limit ฝั่ง Google
+#    เปิด schedule ตอนนี้ = รันทุกครั้งที่กด dispatch ใส่สคริปต์ที่ยังไม่มีจริง → step จะ fail เฉยๆ
+#    (ตั้งใจให้ fail แบบนั้น ไม่ใช่ปล่อยให้ดูเหมือนสำเร็จ)
+#
+# 🔴 อย่าใส่ `CRON_SECRET`/เรียกผ่าน Next.js API — service_role key ต้องอยู่ที่เดียวกับที่มันอยู่แล้ว
+#    (secret ของ job `rls` ใน `ci.yml`) ไม่ใช่โผล่ในที่ที่สาม (ดูเหตุผลเต็มใน handoff/PLAN ที่ P1 ขอ)
+
+on:
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: "*/30 * * * *"   # TODO: เปิดพร้อมตัวเรียก Google — ตัดสินความถี่จาก TTL จริง ไม่ใช่เดา
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    # 🔴 เหมือน job `rls` ทุกประการ — กันสองรอบชนกันบนฐานเดียวกัน (schedule ในอนาคตจะรันถี่กว่า push)
+    concurrency:
+      group: engine-dev-live
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.12.2'
+          cache: npm
+      - run: npm ci
+
+      # 🔴 ต้องมาก่อนแตะฐานเสมอ — ของเดิมที่ job `rls` ใช้อยู่แล้ว ไม่เขียนด่านใหม่ซ้ำ
+      - name: ยืนยันว่า secret ชี้ engine-dev ก่อนแตะ DB
+        run: .github/check-ci-target.py
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
+      # 🔴 TODO(P1): ยังไม่มีสคริปต์นี้จริง — เติมเมื่อ warmTargets() มีตัวเรียก Google + ตัวเขียนแล้ว
+      #    ต้อง: (1) เรียก warmTargets() จาก lib/engine/cacheWarmList.ts พร้อม limit ต่อรอบ
+      #          (2) whitelist self-check ก่อนเขียนทุกแถว (service_role มี BYPASSRLS — ห้ามเชื่อ select ที่อ่านมา)
+      #          (3) rate-limit การยิง Google (sleep ระหว่างคำขอ ไม่ใช่ยิงพร้อมกันหมด)
+      - name: อุ่นแคช (ยังไม่มีสคริปต์ - placeholder)
+        id: warm
+        run: |
+          echo "🔴 ยังไม่มี lib/engine/cacheWarm.ts (ตัวเรียก Google + ตัวเขียน) — รอ P1"
+          exit 1
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
+      # 🔴 post-check ตามที่ P1 เสนอ — ใช้ได้แล้วหลัง grant execute (ข้อยกเว้นที่ 7 · `62c1f93`)
+      #    ถ้า cron เผลอเปิดสิทธิ์อะไรระหว่างทาง (เช่น bug เขียนผิดตาราง) ด่านนี้จับก่อนจบ job
+      - name: post-check — service_role ไม่ได้เปิดสิทธิ์อะไรเกิน (assert_cache_lockdown)
+        if: always()
+        run: |
+          echo "🔴 TODO: เรียก app.assert_cache_lockdown() ผ่าน RPC เมื่อมีตัวเขียนจริงให้ทดสอบคู่กัน"
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
