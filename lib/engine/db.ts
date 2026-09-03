@@ -42,6 +42,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
+import { PLACE_ID_PREFIX } from "@/lib/placeQuery";
 
 /** ตารางของแพลตฟอร์มที่ชั้นนี้ดูแล — เพิ่มตารางใหม่ = เพิ่มฟังก์ชันในไฟล์นี้ ไม่ใช่เรียก `.from` ที่อื่น */
 export type EngineTable =
@@ -215,13 +216,50 @@ export async function catalogPublicSlugs(db: Db, slugs: string[]): Promise<Set<s
  *   สำหรับ `E3-AC6`: **แคชเฉพาะสิ่งที่พิสูจน์ได้ว่าเป็นของคลังสาธารณะ**
  */
 export async function catalogPublicMapsQueries(db: Db, queries: string[]): Promise<Set<string>> {
-  return catalogPublicValues(db, "maps_query", queries);
+  /**
+   * 🔴 **แก้ 3 ก.ย. 2026 — ฉบับแรกเทียบคอลัมน์เดียว แล้วคีย์ครึ่งหนึ่งไม่มีทางผ่าน (P1 เจอเอง)**
+   * `placeQueryKey()` คืน **สองรูป** · ฉบับแรกของประตูนี้รู้จักรูปเดียว
+   * ```
+   * "<mapsQuery>"      → เทียบ catalog_places.maps_query        ← ฉบับแรกทำเฉพาะอันนี้
+   * "place_id:<gid>"   → ต้องเทียบ catalog_places.google_place_id  ← ไม่เคยถูกเทียบเลย
+   * ```
+   * วัดกับข้อมูลจริง (สำเนาแช่แข็ง · สนามซ้อมในเครื่อง):
+   * ```
+   * place_details_cache  คีย์รูป place_id:  22 / 140   ผ่านประตูฉบับแรก **0 แถว**
+   * ในนั้นเป็นของคลังจริง (มี google_place_id ตรงกัน)   3 แถว   ← ถูกกันทิ้งทั้งที่พิสูจน์ได้ว่าสาธารณะ
+   * ```
+   * 🔴 **ทิศของความเสียหายคือ fail-closed — ไม่ใช่ช่องรั่ว** แต่แคชตายถาวรสำหรับ *ของที่เราคัดเอง*
+   *    ซึ่งเป็นกลุ่มที่เปิดบ่อยที่สุด **และเป็นกลุ่มที่ปลอดภัยที่สุดที่จะแคช**
+   * ⚠️ **และมันเงียบ** — ไม่มี error · ผู้ใช้ยังได้คำตอบ (ยิง Google ใหม่ทุกครั้ง) · เห็นที่บิลค่า API เท่านั้น
+   * 📌 วันนี้คลังมี `google_place_id` แค่ 3/203 แถว — **นั่นคือช่องว่างของ *ข้อมูล* คนละเรื่องกับช่องว่างของ *ประตู* นี้**
+   */
+  const wanted = queries.filter((q) => q.length > 0);
+  if (wanted.length === 0) return new Set();
+
+  const plain = wanted.filter((q) => !q.startsWith(PLACE_ID_PREFIX));
+  const byPlaceId = new Map<string, string>();          // google place id → คีย์รูปเดิม
+  for (const q of wanted) {
+    if (q.startsWith(PLACE_ID_PREFIX)) byPlaceId.set(q.slice(PLACE_ID_PREFIX.length), q);
+  }
+
+  const [okPlain, okIds] = await Promise.all([
+    catalogPublicValues(db, "maps_query", plain),
+    catalogPublicValues(db, "google_place_id", [...byPlaceId.keys()]),
+  ]);
+
+  // 🔴 คืน **คีย์ในรูปที่ผู้เรียกส่งมา** ไม่ใช่ค่าที่คลังเก็บ — ผู้เรียกเอาไปทำ `.in("maps_query", …)` ต่อ
+  const out = new Set(okPlain);
+  for (const gid of okIds) {
+    const key = byPlaceId.get(gid);
+    if (key) out.add(key);
+  }
+  return out;
 }
 
 /** แกนร่วมของสองตัวบน — ถามคลังว่าค่าไหน "มีอยู่จริง" · **ล้ม = เซตว่าง ไม่ใช่โยน ไม่ใช่เดา** */
 async function catalogPublicValues(
   db: Db,
-  column: "legacy_slug" | "maps_query",
+  column: "legacy_slug" | "maps_query" | "google_place_id",
   values: string[]
 ): Promise<Set<string>> {
   const wanted = values.filter((v) => v.length > 0);
