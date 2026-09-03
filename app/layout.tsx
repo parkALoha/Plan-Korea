@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { CacheFullBanner } from "@/components/CacheFullBanner";
 import { SystemModeBanner } from "@/components/SystemModeBanner";
 import { DeviceOwnerStamp } from "@/components/DeviceOwnerStamp";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
@@ -39,6 +40,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <DeviceOwnerStamp />
         <ServiceWorkerRegistrar />
         <OfflineBanner />
+        {/* คนละเรื่องกับ OfflineBanner โดยตั้งใจ — อันบนบอกว่าที่เห็นเป็นของเก่า
+            อันนี้บอกว่าของใหม่จะไม่ถูกเก็บไว้เลย (E6-AC7 ครึ่งฝั่งผู้ใช้) */}
+        <CacheFullBanner />
         {/* ครอบทั้ง banner และ children — ทั้งคู่อ่านโหมดผ่าน useSystemMode() (banner เป็นคนแรก
             ตอนนี้มี BookingEditModal ที่ลึกลงไปใน children เป็นคนที่สองแล้ว) provider ต้องอยู่เหนือ
             ทุกจุดที่เรียก ไม่ใช่แค่เหนือ banner (ดู hooks/useSystemMode.tsx) */}
