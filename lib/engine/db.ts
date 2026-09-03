@@ -256,6 +256,81 @@ export async function catalogPublicMapsQueries(db: Db, queries: string[]): Promi
   return out;
 }
 
+/**
+ * **`Q3` ก้าวที่ 2 — ฝั่งดึงข้อมูลให้ตัวอุ่นแคช** · P1 · 3 ก.ย. 2026
+ *
+ * 🔴 **PostgREST ตัดผลลัพธ์ที่ `db-max-rows` (ค่าเริ่มต้น 1000) *เงียบ ๆ*** — ไม่มี error ไม่มีสัญญาณ
+ * · วัดแล้ว `catalog_places` วันนี้ **1118 แถว** ⇒ อ่านรวดเดียวจะได้ไม่ครบ **แล้วตัวอุ่นจะข้ามของจริงไปเงียบ ๆ**
+ * · ⚠️ **ไม่มีใครใน `db.ts` ใช้ `.range()` มาก่อนเลย** — ตัวอื่นอ่านทีละทริป/ทีละวัน จึงไม่เคยชนเพดานนี้
+ * 🎯 **อาการเวลาโดนตัด อ่านเหมือน "อุ่นครบแล้ว"** เพราะแถวที่หายไปไม่เคยเข้ามาในรายการตั้งแต่แรก
+ *
+ * 📌 **ทั้งสามตัวคืน `null` เมื่ออ่านไม่ได้ ไม่ใช่รายการว่าง** — ผู้เรียกต้องแยก *"ไม่มีอะไรต้องอุ่น"*
+ *    ออกจาก *"ถามฐานไม่ได้"* · ถ้าคืนว่างทั้งสองกรณี cron จะรายงานว่าไม่มีงานทำในวันที่ฐานล่ม
+ * ⚠️ **ไม่มีตัวไหนกรอง fixture ด้วยรหัสประเทศสงวน** — และไม่ต้อง: fixture ในคลังมี `maps_query` เป็น `null`
+ *    ทั้ง 916 แถว (วัดแล้ว) → `warmTargets()` กรองทิ้งเองด้วยกฎ *"ไม่มีคีย์ = ข้าม"* · **เกณฑ์อยู่ที่เดียว**
+ */
+const WARM_PAGE = 500;
+
+export async function catalogKeyRows(db: Db) {
+  const out: { id: string; maps_query: string | null; google_place_id: string | null }[] = [];
+  for (let from = 0; ; from += WARM_PAGE) {
+    const { data, error } = await engineTable(db, "catalog_places")
+      .select("id, maps_query, google_place_id")
+      .range(from, from + WARM_PAGE - 1);
+    if (error || !data) return null;
+    out.push(...data);
+    if (data.length < WARM_PAGE) return out;
+  }
+}
+
+/** คีย์ที่มีแถวอยู่แล้วใน `place_details_cache` */
+export async function cachedDetailKeys(db: Db) {
+  const out: string[] = [];
+  for (let from = 0; ; from += WARM_PAGE) {
+    // 🔴 ตารางแคชไม่อยู่ใน `EngineTable` โดยตั้งใจ → ใช้ `db.from()` ตรงเหมือนที่ `route` ทำ
+    const { data, error } = await db
+      .from("place_details_cache")
+      .select("maps_query")
+      .range(from, from + WARM_PAGE - 1);
+    if (error || !data) return null;
+    for (const r of data) out.push(r.maps_query);
+    if (data.length < WARM_PAGE) return new Set(out);
+  }
+}
+
+/** คีย์ที่มีแถวอยู่แล้วใน `place_photo_cache` */
+export async function cachedPhotoKeys(db: Db) {
+  const out: string[] = [];
+  for (let from = 0; ; from += WARM_PAGE) {
+    // 🔴 ตารางแคชไม่อยู่ใน `EngineTable` โดยตั้งใจ → ใช้ `db.from()` ตรงเหมือนที่ `route` ทำ
+    const { data, error } = await db
+      .from("place_photo_cache")
+      .select("maps_query")
+      .range(from, from + WARM_PAGE - 1);
+    if (error || !data) return null;
+    for (const r of data) out.push(r.maps_query);
+    if (data.length < WARM_PAGE) return new Set(out);
+  }
+}
+
+/**
+ * `catalog_places.id` ที่ถูกอ้างจาก `trip_stops` — สัญญาณลำดับความสำคัญ
+ * 🔴 **ผู้ใช้ไม่ต้องเขียนอะไรเพื่อให้สัญญาณนี้เกิด** — เป็นผลข้างเคียงของการวางแผนทริปตามปกติ
+ *    (นั่นคือเหตุผลที่ปฏิเสธคิว cache-miss ที่ `route` เป็นคนเขียน)
+ */
+export async function tripReferencedCatalogPlaceIds(db: Db) {
+  const out: string[] = [];
+  for (let from = 0; ; from += WARM_PAGE) {
+    const { data, error } = await engineTable(db, "trip_stops")
+      .select("catalog_place_id")
+      .not("catalog_place_id", "is", null)
+      .range(from, from + WARM_PAGE - 1);
+    if (error || !data) return null;
+    for (const r of data) if (r.catalog_place_id) out.push(r.catalog_place_id);
+    if (data.length < WARM_PAGE) return new Set(out);
+  }
+}
+
 /** แกนร่วมของสองตัวบน — ถามคลังว่าค่าไหน "มีอยู่จริง" · **ล้ม = เซตว่าง ไม่ใช่โยน ไม่ใช่เดา** */
 async function catalogPublicValues(
   db: Db,
