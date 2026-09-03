@@ -5,6 +5,16 @@ import { catalogKeyRows, cachedDetailKeys, cachedPhotoKeys, type Db } from "@/li
 import { warmTargets } from "@/lib/engine/cacheWarmList";
 
 /**
+ * 🔴 `??` เฉย ๆ ไม่พอ — GitHub Actions ตั้ง env จาก `workflow_dispatch` input ที่เว้นว่างไว้เป็น
+ * **สตริงว่าง ไม่ใช่ `undefined`** → `Number("" ?? "141")` ได้ `0` ไม่ใช่ `141` (พิสูจน์แล้วก่อน commit)
+ * เพดาน `0` ที่ไม่มีใครตั้งใจ = ด่านแดงทันทีโดยดูเหมือนเป็นบั๊กของโค้ด ไม่ใช่ของ config
+ */
+function envInt(name: string, fallback: number): number {
+  const raw = (process.env[name] ?? "").trim();
+  return raw === "" ? fallback : Number(raw);
+}
+
+/**
  * `Q3` ก้าวที่ 2 — cache-heartbeat: **จำนวนคีย์ที่ยังไม่ได้อุ่น ต้องไม่ค้าง** · เจ้าของ: P6-DevOps (3 ก.ย. 2026)
  *
  * ## ทำไมวัด "คีย์ที่ขาด" ไม่ใช่ "แถวสดแค่ไหน" (`fetched_at`)
@@ -28,14 +38,23 @@ import { warmTargets } from "@/lib/engine/cacheWarmList";
  * ถ้ารวม `missingDetails + missingPhotos` เป็นก้อนเดียว ตารางใดตารางหนึ่งพังสนิทแต่อีกใบปกติ
  * ยังผ่านได้ถ้าผลรวมบังเอิญต่ำ — แยก assert สองบรรทัดจึงจำเป็น ไม่ใช่แค่สไตล์
  *
- * ## 🔴 `it.fails` ตรงนี้เพราะยังไม่มีตัวเขียน — ไม่ใช่การปิดตา (รูปเดียวกับ `cacheWritesAreServerOnly.test.ts`)
- * ยิงจริงบน `engine-dev` วันที่เขียนไฟล์นี้ (3 ก.ย. 2026): **141 คีย์ขาดใน `place_details_cache`**
- * (คลัง 202 · คีย์ที่แคชได้ 174 · อุ่นแล้ว 33 — ยังไม่มีตัวเขียนของ P1 เลย) → assertion นี้ **ต้องแดง
- * วันนี้** เพราะสภาพจริงเป็นแบบนี้จริง `it.fails` จึงรายงาน "ผ่าน" (แดงตามคาด ไม่ใช่แดงผิดที่)
- * 🎯 **วันที่ตัวเขียนของ P1 เสร็จและขาด=0 จริง `it.fails` จะกลายเป็น "ล้ม"** (assertion เริ่มผ่านโดยไม่คาด)
- * — นั่นคือสัญญาณให้เปลี่ยนกลับเป็น `it(...)` ธรรมดา **ไม่ใช่บั๊กของเทสต์นี้**
- * ⚠️ **ห้ามใส่ไฟล์นี้เข้า job ที่ต้องเขียวเสมอ** (เช่น `rls` ใน `ci.yml`) จนกว่าจะแปลงกลับเป็น `it`
- *    ปกติแล้วต้องมี creds (`RLS_MATRIX_REQUIRED=1`) ถึงจะรันจริง — ไม่มี creds = ข้าม (ดู `it` แรกด้านล่าง)
+ * ## 🔴 แก้ 3 ก.ย. 2026 (P1 ทัก) — เดิมห่อด้วย `it.fails` แล้วพบว่ามันทำให้ heartbeat ไม่มีอำนาจ
+ * `it.fails` รายงาน "ผ่าน" เสมอไม่ว่าจะขาดกี่คีย์ — heartbeat จึงตอบคำถาม *"ตัวอุ่นทำงานอยู่ไหม"*
+ * ด้วย "ใช่" ตลอดกาล จนกว่าจะมีคนแปลงกลับเอง **ทั้งที่ตอนนี้คือตอนที่ heartbeat มีค่าที่สุด** —
+ * ถ้าคลังโตขึ้นระหว่างที่ยังไม่มีตัวเขียน เราอยากรู้ แต่ `it.fails` จะเงียบ
+ *
+ * ✅ **ใช้เพดาน + ตัวเตือนว่าเพดานล้าแทน — ได้ทั้งด่านจริงตั้งแต่วันนี้ และการพลิกตัวเองเมื่อขาด→0:**
+ * ```
+ * ① ขาด > เพดาน        →  แดงทันที (ด่านทำงานจริง ไม่ต้องรอตัวเขียนเสร็จ)
+ * ② เพดาน − ขาด ใกล้ 0  →  แดง "เพดานล้า ลดได้แล้ว" (พลิกเองเมื่อตัวอุ่นเริ่มทำงาน — หน้าที่เดียวกับ it.fails เดิม)
+ * ```
+ * วัดจริงบน `engine-dev` วันนี้ (3 ก.ย. 2026): คลัง 1118 · คีย์ที่แคชได้ 174 · อุ่นแล้ว 33 ทั้งสองตาราง
+ * → **เพดานเริ่มต้น = 141 ทั้งคู่** (`CACHE_MAX_MISSING_DETAILS`/`CACHE_MAX_MISSING_PHOTOS` ปรับได้จาก env
+ * โดยไม่ต้องแก้ไฟล์นี้ — `cache-warm.yml`/`cache-heartbeat.yml` ตั้ง `=0` ได้ทันทีที่ตัวเขียนพร้อม)
+ *
+ * ⚠️ **`141` เป็นเลขที่ต้องมีคนดูแล ไม่ใช่ค่าคงที่ตลอดกาล** — ถ้าเพิ่มคลังโดยตั้งใจ (เช่นเมืองใหม่)
+ * ต้องขยับเพดานพร้อมกัน ไม่งั้นด่านนี้จะแดงใส่คนที่ทำถูก (ข้อความ error เขียนกำกับไว้แล้วด้านล่าง)
+ * · **ช่วงเตือน (② ด้านบน) ตั้งไว้ที่ 20** — ค่าที่ P1 เลือกเอง ไม่ได้วัดจากอะไร ปรับได้ตามที่เห็นควร
  */
 
 const URL_ = readEnvKey("NEXT_PUBLIC_SUPABASE_URL");
@@ -62,8 +81,7 @@ describe("Q3 ก้าวที่ 2 — cache-heartbeat", () => {
       expect(photoKeys, "อ่าน place_photo_cache ไม่ได้").not.toBeNull();
     });
 
-    // 🔴 it.fails ตั้งใจ — ดูคำอธิบายเต็มในหัวไฟล์ ("ยังไม่มีตัวเขียน") ก่อนแตะบรรทัดนี้
-    it.fails("ต้องไม่มีคีย์ค้าง — ทั้ง place_details_cache และ place_photo_cache แยกกัน", async () => {
+    it("ขาดไม่เกินเพดาน — ทั้ง place_details_cache และ place_photo_cache แยกกัน", async () => {
       const admin = testClient(SERVICE) as Db;
       const catalog = await catalogKeyRows(admin);
       const detailKeys = await cachedDetailKeys(admin);
@@ -82,17 +100,34 @@ describe("Q3 ก้าวที่ 2 — cache-heartbeat", () => {
 
       const missingDetails = warmTargets({ catalog: rows, cachedKeys: detailKeys });
       const missingPhotos = warmTargets({ catalog: rows, cachedKeys: photoKeys });
+      const maxDetails = envInt("CACHE_MAX_MISSING_DETAILS", 141);
+      const maxPhotos = envInt("CACHE_MAX_MISSING_PHOTOS", 141);
 
       expect(
         missingDetails.length,
-        `${missingDetails.length} คีย์ยังไม่มีแถวใน place_details_cache — ตัวอุ่นอาจไม่ได้ทำงาน ` +
-          `หรือมีคลังใหม่เข้ามาแล้วยังไม่ถูกอุ่น (ตัวอย่างคีย์: ${missingDetails.slice(0, 5).map((t) => t.key).join(", ")})`,
-      ).toBe(0);
+        `${missingDetails.length} คีย์ยังไม่มีแถวใน place_details_cache (เพดาน ${maxDetails}) — ` +
+          `ตัวอุ่นอาจไม่ได้ทำงาน หรือมีคลังใหม่เข้ามาเกินที่คาด (ถ้าเพิ่มคลังโดยตั้งใจ ขยับ ` +
+          `CACHE_MAX_MISSING_DETAILS ขึ้นพร้อมกัน) ตัวอย่างคีย์: ${missingDetails.slice(0, 5).map((t) => t.key).join(", ")}`,
+      ).toBeLessThanOrEqual(maxDetails);
       expect(
         missingPhotos.length,
-        `${missingPhotos.length} คีย์ยังไม่มีแถวใน place_photo_cache — ตัวอุ่นอาจไม่ได้ทำงาน ` +
-          `หรือมีคลังใหม่เข้ามาแล้วยังไม่ถูกอุ่น (ตัวอย่างคีย์: ${missingPhotos.slice(0, 5).map((t) => t.key).join(", ")})`,
-      ).toBe(0);
+        `${missingPhotos.length} คีย์ยังไม่มีแถวใน place_photo_cache (เพดาน ${maxPhotos}) — ` +
+          `ตัวอุ่นอาจไม่ได้ทำงาน หรือมีคลังใหม่เข้ามาเกินที่คาด (ถ้าเพิ่มคลังโดยตั้งใจ ขยับ ` +
+          `CACHE_MAX_MISSING_PHOTOS ขึ้นพร้อมกัน) ตัวอย่างคีย์: ${missingPhotos.slice(0, 5).map((t) => t.key).join(", ")}`,
+      ).toBeLessThanOrEqual(maxPhotos);
+
+      // 🔴 ตัวเตือนว่าเพดานล้า — พลิกเองเมื่อขาดลดลงมาก (ตัวอุ่นเริ่มทำงาน) หน้าที่เดียวกับ `it.fails` เดิม
+      //    ช่วง 20 เป็นค่าที่เลือกเอง ไม่ได้วัด — ปรับได้ ดูหัวไฟล์
+      expect(
+        maxDetails - missingDetails.length,
+        `เพดาน place_details_cache (${maxDetails}) ห่างจากของจริง (${missingDetails.length}) เกิน 20 — ` +
+          `ตัวอุ่นน่าจะเริ่มทำงานแล้ว ลดเพดานลงได้ (แก้ CACHE_MAX_MISSING_DETAILS ใน cache-heartbeat.yml)`,
+      ).toBeLessThan(20);
+      expect(
+        maxPhotos - missingPhotos.length,
+        `เพดาน place_photo_cache (${maxPhotos}) ห่างจากของจริง (${missingPhotos.length}) เกิน 20 — ` +
+          `ตัวอุ่นน่าจะเริ่มทำงานแล้ว ลดเพดานลงได้ (แก้ CACHE_MAX_MISSING_PHOTOS ใน cache-heartbeat.yml)`,
+      ).toBeLessThan(20);
     });
   });
 });
