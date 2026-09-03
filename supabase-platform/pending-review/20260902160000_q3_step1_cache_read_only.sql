@@ -254,11 +254,37 @@ delete from public.travel_time_cache t
  where not exists (select 1 from public.catalog_places c where c.legacy_slug = t.from_place_id)
     or not exists (select 1 from public.catalog_places c where c.legacy_slug = t.to_place_id);
 
+
+-- 🔴 **แก้ 3 ก.ย. 2026 — ฉบับแรกของบล็อกนี้ลบแถวที่ *พิสูจน์ได้ว่าสาธารณะ* ทิ้ง (P1 เจอเอง)**
+--    `placeQueryKey()` (`lib/placeQuery.ts`) คืนคีย์ **สองรูป** · ฉบับแรกเทียบรูปเดียว
+--    ```
+--    "<mapsQuery>"     → catalog_places.maps_query        ← ฉบับแรกทำเฉพาะอันนี้
+--    "place_id:<gid>"  → catalog_places.google_place_id   ← ไม่เคยถูกเทียบ → **ถูกลบทุกแถว**
+--    ```
+--    วัดกับข้อมูลจริง (สำเนาแช่แข็ง · สนามซ้อมในเครื่อง):
+--      ฉบับแรกจะลบ 110/140 (details) · 112/142 (photos)
+--      ในนั้น **3 + 3 แถวพิสูจน์ได้ว่าเป็นของคลังจริง** — ลบทิ้งฟรี
+--    🔴 **และตัวเลข 3 เล็กเพราะ `catalog_places.google_place_id` วันนี้เติมแค่ 3/203 แถว —
+--       มันจะโตตามคลัง และนี่คือคำสั่ง `delete` ที่ย้อนไม่ได้**
+--    📌 `travel_time_cache` ไม่กระทบ — คีย์เป็น `legacy_slug` ล้วน (วัดแล้ว 185/185 แถว)
+--    · ประตูฝั่งโค้ดแก้คู่กันแล้วที่ `lib/engine/db.ts` (`08bd3a1`) — **สองฝั่งต้องถามคำถามเดียวกัน
+--      ไม่งั้นมันจะเถียงกันเงียบ ๆ** ซึ่งเป็นเหตุผลเดียวกับที่บล็อกนี้เลือกบัญชีขาวแทนบัญชีดำ
+
 delete from public.place_details_cache d
- where not exists (select 1 from public.catalog_places c where c.maps_query = d.maps_query);
+ where (   not exists (select 1 from public.catalog_places c where c.maps_query = d.maps_query)
+   and not (
+         d.maps_query like 'place_id:%'
+     and exists (select 1 from public.catalog_places c
+                  where c.google_place_id = substring(d.maps_query from 10))
+   ));
 
 delete from public.place_photo_cache p
- where not exists (select 1 from public.catalog_places c where c.maps_query = p.maps_query);
+ where (   not exists (select 1 from public.catalog_places c where c.maps_query = p.maps_query)
+   and not (
+         p.maps_query like 'place_id:%'
+     and exists (select 1 from public.catalog_places c
+                  where c.google_place_id = substring(p.maps_query from 10))
+   ));
 
 do $purged$
 declare n int;
@@ -271,11 +297,21 @@ begin
   if n > 0 then raise exception 'travel_time_cache ยังเหลือ % แถวที่คีย์ไม่ใช่ของคลัง', n; end if;
 
   select count(*) into n from public.place_details_cache d
-   where not exists (select 1 from public.catalog_places c where c.maps_query = d.maps_query);
+   where (   not exists (select 1 from public.catalog_places c where c.maps_query = d.maps_query)
+     and not (
+           d.maps_query like 'place_id:%'
+       and exists (select 1 from public.catalog_places c
+                    where c.google_place_id = substring(d.maps_query from 10))
+     ));
   if n > 0 then raise exception 'place_details_cache ยังเหลือ % แถวที่คีย์ไม่ใช่ของคลัง', n; end if;
 
   select count(*) into n from public.place_photo_cache p
-   where not exists (select 1 from public.catalog_places c where c.maps_query = p.maps_query);
+   where (   not exists (select 1 from public.catalog_places c where c.maps_query = p.maps_query)
+     and not (
+           p.maps_query like 'place_id:%'
+       and exists (select 1 from public.catalog_places c
+                    where c.google_place_id = substring(p.maps_query from 10))
+     ));
   if n > 0 then raise exception 'place_photo_cache ยังเหลือ % แถวที่คีย์ไม่ใช่ของคลัง', n; end if;
 
   -- 🔴 **ทิศบวก — กันเคสที่ผ่านเพราะ *ไม่มีอะไรให้ตรวจ*** (`E3-AC6` · ตระกูลเดียวกับ `P-33` ข้อ 3)
