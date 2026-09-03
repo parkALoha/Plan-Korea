@@ -2,25 +2,24 @@ name: cache-heartbeat
 
 # ตอบคำถามเดียว: **แคชกำลังถูกอุ่นจริงไหม** — ไม่ใช่ "cron รันจบไหม" (P6 · 3 ก.ย. 2026)
 #
-# 🎯 "cron ตาย" กับ "cron รันจบแต่โดน Google rate-limit จนเขียนไม่ลงสักแถว" ต้องแดงเหมือนกัน
-#    ทั้งสองอาการ **ผู้ใช้เห็นเหมือนกันทุกประการ** (เว็บทำงานปกติ แค่ช้าและแพง) — ตามที่ P1 ตั้งคำถามไว้
-#    → วัดผลลัพธ์จริง (แถวถูกเขียนเมื่อไหร่) ไม่ใช่ exit code ของ workflow อื่น
+# 🔴 แก้ 3 ก.ย. 2026 — ทิ้งแผนเดิม (เทียบ `fetched_at` กับ TTL) หลัง P1 ตรวจแล้วพบว่า **ไม่มี
+#    TTL อยู่จริง** (route ไม่เคยอ่าน `fetched_at` · ตัวอุ่นเขียนด้วย `ON CONFLICT DO NOTHING`
+#    ไม่เคยทับของเดิม) → วัดความสดจะแดงถาวรทันทีที่อุ่นครบ ทั้งที่ทุกอย่างทำงานถูก
+#    (ตระกูล "ด่านที่แดงใส่คนที่ทำถูก จะถูกลบทั้งใบ")
+#
+# ✅ วัด **จำนวนคีย์ที่ยังไม่ได้อุ่น** แทน (`lib/__tests__/cacheHeartbeat.test.ts` — เหตุผลเต็มในหัวไฟล์นั้น)
+#    ขาด = 0 → สุขภาพดี · ขาด > 0 ค้าง → มีคลังใหม่แต่ตัวอุ่นไม่ทำงาน
+#    ⚠️ จับ "cron ตายในวันที่ไม่มีคลังใหม่" ไม่ได้ — กรณีนั้นให้ GitHub ส่งอีเมลเองตอน
+#    `cache-warm.yml` (scheduled run) ล้ม สองด่านนี้ครอบคนละกรณี ไม่ใช่ด่านเดียวที่ต้องครอบทุกทาง
 #
 # 🔴 ยังเป็น `workflow_dispatch` เท่านั้น — เปิด `schedule` พร้อมกับ `cache-warm.yml`
-#    เปิดตอนนี้จะแดงตลอดเวลาเพราะยังไม่มีตัวเขียนเลย (ไม่มีประโยชน์ มีแต่ noise)
-#
-# 🔴 ค่า threshold ต้องมาจาก TTL จริงของแคช ไม่ใช่ความรู้สึก (P1 เตือนไว้ตรงๆ)
-#    ตอนนี้ยังไม่มี TTL ตัดสินแล้ว — ใส่ placeholder ไว้ก่อน ห้ามเปิด schedule จนกว่าจะมีเลขจริง
+#    ยิงจริงวันนี้ (3 ก.ย.) ได้ **141 คีย์ขาดใน place_details_cache** — ถูกต้องตามสภาพจริง
+#    (ยังไม่มีตัวเขียน) แต่เปิด schedule ตอนนี้จะแดงทุกรอบเป็น noise ไม่ใช่สัญญาณ
 
 on:
-  workflow_dispatch:
-    inputs:
-      max_staleness_hours:
-        description: "แคชแถวล่าสุดต้องไม่เก่ากว่ากี่ชั่วโมง (placeholder จนกว่าจะมี TTL จริง)"
-        required: false
-        default: "6"
+  workflow_dispatch: {}
   # schedule:
-  #   - cron: "0 * * * *"   # TODO: เปิดพร้อม cache-warm.yml เมื่อมี TTL จริงมาตัดสิน threshold
+  #   - cron: "0 * * * *"   # TODO: เปิดพร้อม cache-warm.yml เมื่อตัวเขียนพร้อมทำให้ขาด=0 ได้จริง
 
 jobs:
   heartbeat:
@@ -40,15 +39,11 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
 
-      # 🔴 TODO: เขียนสคริปต์นี้เมื่อมีตัวเขียนแคชจริงให้วัด — วันนี้ยังเป็น placeholder
-      #    ต้อง: select max(fetched_at) จากทั้ง 2 ตาราง (place_details_cache · place_photo_cache)
-      #    ถ้า now() - max(fetched_at) > threshold → exit 1 (ปล่อยให้ GitHub ส่งอีเมลแจ้งความล้มเหลวเอง)
-      #    ⚠️ ตารางว่างสนิท (ยังไม่เคยอุ่นเลย) ต้องถือเป็นแดงเหมือนกัน ไม่ใช่ "ไม่มีอะไรให้วัด = ผ่าน"
-      - name: เช็คว่าแคชถูกอุ่นเมื่อไหร่ล่าสุด (placeholder)
-        run: |
-          echo "🔴 ยังไม่มีสคริปต์วัด fetched_at จริง — รอ P1 ทำตัวเขียนก่อน"
-          exit 1
+      # 🔴 ยิงจริงแล้ว (P6 · 3 ก.ย. 2026) — แดงตอนนี้ถูกต้อง ไม่ใช่บั๊กของเช็คนี้
+      #    RLS_MATRIX_REQUIRED=1 ตามธรรมเนียมไฟล์อื่นทุกไฟล์ในชุดสด — "ข้าม" ต้องกลายเป็น "ล้ม"
+      - name: จำนวนคีย์ที่ยังไม่ได้อุ่น
+        run: npx vitest run lib/__tests__/cacheHeartbeat.test.ts
         env:
+          RLS_MATRIX_REQUIRED: "1"
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
-          MAX_STALENESS_HOURS: ${{ github.event.inputs.max_staleness_hours }}
