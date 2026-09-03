@@ -4,17 +4,25 @@
 # 🔴 ที่มา: 25 ส.ค. 2026 CI แดงค้าง ~2 ชม. ขณะที่ทุกเครื่องเขียว · ตัวแก้ค้างในเครื่องไม่ได้ push
 #    ต้องเปิด log อ่านถึงจะรู้ว่าแดงเพราะอะไร · สคริปต์นี้ตอบโดยไม่ต้องเปิด log
 #
-# ใช้:  .github/ci-status.sh [branch]     (ค่าเริ่มต้น = branch ปัจจุบัน)
+# ใช้:  .github/ci-status.sh [branch] [workflow-file]     (ค่าเริ่มต้น = branch ปัจจุบัน · ci.yml)
 # ต้องมี: gh ที่ login แล้ว · ต้องต่อเน็ต
+#
+# 🔴 แก้ 3 ก.ย. 2026 (P6 · เจอตอนออกแบบ cron warm-cache) — เดิมดึง "run ล่าสุดของ branch"
+#    โดยไม่กรอง workflow name เลย · ตอนมีแค่ `ci.yml` ไฟล์เดียวไม่มีปัญหา
+#    แต่พอเพิ่ม workflow ที่สอง (cron รันถี่กว่า push มาก) สคริปต์นี้จะเริ่มรายงานผลของ
+#    **cron ล่าสุด แทน CI ล่าสุด** อย่างเงียบๆ — ทั้งสองคืน `success`/`failure` หน้าตาเหมือนกันทุกประการ
+#    ไม่มีอะไรฟ้องว่าอ่านผิดตัว จนกว่าจะมีคนสังเกตว่า commit ที่รายงานไม่ตรงกับที่เพิ่ง push
+# 🎯 ตระกูลเดียวกับ `D72` (เข้าใจผิดว่า "มีคำตอบ" ทั้งที่คำตอบตอบคนละคำถาม) แค่คนละเครื่องมือ
 set -uo pipefail
 REPO="parkALoha/Plan-Korea"
 BR="${1:-$(git branch --show-current)}"
+WF="${2:-ci.yml}"
 
 command -v gh >/dev/null 2>&1 || { echo "🔴 ไม่มี gh — ตอบไม่ได้"; exit 2; }
 
-run="$(gh run list --repo "$REPO" --branch "$BR" --limit 1 \
+run="$(gh run list --repo "$REPO" --branch "$BR" --workflow "$WF" --limit 1 \
         --json databaseId,headSha,conclusion,status,displayTitle 2>/dev/null)"
-[ -z "$run" ] || [ "$run" = "[]" ] && { echo "🔴 ไม่พบ CI run ของ branch '$BR'"; exit 2; }
+[ -z "$run" ] || [ "$run" = "[]" ] && { echo "🔴 ไม่พบ CI run ของ branch '$BR' workflow '$WF'"; exit 2; }
 
 # 🔴 อ่าน stdin ครั้งเดียวแล้วพิมพ์ทั้งสองค่า — ฉบับแรกเรียก json.load(sys.stdin) สองครั้ง
 #    ในบรรทัดเดียว ครั้งที่สองได้สตรีมว่างแล้ว throw → ตกไปที่ `|| echo "?"`
@@ -26,7 +34,7 @@ print(r["headSha"], r.get("conclusion") or r.get("status") or "unknown")')
 EOF
 head="$(git rev-parse HEAD)"
 
-echo "CI ล่าสุดของ '$BR': $concl"
+echo "CI ล่าสุดของ '$BR' ($WF): $concl"
 echo "  CI ทดสอบ commit : ${sha:0:12}"
 echo "  HEAD ในเครื่อง   : ${head:0:12}"
 
