@@ -1,4 +1,5 @@
 import { clearDeviceData } from "@/lib/auth/deviceData";
+import { readCache } from "@/lib/localCache";
 
 /**
  * ตราประทับ "ข้อมูลในเครื่องนี้เป็นของใคร" — `E6-AC14` · P7 ออกแบบ · P1 เขียน · 2 ก.ย. 2026
@@ -76,6 +77,38 @@ export function readDeviceOwner(): string | null {
  * → `lastTripId` ซึ่งอยู่ใน `localStorage` **หายไปในจังหวะเดียวกับที่ตราถูกเปลี่ยน** ไม่มีหน้าต่างให้อ่านของเก่า
  * ⚠️ **ถ้าใครสลับลำดับใน `clearDeviceData()` บรรทัดนี้จะเปิดหน้าต่างขึ้นมาเงียบ ๆ** — เคสในไฟล์นั้นกันไว้แล้ว
  */
+/**
+ * **อ่านแคชที่ผูกกับเจ้าของ — `E6-AC14`** · P1 · 3 ก.ย. 2026
+ *
+ * ## 🔴 ทำไมต้องมี ทั้งที่ `stampDeviceOwner()` ล้างข้อมูลตอนสลับเจ้าของอยู่แล้ว
+ * การล้างเกิดตอน **ตราเปลี่ยน** · การอ่านเกิดตอน **คอมโพเนนต์ mount** · **สองอย่างนี้แข่งกัน**
+ * ```
+ * DeviceOwnerStamp   อยู่ root layout · ประทับตราจาก `onAuthStateChange` → **async**
+ * useActiveTripId    อยู่ root layout เหมือนกัน · อ่าน `lastTripId` ใน effect → **ทันทีที่ mount**
+ * ```
+ * 🎯 **ถ้าตัวอ่านชนะการแข่ง มันได้ข้อมูลของเจ้าของเก่าไปหนึ่งเรนเดอร์ — ก่อนที่ตัวล้างจะทำงาน**
+ * · ⚠️ **และมันไม่ใช่บั๊กที่เห็นได้จากการอ่านโค้ดทีละไฟล์** — ทั้งสองไฟล์ถูกต้องในตัวเอง
+ * · 📌 ตระกูลเดียวกับที่ `TEAM.md §3.4` จดไว้: *ย้าย sync → async แล้วลำดับที่เคยได้ฟรีหายไป*
+ *
+ * ## ✅ ท่าที่เลือก: **ให้ชั้นที่เก็บถามว่า "ใครกำลังดู"** แทนที่จะหวังว่าตราอัปเดตทัน
+ * เมื่อผู้อ่านต้องส่ง `viewerId` มาเอง **การแข่งกันหายไปตามนิยาม** — ไม่ว่าตราจะอัปเดตเมื่อไหร่
+ * การเทียบก็เกิดกับ session จริง ณ วินาทีที่อ่าน
+ *
+ * ## 🔴 fail-closed ทุกกรณีที่คลุมเครือ — และแต่ละกรณีมีเหตุผลต่างกัน
+ * ```
+ * ตราเป็น null      ไม่รู้ว่าข้อมูลเป็นของใคร            → ไม่เสิร์ฟ
+ * viewerId เป็น null  ไม่มี session = ไม่มีใครล็อกอินอยู่   → ไม่เสิร์ฟ (ไม่ใช่ "เสิร์ฟให้ทุกคน")
+ * ไม่ตรงกัน          คนละคน                              → ไม่เสิร์ฟ
+ * ```
+ * ⚠️ **`viewerId` ต้องมาจาก session ที่อ่านได้ *ออฟไลน์*** (`supabase.auth.getSession()` อ่านจาก
+ *    localStorage ไม่ยิงเน็ต) — ไม่งั้นเจ้าของตัวจริงจะใช้งานออฟไลน์ไม่ได้ ซึ่งขัด `E6-AC4`
+ */
+export function readOwnedCache<T>(key: string, viewerId: string | null): T | null {
+  const owner = readDeviceOwner();
+  if (owner === null || viewerId === null || viewerId !== owner) return null;
+  return readCache<T>(key);
+}
+
 export function stampDeviceOwner(ownerId: string | null): void {
   if (typeof window === "undefined") return;
 
