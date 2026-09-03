@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { readEnvKey, requireLiveCreds } from "./_helpers";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { TEST_COUNTRY_CODES, readEnvKey, requireLiveCreds } from "./_helpers";
 import { testClient } from "./_testClient";
 import { browseCatalogPlaces, searchCatalogCities } from "@/lib/engine/db";
 
@@ -231,6 +231,42 @@ describe.runIf(hasCreds)("E4 — ค้นเมืองปลายทาง: 
     name_th: string;
     catalog_countries: { id: string; name_th: string } | null;
   };
+  /**
+   * 🔴 **ปลูก fixture ของเคสนี้เอง — ก่อน 3 ก.ย. 2026 เคสนี้ *ยืม* ของที่ไฟล์อื่นทิ้งค้าง**
+   *
+   * control ข้างล่างทำนายไว้เองว่า *"ถ้าวันหนึ่ง fixture ถูกกวาดหมด เคสนี้จะเตือน"*
+   * · แล้วมันเกิดจริงทันทีที่ `catalogFixtureSweep` เริ่มกวาดตอนจบรอบ (3 ก.ย. 2026)
+   *   **แดงสองเคส**: *"ไม่มีเมืองชื่อตรง เมืองC"* และ *"ไม่มีประเทศ supported=false เลย"*
+   * 🎯 ***เคสควบคุมที่พึ่งของที่คนอื่นทิ้งไว้ ไม่ใช่เคสควบคุม — มันคือการยืมสภาพแวดล้อม***
+   *    และมันพังในวันที่มีคนทำความสะอาด **ซึ่งเป็นวันที่ทุกอย่างกำลังถูกทำให้ถูกต้องขึ้น**
+   *
+   * ⚠️ ประเทศที่ปลูกต้อง `supported = false` — นั่นคือสิ่งที่ `searchCatalogCities` กรองออก
+   *    ถ้าเผลอตั้ง `true` เคส ① จะแดงด้วยเหตุผลที่ถูกต้อง (fixture โผล่ในผลค้นจริง)
+   */
+  const CC = TEST_COUNTRY_CODES.catalogSearch;
+  const CITY_NAMES = ["เมืองC", "เมืองS"];
+
+  beforeAll(async () => {
+    const admin = testClient(SERVICE);
+    await admin.from("catalog_countries").upsert(
+      { id: CC, name_th: "ทดสอบค้นเมือง", name_en: "Search Fixture", supported: false },
+      { onConflict: "id" },
+    );
+    for (const name_th of CITY_NAMES) {
+      await admin.from("catalog_cities").insert({
+        country_id: CC, name_th, name_en: name_th, lat: 1, lng: 1, timezone: "UTC",
+      });
+    }
+  });
+
+  afterAll(async () => {
+    // 🔴 เก็บของตัวเอง **ไม่ฝากไว้กับ `catalogFixtureSweep`** — ตัวกวาดคือตาข่ายรับ
+    //    ไม่ใช่ทางเก็บหลัก · ฝากไว้เมื่อไหร่ ก็กลับไปเป็นการยืมสภาพแวดล้อมอีกใบ
+    const admin = testClient(SERVICE);
+    await admin.from("catalog_cities").delete().eq("country_id", CC);
+    await admin.from("catalog_countries").delete().eq("id", CC);
+  });
+
   const search = async (q: string) => {
     const admin = testClient(SERVICE);
     const { data, error } = await searchCatalogCities(admin as never, { q, limit: 200 });
