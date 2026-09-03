@@ -75,7 +75,43 @@ function open(): Promise<IDBDatabase | null> {
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
     };
-    req.onsuccess = () => resolve(req.result);
+    /**
+     * 🔴 **ฐานที่ *มีอยู่แล้ว* ที่เวอร์ชันเดียวกัน แต่ *ไม่มี object store* — กู้เองตรงนี้** (P3 เจอ · 3 ก.ย. 2026)
+     *
+     * `onupgradeneeded` ยิงเมื่อ **เวอร์ชันที่เก็บไว้ < เวอร์ชันที่ขอ** เท่านั้น
+     * ⇒ ฐานที่ค้างที่ v1 โดยไม่มี `kv` จะเข้า `onsuccess` **แล้วเราคืน db ที่ใช้ไม่ได้**
+     * → `tx()` โยน `NotFoundError` → ถูก `catch` → คืน `null`
+     * 🎯 **ผู้เรียกอ่าน `null` ว่า *"แคชยังว่าง"* — แยกไม่ออกจากแคชว่างตามปกติ**
+     * ⇒ **แคชออฟไลน์ตายถาวร เงียบสนิท และ *ไม่มีเส้นทางกลับในโค้ด***
+     *
+     * ## ไม่ใช่แค่เครื่องทดสอบ
+     * ผู้ใช้จริงเข้าสภาพนี้ได้จาก upgrade ที่ถูกขัดกลางคัน · storage eviction ระหว่าง upgrade ·
+     * หรือ `deleteDatabase` ที่ถูก block แล้วทำครึ่ง ๆ — **ทางหลังคือทางที่ P7 เข้ามาเองตอนยิงเคสควบคุมของ `E6-AC4`**
+     *
+     * ## ✅ ท่าที่ใช้: เปิดใหม่ที่ `version + 1` — **ไม่ลบข้อมูล**
+     * `onupgradeneeded` รอบสองยิงแน่นอนเพราะเวอร์ชันสูงขึ้น แล้วสร้าง store ให้
+     * · 🔴 **ไม่ใช้ `deleteDatabase`** — มันค้างเป็น `blocked` ได้เมื่อมีแท็บอื่นเปิดอยู่ **ซึ่งคือทางที่พาเรามาที่นี่ตั้งแต่แรก**
+     * · ⚠️ รอบสองล้มก็คืน `null` เหมือนเดิม — **ไม่ทำให้แย่ลงกว่าเดิม**
+     */
+    req.onsuccess = () => {
+      const db = req.result;
+      if (db.objectStoreNames.contains(STORE)) return resolve(db);
+
+      const bumped = db.version + 1;
+      db.close();
+      let retry: IDBOpenDBRequest;
+      try {
+        retry = factory.open(DB_NAME, bumped);
+      } catch {
+        return resolve(null);
+      }
+      retry.onupgradeneeded = () => {
+        if (!retry.result.objectStoreNames.contains(STORE)) retry.result.createObjectStore(STORE);
+      };
+      retry.onsuccess = () => resolve(retry.result.objectStoreNames.contains(STORE) ? retry.result : null);
+      retry.onerror = () => resolve(null);
+      retry.onblocked = () => resolve(null);
+    };
     req.onerror = () => resolve(null);
     // 🔴 `blocked` เกิดเมื่อมีแท็บอื่นเปิดฐานรุ่นเก่าค้างอยู่ — **ปล่อยค้างคือ promise ที่ไม่ resolve**
     //    ซึ่งจะกลายเป็นหน้าจอ "กำลังโหลด" ตลอดกาล · คืน `null` แล้วให้แอปเดินต่อแบบไม่มีแคช
