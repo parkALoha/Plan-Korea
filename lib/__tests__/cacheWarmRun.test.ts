@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createClient } from "@supabase/supabase-js";
+import { testClient } from "./_testClient";
 import { lookupPlace } from "@/lib/googlePlaces";
 import { warmTargets } from "@/lib/engine/cacheWarmList";
 import { warmCache, type WarmRow } from "@/lib/engine/cacheWarmWrite";
 import { catalogKeyRows, cachedDetailKeys, catalogPublicMapsQueries } from "@/lib/engine/db";
-import type { Database } from "@/lib/engine/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -62,9 +61,10 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
         return;
       }
       expect(Boolean(URL_ && SERVICE), "ตั้ง CACHE_WARM_RUN=1 แล้วแต่ไม่มี creds").toBe(true);
-      const admin = createClient<Database>(URL_, SERVICE, {
-        auth: { persistSession: false },
-      }) as unknown as SupabaseClient;
+      // 🔴 ใช้ `testClient` ของรีโป ไม่ใช่ `createClient` ตรง —
+      //    `supabase-js` ต้องการ WebSocket ใน Node (`Node.js detected but native WebSocket not found`)
+      //    `_testClient.ts` แก้ข้อนี้ไว้แล้วและ live-test ทุกไฟล์ใช้ตัวเดียวกัน
+      const admin = testClient(SERVICE);
 
       const catalog = await catalogKeyRows(admin);
       const cached = await cachedDetailKeys(admin);
