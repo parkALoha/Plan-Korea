@@ -4608,15 +4608,50 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       "place_photo_cache",
       "travel_time_cache",
     ];
-    it("🔴 แคช 4 ใบ — ไม่มีประตูสำหรับไคลเอนต์เลยสักบาน ทั้ง 5 ทาง", async () => {
+    /**
+     * 🔴 **แก้ 3 ก.ย. 2026 — `Q3` ก้าวที่ 1 เปิด `select` ให้ `authenticated` บนแคช *สองใบ* โดยตั้งใจ**
+     * (`20260902160000` · ผู้ใช้เลือกทาง "ให้งานเบื้องหลังเขียน" · **แคชที่อ่านไม่ได้เลยคือแคชที่ไม่มีประโยชน์**)
+     * · ⚠️ **เกณฑ์ไม่ได้ถูกถอน — มันถูก *ทำให้แคบลง***: เดิม *"ไม่มีประตูเลยสักบาน"* → ตอนนี้ *"มีได้แค่ 4 บานนี้เป๊ะ"*
+     * 🔴 **จงใจเขียนเป็นสตริงเต็มทีละบรรทัด ไม่ใช่ `filter` ตามรูป** — ถ้าใครเปิดเพิ่ม
+     *   (verb อื่น · `anon` · อีกสองตารางที่ประกาศว่าไม่แตะ) **จะโผล่เป็นแถวใหม่ทันทีและเคสนี้แดง**
+     * · ✅ สิ่งที่ยังกันได้เต็ม: **ไม่มี `INSERT`/`UPDATE`/`DELETE` ให้ไคลเอนต์สักตัว** — หัวใจของ `E3-AC6`/`D87`
+     *   **การเปิด `select` ไม่ได้แตะข้อนั้นเลย**
+     * · 📌 `app.assert_cache_lockdown()` บนฐานตรวจข้อเดียวกันจากอีกด้าน (`has_table_privilege`) — สองเครื่องวัดคนละตัว
+     */
+    const CACHE_DOORS_ALLOWED = [
+      "place_details_cache · grant · authenticated · SELECT",
+      "place_details_cache · policy · authenticated · place_details_cache_select",
+      "place_photo_cache · grant · authenticated · SELECT",
+      "place_photo_cache · policy · authenticated · place_photo_cache_select",
+    ];
+    it("🔴 แคช 4 ใบ — เปิดได้เฉพาะ 4 บานที่ประกาศไว้ ทั้ง 5 ทาง", async () => {
       const rows = await exposure(CACHES);
       const open = rows.filter((r) => CLIENT_ROLES.includes(r.grantee));
       expect(
-        open.map((r) => `${r.table_name} · ${r.door} · ${r.grantee} · ${r.detail}`),
+        open
+          .map((r) => `${r.table_name} · ${r.door} · ${r.grantee} · ${r.detail}`)
+          .filter((d) => !CACHE_DOORS_ALLOWED.includes(d)),
         "มีทางเข้าถึงแคชจากฝั่งไคลเอนต์\n" +
           "  · `view` = มีคนสร้าง view ทับโดยไม่ตั้ง `security_invoker` (P7 บาน ③)\n" +
           "  · `publication` = มีคนกดเพิ่มเข้า Realtime จาก dashboard (P7 บาน ④)\n" +
-          "  · `column-grant` = ลอกรูป `grant insert (col, …)` ของตารางอื่นมาใส่แคช",
+          "  · `column-grant` = ลอกรูป `grant insert (col, …)` ของตารางอื่นมาใส่แคช\n" +
+          "  🔴 บานที่อนุญาตมีเฉพาะ `select` ของ `authenticated` บน 2 ใบ (`Q3` ก้าวที่ 1) — ที่เหลือคือของใหม่",
+      ).toEqual([]);
+    });
+    /**
+     * 🔴 **ทิศบวกของบัญชีขาว — ถ้าไม่มีเคสนี้ บัญชีขาวที่ *ล้าสมัย* จะเงียบสนิท**
+     * วันที่มีคนถอน `select` ออก (เช่นย้อน `Q3`) บานทั้งสี่จะหายไปจากฐาน · **เคสข้างบนยังเขียว**
+     * แล้วไม่มีอะไรบอกว่าบัญชีขาวถือชื่อที่ไม่มีอยู่จริงแล้ว — ตระกูล *"ทะเบียนต้องผิดได้"*
+     * · 🎯 และมันคือเคสที่ทำให้บัญชีขาวนี้ **ตรวจได้** แทนที่จะเป็นแหล่งความจริงใบที่สอง
+     */
+    it("🔴 ทั้ง 4 บานที่อนุญาตต้องมีอยู่จริง — บัญชีขาวห้ามถือชื่อที่ตายแล้ว", async () => {
+      const rows = await exposure(CACHES);
+      const open = rows
+        .filter((r) => CLIENT_ROLES.includes(r.grantee))
+        .map((r) => `${r.table_name} · ${r.door} · ${r.grantee} · ${r.detail}`);
+      expect(
+        CACHE_DOORS_ALLOWED.filter((d) => !open.includes(d)),
+        "บัญชีขาวถือบานที่ไม่มีอยู่บนฐานแล้ว — ถ้าถอน `Q3` ให้ลบบรรทัดนั้นออกด้วย",
       ).toEqual([]);
     });
 
@@ -5388,7 +5423,20 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       expect(data, "ไม่มีแถว = เคสด้านลบข้างล่างเขียวเพราะตารางว่าง ไม่ใช่เพราะด่าน").toHaveLength(1);
     });
 
-    it.each(CACHES)("🔴 authenticated แตะ %s ไม่ได้ครบทั้ง 4 verb", async (t) => {
+    /**
+     * 🔴 **แก้ 3 ก.ย. 2026 — `Q3` ก้าวที่ 1 เปิด `select` ให้ `authenticated` บน 2 ใบโดยตั้งใจ**
+     * · **เกณฑ์ *เขียน* ไม่ขยับเลยแม้แต่นิดเดียว** — `insert`/`update`/`delete` ยังต้อง `42501` ครบทั้ง 4 ตาราง
+     *   ซึ่งคือหัวใจของ `E3-AC6`/`D87` (*ไคลเอนต์เขียนแคชไม่ได้*)
+     * · `select` แยกเป็นสองกลุ่มตามที่ประกาศไว้ใน migration:
+     * ```
+     * place_details_cache · place_photo_cache          select ต้อง **ผ่าน**  ← route ต้องอ่านแคชได้
+     * travel_time_cache · place_details_local_cache    select ต้อง **42501** ← ประกาศว่าไม่แตะสองใบนี้
+     * ```
+     * 🔴 **เขียนเป็นรายชื่อตารางตรง ๆ ไม่ใช่ `if เปิดแล้วข้าม`** — ถ้าใครเปิด `select` ให้ `travel_time_cache`
+     *   เคสนี้แดงทันที **และถ้าใครถอน `select` ของสองใบแรก ก็แดงเหมือนกัน** (ทิศบวก)
+     */
+    const CACHES_SELECT_OPEN = ["place_details_cache", "place_photo_cache"];
+    it.each(CACHES)("🔴 authenticated เขียน %s ไม่ได้ทั้ง 3 verb · select ตามที่ประกาศ", async (t) => {
       const attempts: Array<[string, { error: { code?: string } | null }]> = [
         ["select", await A.from(t).select(idCol[t]).limit(1)],
         ["insert", await A.from(t).insert(seedRow[t])],
@@ -5396,6 +5444,14 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
         ["delete", await A.from(t).delete().eq(idCol[t], idVal(t))],
       ];
       for (const [verb, r] of attempts) {
+        if (verb === "select" && CACHES_SELECT_OPEN.includes(t)) {
+          // ทิศบวก: สองใบนี้ต้องอ่าน**ได้** — ถ้าถูกปฏิเสธ แปลว่ามีคนถอน `Q3` แล้ว route จะอ่านแคชไม่ได้
+          expect(
+            r.error?.code,
+            `${t} · select ถูกปฏิเสธ (${r.error?.code}) — Q3 ก้าวที่ 1 เปิดให้ authenticated อ่านสองใบนี้`,
+          ).toBeUndefined();
+          continue;
+        }
         expect(
           r.error?.code,
           `${t} · ${verb} ไม่ได้ถูกปฏิเสธเพราะสิทธิ์ — ได้ ${r.error?.code ?? "ไม่มี error เลย"}`,
