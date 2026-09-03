@@ -39,6 +39,28 @@
  */
 
 /** 🔴 ขึ้นเลขนี้ = ข้อมูลเก่าทั้งหมดถูกทิ้งโดยไม่ต้องเขียนโค้ดล้าง (อยู่คนละฐาน) */
+import { noteCacheFailure } from "@/lib/engine/cacheGuard";
+
+/**
+ * 🔴 **ตะโกนเมื่อ *ชั้นที่เก็บ* ล้ม — ไม่ใช่เปลี่ยนสิ่งที่คืนให้ผู้เรียก** (P3 เสนอ · P7 รับ · 3 ก.ย. 2026)
+ *
+ * ไฟล์นี้เจอบั๊ก **3 ใบในวันเดียว** และ **ทั้งสามใบมีอาการเดียวกันเป๊ะ: `get()` คืน `null`**
+ * (ฐานมีเวอร์ชันตรงแต่ไม่มี store · `open()` ขอเวอร์ชันผิด · จำความล้มเหลวไว้ทั้งอายุหน้า)
+ * · **ผู้เรียกอ่าน `null` ว่า *"ยังไม่มีอะไรในแคช"* ตามสัญญา ⇒ ทั้งสามใบจึงเงียบสนิท**
+ *
+ * ## ทำไมไม่เปลี่ยนชนิดที่คืน (เช่นแยก "ไม่มีของ" ออกจาก "อ่านไม่ได้")
+ * 🎯 **ผลต่อ *ผู้ใช้* เหมือนกันทั้งสองกรณี** — ต่อเน็ตแล้วลองใหม่ · **สิ่งที่หายไปคือ *เวลาไล่บั๊ก* ไม่ใช่ความถูกต้องบนจอ**
+ * · `storeGet` มีผู้เรียก **14 จุด** (P3 นับ) · เปลี่ยนชนิด = บังคับให้ทุกจุดตัดสินใจเรื่องที่**ทุกจุดตอบเหมือนกัน**
+ * · 🔴 **API ที่บังคับให้ผู้เรียก 14 รายตัดสินใจเรื่องที่ทุกรายตอบเหมือนกัน แพงกว่าเดิม ไม่ใช่ดีกว่าเดิม**
+ *
+ * ## 🔴 ข้อจำกัด — เขียนไว้เพราะมันไม่ได้แก้ปัญหาทั้งใบ (P3 ชี้เอง)
+ * **ช่วยเฉพาะคนที่เปิด console อยู่** · รอบที่เจอบั๊กสามใบนี้ผมเปิดอยู่ **แต่นั่นคือความบังเอิญ ไม่ใช่การออกแบบ**
+ * ⇒ **มันลด *เวลาไล่* ไม่ได้ทำให้ปัญหา *มองเห็นเอง*** · อย่างหลังต้องขึ้นไปถึงชั้น UI ซึ่งกระทบผู้ใช้และเป็นคนละงาน
+ */
+function noteStoreFailure(where: string, message: string): void {
+  noteCacheFailure(`offlineStore/${where}`, { code: "idb", message });
+}
+
 const SCHEMA_VERSION = 1;
 const DB_NAME = `plan-korea:v${SCHEMA_VERSION}`;
 const STORE = "kv";
@@ -92,7 +114,8 @@ function open(): Promise<IDBDatabase | null> {
        * ✅ ไม่ระบุเวอร์ชัน = เปิดเวอร์ชันที่มีอยู่จริง · ฐานที่ยังไม่เคยมี → สร้างที่ v1 พร้อมยิง `onupgradeneeded`
        */
       req = factory.open(DB_NAME);
-    } catch {
+    } catch (err) {
+      noteStoreFailure("open-threw", String(err));
       return resolve(null);
     }
     req.onupgradeneeded = () => {
@@ -125,20 +148,38 @@ function open(): Promise<IDBDatabase | null> {
       let retry: IDBOpenDBRequest;
       try {
         retry = factory.open(DB_NAME, bumped);
-      } catch {
+      } catch (err) {
+        noteStoreFailure("recover-threw", String(err));
         return resolve(null);
       }
       retry.onupgradeneeded = () => {
         if (!retry.result.objectStoreNames.contains(STORE)) retry.result.createObjectStore(STORE);
       };
-      retry.onsuccess = () => resolve(retry.result.objectStoreNames.contains(STORE) ? retry.result : null);
-      retry.onerror = () => resolve(null);
-      retry.onblocked = () => resolve(null);
+      retry.onsuccess = () => {
+        if (retry.result.objectStoreNames.contains(STORE)) return resolve(retry.result);
+        noteStoreFailure("recover-no-store", `bumped to v${bumped} but store "${STORE}" still missing`);
+        resolve(null);
+      };
+      retry.onerror = () => {
+        noteStoreFailure("recover-error", String(retry.error));
+        resolve(null);
+      };
+      // 🔴 blocked ตรงนี้เกิดง่ายที่สุด — เงื่อนไขที่พาให้ต้องกู้ *คือ* แท็บอื่นที่ยังเปิดฐานค้างอยู่ (P3)
+      retry.onblocked = () => {
+        noteStoreFailure("recover-blocked", "another tab holds the database open");
+        resolve(null);
+      };
     };
-    req.onerror = () => resolve(null);
+    req.onerror = () => {
+      noteStoreFailure("open-error", String(req.error));
+      resolve(null);
+    };
     // 🔴 `blocked` เกิดเมื่อมีแท็บอื่นเปิดฐานรุ่นเก่าค้างอยู่ — **ปล่อยค้างคือ promise ที่ไม่ resolve**
     //    ซึ่งจะกลายเป็นหน้าจอ "กำลังโหลด" ตลอดกาล · คืน `null` แล้วให้แอปเดินต่อแบบไม่มีแคช
-    req.onblocked = () => resolve(null);
+    req.onblocked = () => {
+      noteStoreFailure("open-blocked", "another tab holds an older version open");
+      resolve(null);
+    };
   });
 
   // 🔴 จำไว้ระหว่าง pending (กันเปิดซ้อน) · **แต่ทิ้งทันทีถ้าผลเป็น `null`** เพื่อให้รอบหน้าลองใหม่
