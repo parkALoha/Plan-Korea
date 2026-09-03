@@ -60,14 +60,26 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
-      # 🔴 แก้ 3 ก.ย. 2026 (P6) — post-check ที่เคยวางแผนไว้ (`admin.rpc("assert_cache_lockdown")`)
-      #    **เรียกไม่ได้จริง** ไม่ว่าจะมี `grant execute ... to service_role` (ข้อยกเว้นที่ 7) หรือไม่
-      #    ยิงทดสอบจริงแล้วได้ `PGRST` error: "Could not find the function public.assert_cache_lockdown
-      #    ... in the schema cache" — เพราะ `app` schema **ไม่ถูก expose ผ่าน PostgREST เลยโดยตั้งใจ**
-      #    (`guards.sh` ยืนยันเอง: "✅ api-config: ไม่มี db_pre_request · schema app ไม่ถูก expose")
-      #    grant แค่เปิดสิทธิ์ระดับ SQL — ไม่ได้เปิดเส้นทาง REST ให้เรียกถึง ด่านสองอย่างนี้คนละชั้น
-      # 🎯 ไม่มี `pg` connection string ใน CI/`.env.local` (P4 วัดไว้แล้วตอนสร้าง fixture lock)
-      #    → ไม่มีทางเรียกฟังก์ชันใน schema `app` จากที่นี่ได้เลยตอนนี้ ไม่ใช่แค่ยังไม่ได้เขียนโค้ด
-      # 📌 ทางที่เป็นไปได้ถ้าอยากได้ post-check จริง: (ก) เพิ่ม thin wrapper ใน schema `public` ที่เรียก
-      #    `app.assert_cache_lockdown()` ต่อ (ข) เพิ่ม pg connection string เป็น secret แล้วใช้ `pg` แทน
-      #    supabase-js — ทั้งคู่เป็นการตัดสินใจเรื่อง surface ใหม่ ส่งให้ P1 ตัดสิน ไม่ทำเองตรงนี้
+      # 🔴 แก้ 3 ก.ย. 2026 (P1) — ต่อกลับเข้ามาได้แล้วผ่าน wrapper ใหม่ `public.assert_cache_lockdown()`
+      #    (`security definer` เรียก `app.assert_cache_lockdown()` ต่อ — เดิม P6 เจอว่า schema `app`
+      #    ไม่ expose ผ่าน PostgREST · P1 เพิ่ม wrapper แล้วยังเจอชั้นที่สอง: wrapper แรกเป็น
+      #    `security invoker` ทำให้รันด้วยสิทธิ์ `service_role` ซึ่งไม่มี `usage` บน schema `app` —
+      #    ต้อง `security definer` ถึงจะข้ามชั้นนั้นได้ · P1 ยิง curl จริงจนได้ 204 ก่อนส่งจุดต่อมา)
+      #    P6 ยืนยันซ้ำเองก่อน commit: `service_role` → 204 · `anon` → 401 (42501 permission denied)
+      - name: post-check — service_role ไม่ได้เปิดสิทธิ์อะไรเกิน (assert_cache_lockdown)
+        if: always()
+        run: |
+          code="$(curl -s -o /tmp/rpc.json -w '%{http_code}' -X POST \
+            "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/rpc/assert_cache_lockdown" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json")"
+          if [ "$code" != "204" ]; then
+            echo "🔴 assert_cache_lockdown: HTTP $code (คาด 204 — ไม่คืนอะไรตอนผ่าน)"
+            cat /tmp/rpc.json
+            exit 1
+          fi
+          echo "✅ assert_cache_lockdown ผ่าน — service_role ไม่ได้เปิดสิทธิ์อะไรเกินที่ประกาศ"
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
