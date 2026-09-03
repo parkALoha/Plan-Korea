@@ -25,6 +25,25 @@ declare
   v_trip uuid := md5('trip:korea-2026-10')::uuid;
   r record; got bigint; n_unknown int; n_stale int; missing text;
 begin
+  -- 🔴 **ก้อนนี้ต้องรันด้วย role ที่ข้าม RLS เหมือนก้อน 6 — แต่ด้วยเหตุผลที่อันตรายกว่า**
+  --    ก้อน 6 รันผิด role แล้ว **ล้มทันที** (`new row violates row-level security policy`)
+  --    ก้อนนี้รันผิด role แล้ว **ตอบว่า "ข้อมูลตกหล่น"** เพราะ `not exists` บนตารางที่มองไม่เห็น
+  --    เป็นจริงทุกแถว → นับได้ครบทุกแถว → อ่านเหมือนข้อมูลหายทั้งก้อน
+  --
+  --    วัดจริง (สนามซ้อมในเครื่อง · 3 ก.ย. 2026):
+  --      public.place_details_cache มี 140 แถวครบถ้วน
+  --      role ที่ไม่ข้าม RLS มองเห็น 0  →  ด่านนี้รายงาน 'มี 140 แถวที่ไม่มีคู่ — ตกหล่น'
+  --
+  --    🎯 **ข้อความนั้นอ่านไม่ออกเลยว่าเป็นเรื่อง role** — ถ้าเกิดตอน cutover จริง
+  --       คนจะ rollback การย้ายที่ *ถูกต้อง* · ด่านที่มีไว้กันข้อมูลหาย กลายเป็นตัวสั่งทิ้งงานที่สำเร็จ
+  --    ⚠️ ไม่ใช่แค่ความสะดวก — **ทิศที่ผิดของด่านนี้แพงกว่าการไม่มีด่าน**
+  if not exists (
+    select 1 from pg_roles where rolname = current_user and (rolsuper or rolbypassrls)
+  ) then
+    raise exception 'ก้อน 9 ต้องรันด้วย role ที่ข้าม RLS (postgres หรือ service_role) — '
+      'role ปัจจุบัน (%) มองไม่เห็นแถวปลายทาง ด่านจะรายงานว่าข้อมูลตกหล่นทั้งที่ครบ', current_user;
+  end if;
+
   -- ── ① ตาราง legacy ที่ไม่มีใครตัดสิน ────────────────────────────────────
   select count(*), string_agg(t.table_name, ', ' order by t.table_name)
     into n_unknown, missing
