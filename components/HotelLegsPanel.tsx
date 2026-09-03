@@ -6,6 +6,7 @@ import { hotelRangeKey, type HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel } from "@/lib/supabase";
 import type { HotelInput } from "@/hooks/useHotels";
 import { HotelEditModal } from "./HotelEditModal";
+import type { CatalogCity } from "@/hooks/useTripCatalogCities";
 
 function dateRangeLabel(leg: HotelLeg) {
   const fmt = (iso: string) =>
@@ -17,11 +18,14 @@ function dateRangeLabel(leg: HotelLeg) {
 
 export function HotelLegsPanel({
   legs,
+  catalogCities,
   hotels,
   onSave,
   onClear,
 }: {
   legs: HotelLeg[];
+  /** ส่งต่อให้ `HotelEditModal` ใช้ดึงผลค้นหาให้ใกล้เมือง (`E2-AC16`) */
+  catalogCities?: CatalogCity[];
   hotels: Record<string, TripHotel>;
   onSave: (input: HotelInput) => void;
   // D51: clearHotel ต้องได้คีย์ช่วงวันที่ ไม่ใช่ legId เพียวๆ — ส่ง range มาด้วยเสมอ (เหมือน onSave)
@@ -71,6 +75,7 @@ export function HotelLegsPanel({
       {editingLeg && (
         <HotelEditModal
           leg={editingLeg}
+          catalogCities={catalogCities}
           existing={hotels[hotelRangeKey(editingLeg)] ?? null}
           onClose={() => setEditingLegId(null)}
           onSave={(input) =>

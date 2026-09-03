@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { cityCenter, Place } from "@/data/places";
+import { Place } from "@/data/places";
+import { cityCenterOf } from "@/lib/engine/cityCenter";
 import type { City, Day, DayEvent } from "@/data/itinerary";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
 import { DayCityPicker } from "@/components/DayCityPicker";
@@ -36,6 +37,7 @@ export function DayStopsSection({
   day,
   stops,
   eventsSplit,
+  catalogCities,
   placeSources,
   hotel,
   startHotel,
@@ -70,6 +72,8 @@ export function DayStopsSection({
    *  `splitDayEvents()` แล้วส่งลงมา · ทริปเกาหลีเดิม (ไฟล์สถิตย์) ไม่ต้องส่ง — `useDaySchedule`
    *  จะตกไปใช้ `day.events` เอง */
   eventsSplit?: { before: DayEvent[]; after: DayEvent[] };
+  /** เมืองในคลังของทริปนี้ — แหล่งพิกัดของเมือง (`E2-AC16`) · ไม่มี = ไม่รู้พิกัด ไม่ใช่พิกัดผิด */
+  catalogCities?: CatalogCity[];
   placeSources: PlaceSources;
   /** ที่พักคืนนี้ = จุดจบของวัน */
   hotel: TripHotel | null;
@@ -159,13 +163,17 @@ export function DayStopsSection({
    *    ทำให้คนอ่านรอบถัดไปเลิกตามต่อ ซึ่งแพงกว่าตัวบั๊กเอง
    *
    * `null` = ไม่รู้พิกัด → **ไม่เสนอปุ่มแทรก** (พิกัดเป็นของจำเป็นของคำขอค้นหา ไม่ใช่ของแต่ง)
+   *
+   * 🔴 **แก้ 3 ก.ย. 2026 (`E2-AC16` ปิดจริง) — เลิกใช้ `cityCenter()` จาก `data/places.ts`**
+   * ตัวเก่าเฉลี่ยพิกัดของสถานที่ในเมือง → เมืองที่มี 0 แห่งได้ `NaN` ซึ่งเป็นสภาพของ**ทุกเมืองนอกเกาหลี**
+   * · ตัวใหม่อ่านพิกัดที่ **เมืองถือเอง** (`catalog_cities.lat/lng`) ผ่าน `cityCenterOf()`
+   *   ซึ่งคืน `null` ทั้งกรณีไม่รู้จักเมือง และกรณีค่าที่ *ผ่านชนิดแต่ไม่ใช่พิกัด* (`NaN`/`Infinity` จากแคชรูปเก่า)
+   * 📌 `day.city` คือ `catalog_cities.legacy_slug` (`usePlatformItinerary:161`) และ `CatalogCity.slug`
+   *   คือฟิลด์เดียวกัน — **จับคู่กันได้จริง ไม่ใช่ slug คนละชุด** · ว่าง (`""`) → `cityCenterOf` คืน `null` เอง
    */
-  const rawCityCenter = cityCenter(day.city);
   const centerBeforeFirstStop = hotel
     ? { lat: hotel.lat, lng: hotel.lng }
-    : Number.isFinite(rawCityCenter.lat) && Number.isFinite(rawCityCenter.lng)
-      ? rawCityCenter
-      : null;
+    : cityCenterOf(catalogCities ?? [], day.city);
 
   // ค่า default จาก/ไปของแถวเดินทางข้ามเมือง — เดาจาก city ของวันนี้ ไปเมืองที่นอนคืนนี้ (ถ้าต่างจากเมืองที่เที่ยว)
   const intercityFromCity = day.city;

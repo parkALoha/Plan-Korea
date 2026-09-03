@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { HotelLeg } from "@/lib/hotelLegs";
 import { cityNameThOf } from "@/components/cityMeta";
-import { cityCenter } from "@/data/places";
+import { cityCenterOf } from "@/lib/engine/cityCenter";
+import type { CatalogCity } from "@/hooks/useTripCatalogCities";
 import { cityLocaleOf } from "@/components/placeCity";
 import type { HotelLocalized, TripHotel } from "@/lib/supabase";
 import type { PlaceSuggestion } from "@/lib/googlePlaces";
@@ -23,12 +24,16 @@ function localizedFrom(data: Record<string, unknown>): HotelLocalized {
 
 export function HotelEditModal({
   leg,
+  catalogCities,
   existing,
   onClose,
   onSave,
   onClear,
 }: {
   leg: HotelLeg;
+  /** เมืองในคลังของทริปนี้ — แหล่งพิกัดที่ใช้ดึงผลค้นหาให้ใกล้เมือง (`E2-AC16`)
+   *  ไม่มี = ไม่ดึง ไม่ใช่ค้นหาไม่ได้ */
+  catalogCities?: CatalogCity[];
   existing: TripHotel | null;
   onClose: () => void;
   onSave: (input: {
@@ -73,18 +78,17 @@ export function HotelEditModal({
   const { mode: systemMode } = useSystemMode();
   const readOnly = systemMode.state === "ok" && systemMode.readOnly;
   /**
-   * 🔴 **`cityCenter()` คืน `NaN` สำหรับเมืองที่ไม่มีใน `PLACES`** (`D54` · `E2-AC16` · P2 · 2 ก.ย. 2026)
-   * มันเฉลี่ยพิกัดของสถานที่ในเมืองนั้น → เมืองที่มี 0 แห่ง = `0/0` · และ `leg.city` **มาจากฐานแล้ว**
+   * 🔴 **เลิกใช้ `cityCenter()` แล้ว — อ่านพิกัดที่เมืองถือเอง** (`D54` · `E2-AC16` · P2 · 3 ก.ย. 2026)
+   * ตัวเก่าเฉลี่ยพิกัดของสถานที่ในเมือง → เมืองที่มี 0 แห่ง = `NaN` · และ `leg.city` **มาจากฐานแล้ว**
    * บน branch นี้ (ดูคอมเมนต์ `locale` ข้างบน — เส้นทางเดียวกันเป๊ะ)
+   * · `cityCenterOf()` คืน `null` ทั้งกรณีไม่รู้จักเมือง และกรณีค่าที่ผ่านชนิดแต่ไม่ใช่พิกัด — **เช็คที่เดียว**
    *
    * 🎯 **ที่นี่พิกัดเป็นของ *ทางเลือก* ไม่ใช่ *จำเป็น*** — มันแค่ดึงผลลัพธ์ให้ใกล้เมือง
    * → ไม่มีพิกัด = **ตัดพารามิเตอร์ทิ้ง ค้นหาต่อได้ตามปกติ** ไม่ใช่ปิดฟีเจอร์
    * ⚠️ ต่างจาก `PlaceSidebar` ที่พิกัดเป็นของจำเป็น (ไม่มี = ไม่เสนอปุ่ม) — **`null` แปลไม่เหมือนกัน
    *    ในสองที่นี้ และนั่นคือการตัดสินใจ ไม่ใช่ความไม่สม่ำเสมอ**
    */
-  const rawBias = cityCenter(leg.city);
-  const bias =
-    Number.isFinite(rawBias.lat) && Number.isFinite(rawBias.lng) ? rawBias : null;
+  const bias = cityCenterOf(catalogCities ?? [], leg.city);
   // ภาษาท้องถิ่นของเมืองที่พักอยู่ — ขอชื่อ/ที่อยู่ภาษานั้น + อังกฤษ + เบอร์โทรมาพร้อมพิกัดในคำขอเดียว
   //
   // 🔴 เดิมมี `as Place["city"]` ตรงนี้ — ลบแล้ว (P1 ชี้ 27 ส.ค. 2026) `leg.city: City` มาจาก

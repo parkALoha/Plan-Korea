@@ -670,7 +670,15 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                 checklistTotal={checklistItems.length}
               >
                 {dayPlanReady ? (
-                  <HotelLegsPanel legs={hotelLegs} hotels={hotels} onSave={setHotel} onClear={clearHotel} />
+                  <HotelLegsPanel
+                    legs={hotelLegs}
+                    catalogCities={
+                      tripCatalogCities.status === "ready" ? tripCatalogCities.cities : undefined
+                    }
+                    hotels={hotels}
+                    onSave={setHotel}
+                    onClear={clearHotel}
+                  />
                 ) : (
                   <HotelsFlatList hotels={hotels} />
                 )}
@@ -714,6 +722,9 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                       : undefined
                   }
                   placeSources={placeSources}
+                  catalogCities={
+                    tripCatalogCities.status === "ready" ? tripCatalogCities.cities : undefined
+                  }
                   hotel={hotelForDay(day.id)}
                   startHotel={hotelBeforeDay(day.id)}
                   returnTravelMode={
