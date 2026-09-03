@@ -4,6 +4,7 @@ import { lookupPlace } from "@/lib/googlePlaces";
 import { warmTargets } from "@/lib/engine/cacheWarmList";
 import { warmCache, type WarmRow } from "@/lib/engine/cacheWarmWrite";
 import {
+  CACHE_REFRESH_AFTER_DAYS,
   catalogKeyRows,
   cachedDetailKeys,
   cachedPhotoKeys,
@@ -71,7 +72,7 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
       const admin = testClient(SERVICE);
 
       const catalog = await catalogKeyRows(admin);
-      const cached = await cachedDetailKeys(admin);
+      const cached = await cachedDetailKeys(admin, CACHE_REFRESH_AFTER_DAYS);
       expect(catalog, "อ่านคลังไม่ได้").not.toBeNull();
       expect(cached, "อ่านแคชไม่ได้").not.toBeNull();
 
@@ -145,7 +146,7 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
       // ── รอบที่สอง: `place_photo_cache` ──────────────────────────────────
       // 🔴 **คำขอคนละชนิดกับ Google** (`places.photos` ไม่ใช่ `places.rating,…`)
       //    ⇒ ขาดไม่เท่ากันได้ตามธรรมชาติ · นั่นคือเหตุผลที่ P6 แยกเพดานเป็นสองตัว
-      const cachedPhotos = await cachedPhotoKeys(admin);
+      const cachedPhotos = await cachedPhotoKeys(admin, CACHE_REFRESH_AFTER_DAYS);
       expect(cachedPhotos, "อ่าน place_photo_cache ไม่ได้").not.toBeNull();
       const photoTargets = warmTargets({
         catalog: catalog!.map((r) => ({
