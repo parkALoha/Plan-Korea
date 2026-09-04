@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { MapsApiProvider } from "@/components/MapsApiProvider";
@@ -11,7 +12,6 @@ import { PlaceSidebar } from "@/components/PlaceSidebar";
 import { NearbyPlacesModal } from "@/components/NearbyPlacesModal";
 import { IntercityEditModal } from "@/components/IntercityEditModal";
 import { TransferEditModal } from "@/components/TransferEditModal";
-import { PlanEditModal, type PlanEditMode } from "@/components/PlanEditModal";
 import { TripHeader } from "@/components/TripHeader";
 import { TripPrepPanel } from "@/components/TripPrepPanel";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
@@ -91,7 +91,11 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     removeItem: removeChecklistItem,
     restoreItem: restoreChecklistItem,
   } = useChecklist(tripId);
-  const { plans, activePlanId, loaded: plansLoaded, createPlan, renamePlan, deletePlan, switchActivePlan } =
+  /* 🔴 **UI ของ "แผน A/B" ถอดออกแล้ว (ผู้ใช้สั่ง 4 ก.ย. 2026)** — *"คงไม่มีใครมาวางแบบนี้
+     เขาก็คงจัดไปจัดมาในแผนเดียวจนลงตัว"* · ตัวข้อมูลยังอยู่และ **ยังจำเป็น**:
+     `activePlanId` เป็นคีย์ของ `useStops` · `usePlaceNotes` · `useDaySettings`
+     🎯 เอา *ตัวเลือก* ออก ไม่ได้เอา *โครงสร้าง* ออก — ถอดโครงสร้างเป็นงานฝั่ง API/ฐาน (โซน P1) */
+  const { plans, activePlanId, loaded: plansLoaded } =
     usePlans(tripId);
   const {
     stops,
@@ -258,11 +262,26 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
 
   // 🔴 ชื่อผู้ใช้ — ข้อมูลส่วนบุคคล ต้องถูกล้างตอน `signOut` (ดู `hooks/personalLocalValue.ts`)
   //    เดิมเขียนคีย์ดิบ `"trip-who"` ซึ่งอยู่นอก `trip-cache:` → `clearAllCaches()` กวาดไม่ถึง
-  const [who, setWho] = useState(() => readPersonalValue("who", "trip-who"));
+  const [whoOverride, setWho] = useState(() => readPersonalValue("who", "trip-who"));
 
   useEffect(() => {
-    if (who) writePersonalValue("who", who);
-  }, [who]);
+    if (whoOverride) writePersonalValue("who", whoOverride);
+  }, [whoOverride]);
+
+  /**
+   * 🔴 **ชื่อมีอยู่แล้วตั้งแต่สมัคร — ไม่ต้องให้พิมพ์ซ้ำ** (ผู้ใช้ทัก 4 ก.ย. 2026)
+   * `app.handle_new_user()` เขียน `profiles.display_name` ให้ทุกบัญชีตั้งแต่วินาทีที่สมัคร
+   * (จาก metadata ของ provider หรือ **local-part ของอีเมล**) ⇒ ช่อง "ชื่อคุณ" ที่ว่างเปล่า
+   * คือการถามสิ่งที่ระบบรู้คำตอบอยู่แล้ว
+   *
+   * ⚠️ **ยังไม่ถอดช่องกรอกทิ้ง** — ค่านี้คือสิ่งที่ติดไว้กับจุดแวะ ("เลือกโดยใคร")
+   * ถอดก่อนมีทางเขียน `display_name` จริง = จุดแวะใหม่ไม่มีเจ้าของ
+   * 🎯 ตอนนี้เป็น *ค่าตั้งต้น* ไม่ใช่ *ค่าที่ล็อก* — พิมพ์ทับได้ และค่าที่พิมพ์ชนะเสมอ
+   * 📌 ระบบเปลี่ยนชื่อจริง (คนอื่นเห็นด้วย) ต้องมี `PATCH profiles` ซึ่งยังไม่มีทั้งเว็บ — โซน P1
+   */
+  const currentUser = useCurrentUser();
+  const accountName = currentUser.status === "ready" ? (currentUser.displayName ?? "") : "";
+  const who = whoOverride || accountName;
 
   // เมือง/วันที่โฟกัสอยู่ใน sidebar เลือกสถานที่ — คุมจากที่นี่แทนที่จะให้ sidebar เก็บ state เอง
   // เพื่อให้ปุ่ม "+ เพิ่มสถานที่" ในแต่ละวันสั่งโฟกัส sidebar มาที่วันนั้นได้เลย
@@ -422,7 +441,6 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   } | null>(null);
 
   // modal จัดการแผน (สร้าง/เปลี่ยนชื่อ/ลบ) — null = ปิดอยู่ · เดิมใช้ window.prompt/confirm ของเบราว์เซอร์
-  const [planEditMode, setPlanEditMode] = useState<PlanEditMode | null>(null);
 
   // บริบทตอนกด "✈️ + ไปสนามบิน" — เก็บวัน/ตำแหน่งที่จะแทรก (modal ดึงเที่ยวบินของวันนั้นมาเป็นตัวเลือกเดดไลน์เอง)
   const [transferContext, setTransferContext] = useState<{
@@ -559,18 +577,6 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     }
   }
 
-  async function handlePlanEditSubmit(name: string | null) {
-    const mode = planEditMode;
-    setPlanEditMode(null);
-    if (mode === "create" && name) {
-      await createPlan(name, { duplicateFrom: activePlanId ?? undefined, activate: true });
-    } else if (mode === "rename" && name && activePlanId) {
-      await renamePlan(activePlanId, name);
-    } else if (mode === "delete" && activePlanId) {
-      await deletePlan(activePlanId);
-    }
-  }
-
   const overallLoaded =
     plansLoaded &&
     customPlacesLoaded &&
@@ -617,14 +623,9 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
         <TripHeader
           tripId={tripId}
           who={who}
+          accountName={accountName}
           onWhoChange={setWho}
           stopsCount={stops.length}
-          plans={plans}
-          activePlanId={activePlanId}
-          onSwitchPlan={switchActivePlan}
-          onNewPlan={() => setPlanEditMode("create")}
-          onRenamePlan={() => setPlanEditMode("rename")}
-          onDeletePlan={() => setPlanEditMode("delete")}
           lockedDayCount={lockedDayCount}
           totalDayCount={itinerary.length}
           onToggleLockAll={handleToggleLockAll}
@@ -813,14 +814,13 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
           )}
         </div>
 
-        {/* 🔴 เดิมเขียนว่า "กำลังตั้งค่าแผนเริ่มต้น..." เหมือนเป็นสถานะ loading ชั่วคราว — ผิด (P1 ชี้
-            27 ส.ค. 2026) `overallLoaded` เป็น true แล้วตอนถึงบรรทัดนี้ ไม่มีอะไรกำลังโหลดอยู่จริง ·
-            สถานะจริงคือ "ไม่มีแผนไหน active เลย" ซึ่งเกิดถาวรได้ (เช่นลบแผน active ทิ้งแล้วไม่มีแผนไหน
-            ขึ้นมาแทน — ก่อน migration `pending-review` ตัวที่ 4 ลง) ข้อความเดิมสั่งให้ผู้ใช้ "รอ" ทั้งที่
-            ไม่มีอะไรจะเสร็จ ทางแก้จริงคือกด ⚙️ แล้วเลือกแผน — บอกตรงนั้นแทน */}
+                {/* 🔴 **"ยังไม่มีแผนที่ใช้งานอยู่" เกิดถาวรได้** (เช่นแถว `trip_plans` หายไปทั้งหมด) —
+            ข้อความเดิมสั่งให้กด ⚙️ เพื่อ *เลือกแผน* ซึ่งใช้ไม่ได้แล้วตั้งแต่ถอด UI แผนออก (4 ก.ย. 2026)
+            🎯 **คำแนะนำที่ชี้ไปยังปุ่มที่ไม่มีอยู่ แย่กว่าไม่มีคำแนะนำ** — บอกสภาพตรง ๆ แทน
+            📌 ยังไม่ลบทั้งแถบ เพราะสถานะนี้ยังเกิดได้จริงและเงียบกว่านี้ไม่ได้ */}
         {overallLoaded && !activePlan && (
           <div className="fixed inset-x-0 bottom-14 bg-maple-soft px-4 py-2 text-center text-xs text-maple-dark lg:bottom-0">
-            ยังไม่มีแผนที่ใช้งานอยู่ — แตะปุ่ม ⚙️ มุมขวาบนเพื่อเลือกแผน
+            เปิดแผนของทริปนี้ไม่ได้ — ลองรีเฟรชหน้า ถ้ายังไม่หายแจ้งทีมได้เลย
           </div>
         )}
       </main>
@@ -872,15 +872,6 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
             ).then(flashNewStop);
             setTransferContext(null);
           }}
-        />
-      )}
-
-      {planEditMode && (
-        <PlanEditModal
-          mode={planEditMode}
-          plan={plans.find((p) => p.id === activePlanId) ?? null}
-          onClose={() => setPlanEditMode(null)}
-          onSubmit={handlePlanEditSubmit}
         />
       )}
 
