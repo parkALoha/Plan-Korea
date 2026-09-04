@@ -160,6 +160,45 @@ describe("ความครบของ matrix — ตรวจตัวรา�
   });
 
   /** ⚠️ ควบคุมว่า *เครื่องวัดรันจริง* — จักรวาลว่างทำให้เคสข้างบนผ่านฟรี */
+  /**
+   * 🔴 **`trip_days_unique_date` — พินที่เขียน *รายชื่อผู้พึ่งพา* ไม่ใช่แค่คำว่า "ห้าม drop"**
+   * เจ้าของ: P1 ขอ · P4 เขียน · 4 ก.ย. 2026
+   *
+   * `unique (trip_id, date)` (`20260825110903:125`) ทำให้การจับคู่วันเก่า↔วันใหม่ **ด้วย `date`**
+   * เป็นหนึ่งต่อหนึ่ง · `copy_trip_template()` พึ่งข้อนี้เพื่อไม่ต้องถือ mapping ในตัวแปร
+   *
+   * 🎯 ***วันที่มีคน drop constraint นี้ `join` จะกลายเป็นหลายต่อหลาย → แถวถูกก๊อปซ้ำ
+   *    · ไม่มี error · ไม่มี notice · ผู้ใช้เห็นจุดแวะซ้ำในแผนที่เราแนะนำ***
+   *
+   * 🔴 **ผู้พึ่งพา — เขียนชื่อไว้เพราะคนที่จะ drop ต้องเห็นว่า *ใครพัง* ไม่ใช่เห็นแค่คำสั่งห้าม**
+   *    (`§3.4`: ข้อเท็จจริงที่เก็บคนละที่กับสิ่งที่ทำให้มันจริง จะหมดอายุโดยไม่มีใครแตะมัน —
+   *     คนที่ drop constraint **ไม่มีวันเปิดไฟล์ `copy_trip_template` เลย**)
+   *    ```
+   *    copy_trip_template()  join trip_days nd on nd.date = od.date + v_shift   **2 จุดในไฟล์เดียว**
+   *      ① คัดลอก trip_stops                ② คัดลอก trip_day_plan_settings
+   *    ```
+   * ⚠️ **ขอบเขต:** พินนี้อ่าน *ไฟล์ migration* ไม่ได้ถามฐาน ⇒ **drift ผ่าน SQL editor มองไม่เห็นจากตรงนี้**
+   *    (ตัวที่ถามฐานจริงคือ `rlsMatrix` — คนละชั้น เสริมกัน)
+   */
+  it("🔴 `trip_days_unique_date` ต้องยังอยู่ — `copy_trip_template()` จับคู่วันด้วย `date` โดยพึ่งมัน", () => {
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+    // ควบคุมฝั่งบวก — ตัวสแกนต้องเห็นของจริง ไม่งั้น "ไม่เจอ drop" แปลว่าอะไรก็ไม่รู้
+    expect(
+      /constraint\s+trip_days_unique_date\s+unique/i.test(src) ||
+        /add\s+constraint\s+trip_days_unique_date/i.test(src),
+      "หา `trip_days_unique_date` ในไฟล์ migration ไม่เจอเลย — constraint ถูกลบ หรือตัวสแกนพัง\n" +
+        "  🔴 ถ้าถูกลบจริง: `copy_trip_template()` จะก๊อปจุดแวะซ้ำแบบเงียบ ๆ (join กลายเป็นหลายต่อหลาย)",
+    ).toBe(true);
+    expect(
+      /drop\s+constraint\s+(if\s+exists\s+)?trip_days_unique_date/i.test(src),
+      "มีคน `drop constraint trip_days_unique_date`\n" +
+        "  🔴 ผู้พึ่งพาที่ต้องแก้พร้อมกัน (ไม่ใช่แค่ห้าม drop — ไปดูว่าอะไรพัง):\n" +
+        "     · `copy_trip_template()` → คัดลอก `trip_stops`            (join ด้วย date)\n" +
+        "     · `copy_trip_template()` → คัดลอก `trip_day_plan_settings` (join ด้วย date · **จุดที่สอง**)\n" +
+        "  ⇒ ทั้งสองจะกลายเป็นหลายต่อหลาย = แถวซ้ำ **โดยไม่มี error**",
+    ).toBe(false);
+  });
+
   it("เครื่องวัดทำงาน: มีคำสั่ง policy ให้ตรวจมากกว่า 0", () => {
     const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
     expect((src.match(/\b(?:create|drop)\s+policy\b/gi) ?? []).length).toBeGreaterThan(0);
@@ -518,6 +557,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.assert_engine_dev",
       "public.authorship_columns",
       "public.client_writable_timestamps",
+      "public.copy_trip_template",
       "public.create_trip",
       "public.fixture_lock_holder",
       // 🔴 เพิ่ม 26 ส.ค. (P1) — **ตัวอ่านผลการวัด ไม่ใช่ฟีเจอร์ · ของชั่วคราวโดยประกาศ**
@@ -542,6 +582,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    → เทสต์ควร **pin ว่ามันเป็น `null`** เพื่อให้วันที่มีคนเปลี่ยน มีคนต้องตอบว่า
       //      สัมพันธ์กับ `E7`-pin ยังไง · **รูปเดียวกับด่าน publication: pin สภาพที่คำถามยังไม่เปิด**
       //    คำตอบของคำถามข้างบน: **ไม่รับพารามิเตอร์ · ไม่มี DML · `service_role` เท่านั้น**
+      "public.list_trip_templates",
       "public.mode_limits",
       "public.read_only_selftest",
       // 🔴 เพิ่ม 27 ส.ค. (P1) — **ทางเรียกของ `app.read_only_uncovered_tables()`**
@@ -574,6 +615,26 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //       C ถอนหมุดของตัวเอง แล้ว assert ว่า **หมุดของ A ยังอยู่** — เคสนั้นแดงทันทีถ้าเงื่อนไขหาย
       //    · ⚠️ ไม่ได้ตรวจ `role` เลย **โดยตั้งใจ** — สมาชิกคนไหนก็ปักของตัวเองได้ คือความหมายของฟีเจอร์
       //      (เป็นใบเดียวใต้ `[tripId]` ที่ `viewer` ต้อง *ผ่าน* · ดูทะเบียน `engineAttackSurface`)
+      // 🔴 **เพิ่ม 4 ก.ย. 2026 (P1 เขียน · P4 ตรวจแล้ว 3 รอบก่อนขึ้นทะเบียน)** — ทริปแนะนำ
+      //    คำตอบของคำถามข้างบน (*รับคอลัมน์ที่ column grant ห้ามไหม · แตะข้อมูลผู้ใช้ไหม · ใครเรียกได้*):
+      //    · `list_…` รับ **ศูนย์พารามิเตอร์** · คืนเฉพาะ `id/title/day_count/night_count/cities`
+      //      ของทริปที่ `published_template_at is not null` เท่านั้น ⇒ ไม่มีเนื้อแผนหลุดออกมา
+      //    · `copy_…` รับ `template_id` + `start_date` + `title` — **ไม่รับ user id** ⇒ ก๊อปให้คนอื่นไม่ได้
+      //      `created_by`/`added_by_user` = `auth.uid()` ของผู้เรียก · `grant execute` ให้ `authenticated` เท่านั้น
+      //
+      //    🔴 **ทั้งคู่เป็น definer ⇒ RLS ถูกข้าม ⇒ ด่านเหลือ `where` บรรทัดเดียวเหมือน `set_trip_pinned`:**
+      //    ```sql
+      //    where id = p_template_id and published_template_at is not null
+      //    ```
+      //    🎯 ***ถอด `published_template_at is not null` ออกเมื่อไหร่ = ก๊อปทริปของใครก็ได้***
+      //       และ **RLS จะไม่ค้านเลย** เพราะ definer ข้ามมันไปแล้ว
+      //    ⇒ ราคาถูกจำกัดไว้ด้วยดีไซน์: **ไม่มี policy ให้ *อ่าน* ทริปคนอื่นเลย** เนื้อออกทาง `copy_…`
+      //      ซึ่งเขียนลงทริปของผู้เรียกเท่านั้น ⇒ ติดธงผิดใบ = *มีคนก๊อปแผนที่ไม่ได้ตั้งใจเผยแพร่*
+      //      **ไม่ใช่ข้อมูลรั่ว** · (P1 เลือกทางนี้ทับทางเปิด policy โดยตั้งใจ · P4 เห็นด้วย)
+      //    · 📌 P4 จับบั๊ก 2 ตัวในใบนี้ก่อนมันลงฐาน: `custom_places` ไม่ถูกก๊อป (FK composite ระเบิด) ·
+      //      และก๊อปโดยไม่กรอง `deleted_at` (ของที่ทีมลบแล้วฟื้นในทริปผู้ใช้ทุกใบ) — แก้แล้วทั้งคู่
+      //    🔴 **ยังไม่มีเคสสดสักข้อ** — ทั้งใบยังไม่เคยรันที่ไหน · เคส 7 ข้อรอ `db:push`
+      //    (ชื่อทั้งสองอยู่ตามลำดับตัวอักษรด้านบน — `copy_…` ก่อน `create_trip` · `list_…` ก่อน `mode_limits`)
       "public.set_system_mode",
       "public.set_trip_pinned",
       "public.soft_delete_booking",
