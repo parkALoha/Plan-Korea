@@ -205,7 +205,7 @@ function SummaryDayCard({
                     <PlaceThumb
                       query={placeQueryKey(place)}
                       category={place.category}
-                      className="h-12 w-12 shrink-0"
+                      size="md"
                     />
                   ) : (
                     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-xl">
@@ -322,7 +322,7 @@ function SummaryDayCard({
                   <PlaceThumb
                     query={placeQueryKey(place)}
                     category={place.category}
-                    className="h-12 w-12 shrink-0"
+                    size="md"
                   />
                 ))}
               <div className="min-w-0 flex-1">

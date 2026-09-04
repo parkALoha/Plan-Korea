@@ -11,6 +11,7 @@ import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { InsertBetweenRow } from "./InsertBetweenRow";
 import NoteBody from "./NoteBody";
+import { NoteListEditor } from "./NoteListEditor";
 import { PhotoLightbox } from "./PhotoLightbox";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
@@ -92,7 +93,6 @@ export function SortableStopRow({
     opacity: isDragging ? 0.5 : 1,
   };
   const [editingNote, setEditingNote] = useState(false);
-  const [noteDraft, setNoteDraft] = useState(stop.note ?? "");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(false);
@@ -314,7 +314,7 @@ export function SortableStopRow({
                 <PlaceThumb
                   query={placeQueryKey(sched.place)}
                   category={sched.place.category}
-                  className="h-10 w-10 shrink-0"
+                  size="lg"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold text-content hover:underline">
@@ -358,72 +358,28 @@ export function SortableStopRow({
             />
           ) : null
         ) : editingNote ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {/* textarea ไม่ใช่ input — โน้ตหลายอันเป็นแพลนย่อยของสถานที่นั้น ต้องขึ้นบรรทัดใหม่/ทำบุลเล็ตได้
-                Enter = ขึ้นบรรทัด, Cmd/Ctrl+Enter = บันทึก (Enter เดี่ยวเคยบันทึกทันที เลยพิมพ์หลายบรรทัดไม่ได้เลย) */}
-            <textarea
-              autoFocus
-              rows={Math.min(10, Math.max(2, noteDraft.split("\n").length))}
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  onUpdateNote(noteDraft.trim() || null);
-                  setEditingNote(false);
-                }
-                if (e.key === "Escape") {
-                  setNoteDraft(stop.note ?? "");
-                  setEditingNote(false);
-                }
-              }}
-              placeholder={"จดได้ยาวๆ ขึ้นบรรทัดใหม่ได้ เช่น\n- สั่งบิบิมบับหม้อหิน\n10:30 ต่อคิวหน้าร้าน"}
-              className="min-w-0 flex-1 basis-full resize-y rounded-lg border border-line px-2 py-1.5 text-sm leading-relaxed text-content focus:border-maple focus:outline-none"
-            />
-            <button
-              onClick={() => {
-                onUpdateNote(noteDraft.trim() || null);
-                setEditingNote(false);
-              }}
-              className="shrink-0 rounded-lg bg-pine px-2.5 py-1 text-xs font-medium text-cream hover:bg-pine-dark"
-            >
-              บันทึก
-            </button>
-            <button
-              onClick={() => {
-                setNoteDraft(stop.note ?? "");
-                setEditingNote(false);
-              }}
-              className="shrink-0 rounded-lg px-2 py-1 text-xs text-content-soft hover:bg-surface-soft"
-            >
-              ยกเลิก
-            </button>
-            {stop.note && (
-              <button
-                onClick={() => {
-                  onUpdateNote(null);
-                  setNoteDraft("");
-                  setEditingNote(false);
-                }}
-                className="shrink-0 rounded-lg px-2 py-1 text-xs text-maple-dark hover:bg-maple-soft"
-              >
-                ลบ
-              </button>
-            )}
-          </div>
+          <NoteListEditor
+            value={stop.note ?? ""}
+            canDelete={!!stop.note}
+            onSave={(next) => {
+              onUpdateNote(next);
+              setEditingNote(false);
+            }}
+            onCancel={() => {
+              setEditingNote(false);
+            }}
+          />
         ) : stop.note ? (
           /* div ไม่ใช่ button — ข้างในมีปุ่ม "ดูทั้งหมด" ของ NoteBody อยู่ ซ้อน button ในกันไม่ได้ */
           <div
             role="button"
             tabIndex={0}
             onClick={() => {
-              setNoteDraft(stop.note ?? "");
               setEditingNote(true);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                setNoteDraft(stop.note ?? "");
                 setEditingNote(true);
               }
             }}

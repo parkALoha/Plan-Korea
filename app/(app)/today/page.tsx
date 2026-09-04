@@ -520,7 +520,7 @@ export default function TodayPage() {
                         <PlaceThumb
                           query={placeQueryKey(nextSched.place)}
                           category={nextSched.place.category}
-                          className="h-16 w-16 shrink-0"
+                          size="lg"
                         />
                       )}
                       <div className="min-w-0 flex-1">
@@ -683,7 +683,7 @@ export default function TodayPage() {
                         <PlaceThumb
                           query={placeQueryKey(place)}
                           category={place.category}
-                          className="h-9 w-9 shrink-0"
+                          size="sm"
                         />
                       ) : (
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-base">

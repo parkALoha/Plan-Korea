@@ -99,7 +99,7 @@ export function DayEventsPanel({
                     <PlaceThumb
                       query={placeQueryKey(place)}
                       category={place.category}
-                      className="h-10 w-10 shrink-0"
+                      size="lg"
                     />
                   ) : (
                     // ไอคอนในกรอบขนาดเท่ารูปย่อ — แบบเดียวกับแถว intercity/hotel/transfer ที่ไม่มีรูป
