@@ -199,6 +199,64 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     ).toBe(false);
   });
 
+  /**
+   * 🔴 **ฟังก์ชันที่ `anon` เรียกได้ — ทะเบียนที่ต้องขยับอย่างจงใจ** (P4 · 4 ก.ย. 2026)
+   *
+   * ## ทำไมต้องมีตอนนี้พอดี
+   * ระบบนี้ถูกออกแบบบนสมมติฐาน ***`anon` ไม่มีสิทธิ์อะไรเลย*** — ทุกใบ `revoke all … from anon`
+   * (`20260824043822:91` · `20260824221550:75`) · **P4 ยิงยืนยันด้วย anon key จริงแล้ว 4 ก.ย.:**
+   * `catalog_countries` · `catalog_cities` · `catalog_places` · `trips` → `42501` ทุกตัว
+   *
+   * 🔴 **และมันกำลังจะเปลี่ยนเป็นครั้งแรก** — ผู้ใช้สั่งเปิดหน้าแรกให้คนยังไม่ล็อกอินเข้าได้
+   * ⇒ จะมี definer RPC ใบใหม่ที่ `grant execute … to anon`
+   *
+   * 🎯 ***`grant … to anon` ไม่ใช่ "หน้าเว็บเราแสดงให้คนนอกดูได้" — `anon key` เป็น `NEXT_PUBLIC_`
+   *    อยู่ใน JS bundle ⇒ มันคือ **"ยิงตรงผ่าน PostgREST ได้จากทั้งอินเทอร์เน็ต
+   *    โดยไม่ผ่าน route เรา ไม่ผ่าน `rateLimitGuard` เรา"*****
+   * ⇒ ทุกชื่อที่เพิ่มในลิสต์นี้ **ต้องผ่านการตัดสินใจ ไม่ใช่ผลข้างเคียงของใบอื่น**
+   *
+   * ⚠️ **ขอบเขต:** อ่าน *ไฟล์ migration* ไม่ได้ถามฐาน ⇒ **drift ผ่าน SQL editor มองไม่เห็นจากตรงนี้**
+   *    · ครึ่งที่ยิงจริงอยู่ที่ `rlsMatrix`: `anon` เรียก `create_trip` ไม่ได้ · อ่านคลัง/`trips` ไม่ได้
+   *    · 🔴 **และมันจับได้แค่ `grant` ที่เขียนชื่อ `anon` ตรง ๆ** — `grant … to public` เปิดให้ทุก role
+   *      รวม `anon` **โดยไม่มีคำว่า `anon` ในบรรทัด** ⇒ เคสที่สองข้างล่างถามข้อนั้นแยก
+   */
+  it("🔴 ฟังก์ชันที่ `anon` เรียกได้ ต้องมีเท่าที่ขึ้นทะเบียน — เปิดเพิ่ม = การตัดสินใจ ไม่ใช่ผลข้างเคียง", () => {
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+    const granted = new Set<string>();
+    for (const m of src.matchAll(/grant\s+execute\s+on\s+function\s+([\w.]+)\s*\([^)]*\)\s*to\s+([^;]+);/gi)) {
+      if (/\banon\b/i.test(m[2])) granted.add(m[1]);
+    }
+    // ควบคุมฝั่งบวก — ตัวสแกนต้องเห็น `grant execute` อย่างน้อยหลายใบ ไม่งั้นเซตว่างอ่านเป็น "ไม่มีใครเปิด"
+    expect(
+      (src.match(/grant\s+execute\s+on\s+function/gi) ?? []).length,
+      "หา `grant execute on function` ไม่เจอเลย = ตัวสแกนพัง ไม่ใช่ว่าไม่มีใครให้สิทธิ์",
+    ).toBeGreaterThan(5);
+
+    expect(
+      [...granted].sort(),
+      "ฟังก์ชันที่ `anon` เรียกได้เปลี่ยนไป\n" +
+        "  🔴 `anon key` เป็น `NEXT_PUBLIC_` ⇒ ทุกคนบนอินเทอร์เน็ตเรียกได้ **ไม่ผ่าน route · ไม่ผ่าน rate limit**\n" +
+        "  ⇒ ถามก่อนเพิ่ม: ฟังก์ชันนี้ตอบเหมือนกันหมดทุกคนไหม · คืนของที่ยอมให้ถูกดูดทั้งใบไหม\n" +
+        "  · ถ้าตั้งใจ เติมชื่อที่นี่ **พร้อม migration ในคอมมิตเดียวกัน**",
+    ).toEqual([
+      // ธงโหมดอ่านอย่างเดียว — `401-exempt` โดยตั้งใจ (`system-mode/route.ts:19`)
+      // คำตอบเหมือนกันหมดทุกคน · ไม่มีข้อมูลของใครอยู่ในนั้น · ไม่รับพารามิเตอร์
+      "public.system_mode",
+    ]);
+  });
+
+  it("🔴 ห้าม `grant` ให้ `public` — มันครอบ `anon` โดยไม่มีคำว่า `anon` ในบรรทัด", () => {
+    const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+    // `grant … to public` = ทุก role รวม anon ⇒ เคสข้างบน (ที่หาคำว่า `anon`) **มองไม่เห็นตามนิยาม**
+    const toPublic = [...src.matchAll(/grant\s+[^;]*?\s+to\s+([^;]*\bpublic\b[^;]*);/gi)].map((m) =>
+      m[0].replace(/\s+/g, " ").trim().slice(0, 120),
+    );
+    expect(
+      toPublic,
+      "มี `grant … to public` — มันเปิดให้ **ทุก role รวม `anon`** โดยที่ทะเบียนข้างบนมองไม่เห็น",
+    ).toEqual([]);
+  });
+
   it("เครื่องวัดทำงาน: มีคำสั่ง policy ให้ตรวจมากกว่า 0", () => {
     const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
     expect((src.match(/\b(?:create|drop)\s+policy\b/gi) ?? []).length).toBeGreaterThan(0);
