@@ -53,7 +53,12 @@ interface UseTripDndArgs {
   /** ล้างโน้ตที่ฝากไว้ — ใช้ตอนกด "เลิกทำ" ซึ่งเอาจุดแวะ (พร้อมโน้ตในตัว) กลับไปที่เดิมแล้ว */
   clearPlaceNote: (placeId: string) => Promise<void>;
   reorderStops: (dayId: string, orderedStopIds: string[]) => Promise<void>;
-  moveStopToDay: (stopId: string, targetDayId: string) => Promise<void> | void;
+  /** `atIndex` = ตำแหน่งในวันปลายทาง (ไม่ใส่ = ต่อท้าย) — การลากไม่เคยระบุ เมนู "ย้ายไปวัน…" ระบุ */
+  moveStopToDay: (
+    stopId: string,
+    targetDayId: string,
+    atIndex?: number
+  ) => Promise<void> | void;
   flashNewStop: (stopId: string | undefined) => void;
 }
 
@@ -212,6 +217,65 @@ export function useTripDnd({
     });
   }
 
+  /* ── ทางเข้าที่สอง: เมนูบนแถว (ไม่ต้องลาก) ────────────────────────────────────────
+     🔴 **อยู่ในฮุกนี้ตั้งใจ ไม่ใช่แยกไฟล์** — "ย้ายจุดแวะไปวันอื่น" มีกฎที่ต้องเหมือนกัน
+     ทั้งสองทางเข้า (ด่านวันล็อกทั้งต้นทาง/ปลายทาง · เตือนเมื่อคนละเมืองพร้อมปุ่มเลิกทำ)
+     🎯 แยกไปเขียนใหม่อีกไฟล์ = กฎสองชุดที่ *เริ่ม* เหมือนกัน แล้วคนแก้ทีละข้าง
+     ⚠️ ชื่อฮุกยังเป็น `useTripDnd` เพราะการลากยังเป็นเจ้าของ `sensors`/overlay อยู่ —
+     ถ้าวันหนึ่งทางเข้าที่สามโผล่มา ให้ยกสามฟังก์ชันนี้ออกเป็นฮุกของ "การย้าย" ทั้งก้อน */
+
+  /** เลื่อนขึ้น/ลงหนึ่งช่องในวันเดียวกัน — ใช้เส้นทางเดียวกับการลากจัดลำดับ (`reorderStops`) */
+  function moveStopWithinDay(stopId: string, dayId: string, dir: -1 | 1) {
+    if (isDayLocked(dayId)) return;
+    const dayStops = stopsByDay[dayId] ?? [];
+    const from = dayStops.findIndex((s) => s.id === stopId);
+    const to = from + dir;
+    if (from === -1 || to < 0 || to >= dayStops.length) return;
+    reorderStops(dayId, arrayMove(dayStops, from, to).map((s) => s.id));
+  }
+
+  /**
+   * ย้ายไปวันอื่นที่ตำแหน่งที่เลือก — คนละเมืองก็แค่เตือนเหมือนการลากทุกประการ
+   *
+   * 🔴 ปุ่ม "เลิกทำ" ที่นี่พากลับ **ตำแหน่งเดิม** ไม่ใช่แค่วันเดิม (ทางลากทำได้แค่วันเดิม
+   * เพราะตอนวางมันไม่รู้ว่าเดิมอยู่ช่องที่เท่าไหร่) · เมนูรู้ตั้งแต่ก่อนย้าย จึงคืนได้ครบ
+   */
+  function moveStopToDayAt(
+    stopId: string,
+    sourceDayId: string,
+    targetDayId: string,
+    atIndex: number
+  ) {
+    if (isDayLocked(sourceDayId) || isDayLocked(targetDayId)) return;
+    const sourceIndex = (stopsByDay[sourceDayId] ?? []).findIndex((s) => s.id === stopId);
+
+    /* วันเดิม = จัดลำดับ ไม่ใช่ย้ายวัน → ใช้เส้นทางเดียวกับการลาก (`reorderStops`) ซึ่งอัปเดต
+       หน้าจอทันทีก่อนยิง · `atIndex` นับจากลิสต์ที่ไม่มีตัวมันเอง ซึ่งตรงกับดัชนีปลายทางของ
+       `arrayMove` พอดีทุกกรณี (ทั้งเลื่อนขึ้นและเลื่อนลง) */
+    if (targetDayId === sourceDayId) {
+      const dayStops = stopsByDay[sourceDayId] ?? [];
+      if (sourceIndex === -1 || atIndex === sourceIndex) return;
+      reorderStops(
+        sourceDayId,
+        arrayMove(dayStops, sourceIndex, Math.min(atIndex, dayStops.length - 1)).map((s) => s.id)
+      );
+      return;
+    }
+
+    const targetDay = itinerary.find((d) => d.id === targetDayId);
+    const movingStop = stops.find((s) => s.id === stopId);
+    const place = movingStop ? resolvePlace(movingStop.place_id, placeSources) : null;
+    if (!targetDay) return;
+    Promise.resolve(moveStopToDay(stopId, targetDayId, atIndex)).then(() => {
+      if (place && place.city !== targetDay.city) {
+        showUndoToast(
+          `"${place.nameTh}" อยู่ที่${placeCityNameThOf(place.city)} แต่วันนี้เที่ยว${cityNameThOf(targetDay.city)}`,
+          () => moveStopToDay(stopId, sourceDayId, sourceIndex === -1 ? undefined : sourceIndex)
+        );
+      }
+    });
+  }
+
   const activeDragLabel = useMemo(() => {
     if (!activeDrag) return null;
     const placeId = activeDrag.kind === "place" ? activeDrag.placeId : stops.find((s) => s.id === activeDrag.stopId)?.place_id;
@@ -220,5 +284,12 @@ export function useTripDnd({
     return place ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}` : null;
   }, [activeDrag, placeSources, stops]);
 
-  return { sensors, handleDragStart, handleDragEnd, activeDragLabel };
+  return {
+    sensors,
+    handleDragStart,
+    handleDragEnd,
+    activeDragLabel,
+    moveStopWithinDay,
+    moveStopToDayAt,
+  };
 }

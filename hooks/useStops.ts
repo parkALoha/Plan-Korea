@@ -417,11 +417,22 @@ export function useStops(tripId: string | null, planId: string | null) {
     [planId, call, reload]
   );
 
+  /**
+   * ย้ายจุดแวะไปวันอื่น — `atIndex` เลือกตำแหน่งในวันปลายทางได้ (ไม่ใส่ = ต่อท้าย เหมือนเดิม)
+   *
+   * 🔴 `atIndex` นับจากลิสต์ของวันปลายทาง **ที่ไม่มีตัวมันเองอยู่** — ฝั่งเซิร์ฟเวอร์
+   * (`PATCH …/stops`) กรอง `r.id !== id` ออกก่อนคำนวณ `rank` เสมอ · ข้อนี้สำคัญเฉพาะตอน
+   * ย้ายภายในวันเดิม: เลื่อนลง 1 ช่องคือ `atIndex = index + 1` ไม่ใช่ `+ 2`
+   */
   const moveStopToDay = useCallback(
-    async (stopId: string, targetDayId: string) => {
+    async (stopId: string, targetDayId: string, atIndex?: number) => {
       const tripDayId = dayToUuid.current.get(targetDayId);
       if (!tripDayId || !planId) return;
-      await patch("ย้ายจุดแวะข้ามวัน", stopId, { planId, tripDayId });
+      await patch("ย้ายจุดแวะข้ามวัน", stopId, {
+        planId,
+        tripDayId,
+        ...(atIndex != null ? { atIndex } : null),
+      });
       await reload();
     },
     [planId, patch, reload]

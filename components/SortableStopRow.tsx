@@ -12,6 +12,7 @@ import { placeQueryKey } from "@/lib/placeQuery";
 import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { InsertBetweenRow } from "./InsertBetweenRow";
+import { MoveStopMenu, type MoveDayTarget } from "./MoveStopMenu";
 import NoteBody, { itemsToNote, noteItems, type NoteItem } from "./NoteBody";
 import { PhotoLightbox } from "./PhotoLightbox";
 import { PlaceThumb } from "./PlaceThumb";
@@ -70,6 +71,10 @@ export function SortableStopRow({
   onInsertHotelBefore,
   hotelName,
   signedPhotoUrl,
+  moveTargets,
+  dayStopCount,
+  onMoveWithinDay,
+  onMoveToDay,
 }: {
   stop: TripStop;
   dayId: string;
@@ -109,6 +114,12 @@ export function SortableStopRow({
    *  เอง ตั้งใจ เพราะ parent มี stops ทั้งวันอยู่ในมืออยู่แล้วและเซ็นรวมทีเดียวถูกกว่าเซ็นทีละแถว
    *  undefined = ยังเซ็นไม่เสร็จ · null = เซ็นไม่สำเร็จ (ต้องบอกว่าเปิดไม่ได้) · string = เปิดได้ */
   signedPhotoUrl: string | null | undefined;
+  /** ทุกวันของทริปพร้อมจุดแวะของมัน — ป้อนเมนู "ย้ายไปวันที่…" (ดู `MoveStopMenu`) */
+  moveTargets: MoveDayTarget[];
+  /** จำนวนจุดแวะของวันนี้ — ใช้ปิดปุ่ม "เลื่อนลง" ที่แถวสุดท้าย */
+  dayStopCount: number;
+  onMoveWithinDay: (dir: -1 | 1) => void;
+  onMoveToDay: (targetDayId: string, atIndex: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stop.id,
@@ -239,6 +250,20 @@ export function SortableStopRow({
         +
       </button>
     </>
+  );
+
+  /* เมนูย้ายจุดแวะ — วางคู่กับปุ่มลบ เพราะทั้งคู่คือ "จัดการแถวนี้" และต้องอยู่ที่เดียวกัน
+     ทั้งบนมือถือและบนจอ lg ที่แผนที่แย่งพื้นที่ (เหตุผลเดียวกับ `dwellControls`) */
+  const moveButton = (
+    <MoveStopMenu
+      stopId={stop.id}
+      dayId={dayId}
+      index={index}
+      dayStopCount={dayStopCount}
+      targets={moveTargets}
+      onMoveWithinDay={onMoveWithinDay}
+      onMoveToDay={onMoveToDay}
+    />
   );
 
   const removeButton = (
@@ -422,7 +447,10 @@ export function SortableStopRow({
             <div className="hidden shrink-0 items-center gap-1 text-xs text-content-soft sm:flex lg:hidden">
               {dwellControls}
             </div>
-            <div className="hidden sm:block lg:hidden">{removeButton}</div>
+            <div className="hidden items-center gap-1 sm:flex lg:hidden">
+              {moveButton}
+              {removeButton}
+            </div>
           </>
         )}
       </div>
@@ -595,6 +623,7 @@ export function SortableStopRow({
           !editingNote && (
             <div className="flex shrink-0 items-center gap-1 text-xs text-content-soft sm:hidden lg:flex">
               {dwellControls}
+              {moveButton}
               {removeButton}
             </div>
           )

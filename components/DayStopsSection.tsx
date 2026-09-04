@@ -31,6 +31,7 @@ import { dayCardElementId } from "./DayJumpBar";
 import { InsertBetweenRow } from "./InsertBetweenRow";
 import NoteBody from "./NoteBody";
 import { SortableStopRow } from "./SortableStopRow";
+import type { MoveDayTarget } from "./MoveStopMenu";
 import { TravelModeRow } from "./TravelModeRow";
 
 export function DayStopsSection({
@@ -64,6 +65,9 @@ export function DayStopsSection({
   cityOptions,
   currentCityId = null,
   onChangeDayCity,
+  moveTargets,
+  onMoveStopWithinDay,
+  onMoveStopToDay,
 }: {
   day: Day;
   /** stops for this day only, already sorted by order_index */
@@ -126,6 +130,11 @@ export function DayStopsSection({
   currentCityId?: string | null;
   /** บันทึกเมืองของวันนี้ · `null` = ล้างกลับเป็น "ยังไม่ระบุเมือง" · **โยน error เมื่อไม่สำเร็จ** */
   onChangeDayCity?: (cityId: string | null) => Promise<void>;
+  /** ทุกวันของทริปพร้อมจุดแวะของมัน — ป้อนเมนู "ย้ายไปวันที่…" บนแถวจุดแวะ (ดู `MoveStopMenu`)
+   *  🔴 การ์ดวันรู้จักแค่วันของตัวเอง จึงรับรายการทั้งทริปลงมาจาก `TripPlanScreen` ที่เดียว */
+  moveTargets: MoveDayTarget[];
+  onMoveStopWithinDay: (stopId: string, dir: -1 | 1) => void;
+  onMoveStopToDay: (stopId: string, targetDayId: string, atIndex: number) => void;
 }) {
   // เซ็น signed URL ของรูปจุดแวะทั้งวันครั้งเดียว (E2-AC13 ②) — ไม่ใช่ให้ SortableStopRow เซ็นเอง
   // ทีละแถว เพราะที่นี่มี stops ทั้งวันอยู่ในมือแล้วโดยธรรมชาติของโครงเดิม ไม่ต้องรื้อ prop chain
@@ -556,6 +565,12 @@ export function DayStopsSection({
                       : null
                   }
                   locked={locked}
+                  moveTargets={moveTargets}
+                  dayStopCount={stops.length}
+                  onMoveWithinDay={(dir) => onMoveStopWithinDay(stop.id, dir)}
+                  onMoveToDay={(targetDayId, atIndex) =>
+                    onMoveStopToDay(stop.id, targetDayId, atIndex)
+                  }
                   onSetTravelMode={(mode) => onUpdateTravelMode(stop.id, mode)}
                   onView={() => {
                     setViewIndex(i);

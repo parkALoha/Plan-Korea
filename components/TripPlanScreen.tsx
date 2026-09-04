@@ -17,8 +17,10 @@ import { TripPrepPanel } from "@/components/TripPrepPanel";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import { type Place } from "@/data/places";
 import { categoryMetaOf } from "@/components/categoryMeta";
+import { cityMetaOf } from "@/components/cityMeta";
+import type { MoveDayTarget } from "@/components/MoveStopMenu";
 import type { City, Day } from "@/data/itinerary";
-import { hotelAnchorId } from "@/lib/hotelLegs";
+import { hotelAnchorId, hotelOfLeg } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
 import { haversineKm } from "@/lib/geo";
 import { showUndoToast } from "@/lib/toast";
@@ -503,7 +505,14 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     [placeNotes, addStop, clearNote]
   );
 
-  const { sensors, handleDragStart, handleDragEnd, activeDragLabel } = useTripDnd({
+  const {
+    sensors,
+    handleDragStart,
+    handleDragEnd,
+    activeDragLabel,
+    moveStopWithinDay,
+    moveStopToDayAt,
+  } = useTripDnd({
     itinerary,
     placeSources,
     stops,
@@ -521,6 +530,46 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     moveStopToDay,
     flashNewStop,
   });
+
+  /**
+   * ทุกวันของทริปพร้อมชื่อจุดแวะของมัน — ป้อนเมนู "ย้ายไปวันที่…" บนแถวจุดแวะ
+   *
+   * 🔴 **คิดที่นี่ที่เดียว ไม่ใช่ในการ์ดวัน** — การ์ดวันรู้จักแค่วันของตัวเอง แต่เมนูต้องโชว์
+   * *ทุก* วันพร้อมจุดแวะของวันนั้น เพื่อให้เลือก **ตำแหน่ง** ได้ ไม่ใช่แค่เลือกวัน
+   * · ล็อกอ่านจาก `isDayLocked` ตัวเดียวกับที่ปิด `useSortable`/`useDroppable` — วันที่ลากเข้าไม่ได้
+   *   ต้องกดเมนูเข้าไปไม่ได้ด้วย ไม่งั้นเมนูกลายเป็นทางลัดข้ามด่าน
+   */
+  const moveTargets: MoveDayTarget[] = useMemo(
+    () =>
+      itinerary.map((day, i) => ({
+        dayId: day.id,
+        dayNumber: i + 1,
+        dateLabel: new Date(day.date).toLocaleDateString("th-TH", {
+          day: "numeric",
+          month: "short",
+        }),
+        cityLabel: day.cityTh,
+        icon: cityMetaOf(day.city).icon,
+        locked: isDayLocked(day.id),
+        stops: (stopsByDay[day.id] ?? []).map((stop) => {
+          // แถวข้ามเมืองไม่มีสถานที่ให้ resolve — ชื่อของมันคือคู่ต้นทาง→ปลายทางที่พิมพ์ไว้เอง
+          if (stop.kind === "intercity") {
+            return {
+              id: stop.id,
+              label: `🚄 ${stop.intercity_from ?? "?"} → ${stop.intercity_to ?? "?"}`,
+            };
+          }
+          const place = resolvePlace(stop.place_id, placeSources);
+          return {
+            id: stop.id,
+            label: place
+              ? `${categoryMetaOf(place.category).emoji} ${place.nameTh}`
+              : "จุดแวะ",
+          };
+        }),
+      })),
+    [itinerary, stopsByDay, placeSources, isDayLocked]
+  );
 
   /** เวลาเริ่มต้นของแถว "แวะที่พัก" — เช็คอิน/ฝากกระเป๋าแล้วออกไปต่อ ปกติไม่เกินครึ่งชั่วโมง
    *  (ปรับด้วยปุ่ม +/− ที่แถวได้เหมือนจุดแวะปกติ) */
@@ -663,7 +712,7 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                 // ไม่ว่าจะบันทึกที่พักไปกี่ที่แล้ว — ใช้จำนวนที่พักจริงแทนตอนนั้น ไม่มี "ครบ/ไม่ครบ" ให้เทียบ
                 // (P1/P3, 27 ส.ค. 2026 — ดู §22/§23)
                 hotelsSetCount={
-                  dayPlanReady ? hotelLegs.filter((leg) => hotels[leg.id]).length : Object.keys(hotels).length
+                  dayPlanReady ? hotelLegs.filter((leg) => hotelOfLeg(hotels, leg)).length : Object.keys(hotels).length
                 }
                 hotelsTotal={dayPlanReady ? hotelLegs.length : Object.keys(hotels).length}
                 bookingCount={bookings.length}
@@ -739,6 +788,11 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                     setDaysLocked([day.id], !isDayLockedInDb(day.id))
                   }
                   onReorder={(orderedStopIds) => reorderStops(day.id, orderedStopIds)}
+                  moveTargets={moveTargets}
+                  onMoveStopWithinDay={(stopId, dir) => moveStopWithinDay(stopId, day.id, dir)}
+                  onMoveStopToDay={(stopId, targetDayId, atIndex) =>
+                    moveStopToDayAt(stopId, day.id, targetDayId, atIndex)
+                  }
                   {...(usePlatformDays
                     ? {
                         cityOptions: platformCityOptions,
