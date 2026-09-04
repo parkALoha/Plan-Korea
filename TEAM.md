@@ -677,6 +677,7 @@ grep -nE '^\s*(- )?(run|uses):' .github/workflows/ci.yml
 | 5 | `select, insert, delete on {place_details,place_details_local,place_photo,travel_time}_cache` | วาง fixture แล้วเก็บ — **ไม่มีทางอื่นให้มีแถวอยู่จริง** · ไม่ให้ `update` | `20260825152400_…` |
 | 6 | `execute on app.read_only_uncovered_tables()` | เรียกตัวตรวจความครอบคลุม · ไม่ให้สิทธิ์บนตารางใดเลย | `20260827200000_…` |
 | 7 | `execute on app.assert_cache_lockdown()` | ให้ cron ของ `Q3` เรียกตัวตรวจได้ | `…160000` + wrapper `…200000` + definer `…210000` |
+| 8 | `update (published_template_at) on trips` | ติดธง "ทริปแนะนำ" — **คอลัมน์เดียว** · ไคลเอนต์ต้องติดเองไม่ได้ (assert บังคับทั้งสองทิศ) | `20260904190000_…` |
 
 🔴 **บทเรียนของข้อ 6/7 ที่ต้องอ่านก่อนขอข้อถัดไป — `grant execute` อย่างเดียว *ไม่พอ*:**
 ```
