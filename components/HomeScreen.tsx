@@ -8,6 +8,7 @@ import { DestinationExplorer } from "@/components/DestinationExplorer";
 import type { CityOption } from "@/components/TripDestinationPicker";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
+import { SiteNav } from "@/components/SiteNav";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useMounted } from "@/hooks/useMounted";
 import { useSystemMode } from "@/hooks/useSystemMode";
@@ -508,7 +509,7 @@ function RecommendedTrips() {
   if (templates.length === 0) return null;
 
   return (
-    <section className="mt-10 border-t border-line pt-6">
+    <section id="explore" className="mt-10 border-t border-line pt-6">
       <h2 className="text-lg font-bold text-content">{COPY.recommended}</h2>
       <p className="mb-3 mt-0.5 text-sm text-content-soft">{COPY.recommendedSubheading}</p>
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
@@ -747,7 +748,7 @@ export function HomeScreen() {
 
 
   return (
-    <main className="min-h-full bg-surface pb-24 text-content">
+    <main className="min-h-full bg-surface pb-36 text-content lg:pb-24">
       {/**
        * 🔴 **แถบหัวเป็น *แถบของแอป* ไม่ใช่ *แถบทักทาย*** — รื้อ 4 ก.ย. 2026 (ผู้ใช้สั่งเอง: *"Header มันดูกากไปหน่อย"*)
        *
@@ -950,7 +951,7 @@ export function HomeScreen() {
            * เขาไม่รู้ว่าเว็บนี้ทำอะไรได้ และไม่รู้ว่าจะเริ่มยังไง · ***นี่คือคุณค่าหลักของงานนี้ ไม่ใช่ผลพลอยได้***
            * ⇒ ให้เมนู "เลือกปลายทาง" กินเต็มหน้าแทน · ฟอร์มเปล่ายังอยู่ใต้สุดสำหรับคนที่รู้อยู่แล้วว่าจะไปไหน
            */
-          <div className="py-2">
+          <div id="explore" className="py-2">
             <h1 className="text-2xl font-extrabold tracking-tight text-content sm:text-3xl">
               {E5_COPY.explorer.heading}
             </h1>
@@ -1108,7 +1109,7 @@ export function HomeScreen() {
           disabled={readOnly}
           aria-label={COPY.newTrip}
           title={readOnly ? COPY.readOnlyFab : undefined}
-          className="fixed bottom-6 right-4 z-30 flex h-14 items-center gap-2 rounded-full bg-maple px-5 font-semibold text-white shadow-lg shadow-ink/20 hover:bg-maple-dark disabled:cursor-not-allowed disabled:opacity-40 sm:right-8"
+          className="fixed bottom-20 right-4 z-30 flex h-14 lg:bottom-6 items-center gap-2 rounded-full bg-maple px-5 font-semibold text-white shadow-lg shadow-ink/20 hover:bg-maple-dark disabled:cursor-not-allowed disabled:opacity-40 sm:right-8"
         >
           {COPY.newTrip}
         </button>
@@ -1213,6 +1214,11 @@ export function HomeScreen() {
           <CreateTripForm initialDestinations={seedCities} />
         </Modal>
       )}
+      {/**
+       * 🔴 **แถบเมนูระดับเว็บ วางที่ *หน้า* ไม่ใช่ที่ `layout`** — หน้าทริปมี `BottomNav` ของตัวเองอยู่แล้ว
+       * ถ้าวางที่ layout จะต้องมีเงื่อนไข *"ยกเว้นหน้าทริป"* ซึ่งลืมง่ายกว่า และพังแบบเงียบ (สองแถบซ้อนกัน)
+       */}
+      <SiteNav />
     </main>
   );
 }

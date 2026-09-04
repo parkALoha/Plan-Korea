@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteNav } from "@/components/SiteNav";
 import { requireUser } from "@/lib/auth/server";
 import { Card } from "@/components/ui/Card";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -115,7 +116,7 @@ export default async function AccountPage() {
   const createdAt = thaiDate(user.created_at);
 
   return (
-    <main className="mx-auto max-w-md px-4 py-6 text-content sm:py-10">
+    <main className="mx-auto max-w-md px-4 pb-28 pt-6 text-content sm:py-10 lg:pb-6">
       {/* 🔴 **ทางออก — วัดแล้วว่าหน้านี้ไม่มีเลยสักทาง** (P7 · 4 ก.ย. 2026)
           `document.querySelectorAll('a')` บนหน้านี้คืน **0 ตัว** และ root layout ไม่ให้ nav อะไรมาเลย
           (`BottomNav` อยู่ที่หน้าทริป ไม่ใช่ที่นี่) ⇒ ผู้ใช้ที่กดไอคอนบัญชีบนแถบหัวเข้ามา
@@ -225,6 +226,8 @@ export default async function AccountPage() {
       <SignOutButton />
 
       <CopyUserId userId={user.id} />
+      {/* แถบเมนูระดับเว็บ — หน้านี้อยู่นอกทริป จึงไม่มี `BottomNav` (เหตุผลเต็มอยู่ที่ `SiteNav.tsx`) */}
+      <SiteNav />
     </main>
   );
 }

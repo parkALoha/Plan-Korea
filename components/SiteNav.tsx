@@ -1,0 +1,62 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+/**
+ * **แถบเมนูระดับ *เว็บ*** — สำหรับหน้าที่อยู่ *นอก* ทริปหนึ่งใบ (หน้าแรก · บัญชี)
+ * เจ้าของ: P2-UI/UX · 5 ก.ย. 2026 · ผู้ใช้อนุมัติผ่าน P1 (*"ทำตามที่แนะนำไปก่อน พรุ่งนี้ค่อยมาปรับกัน"*)
+ *
+ * ## 🔴 ทำไมไม่รวมเป็นแถบเดียวกับ `BottomNav`
+ * ```
+ * SiteNav     ตอบ "จะไปส่วนไหนของเว็บ"      ← นอกหน้าทริป
+ * BottomNav   ตอบ "จะดูทริปนี้มุมไหน"        ← ในหน้าทริป (แผน · วันนี้ · สรุป) ผูกกับ `tripId`
+ * ```
+ * 🎯 ***สองแถบนี้ตอบคนละคำถาม รวมกันแล้วจะได้แถบที่ตอบทั้งสองไม่ได้ดีสักอัน***
+ * · ⚠️ **ห้ามให้โผล่พร้อมกัน** — หน้าทริปมี `BottomNav` อยู่แล้ว · ตัวนี้จึงถูกวางเฉพาะหน้าที่ไม่มีมัน
+ *   (วางที่ *หน้า* ไม่ใช่ที่ `layout` — layout จะทำให้ต้องมีเงื่อนไข "ยกเว้นหน้าทริป" ซึ่งลืมง่ายกว่า)
+ *
+ * ## 🔴 ยังไม่มีปุ่ม "ทริปแนะนำ" — และนั่นคือการตัดสินใจ ไม่ใช่การลืม
+ * P1 เสนอ 4 ปุ่ม · ผมลง 3 เพราะ ***"ทริปแนะนำ" ยังไม่มีที่ให้ไป***:
+ * มันเป็น *ส่วนหนึ่งของหน้าแรก* ที่ **ไม่เรนเดอร์เลยเมื่อยังไม่มีแผนสักใบ** (ตอนนี้คือ 0 ใบ)
+ * ⇒ ปุ่มจะพาไปยังจุดยึดที่ไม่มีอยู่ = **ปุ่มที่กดแล้วไม่มีอะไรเกิดขึ้น** ซึ่งเราตัดออกไปหลายที่แล้ววันนี้
+ * ✅ เพิ่มได้ทันทีเมื่อมีแผนใบแรก — **แต่ต้องมาพร้อมกฎว่าตอนไม่มีแผนให้ซ่อนปุ่ม ไม่ใช่ปล่อยให้กดลม**
+ */
+const TABS = [
+  { href: "/", icon: "🧳", label: "ทริปของฉัน", match: (p: string) => p === "/" },
+  /** จุดยึดในหน้าแรก — ส่วน "ไปไหนดี?" มีอยู่เสมอ ไม่ว่าจะมีทริปหรือไม่ (ต่างจาก "ทริปแนะนำ") */
+  { href: "/#explore", icon: "🧭", label: "ไปไหนดี", match: () => false },
+  { href: "/account", icon: "👤", label: "บัญชี", match: (p: string) => p.startsWith("/account") },
+] as const;
+
+export function SiteNav() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      aria-label="เมนูของเว็บ"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface-raised/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+    >
+      <div className="mx-auto flex max-w-2xl">
+        {TABS.map((tab) => {
+          const active = tab.match(pathname);
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              aria-current={active ? "page" : undefined}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
+                active ? "text-maple" : "text-content-soft"
+              }`}
+            >
+              <span aria-hidden className="text-lg leading-none">
+                {tab.icon}
+              </span>
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
