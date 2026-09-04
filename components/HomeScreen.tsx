@@ -783,7 +783,7 @@ export function HomeScreen() {
           {trips !== null && trips.length > 0 && (
             <label
               htmlFor="home-trip-search"
-              className="group hidden min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 transition focus-within:ring-2 focus-within:ring-cream sm:flex sm:max-w-md"
+              className="group hidden min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 sm:flex sm:max-w-md"
             >
               <input
                 id="home-trip-search"
@@ -1102,9 +1102,28 @@ export function HomeScreen() {
             </>
           }
         >
+          {/**
+           * 🔴 **ช่องค้นหา *ไม่มี* วงโฟกัสเลย — ตั้งใจ และผู้ใช้สั่งสามรอบ** (4 ก.ย. 2026)
+           *
+           * ## ที่ลองมาแล้วและใช้ไม่ได้ ทั้งสองทาง
+           * ```
+           * focus-within:ring-maple          ส้มจัด · ซ้อนกับ :focus-visible ของ globals อีกชั้น = สองเส้น
+           * has-[:focus-visible]:ring-…      คิดว่าจะขึ้นเฉพาะตอนกด Tab — **ผิด**
+           * ```
+           * 🔴 **`autoFocus` ทำให้เบราว์เซอร์ถือว่าเป็นโฟกัสแบบคีย์บอร์ด** ⇒ `:focus-visible` เป็นจริง
+           *    **ตั้งแต่วินาทีที่กล่องเปิด** ต่อให้เปิดด้วยการแตะก็ตาม (ยิงลำดับ pointer จริงยืนยันแล้ว: `true`)
+           * 🎯 ***`:focus-visible` ตอบว่า "เบราว์เซอร์คิดว่าควรโชว์ไหม" ไม่ได้ตอบว่า "ผู้ใช้ใช้คีย์บอร์ดไหม"***
+           *    — สองอย่างนี้ต่างกันเมื่อโฟกัสถูกตั้งด้วยโค้ด ซึ่งเป็นสิ่งที่เราทำเองที่บรรทัด `autoFocus`
+           *
+           * ## a11y — ที่ยอมได้เพราะอะไร (ไม่ใช่เพราะผู้ใช้สั่ง)
+           * ช่องข้อความมี **เคอร์เซอร์กะพริบ** เป็นตัวบอกโฟกัสของมันเองอยู่แล้ว · และช่องนี้ถูกโฟกัส
+           * ตั้งแต่กล่องเปิด ⇒ **ไม่มีจังหวะที่ผู้ใช้ต้องเดาว่าโฟกัสอยู่ไหน**
+           * ⚠️ **เหตุผลนี้ใช้ได้กับ *ช่องข้อความที่ autofocus ในกล่องที่มีช่องเดียว* เท่านั้น** —
+           *    ห้ามยกไปใช้กับปุ่ม/ลิงก์/ฟอร์มหลายช่อง ซึ่งไม่มีเคอร์เซอร์ให้ดูและต้อง Tab ไล่
+           */}
           <label
             htmlFor="home-trip-search-modal"
-            className="flex cursor-text items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 ring-1 ring-line focus-within:ring-2 focus-within:ring-content-soft/40"
+            className="flex cursor-text items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 ring-1 ring-line"
           >
             <SearchIcon className="h-4 w-4 shrink-0 text-content-soft" />
             <input
