@@ -88,7 +88,30 @@ def comp(place, kind):
 #    ⚠️ **และครึ่งหนึ่งผ่าน**: `New Taipei City` · `Taipei City` ผ่านเพราะ `city` อยู่ในลิสต์อยู่แล้ว
 #    → ตัวเลขรวมจึงไม่ดูผิดสังเกต **นั่นคือเหตุผลที่ไม่มีใครเห็นมันจนกว่าจะไล่ทีละเมือง**
 _SUFFIX = ("city", "town", "village", "ward", "county", "township", "district",
-           "shi", "sheng", "qu", "go", "cho")
+           "shi", "sheng", "qu", "go", "cho",
+           # ── เกาหลี · วัดจาก `skipped_names` ของการรันจริง 4 ก.ย. 2026 (P5) ──
+           #   14  Sokcho-si / Gangwon-do      ← ซกโชค้างที่ 9 แห่ง
+           #   11  Gapyeong-gun / Gyeonggi-do  ← คาพย็องได้ 0 (เกาะนามิอยู่ที่นี่)
+           #    5  Jeju-si / Jeju-do
+           # 🔴 **จงใจไม่ใส่ `gu` และ `do`** — `Daegu` ลงท้ายด้วย `gu` จริง ๆ (จะถูกตัดเหลือ `dae`)
+           #    และ `do` เสี่ยงกับชื่อที่ลงท้ายด้วยพยางค์นั้นโดยบังเอิญ · `Jeju-do` แก้ด้วย ALIASES แทน
+           #    🎯 **รายการนี้ต้องแลกความครอบคลุมกับความปลอดภัยเสมอ — ไม่ใช่ยิ่งยาวยิ่งดี**
+           "si", "gun", "eup", "myeon")
+
+# 🔴 **คำ *นำหน้า* ของหน่วยปกครองไทย — `_SUFFIX` ตัดหางอย่างเดียว จับข้อนี้ไม่ได้เลย** (P5 · 4 ก.ย. 2026)
+# วัดจาก `skipped_names` ของการรันจริง ไม่ได้เดา:
+# ```
+#   15  เมืองพัทยา / ชลบุรี            ← พัทยาค้างอยู่ที่ 2 แห่งเพราะข้อนี้
+#    8  ตำบลหัวหิน / ประจวบคีรีขันธ์     ← หัวหิน 2
+#   13  — / จังหวัดพระนครศรีอยุธยา       ← อยุธยา 2 (ใบนี้ต้องใช้ ALIASES ด้วย ชื่อคนละชื่อ)
+# ```
+# 🎯 **ไทยเป็นภาษาที่ *หน่วยปกครองอยู่หน้า* ไม่ใช่หลัง** — `เมือง`/`ตำบล`/`จังหวัด` นำหน้าชื่อจริงเสมอ
+#    ⇒ กฎที่เขียนขึ้นจากภาษาที่หน่วยอยู่ท้าย (`市` `Shi` `City`) **ไม่มีทางครอบภาษาที่หน่วยอยู่หน้า**
+#    · และมันเงียบสนิท: เมืองได้ 2 แห่งแทนที่จะเป็น 20 **ซึ่งยังอ่านเหมือนตัวเลขปกติ**
+_PREFIX = ("จังหวัด", "อำเภอ", "ตำบล", "แขวง", "เขต", "เมือง")
+# รูปของ `_PREFIX` หลังผ่านการตัดอักขระแบบเดียวกับ `_norm` — คำนวณครั้งเดียวตอนโหลด
+# 🎯 **ที่มาจากที่เดียวกัน จึงเพี้ยนพร้อมกันไม่ได้** — เขียนซ้ำด้วยมือเมื่อไหร่คือรอให้มันล้า
+_PREFIX_N = tuple(re.sub(r"[^\w\s]", "", p, flags=re.UNICODE) for p in _PREFIX)
 
 # 🔴 **เมืองที่ Google ไม่มีชื่อเดียว — ต้องประกาศชื่ออื่นตรง ๆ**
 #    ฮ่องกงไม่มี `locality` และ `admin1` เป็น *เขต* ทั้งสาม ไม่ใช่ชื่อเมือง
@@ -96,6 +119,30 @@ _SUFFIX = ("city", "town", "village", "ward", "county", "township", "district",
 #    ⚠️ **ตารางนี้จะล้าถ้า Google เปลี่ยนวิธีเรียก** — และ `--why` จะบอกทันทีว่าข้ามเพราะชื่ออะไร
 ALIASES = {
     "Hong Kong": ("kowloon", "hongkongisland", "newterritories", "hongkong"),
+    # ── ไทย · วัดจาก `skipped_names` ของการรันจริง 4 ก.ย. 2026 (P5) ──────────
+    # 🔴 **สองใบนี้ไม่ใช่เรื่องคำนำหน้า — เป็นเรื่อง *ชื่อคนละชื่อ* จึงแก้ที่ `_norm` ไม่ได้**
+    # อยุธยา: Google คืน `จังหวัดพระนครศรีอยุธยา` · คลังเก็บ `อยุธยา` (ชื่อที่คนไทยใช้จริง)
+    #   ⇒ ตัดคำนำหน้าแล้วยังเหลือ `พระนครศรีอยุธยา` ซึ่งคนละสตริงกับ `อยุธยา`
+    "Ayutthaya": ("จังหวัดพระนครศรีอยุธยา", "พระนครศรีอยุธยา", "phranakhonsiayutthaya"),
+    # เกาะสมุย: **ไม่มี `locality` เลย** · `admin1` = `สุราษฎร์ธานี` ซึ่งเป็น *จังหวัด* ไม่ใช่ชื่อเกาะ
+    #   ⚠️ **ความเสี่ยงที่ต้องรู้:** จังหวัดนี้มีเกาะพะงัน/เกาะเต่า/แผ่นดินใหญ่ด้วย
+    #      วันที่มีคนเพิ่มเกาะพะงันเข้าคลัง **สองเมืองจะอ้างสิทธิ์บน `สุราษฎร์ธานี` เหมือนกัน**
+    #      และการ์ด "ยกให้เมืองที่ตรงกว่า" **ช่วยไม่ได้เพราะมันดู `locality`/`admin2` ซึ่งว่างทั้งคู่**
+    #   📌 วันนี้ปลอดภัยเพราะ ① สมุยเป็นเมืองเดียวของจังหวัดนี้ในคลัง ② การค้นยิงรอบพิกัดสมุย
+    #      **ทั้งสองข้อเป็นข้อเท็จจริงของวันนี้ ไม่ใช่คุณสมบัติของโค้ด** — เพิ่มเมืองในจังหวัดนี้เมื่อไหร่ ต้องกลับมาดู
+    "Koh Samui": ("สุราษฎร์ธานี", "suratthani"),
+    # เชจู: Google คืน `Cheju` (การถอดเสียงแบบเก่า) และ `Jeju-do` (จังหวัด) ปนกัน
+    # 🔴 `Cheju` แก้ด้วย `_SUFFIX` ไม่ได้ **เพราะมันไม่ใช่คำต่อท้าย มันคือคนละสตริง**
+    "Jeju": ("cheju", "jejudo", "jeju-do"),
+    # ฮาลอง: Google **ไม่เคยคืนคำว่า `Ha Long` เลยสักใบ** — คืนชื่อแขวงกับจังหวัดเท่านั้น
+    #   วัดจากการรันจริง 4 ก.ย. 2026: `Hồng Gai` 6 · `Bãi Cháy` 4 · `Cao Xanh` 2 · `Việt Hưng` 1
+    #   ⇒ ฮาลองได้ **4 แห่ง** ทั้งที่เป็นอ่าวมรดกโลก · **ข้ามไป 15 แห่ง**
+    # 🔴 **ใช้ชื่อ *จังหวัด* ไม่ใช่ไล่ชื่อแขวง** — ไล่แขวงคือทะเบียนที่ต้องมีคนคอยเติม
+    #    และแขวงใหม่จะหลุดเงียบ ๆ · จังหวัดครอบได้ทั้งหมดในครั้งเดียว
+    #    ⚠️ **ข้อแลก (รูปเดียวกับเกาะสมุย):** ถ้าวันหนึ่งมีเมืองที่สองของจังหวัดนี้เข้าคลัง
+    #       สองเมืองจะอ้างสิทธิ์ทับกัน · วันนี้ปลอดภัยเพราะฮาลองเป็นใบเดียว **และการค้นยิงรอบพิกัดฮาลอง**
+    # 📌 ใส่ทั้งรูปมีและไม่มีวรรณยุกต์ — **API คืนทั้งสองรูปจริง** (`Quảng Ninh` และ `Quang Ninh`)
+    "Ha Long": ("Quảng Ninh", "Quang Ninh"),
 }
 
 
@@ -118,9 +165,28 @@ def _norm(name):
     while len(parts) > 1 and parts[-1] in _SUFFIX:
         parts.pop()
     n = "".join(parts)
+    # 🔴 **ตัดคำต่อท้ายครั้งเดียว (`break`)** — วัดจริง 4 ก.ย. 2026 (P5):
+    #    เดิมวนตัดต่อเนื่อง ⇒ `Sokcho-si` → `sokchosi` → ตัด `si` → `sokcho` → **ตัด `cho` ต่อ → `sok`**
+    #    ⚠️ **เคสยังเขียวเพราะคลังก็เก็บ `Sokcho` ซึ่งโดนตัดเป็น `sok` เหมือนกัน**
+    #       — สองฝั่งเพี้ยนเท่ากันจึงยังตรงกัน · **นั่นคือความบังเอิญ ไม่ใช่ความถูกต้อง**
+    #       และมันเปิดช่องให้ชื่อคนละเมืองย่อลงมาชนกันเงียบ ๆ (`sok` สั้นกว่าชื่อจริงมาก)
+    #    🎯 ***ตัวปรับข้อมูลที่ทำลายข้อมูลเท่ากันทั้งสองฝั่ง จะผ่านการทดสอบความเท่ากันเสมอ***
     for suf in _SUFFIX:
         if n.endswith(suf) and len(n) > len(suf) + 2:
             n = n[: -len(suf)]
+            break
+    # 🔴 ตัดคำนำหน้าไทย · เงื่อนไขความยาวเหมือนฝั่งท้าย — กันชื่อที่ *ขึ้นต้นด้วยคำนั้นจริง ๆ* ถูกกินหัว
+    #    ตัดครั้งเดียวพอ (`break`) — `จังหวัดเมือง…` ไม่มีอยู่จริง และการวนตัดซ้ำจะกินชื่อสั้น
+    # 🔴 **เทียบกับคำนำหน้าที่ผ่าน `_strip_marks` แล้วเท่านั้น** — วัดจริง 4 ก.ย. 2026:
+    #    `re.sub(r"[^\w\s]")` ข้างบน **ตัดสระ/วรรณยุกต์ไทยทิ้ง** เพราะ `\w` ของ Python
+    #    ไม่นับอักขระประกอบ (Unicode category Mn) ⇒ `เมือง` → `เมอง` · `จังหวัด` → `จงหวด`
+    #    ⚠️ **ถ้าเทียบกับคำที่เขียนไว้ในโค้ดตรง ๆ จะไม่มีวันตรง** และมันจะเงียบสนิท
+    #       — `ตำบล` บังเอิญรอด (ตัวอักษรทุกตัวเป็น Lo) ⇒ **ครึ่งหนึ่งทำงาน ครึ่งหนึ่งไม่**
+    #       ซึ่งเป็นรูปเดียวกับที่ `city`/`county` เคยเป็น · selftest จับได้ตั้งแต่รันแรก
+    for pre in _PREFIX_N:
+        if n.startswith(pre) and len(n) > len(pre) + 2:
+            n = n[len(pre):]
+            break
     return n
 
 
@@ -140,6 +206,38 @@ def names_of(city):
     """
     out = [n for n in (city.get("name_en"), city.get("name_local"), city.get("name_th")) if n]
     out += list(ALIASES.get(city.get("name_en"), ()))
+    return out
+
+
+def _locality_forms(name):
+    """รูปที่เป็นไปได้ของ *ชื่อเมือง* ที่ซ่อนอยู่ใน `locality` — คืนรายการที่ยังไม่ผ่าน `_norm`
+
+    🔴 **วัดจาก `skipped_names` ของการรันเวียดนามจริง 4 ก.ย. 2026 (P5)** — ไม่ได้เดา:
+    ```
+       9  Xuân Hương - Đà Lạt / Lâm Đồng      ← ดาลัดได้ 0 ทั้งที่มีของเพียบ
+       6  Cam Ly - Đà Lạt / Lâm Đồng
+       3  Lang Biang - Đà Lạt / Lâm Đồng
+       4  Bắc Nha Trang / Khánh Hòa           ← ญาจางได้ไม่ครบ
+       3  Tây Nha Trang / Khánh Hòa
+    ```
+    **สองรูป สองสาเหตุ:**
+      ① `<แขวง> - <เมือง>` — ชื่อเมืองอยู่ *หลังขีด* · `_norm` ตัดขีดแล้วเชื่อมติดกัน
+         ⇒ `xuanhuongdalat` ซึ่งไม่เท่ากับ `dalat` **และไม่มีชั้นไหนมองเห็น**
+      ② `<ทิศ> <เมือง>` — `Bắc/Nam/Đông/Tây` = เหนือ/ใต้/ตะวันออก/ตะวันตก นำหน้าชื่อเมือง
+
+    🎯 ***ทั้งสองรูปคือ "ชื่อเมืองที่ถูกต้อง + ส่วนขยาย" ไม่ใช่ "ชื่ออื่น"*** —
+       ต่างจาก `สุราษฎร์ธานี`/`เกาะสมุย` ที่เป็นคนละชื่อกันจริง ๆ (ต้องใช้ `ALIASES`)
+    ⚠️ **จงใจไม่ทำให้ทั่วไปกว่านี้** — ไม่ตัดคำนำหน้าอะไรก็ได้ เพราะจะกลายเป็น
+       "ชื่อไหนก็แมตช์ได้ถ้ามีชื่อเมืองอยู่ข้างใน" ซึ่งจะกวาดเมืองข้างเคียงเข้ามาเงียบ ๆ
+    """
+    if not name:
+        return []
+    out = [name]
+    if " - " in name:
+        out.append(name.rsplit(" - ", 1)[1])       # เอาส่วนหลังขีดสุดท้าย
+    parts = name.split()
+    if len(parts) > 1 and parts[0] in ("Bắc", "Nam", "Đông", "Tây"):
+        out.append(" ".join(parts[1:]))
     return out
 
 
@@ -174,11 +272,15 @@ def city_of(place, city, catalog_names):
         """ชื่อนี้เป็นชื่อของเมือง *อื่น* ในคลังหรือเปล่า — ใช้ยกของให้เจ้าของที่เจาะจงกว่า"""
         if not name:
             return False
-        t = _norm(name)
-        return any(t in {_norm(x) for x in ns}
+        # 🔴 ต้องใช้ `_locality_forms` ชุดเดียวกับชั้นข้างล่าง — ไม่งั้นการ์ดจะ *ตาบอด*
+        #    ต่อรูปที่ชั้นนั้นมองเห็น แล้วยกของให้เมืองที่ความจริงไม่ได้อ้างสิทธิ์
+        #    (รูปเดียวกับที่การ์ดเดิมผูกกับ `loc` ฟิลด์เดียวแล้วเงียบตอน `loc` ว่าง)
+        forms = {_norm(f) for f in _locality_forms(name)}
+        return any(forms & {_norm(x) for x in ns}
                    for cn, ns in catalog_names.items() if cn != city["name_en"])
 
-    if loc and _norm(loc) in mine:
+    # 🔴 เทียบ *ทุกรูป* ของ locality ไม่ใช่รูปดิบรูปเดียว — ดู `_locality_forms`
+    if loc and any(_norm(f) in mine for f in _locality_forms(loc)):
         return True, "locality"
     if a2 and _norm(a2) in mine:
         # ชั้นนี้ยังต้องยกให้ `locality` ซึ่งเจาะจงกว่า ตามหลักเดียวกับชั้น admin1
@@ -219,6 +321,41 @@ SELFTEST = [
                                         administrative_area_level_1="Da Nang"), "Da Nang", False),
     ("ดานังของจริงยังเป็นของดานัง", dict(locality="Da Nang",
                                         administrative_area_level_1="Da Nang"), "Da Nang", True),
+    # ── ไทย · รูปที่ P5 วัดจาก `skipped_names` ของการรันจริง 4 ก.ย. 2026 ──
+    # 🔴 ทั้งสี่ใบนี้เคยถูกข้ามเงียบ ๆ · พัทยา/หัวหิน/อยุธยา ค้างอยู่ที่เมืองละ **2 แห่ง**
+    ("พัทยา: คำนำหน้า `เมือง`",   dict(locality="เมืองพัทยา",
+                                        administrative_area_level_1="ชลบุรี"), "Pattaya", True),
+    ("หัวหิน: คำนำหน้า `ตำบล`",   dict(locality="ตำบลหัวหิน",
+                                        administrative_area_level_1="ประจวบคีรีขันธ์"), "Hua Hin", True),
+    ("อยุธยา: ชื่อทางการคนละชื่อ", dict(administrative_area_level_1="จังหวัดพระนครศรีอยุธยา"),
+                                        "Ayutthaya", True),
+    ("เกาะสมุย: admin1 เป็นจังหวัด", dict(administrative_area_level_1="สุราษฎร์ธานี"),
+                                        "Koh Samui", True),
+    # 🔴 เคสควบคุมฝั่งลบ — ตัดคำนำหน้าแล้วต้องไม่กลายเป็น "อะไรก็ได้"
+    ("หัวหินต้องไม่กวาดของพัทยา",  dict(locality="เมืองพัทยา",
+                                        administrative_area_level_1="ชลบุรี"), "Hua Hin", False),
+    # ── เวียดนาม · รูปที่ P5 วัดจาก `skipped_names` ของการรันจริง 4 ก.ย. 2026 ──
+    ("ดาลัด: `<แขวง> - <เมือง>`", dict(locality="Xuân Hương - Đà Lạt",
+                                        administrative_area_level_1="Lâm Đồng"), "Da Lat", True),
+    ("ญาจาง: ทิศนำหน้า",          dict(locality="Bắc Nha Trang",
+                                        administrative_area_level_1="Khánh Hòa"), "Nha Trang", True),
+    # 🔴 เคสควบคุมฝั่งลบ — รูปหลังขีดต้องไม่ทำให้เมืองอื่นแมตช์ตามไปด้วย
+    ("ฮอยอันต้องไม่กินของดาลัด",   dict(locality="Xuân Hương - Đà Lạt",
+                                        administrative_area_level_1="Lâm Đồng"), "Hoi An", False),
+    # ── เกาหลี · รูปที่ P5 วัดจาก `skipped_names` ของการรันจริง 4 ก.ย. 2026 ──
+    ("ซกโช: คำต่อท้าย -si",      dict(locality="Sokcho-si",
+                                        administrative_area_level_1="Gangwon-do"), "Sokcho", True),
+    ("คาพย็อง: คำต่อท้าย -gun",  dict(locality="Gapyeong-gun",
+                                        administrative_area_level_1="Gyeonggi-do"), "Gapyeong", True),
+    ("เชจู: ถอดเสียงเก่า Cheju",  dict(locality="Cheju",
+                                        administrative_area_level_1="Jeju-do"), "Jeju", True),
+    # 🔴 เคสควบคุม — `Daegu` ต้องไม่ถูกตัดหางเป็น `dae`
+    ("แทกูต้องไม่ถูกตัดเป็น dae", dict(locality="Daegu",
+                                        administrative_area_level_1="Daegu"), "Daegu", True),
+    ("ฮาลอง: แขวง+จังหวัด ไม่มีชื่อเมือง", dict(locality="Hồng Gai",
+                                        administrative_area_level_1="Quảng Ninh"), "Ha Long", True),
+    ("ฮาลอง: จังหวัดไม่มีวรรณยุกต์",  dict(locality="Cao Xanh",
+                                        administrative_area_level_1="Quang Ninh"), "Ha Long", True),
     # ── รูปที่สคริปต์นี้จดไว้เองว่าวัดมาแล้วก่อนหน้า (เคสถดถอย) ──
     ("โตเกียว: ward → admin1",     dict(locality="Minato City",
                                         administrative_area_level_1="Tokyo"), "Tokyo", True),
@@ -234,8 +371,20 @@ SELFTEST = [
                                         administrative_area_level_1="Tokyo"), "Tokyo", False),
 ]
 
+# ทูเพิล = (name_en, name_th) · สตริงเดี่ยว = ใช้ชื่อเดียวกันทั้งสองช่อง
+# 🔴 **เมืองไทยต้องมี `name_th` จริง ไม่งั้นเคสไทยจะเทียบ `เมืองพัทยา` กับ `Pattaya` แล้วแดงตลอด
+#    ด้วยเหตุผลที่ไม่เกี่ยวกับบั๊กที่มันตั้งใจจับ**
 _SELFTEST_CITIES = ["Nantou", "Hualien", "New Taipei", "Hoi An", "Da Nang", "Tokyo",
-                    "Yokohama", "Shirakawa-go", "Chengdu", "Xi'an", "Macao", "Hong Kong"]
+                    "Yokohama", "Shirakawa-go", "Chengdu", "Xi'an", "Macao", "Hong Kong",
+                    ("Pattaya", "พัทยา"), ("Hua Hin", "หัวหิน"),
+                    ("Ayutthaya", "อยุธยา"), ("Koh Samui", "เกาะสมุย"),
+                    # 🔴 เมืองเวียดนามต้องมี `name_local` จริง — `_norm` ไม่แปลงอักขระมีเครื่องหมาย
+                    #    (`Đà Lạt` ≠ `Da Lat`) · คลังจริงเก็บทั้งสองช่อง เคสจึงต้องเหมือนคลัง
+                    #    ไม่งั้นเคสจะแดงด้วยเหตุผลที่ไม่ใช่บั๊กที่มันตั้งใจจับ
+                    ("Da Lat", "ดาลัด", "Đà Lạt"), ("Nha Trang", "ญาจาง", "Nha Trang"),
+                    ("Sokcho", "ซกโช", "속초"), ("Gapyeong", "คาพย็อง", "가평"),
+                    ("Jeju", "เชจู", "제주"), ("Daegu", "แทกู", "대구"),
+                    ("Ha Long", "ฮาลอง", "Hạ Long")]
 
 
 def selftest():
@@ -249,8 +398,12 @@ def selftest():
     🎯 ***ด่านที่มีค่าที่สุดคือด่านของฟังก์ชันที่ผลลัพธ์ผิดของมันหน้าตาเหมือนผลลัพธ์ถูก***
     ⚠️ **ไม่ยิงเน็ต ไม่แตะฐาน** — เป็น pure function ล้วน ราคาจึงเป็นศูนย์ ไม่มีเหตุให้ข้าม
     """
-    cities = [{"name_en": n, "name_th": n, "name_local": None} for n in _SELFTEST_CITIES]
-    cat = {c["name_en"]: [c["name_en"], c["name_th"]] for c in cities}
+    cities = [{"name_en": n[0] if isinstance(n, tuple) else n,
+               "name_th": n[1] if isinstance(n, tuple) else n,
+               "name_local": n[2] if isinstance(n, tuple) and len(n) > 2 else None}
+              for n in _SELFTEST_CITIES]
+    cat = {c["name_en"]: [x for x in (c["name_en"], c["name_th"], c["name_local"]) if x]
+           for c in cities}
     by = {c["name_en"]: c for c in cities}
     bad = []
     for label, kw, city_en, want in SELFTEST:
@@ -259,7 +412,7 @@ def selftest():
         if got != want:
             bad.append(f"{label}: {city_en} ได้ {got} ({why}) ต้องการ {want}")
     # 🔴 ทะเบียนว่าง = ด่านเงียบ — เคสหายไปหมดต้องแดง ไม่ใช่ผ่าน
-    if len(SELFTEST) < 10:
+    if len(SELFTEST) < 26:
         raise SystemExit("🔴 selftest: เคสหายไป — ด่านนี้จะผ่านโดยไม่ตรวจอะไร")
     if bad:
         raise SystemExit("🔴 selftest ของ city_of ล้ม — **หยุดก่อนนำเข้า**\n   "
