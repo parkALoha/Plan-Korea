@@ -38,7 +38,6 @@ import { useTripWeather } from "@/hooks/useTripWeather";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDaySettings } from "@/hooks/useDaySettings";
-import { BottomNav } from "@/components/BottomNav";
 import { WeatherBadge } from "@/components/WeatherBadge";
 import { EmergencyCard } from "@/components/EmergencyCard";
 import type { TravelMode } from "@/lib/schedule";
@@ -947,7 +946,6 @@ export default function TodayPage() {
       {zoomed && (
         <PhotoLightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(null)} />
       )}
-      <BottomNav />
     </main>
   );
 }

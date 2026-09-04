@@ -38,7 +38,6 @@ import { useHotelSchedule } from "@/hooks/useHotelSchedule";
 import { useTripDnd } from "@/hooks/useTripDnd";
 import { useTripWeather } from "@/hooks/useTripWeather";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
-import { BottomNav } from "@/components/BottomNav";
 import { DayJumpBar } from "@/components/DayJumpBar";
 
 // ระยะที่ถือว่า "เดินไปได้" — ต่ำกว่านี้เดาโหมดเดินทางเป็นเดิน ที่เหลือเดาเป็นขนส่งสาธารณะ
@@ -536,7 +535,6 @@ export default function Home() {
         )}
       </main>
 
-      <BottomNav />
 
       <DragOverlay>
         {activeDragLabel && (

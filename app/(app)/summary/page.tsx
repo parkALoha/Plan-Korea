@@ -32,7 +32,6 @@ import {
   BOOKING_CATEGORY_LABEL,
   BOOKING_CATEGORY_LABEL_EN,
 } from "@/components/BookingsPanel";
-import { BottomNav } from "@/components/BottomNav";
 import { ImmigrationSheet, formatDateEn } from "@/components/ImmigrationSheet";
 import { LayoverBadges } from "@/components/LayoverBadges";
 import { PhotoLightbox } from "@/components/PhotoLightbox";
@@ -828,7 +827,6 @@ function SummaryContent() {
       )}
 
       <div className="print:hidden">
-        <BottomNav />
       </div>
     </main>
   );
