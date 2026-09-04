@@ -366,7 +366,21 @@ function TripMembers({
         {stack}
       </button>
       {open && (
-        <Modal onClose={() => setOpen(false)} title={COPY.membersTitle} size="md">
+        <Modal
+          onClose={() => setOpen(false)}
+          title={COPY.membersTitle}
+          size="md"
+          /**
+           * 🔴 **`top` + `fillHeight`** (ผู้ใช้สั่งเอง 4 ก.ย. 2026:
+           * *"ในมุมมองมือถือ modal ควรเลื่อนขึ้นมาสูง ๆ และ fix ขนาดเลย และเลื่อนดูสมาชิกได้"*)
+           *
+           * เดิมกล่องสูงตามจำนวนสมาชิก ⇒ **ทริปคนเดียวได้กล่องเตี้ยแปะขอบล่าง · 15 คนได้กล่องสูงเกือบเต็มจอ**
+           * 🎯 ***กล่องเดียวกันเปลี่ยนขนาดตามข้อมูล ทำให้ผู้ใช้ต้องมองหาปุ่มปิดใหม่ทุกครั้งที่เปิด***
+           * ⇒ ความสูงคงที่ + รายชื่อเลื่อนข้างใน = **ปุ่มปิดอยู่ที่เดิมเสมอ ไม่ว่าจะมีกี่คน**
+           */
+          align="top"
+          fillHeight
+        >
           {members === null ? (
             <p className="text-sm text-content-soft">{COPY.membersLoading}</p>
           ) : members === "error" ? (

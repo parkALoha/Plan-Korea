@@ -52,7 +52,11 @@ export function Modal({
    */
   align?: "sheet" | "top";
   /**
-   * สูงคงที่ `90vh` เสมอ แทนที่จะ *ไม่เกิน* `90vh` — สำหรับโมดัลที่เนื้อหาโหลดทีหลัง
+   * 🔴 **ความสูงคงที่ต่างกันตาม `align`** — `sheet` ได้ `90vh` · `top` ได้ `100vh - 6rem`
+   * เพราะ `top` มีระยะเว้นใต้แถบหัวอยู่แล้ว (`pt-[4.25rem]`) ⇒ ใช้ `90vh` จะล้นจอ
+   * ⚠️ **คำนวณจากของที่มีอยู่จริง ไม่ใช่เดา**: 4.25rem (68px) + 6rem-ที่หักไป ครอบระยะบน+ล่างพอดี
+   *
+   * สูงคงที่ แทนที่จะ *ไม่เกิน* — สำหรับโมดัลที่เนื้อหาโหลดทีหลัง
    *
    * 🔴 บั๊กจริง (ผู้ใช้เจอ 4 ก.ย. 2026): โมดัลค้นหาสถานที่เปิดมาเตี้ย (มีแค่ "กำลังค้นหา...")
    * แล้วพุ่งขึ้นเมื่อผลมาถึง · **ไม่ใช่แอนิเมชัน — เป็นความสูงตามเนื้อหา**
@@ -110,7 +114,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex ${fillHeight ? "h-[90vh]" : "max-h-[90vh]"} w-full flex-col bg-surface-raised text-content outline-none sm:rounded-2xl ${
+        className={`flex ${fillHeight ? (align === "top" ? "h-[calc(100vh-6rem)]" : "h-[90vh]") : "max-h-[90vh]"} w-full flex-col bg-surface-raised text-content outline-none sm:rounded-2xl ${
           align === "top" ? "rounded-2xl shadow-lg shadow-ink/20" : "rounded-t-2xl"
         } ${size === "md" ? "max-w-md" : "max-w-lg"}`}
         onClick={(e) => e.stopPropagation()}
