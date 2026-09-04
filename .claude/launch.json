@@ -2,6 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "comment": "🔴 ทรี platform อยู่ที่ /Users/park/plan-korea-platform และรันบน :3300 — entry ข้างล่างนี้เจาะจงทรีนั้นด้วย --prefix จึงยิงถูกทรีเสมอ ไม่ขึ้นกับว่าเซสชันยืนอยู่ที่ไหน (P2 4 ก.ย. 2026: `korea-trip-plan-dev` ข้างล่างชี้ :3000 ซึ่งเป็นทรี main — เปิดแล้วหน้าตาคล้ายกันจนอ่านผลผิดได้ทั้งวัน และ git status ไม่ฟ้องอะไรเลย)",
+      "name": "platform-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/park/plan-korea-platform", "run", "dev", "--", "-p", "3300"],
+      "port": 3300
+    },
+    {
+      "comment": "⚠️ ตัวนี้คือทรี main (:3000) ไม่ใช่ platform — งานบน branch platform ให้ใช้ `platform-dev` ข้างบน",
       "name": "korea-trip-plan-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
