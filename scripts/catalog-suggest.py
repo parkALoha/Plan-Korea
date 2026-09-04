@@ -37,11 +37,78 @@ CATEGORY_MAP = [
 ]
 SEARCH_TYPES = ["tourist_attraction", "market", "shopping_mall"]
 
+# 🔴 **ชนิดของกิน — แยกจาก `SEARCH_TYPES` โดยตั้งใจ** (P5 · 4 ก.ย. 2026)
+# เหตุ: `SEARCH_TYPES` ทั้งสามเป็น "ที่ให้ดู" ⇒ คลัง 1,619 แห่งมีของกิน **29 แห่ง = 1.8%**
+#      ตอบได้แค่ *"ไปดูอะไร"* · ตอบ *"กินอะไร"* แทบไม่ได้เลย ทั้งที่คนไปเกาหลี/ญี่ปุ่น/ไต้หวัน
+#      เล่าถึงของกินมากที่สุด
+# ⚠️ **ห้ามยัดรวมใน `SEARCH_TYPES`** — ร้านอาหารมีรีวิวเยอะกว่าวัด/สวนโดยธรรมชาติ
+#    เพดานรวมเดียวจะทำให้ของกิน **เบียดที่เที่ยวออก** ⇒ แยกเพดาน (`--limit-food`)
+FOOD_TYPES = ["restaurant", "cafe", "bakery", "bar", "food_court", "night_club"]
+
+# ชนิดที่ไม่ใช่ *ปลายทาง* — ตัดทิ้งก่อนถึงตัวกรองเชนด้วยซ้ำ
+FOOD_EXCLUDE = {"fast_food_restaurant", "convenience_store", "gas_station"}
+
+# 🔴 **ชื่อที่ลงท้ายว่า "สาขา" = สาขาของเชน ไม่ว่าเราจะเห็นมันกี่เมือง** (P5 · 4 ก.ย. 2026)
+# ทำไมต้องมีกฎนี้ *เพิ่มจาก* ตัวกรองเชน: ตัวกรองเชนดูว่า **ชื่อเดียวกันโผล่กี่เมือง**
+# ⇒ **จับเชนที่โผล่เมืองเดียวไม่ได้เลย** · วัดจริง: ปูซานได้ `갓파스시 연산점` (Kappa Sushi สาขายอนซาน)
+#    ซึ่งโผล่เมืองเดียวในผลของเรา ⇒ รอดตัวกรองเชนทุกเกณฑ์
+# 🎯 ***ตัวกรองที่นับความถี่ ต้องเห็นของซ้ำถึงจะทำงาน — ของที่โผล่ครั้งเดียวมองไม่เห็นตามนิยาม***
+# ✅ `본점` / `本店` / `總店` = **สาขาแรก/ร้านต้นตำรับ ซึ่งมักเป็นร้านที่คนตั้งใจไป** → เก็บไว้
+#    (วัดแล้ว: `현대옥 전주본점` · `우성닭갈비 본점` · `お食事処 とよ常 別府本店` — ของจริงทั้งนั้น)
+# 🔴 **`점` กับ `Branch` ใช้ตรง ๆ ได้ · `店` ใช้ตรง ๆ ไม่ได้** (P1 ทัก · P5 วัดแล้วเขาถูก)
+# ```
+# เกาหลี  `점` = "สาขา" เสมอ                          → กฎแม่น
+# อังกฤษ  `Branch` = "สาขา" เสมอ                      → กฎแม่น
+# จีน     `店` = **"ร้าน" เฉย ๆ** ไม่ได้แปลว่าสาขา     → กฎพัง
+#         `南翔馒头店` = ร้านเสี่ยวหลงเปาต้นตำรับที่หยูหยวน **ร้านเดียวในโลก**
+#         `海底撈火鍋 板橋店` = สาขาปั่นเฉียวของเชนหม้อไฟ  **คนละเรื่องกันสิ้นเชิง**
+# ```
+# ✅ **ตัวแยกที่วัดได้จากข้อมูลจริง: มี *ตัวคั่น* หน้าคำที่ลงท้าย `店` หรือเปล่า**
+#    สาขาเขียนเป็น `<แบรนด์> <ย่าน>店` — ชื่อย่านเป็นคนละคำ · ร้านเดี่ยวเขียนติดกันคำเดียว
+#    วัดกับ 778 แถว: จับสาขาไต้หวัน/จีนได้ **และไม่ตัด `南翔馒头店`**
+# ⚠️ **แลกด้วย: สาขาที่เขียนติดกันไม่มีตัวคั่นจะรอด** (`海底捞火锅王府井店`)
+#    ยอมรับข้อนี้ **เพราะตัดร้านต้นตำรับทิ้งแพงกว่าปล่อยสาขาหลุด** — และตัวนับความถี่ยังเป็นตาข่ายอีกชั้น
+# 🎯 ***กฎเดียวครอบสองภาษาที่คำเดียวกันแปลไม่เหมือนกัน = สัญญาณว่าสรุปเรียบเกินจริง***
+_BRANCH_TAIL = re.compile(r"(점|[Bb]ranch)$")
+_HEAD_STORE = re.compile(r"(본점|本店|總店|总店)$")
+# `店` ต้องมีตัวคั่น (ช่องว่าง/ขีด) นำหน้ากลุ่มคำที่จบด้วยมัน
+_BRANCH_CJK = re.compile(r"[\s\-–—·]\S{1,6}店$")
+
+
+def is_branch_name(name):
+    """ชื่อนี้เป็น *สาขา* ของเชนหรือเปล่า — ดูรูปของชื่อ ไม่ใช่ความถี่
+
+    🔴 มีไว้เพราะ **ตัวกรองเชนที่นับความถี่ มองไม่เห็นเชนที่โผล่เมืองเดียวตามนิยาม**
+       (ปูซานได้ `갓파스시 연산점` มาเพราะข้อนี้ — Kappa Sushi โผล่เมืองเดียวในผลของเรา)
+    """
+    name = name or ""
+    parts = name.split()
+    if not parts or _HEAD_STORE.search(name):
+        return False
+    return bool(_BRANCH_TAIL.search(parts[-1]) or _BRANCH_CJK.search(name))
+
+# 🔴 **ของกินแมปด้วย *กฎ* ไม่ใช่ *รายชื่อ*** (P5 · 4 ก.ย. 2026)
+# Google มีชนิดอาหารแยกตามสัญชาติเป็นสิบ ๆ ตัว (`ramen_restaurant` `korean_restaurant`
+# `sushi_restaurant` …) และ **เพิ่มชนิดใหม่ได้ตลอด** ⇒ รายชื่อที่ไล่เองจะล้าเงียบ
+# ✅ ใช้กฎ `ลงท้ายด้วย _restaurant` ครอบทั้งตระกูลในบรรทัดเดียว — ชนิดใหม่เข้าเองอัตโนมัติ
+_CAFE_TYPES = {"cafe", "coffee_shop", "bakery", "tea_house", "dessert_shop",
+               "ice_cream_shop", "donut_shop", "juice_shop"}
+_RESTAURANT_TYPES = {"restaurant", "food_court", "meal_takeaway", "deli", "diner", "steak_house"}
+
+
 def category_for(types):
     t = set(types or [])
     for cat, keys in CATEGORY_MAP:
         if t & keys:
             return cat
+    # 🔴 ต้องอยู่ **หลัง** `CATEGORY_MAP` — บาร์ที่เสิร์ฟอาหารด้วยควรเป็น `nightlife` ไม่ใช่ `restaurant`
+    if t & _CAFE_TYPES:
+        return "cafe"
+    if (t & _RESTAURANT_TYPES) or any(x.endswith("_restaurant") for x in t):
+        return "restaurant"
+    # ⚠️ `sight` **ไม่มีอยู่ใน `Category` ของ `data/places.ts`** (10 หมวด ไม่มีตัวนี้)
+    #    ⇒ ทุกแถวที่ตกมาถึงบรรทัดนี้ **แสดงเป็น 📍 เทา "อื่น ๆ" บนจอ**
+    #    วันนี้มี 479/1,619 = 29% ของคลัง · P2 กำลังจะตัดสินชุดหมวดใหม่
     return "sight"
 
 def slugify(name, taken):
@@ -56,8 +123,8 @@ def slugify(name, taken):
     taken.add(s)
     return s
 
-def nearby(key, lat, lng, radius, limit, lang="th"):
-    body = {"includedTypes": SEARCH_TYPES, "maxResultCount": min(20, max(limit * 2, 10)),
+def nearby(key, lat, lng, radius, limit, lang="th", types=None):
+    body = {"includedTypes": types or SEARCH_TYPES, "maxResultCount": min(20, max(limit * 2, 10)),
             "rankPreference": "POPULARITY", "languageCode": lang,
             "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lng},
                                                "radius": float(radius)}}}
@@ -411,6 +478,19 @@ def selftest():
         got, why = city_of(p, by[city_en], cat)
         if got != want:
             bad.append(f"{label}: {city_en} ได้ {got} ({why}) ต้องการ {want}")
+    # ── ชื่อสาขา — ตรึงเคสที่ P1 ทักและที่วัดจากข้อมูลจริง ──────────────────
+    # 🔴 **เคสที่มีค่าที่สุดคือสองบรรทัดจีน** — คำเดียวกัน (`店`) ผลตรงข้ามกัน
+    #    ตัดผิดใบเดียวคือทิ้งร้านต้นตำรับที่หยูหยวน · ปล่อยผิดใบเดียวคือได้สาขาเชนมาหนึ่งแถว
+    for nm, want in [("갓파스시 연산점", True), ("현대옥 전주본점", False),
+                     ("HaiDiLao Taipei Breeze NanShan Branch", True),
+                     ("南翔馒头店", False),          # ร้านเสี่ยวหลงเปาต้นตำรับ ร้านเดียวในโลก
+                     ("海底撈火鍋 板橋店", True),      # สาขาปั่นเฉียวของเชนหม้อไฟ
+                     ("貴族世家-板橋板新店", True),
+                     ("Din Tai Fung 101", False),
+                     ("お食事処 とよ常 別府本店", False)]:
+        if is_branch_name(nm) != want:
+            bad.append(f"ชื่อสาขา: {nm} ได้ {not want} ต้องการ {want}")
+
     # 🔴 ทะเบียนว่าง = ด่านเงียบ — เคสหายไปหมดต้องแดง ไม่ใช่ผ่าน
     if len(SELFTEST) < 26:
         raise SystemExit("🔴 selftest: เคสหายไป — ด่านนี้จะผ่านโดยไม่ตรวจอะไร")
@@ -435,6 +515,108 @@ def sql(query):
     return d.get("rows", [])
 
 
+def _chain_key(name):
+    """คีย์ที่ใช้บอกว่า "ร้านนี้กับร้านนั้นคือแบรนด์เดียวกัน" — ตัดส่วนขยายสาขาออก
+
+    `Starbucks Coffee - Myeongdong` · `Starbucks 명동점` ⇒ คีย์เดียวกัน
+    ⚠️ **หยาบโดยตั้งใจ** — คีย์ที่ละเอียดเกินจะไม่จับสาขา · คีย์ที่หยาบเกินจะรวมร้านคนละแบรนด์
+       ตัวชี้ขาดคือ **รายชื่อที่มันตัดทิ้ง ซึ่งสคริปต์พิมพ์ออกมาให้ตรวจทุกครั้ง**
+    """
+    n = unicodedata.normalize("NFKC", name).lower()
+    n = re.split(r"[-–—(|·]", n)[0]                   # ตัดหลังขีด/วงเล็บ = ชื่อสาขา
+    n = re.sub(r"[^\w\s]", " ", n, flags=re.UNICODE)
+    return " ".join(n.split())[:40]
+
+
+def food_pass(key, cities, all_names, seen_gpid, seen_name, taken_slug, limit_food, radius):
+    """หา *ที่กิน* ต่อเมือง แล้วกรองเชนออกด้วยข้อมูลของเราเอง
+
+    ## 🔴 ทำไมตัวกรองเชนไม่ใช้ "รายชื่อเชน"
+    รายชื่อที่คนเขียน **ต้องมีคนคอยเติม และเชนใหม่จะหลุดเงียบ** — รูปที่รีโปนี้จดไว้แล้วว่าอย่าสร้าง
+    ✅ ใช้เกณฑ์ที่ *วัดจากของที่เราดึงมาอยู่แล้ว*: **ชื่อเดียวกันโผล่หลายเมือง**
+    🎯 จับ `Starbucks` · `스타벅스` · `星巴克` ได้ **โดยไม่รู้จักชื่อพวกนั้นเลย** เพราะเกณฑ์คือ
+       *"โผล่หลายเมือง"* ไม่ใช่ *"ชื่อนี้เป็นเชน"*
+
+    ## เกณฑ์ (P5 เสนอ · P1 เติมข้อหลัง)
+        โผล่ ≥3 เมือง **และ** ( ข้ามประเทศ **หรือ** ≥5 เมืองในประเทศเดียว )
+    · เงื่อนไข "ข้ามประเทศ" กัน **ร้านท้องถิ่นที่มี 3-4 สาขาในเมืองใกล้กัน** ไม่ให้โดนตัด
+      (ร้านที่คนบินไปกินมักมีสาขาในประเทศเดียว)
+    · เงื่อนไข "≥5 เมืองในประเทศเดียว" กันเชนใหญ่ที่มีแต่ในประเทศนั้น (เชนกาแฟเกาหลี ฯลฯ)
+    · 🔴 **เลข 3 และ 5 เป็นค่าที่เราเดา — ให้ข้อมูลตัดสิน** ดูรายชื่อที่ถูกตัดแล้วปรับ
+
+    ## 🔴 ต้องยิงทุกเมืองในคลังพร้อมกัน ไม่ใช่ทีละประเทศ
+    "ข้ามประเทศ" ตรวจไม่ได้ถ้าเห็นทีละประเทศ — **โหมดนี้จึงไม่รับ `--country`**
+    """
+    cand, branch_drop = [], []
+    for c in cities:
+        for p in nearby(key, c["lat"], c["lng"], radius, limit_food, types=FOOD_TYPES):
+            ok, _ = city_of(p, c, all_names)
+            if not ok:
+                continue
+            t = set(p.get("types") or [])
+            if t & FOOD_EXCLUDE:
+                continue
+            nm = p.get("displayName", {}).get("text", "").strip()
+            if is_branch_name(nm):
+                branch_drop.append((nm, c["name_th"]))
+                continue
+            gpid, name = p.get("id"), p.get("displayName", {}).get("text", "").strip()
+            if not gpid or not name or gpid in seen_gpid or name.lower() in seen_name:
+                continue
+            cand.append({"c": c, "p": p, "gpid": gpid, "name": name,
+                         "key": _chain_key(name), "reviews": p.get("userRatingCount", 0)})
+
+    # ── นับว่าคีย์ไหนโผล่กี่เมือง กี่ประเทศ ──
+    cities_of = collections.defaultdict(set)
+    countries_of = collections.defaultdict(set)
+    per_country = collections.defaultdict(lambda: collections.defaultdict(set))
+    for x in cand:
+        cities_of[x["key"]].add(x["c"]["name_en"])
+        countries_of[x["key"]].add(x["c"]["country_id"])
+        per_country[x["key"]][x["c"]["country_id"]].add(x["c"]["name_en"])
+
+    def is_chain(k):
+        if len(cities_of[k]) < 3:
+            return False
+        if len(countries_of[k]) >= 2:
+            return True
+        return any(len(v) >= 5 for v in per_country[k].values())
+
+    chains = {k for k in cities_of if is_chain(k)}
+
+    # 🔴 **พิมพ์ *ตัวอย่างจริง* ที่ถูกตัด ไม่ใช่แค่จำนวน** (P1 ขอ · และเป็นข้อที่ถูก)
+    #    "ตัด 47 แห่ง" ตรวจไม่ได้ · "ตัด: Starbucks (12 เมือง)" ตรวจได้ใน 5 วินาที
+    if chains:
+        print(f"\n  ── ตัดออกเพราะเข้าเกณฑ์เชน ({len(chains)} แบรนด์) ──")
+        for k in sorted(chains, key=lambda k: -len(cities_of[k]))[:12]:
+            ex = next(x["name"] for x in cand if x["key"] == k)
+            print(f"     {ex[:38]:<38} {len(cities_of[k])} เมือง / {len(countries_of[k])} ประเทศ")
+    else:
+        # 🔴 ไม่มีอะไรถูกตัด = อาจแปลว่าตัวกรองไม่ทำงาน ไม่ใช่ว่าไม่มีเชน — ต้องดังไว้ก่อน
+        print("\n  ⚠️ ไม่มีแบรนด์ไหนเข้าเกณฑ์เชนเลย — ตรวจว่าโหมดนี้ยิงหลายเมืองจริงหรือเปล่า")
+
+    if branch_drop:
+        print(f"\n  ── ตัดออกเพราะชื่อบอกว่าเป็นสาขา ({len(branch_drop)} แห่ง) ──")
+        for nm, ct in branch_drop[:10]:
+            print(f"     {nm[:44]:<44} {ct}")
+
+    rows, by_city = [], collections.defaultdict(int)
+    for x in sorted(cand, key=lambda x: -x["reviews"]):
+        if x["key"] in chains or by_city[x["c"]["id"]] >= limit_food:
+            continue
+        p, c = x["p"], x["c"]
+        seen_gpid.add(x["gpid"]); seen_name.add(x["name"].lower())
+        by_city[c["id"]] += 1
+        rows.append({"city_id": c["id"], "city_en": c["name_en"], "city_th": c["name_th"],
+                     "name": x["name"], "google_place_id": x["gpid"],
+                     "category": category_for(p.get("types")),
+                     "lat": p["location"]["latitude"], "lng": p["location"]["longitude"],
+                     "maps_query": f"place_id:{x['gpid']}",
+                     "legacy_slug": slugify(x["name"], taken_slug),
+                     "rating": p.get("rating"), "reviews": x["reviews"]})
+    return rows
+
+
 def main():
     args = sys.argv[1:]
     apply_ = "--apply" in args
@@ -442,6 +624,8 @@ def main():
     limit = int(next((a.split("=", 1)[1] for a in args if a.startswith("--limit=")), "12"))
     radius = int(next((a.split("=", 1)[1] for a in args if a.startswith("--radius=")), "12000"))
     only = next((a.split("=", 1)[1] for a in args if a.startswith("--city=")), None)
+    food = "--food" in args
+    limit_food = int(next((a.split("=", 1)[1] for a in args if a.startswith("--limit-food=")), "10"))
 
     selftest()   # 🔴 ก่อนทุกอย่าง — ราคาศูนย์ และมันคือสิ่งเดียวที่จับ city_of ที่พังเงียบได้
 
@@ -449,12 +633,14 @@ def main():
     if not key:
         raise SystemExit("🔴 ไม่มี GOOGLE_MAPS_API_KEY — `set -a && . .env.local && set +a` ก่อน")
 
-    cities = sql(f"""select ci.id, ci.name_th, ci.name_en, ci.name_local, ci.lat, ci.lng,
+    # 🔴 `country_id` จำเป็นสำหรับตัวกรองเชนของโหมดของกิน (เกณฑ์ "ข้ามประเทศ")
+    #    ตกไปครั้งแรกแล้วพังตอนรัน — **และมันพังดัง ไม่ใช่พังเงียบ ซึ่งถูกแล้ว**
+    cities = sql(f"""select ci.id, ci.country_id, ci.name_th, ci.name_en, ci.name_local, ci.lat, ci.lng,
                             count(p.id) as have
                        from public.catalog_cities ci
                        left join public.catalog_places p on p.city_id = ci.id
-                      where ci.country_id = '{country}'
-                      group by ci.id, ci.name_th, ci.name_en, ci.name_local, ci.lat, ci.lng
+                      {"" if food else f"where ci.country_id = '{country}'"}
+                      group by ci.id, ci.country_id, ci.name_th, ci.name_en, ci.name_local, ci.lat, ci.lng
                       order by ci.name_en;""")
     if only:
         cities = [c for c in cities if c["name_en"] == only]
@@ -473,6 +659,23 @@ def main():
 
     print(f"\n  ประเทศ {country} · {len(cities)} เมือง · limit {limit}/เมือง · radius {radius/1000:g} กม.")
     print(f"  มีในคลังแล้ว {len(existing)} แห่ง (กันซ้ำด้วย google_place_id {len(seen_gpid)} · ชื่อ {len(seen_name)})\n")
+
+    # 🔴 โหมดของกินยิง **ทุกเมืองในคลัง** — ตัวกรองเชนต้องเห็นข้ามประเทศ (ดู `food_pass`)
+    if food:
+        print(f"\n  🍜 โหมดของกิน · {len(cities)} เมืองทั้งคลัง · limit-food {limit_food}/เมือง")
+        rows = food_pass(key, cities, all_names, seen_gpid, seen_name, taken_slug,
+                         limit_food, radius)
+        by = collections.Counter(r["city_th"] for r in rows)
+        cat = collections.Counter(r["category"] for r in rows)
+        print(f"\n  รวมเสนอเพิ่ม {len(rows)} แห่ง · {len(by)} เมือง")
+        print("  หมวด: " + " · ".join(f"{k} {v}" for k, v in cat.most_common()))
+        print("  เมืองที่ได้น้อยสุด: " +
+              " · ".join(f"{t} {n}" for t, n in sorted(by.items(), key=lambda kv: kv[1])[:8]))
+        json.dump(rows, open("/tmp/catalog-suggest.json", "w"), ensure_ascii=False)
+        if not apply_:
+            print("\n  🔴 โหมด --dry — **ไม่ได้แตะฐานเลย** · เติม --apply เพื่อเขียนจริง")
+            return
+        return write_rows(rows)
 
     rows, skipped_city, dup = [], 0, 0
     # 🔴 **เก็บว่าข้ามเพราะ *ชื่ออะไร* ไม่ใช่แค่ *กี่อัน***
@@ -532,6 +735,13 @@ def main():
         print("\n  🔴 โหมด --dry (ค่าเริ่มต้น) — **ไม่ได้แตะฐานเลย** · เติม --apply เพื่อเขียนจริง")
         return 0
 
+    return write_rows(rows)
+
+
+def write_rows(rows):
+    """เขียนลงคลัง — **ที่เดียวในสคริปต์ที่แตะฐาน** · ทั้งโหมดที่เที่ยวและโหมดของกินใช้ตัวนี้ร่วมกัน
+    🎯 มีทางเขียนทางเดียว = มีที่ให้แก้ที่เดียวเวลากติกาการเขียนเปลี่ยน
+    """
     svc = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     if not svc:
         raise SystemExit("🔴 --apply ต้องมี SUPABASE_SERVICE_ROLE_KEY")
