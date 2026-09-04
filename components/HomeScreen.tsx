@@ -391,8 +391,12 @@ export function HomeScreen() {
             </span>
             <span className="min-w-0">
               <span className="block truncate text-base font-extrabold leading-tight">{COPY.brand}</span>
-              {/* คำโปรยซ่อนบนมือถือ — ที่แคบ ชื่อสำคัญกว่า */}
-              <span className="hidden text-2xs leading-tight text-cream/70 sm:block">
+              {/**
+               * 🔴 **คำโปรยแสดงบนมือถือด้วยแล้ว** — เดิมซ่อน (`hidden sm:block`) เพราะชื่อเดิมเป็นไทย
+               * อยู่แล้ว จึงไม่ต้องอธิบาย · ตอนนี้ชื่อเป็น **`luitrip`** ⇒ **มือถือเป็นที่ที่คนไทยเจอชื่อ
+               * ครั้งแรกและไม่มีบริบทเลยถ้าซ่อนบรรทัดนี้** · วัดแล้วที่ 375px ยังไม่เบียดชื่อ/ปุ่มบัญชี
+               */}
+              <span className="block text-2xs leading-tight text-cream/70">
                 {COPY.brandTagline}
               </span>
             </span>
