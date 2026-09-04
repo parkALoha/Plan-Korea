@@ -45,6 +45,19 @@ const LIMIT = (() => {
   return raw === "" ? 25 : Number(raw);
 })();
 
+/**
+ * 🔴 **`testTimeout` เดิมเป็นค่าคงที่ `120_000` ไม่ผูกกับ `LIMIT` เลย** (P1 จับ 4 ก.ย. 2026
+ * ตอนยิง `limit=400` ด้วยมือ — รอบที่ 4 ได้ `completed failure` ทั้งที่เขียนไป 397/400 แถวจริง
+ * เพราะ vitest ฆ่า test กลางคัน ไม่ใช่ error ของงาน)
+ * · **ที่มาของค่า:** สองรอบ (details + photos) ยิง Google **แบบ serial ทีละคีย์** (`cacheWarmWrite.ts`
+ *   ไม่มี concurrency) · จากรอบจริงที่ P1 วัด — 400 คีย์รอบ details ใช้เวลา ~120s ก่อนโดนตัด
+ *   ⇒ **~300ms/คีย์ที่วัดได้จริง** ไม่ใช่เลขเดา · คูณ 2 รอบ + กันชนให้เผื่อ Google ช้ากว่านั้นบางที
+ * · **ทำไมไม่ลด `LIMIT` แทน:** การจำกัด `limit` ไม่ผูกกับปัญหาจริง — ใครยิง `limit` สูงขึ้นอีกในอนาคต
+ *   (คลังโตต่อ) จะเจอ `failure` หลอกซ้ำ ต้องแก้ที่ความสัมพันธ์ระหว่างสองค่า ไม่ใช่ตรึงค่าใดค่าหนึ่งไว้
+ * · **`LIMIT=5` (ค่าเริ่มต้นของ `schedule`) ไม่เปลี่ยนพฤติกรรม** — สูตรคืนพื้นล่างเดิม `120_000` เป๊ะ
+ */
+const TEST_TIMEOUT_MS = Math.max(120_000, LIMIT * 700 + 20_000);
+
 /** ตรงกับที่ `app/api/place-details/route.ts` ใช้ตอนดึงของสด — **ห้ามแยกกัน** */
 const FIELD_MASK =
   "places.id,places.regularOpeningHours,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.reviews";
@@ -211,6 +224,6 @@ describe("Q3 ก้าวที่ 2 — อุ่นแคช (ต้องต�
       expect(photoReport.aborted, `อุ่นรูปไม่สำเร็จ: ${photoReport.aborted}`).toBeNull();
       expect(photoReport.droppedNotPublic, "คีย์รูปหลุดบัญชีขาวระหว่างรอบ").toBe(0);
     },
-    120_000,
+    TEST_TIMEOUT_MS,
   );
 });
