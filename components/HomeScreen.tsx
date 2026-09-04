@@ -231,6 +231,29 @@ function PinButton({ pinned, busy, onToggle }: { pinned: boolean; busy: boolean;
  * `stroke="currentColor"` ⇒ เป็นสีของข้อความ ตามพื้นหลังและตามธีมเสมอ
  * 📌 อยู่ที่เดียว เพราะถูกใช้สองที่: บล็อกท้ายช่องค้นหา (จอใหญ่) · ปุ่มเปิดโมดัล (จอโทรศัพท์)
  */
+/**
+ * แอตทริบิวต์ที่ปิด **ตัวช่วยพิมพ์ของเบราว์เซอร์** สำหรับช่องค้นหาในเว็บ (P2 · 4 ก.ย. 2026 · ผู้ใช้ทัก)
+ *
+ * ผู้ใช้เห็นกล่องดำมีหางชี้ขึ้นมาบังใต้ช่อง แสดงคำที่เพิ่งพิมพ์ (`ญี่ป`)
+ * 🔴 **มันไม่ใช่ของในหน้าเรา — ไม่มี element ไหนในหน้านี้วาดมัน** ⇒ แก้ด้วย CSS ไม่ได้
+ * มันคือชั้นช่วยพิมพ์ของเบราว์เซอร์/ระบบ ซึ่งเปิดให้เองกับ `<input>` ทุกช่อง:
+ * ```
+ * autoComplete="off"  ประวัติคำค้นเดิมของช่องนี้      · `type="search"` เปิดให้เป็นค่าเริ่มต้น
+ * spellCheck={false}  ตัวตรวจคำสะกด (ขีดหยัก + ป้าย)  · ไม่รู้จักคำไทย ⇒ ขีดแดงใต้ทุกคำอยู่แล้ว
+ * autoCorrect/Capitalize  ตัวเดา/แก้คำของ iOS · Safari
+ * ```
+ * ⚠️ **ขอบเขต: ผมยืนยันไม่ได้ว่ามันตัวไหน เพราะสร้างซ้ำในเครื่องผมไม่ได้** (คนละ OS/ภาษาป้อนเข้า)
+ * ปิดทั้งชุดเพราะ **ไม่มีตัวไหนในนี้ที่ช่องค้นหาทริปได้ประโยชน์** — ไม่ใช่เพราะรู้ว่าตัวไหนผิด
+ * 🎯 ***จดไว้ตรง ๆ ว่าเป็นการตัดตัวเลือกทั้งกลุ่ม ไม่ใช่การแก้ที่ต้นเหตุที่ระบุได้*** —
+ *    วันที่มันยังไม่หาย คนถัดไปจะได้รู้ว่าไม่ต้องเสียเวลาไล่ตรงนี้ซ้ำ
+ */
+const SEARCH_INPUT_QUIET = {
+  autoComplete: "off",
+  autoCorrect: "off",
+  autoCapitalize: "off",
+  spellCheck: false,
+} as const;
+
 function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
@@ -747,7 +770,8 @@ export function HomeScreen() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={COPY.searchPlaceholder}
                 aria-label={COPY.searchPlaceholder}
-                className="min-w-0 flex-1 bg-transparent py-2 pl-3.5 pr-2 text-sm text-content outline-none placeholder:text-content-soft"
+                {...SEARCH_INPUT_QUIET}
+                className="min-w-0 flex-1 bg-transparent py-2 pl-3.5 pr-2 text-sm text-content outline-none placeholder:text-content-soft focus-visible:outline-none"
               />
               {/**
                * 🔴 **แว่นขยายเป็น SVG ไม่ใช่อีโมจิ `🔍`** (ผู้ใช้สั่งเอง 4 ก.ย. 2026)
@@ -1058,7 +1082,7 @@ export function HomeScreen() {
         >
           <label
             htmlFor="home-trip-search-modal"
-            className="flex cursor-text items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 ring-1 ring-line focus-within:ring-2 focus-within:ring-maple"
+            className="flex cursor-text items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 ring-1 ring-line focus-within:ring-2 focus-within:ring-content-soft/40"
           >
             <SearchIcon className="h-4 w-4 shrink-0 text-content-soft" />
             <input
@@ -1068,7 +1092,8 @@ export function HomeScreen() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={COPY.searchPlaceholder}
-              className="min-w-0 flex-1 bg-transparent text-base text-content outline-none placeholder:text-content-soft"
+              {...SEARCH_INPUT_QUIET}
+              className="min-w-0 flex-1 bg-transparent text-base text-content outline-none placeholder:text-content-soft focus-visible:outline-none"
             />
           </label>
         </Modal>
