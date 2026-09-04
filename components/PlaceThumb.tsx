@@ -2,6 +2,7 @@
 
 import { categoryMetaOf } from "@/components/categoryMeta";
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
+import { PhotoImg } from "@/components/PhotoImg";
 import { photoUrlAtWidth } from "@/lib/photoUrl";
 
 /**
@@ -27,30 +28,32 @@ export function PlaceThumb({
     return <div className={`${base} animate-pulse bg-surface-soft`} />;
   }
 
-  if (photos.length === 0) {
-    return (
-      <div
-        className={`${base} flex items-center justify-center text-sm`}
-        // 🔴 ต่อสตริงเป็นสีโปร่ง `#rrggbb` + `22` — ค่า fallback จึงต้องเป็นเลขฐานสิบหก
-        // ห้ามเป็นโทเคน `var(--…)` (ดูเหตุผลเต็มที่ `components/categoryMeta.ts`)
-        style={{ backgroundColor: `${categoryMetaOf(category).color}22` }}
-      >
-        {categoryMetaOf(category).emoji}
-      </div>
-    );
-  }
+  /**
+   * 🔴 **ไทล์สำรองใบเดียว ใช้ทั้งตอน "ไม่มีรูป" และตอน "รูปโหลดไม่ได้"**
+   * ถ้าเขียนสองที่ วันหนึ่งจะมีคนแก้ที่เดียว แล้วสองสภาพจะดูต่างกันโดยไม่มีเหตุผล
+   */
+  const tile = (
+    <div
+      className={`${base} flex items-center justify-center text-sm`}
+      // 🔴 ต่อสตริงเป็นสีโปร่ง `#rrggbb` + `22` — ค่า fallback จึงต้องเป็นเลขฐานสิบหก
+      // ห้ามเป็นโทเคน `var(--…)` (ดูเหตุผลเต็มที่ `components/categoryMeta.ts`)
+      style={{ backgroundColor: `${categoryMetaOf(category).color}22` }}
+    >
+      {categoryMetaOf(category).emoji}
+    </div>
+  );
+
+  if (photos.length === 0) return tile;
 
   // ต้องครอบ img ด้วย div ที่ถือคลาสขนาด — ถ้าใส่ทั้ง h-10 w-10 และ h-full w-full บน img เดียวกัน
   // h-full/w-full จะชนะ แล้วรูปจะบานเต็มแถวจนชื่อสถานที่หายไป
   return (
     <div className={base}>
       {/* รูปย่อกว้างจริงไม่เกิน ~56px ขอแค่ 160px ก็คมพอแม้จอ 3x — เดิมโหลด 800px ทุกใบ (เฟส 19) */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <PhotoImg
         src={photoUrlAtWidth(photos[0], 160)}
-        alt=""
-        loading="lazy"
         className="h-full w-full object-cover"
+        fallback={tile}
       />
     </div>
   );

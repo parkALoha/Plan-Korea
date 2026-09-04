@@ -1,6 +1,7 @@
 "use client";
 
 import { usePlacePhotos } from "@/hooks/usePlacePhotos";
+import { PhotoImg } from "@/components/PhotoImg";
 import { photoUrlAtWidth } from "@/lib/photoUrl";
 
 export function PhotoGallery({ query }: { query: string }) {
@@ -25,13 +26,13 @@ export function PhotoGallery({ query }: { query: string }) {
   return (
     <div className="grid grid-cols-3 gap-2">
       {photos.map((src) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <PhotoImg
           key={src}
           src={photoUrlAtWidth(src, 400)}
-          alt=""
-          loading="lazy"
           className="h-24 w-full rounded-md object-cover"
+          // 🔴 ที่นี่ไม่มีหมวดให้ใช้สี — ใช้ช่องว่างที่ *กินที่เท่ากัน* เพื่อไม่ให้กริดขยับ
+          //    (ต่างจาก PlaceThumb/PlaceCard ที่มีอิโมจิหมวดให้แสดง)
+          fallback={<div className="h-24 w-full rounded-md bg-surface-soft" />}
         />
       ))}
     </div>

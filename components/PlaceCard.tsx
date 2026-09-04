@@ -1,5 +1,6 @@
 "use client";
 
+import { PhotoImg } from "@/components/PhotoImg";
 import { categoryMetaOf } from "@/components/categoryMeta";
 import type { Place } from "@/data/places";
 import type { PlaceNote } from "@/lib/supabase";
@@ -57,12 +58,11 @@ export function PlaceCard({
         <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-surface-soft">
           {photoSrc ? (
             // การ์ดในคลังกว้างจริง ~130px (2 คอลัมน์ในไซด์บาร์) — 400px พอสำหรับจอ 3x (เฟส 19)
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <PhotoImg
               src={photoSrc}
-              alt=""
-              loading="lazy"
               className="h-full w-full object-cover"
+              // ตัวเดียวกับกิ่ง "ไม่มีรูป" ข้างล่าง — สองสภาพนี้ต้องหน้าตาเหมือนกัน
+              fallback={<span className="text-3xl">{categoryMetaOf(place.category).emoji}</span>}
             />
           ) : (
             <span className="text-3xl">{categoryMetaOf(place.category).emoji}</span>
