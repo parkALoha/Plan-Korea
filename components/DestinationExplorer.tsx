@@ -32,6 +32,33 @@ function flagOf(countryId: string): string {
 
 type ListState<T> = { status: "loading" } | { status: "ready"; items: T[] } | { status: "error" };
 
+/**
+ * รูปปกประเทศ — ไฟล์ `country-<id>.svg` ถ้ามี · ไม่มีก็ **พื้นไล่สี + ธงใบใหญ่**
+ * 🔴 มีไฟล์แค่ 4 จาก 9 ประเทศ ⇒ ห้าใบต้องมีอะไรที่ *ไม่ใช่กล่องเปล่า* และธงคือของที่มีความหมายที่สุดที่เรามี
+ *    (ผู้ใช้ขอ "icon ประเทศ" ตั้งแต่แรก · ตอนนี้มันย้ายจาก*ตัวการ์ด*มาเป็น*ของในการ์ด* ตามที่เขาสั่งรอบสอง)
+ */
+function CountryThumb({ countryId }: { countryId: string }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    /**
+     * 🔴 **พื้นไล่สีเปล่า ไม่ใส่ธงซ้ำ** — ธงอยู่ในบรรทัดชื่อแล้ว **ทุกใบ**
+     * ยิงจริงตอนใส่ทั้งสองที่: ประเทศที่ไม่มีไฟล์รูปได้ `🇨🇳 🇨🇳จีน` **ธงซ้ำสองรอบ**
+     * ส่วนสี่ประเทศที่มีไฟล์รูปได้ธงรอบเดียว ⇒ **การ์ดเก้าใบมีสองแบบโดยไม่ได้ตั้งใจ**
+     * 🎯 ***ไอคอนต้องอยู่ที่เดียว "ที่มีเสมอ" ไม่ใช่สองที่ "ที่มีบ้างไม่มีบ้าง"***
+     */
+    return <div className="h-20 w-full bg-gradient-to-br from-pine to-maple" />;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
+    <img
+      src={`/covers/country-${countryId}.svg`}
+      alt=""
+      className="h-20 w-full object-cover"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 /** รูปปกเมือง — ไล่ `city-<slug>` → พื้นไล่สี · **ไม่ไล่ไปรูปประเทศ** เพราะที่นี่ทุกใบเป็นประเทศเดียวกัน
  *  ⇒ รูปประเทศจะทำให้ทุกเมืองหน้าตาเหมือนกันหมด ซึ่งแย่กว่าพื้นไล่สีที่อย่างน้อยไม่โกหกว่าเป็นเมืองนั้น */
 function CityThumb({ slug }: { slug: string | null | undefined }) {
@@ -112,37 +139,64 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
 
   return (
     <div>
-      {/* ── แถวธงประเทศ ─────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2">
-        {countries.status === "loading"
-          ? Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className="h-11 w-28 animate-pulse rounded-xl bg-surface-soft" />
-            ))
-          : countries.items.map((c) => {
-              const active = c.id === countryId;
-              return (
-                <button
+      {/**
+       * ── การ์ดประเทศ ──────────────────────────────────────────────
+       * 🔴 **ประเทศเป็น *การ์ด* ไม่ใช่ชิป/ปุ่มธง** — ผู้ใช้สั่งเอง (รอบสอง):
+       * > *"จะโชว์ component เหมือนกับรูป trip ของตัวเอง **เป็นชื่อประเทศ กดเข้าไป ค่อยมีเมืองเด้งมาให้เลือกต่อ**"*
+       * ⇒ ใช้ `CoverCard` ใบเดียวกับการ์ดทริป · ธงยังอยู่ **แต่ย้ายจาก *ตัวการ์ด* มาเป็น *ของในการ์ด***
+       *
+       * 🔴 **บรรทัด "N เมือง" และชื่อเมืองตัวอย่างยังว่าง — และตั้งใจว่างจริง ไม่ใช่ลืม**
+       * `GET /api/engine/countries` คืนแค่ `id`/`name_th`/`name_en` · จะได้ตัวเลขต้องยิง `/cities`
+       * ทีละประเทศ = **9 คำขอบนหน้าแรกเพื่อของประดับ** · ขอ P1 เพิ่มฟิลด์แล้ว (โซนเขา)
+       * 🎯 ***ช่องถูกจองไว้ให้แถวสูงเท่ากัน แต่ไม่เติมของปลอมลงไป*** — รูปเดียวกับบรรทัด 📍 ของการ์ดทริป
+       */}
+      {countryId === "" && (
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]">
+          {countries.status === "loading"
+            ? Array.from({ length: 9 }, (_, i) => (
+                <div key={i} className="h-36 animate-pulse rounded-2xl bg-surface-soft" />
+              ))
+            : countries.items.map((c) => (
+                <CoverCard
                   key={c.id}
-                  onClick={() => setCountryId(active ? "" : c.id)}
-                  aria-pressed={active}
-                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                    active
-                      ? "border-maple bg-maple-soft/60 text-content"
-                      : "border-line bg-surface-raised text-content-soft hover:border-maple/40 hover:text-content"
-                  }`}
+                  onClick={() => setCountryId(c.id)}
+                  coverLayout="banner"
+                  cover={<CountryThumb countryId={c.id} />}
+                  title={
+                    <>
+                      <span aria-hidden className="mr-1.5">
+                        {flagOf(c.id)}
+                      </span>
+                      {c.name_th}
+                    </>
+                  }
+                  titleClassName="text-sm font-semibold"
                 >
-                  <span aria-hidden className="text-xl leading-none">
-                    {flagOf(c.id)}
-                  </span>
-                  {c.name_th}
-                </button>
-              );
-            })}
-      </div>
+                  <p className="truncate text-xs text-content-soft" aria-hidden>
+                    {"\u00a0"}
+                  </p>
+                </CoverCard>
+              ))}
+        </div>
+      )}
 
       {/* ── เมืองของประเทศที่เลือก ───────────────────────────────────── */}
       {countryId !== "" && (
-        <div className="mt-3">
+        <div>
+          {/* 🔴 การ์ดประเทศหายไปตอนเลือกแล้ว ⇒ **ต้องมีทางกลับที่มองเห็น**
+              ไม่งั้นผู้ใช้ติดอยู่ในประเทศเดียวโดยไม่รู้ว่าออกยังไง (กดธงซ้ำเพื่อยกเลิกเป็นของที่มองไม่เห็น) */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setCountryId("")}
+              className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-content hover:bg-surface-soft"
+            >
+              {COPY.backToCountries}
+            </button>
+            <h3 className="text-sm font-semibold text-content">
+              {COPY.citiesIn(countries.status === "ready" ? (countries.items.find((c) => c.id === countryId)?.name_th ?? "") : "")}
+              {cityState.status === "ready" && cityState.items.length > 0 ? ` · ${COPY.cityCount(cityState.items.length)}` : ""}
+            </h3>
+          </div>
           {cityState.status === "loading" ? (
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]">
               {Array.from({ length: 6 }, (_, i) => (
