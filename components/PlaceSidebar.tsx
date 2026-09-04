@@ -453,7 +453,7 @@ export function PlaceSidebar({
           {/* ยกให้พ้นแถบเมนูล่าง (BottomNav) ที่สูง ~3.5rem ไม่งั้นทับกัน */}
           <button
             onClick={() => onMobileOpenChange(true)}
-            className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20"
+            className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple-dark px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20"
           >
             📍 สถานที่
           </button>

@@ -411,7 +411,7 @@ export default function TodayPage() {
             ‹
           </button>
           <div className="text-center">
-            <div className="text-xs uppercase tracking-wide text-gold">
+            <div className="text-xs uppercase tracking-wide text-gold-ink">
               {dateLabel} · วัน{day.weekdayTh}
               {!isRealToday && " · (ไม่ใช่วันนี้)"}
             </div>
@@ -434,7 +434,7 @@ export default function TodayPage() {
         {!isRealToday && (
           <button
             onClick={() => setDayIndex(todayIndex)}
-            className="mx-auto mt-2 block text-xs font-medium text-gold underline"
+            className="mx-auto mt-2 block text-xs font-medium text-gold-ink underline"
           >
             กลับไปวันนี้จริง
           </button>
@@ -558,7 +558,7 @@ export default function TodayPage() {
           {/* จุดถัดไป — การ์ดเด่นสุดของหน้า */}
           {nextStop && nextSched && (
             <section className="mb-5 overflow-hidden rounded-2xl border-2 border-maple bg-surface-raised shadow-md shadow-maple/20">
-              <div className="bg-maple px-4 py-2 text-xs font-semibold uppercase tracking-wide text-cream">
+              <div className="bg-maple-dark px-4 py-2 text-xs font-semibold uppercase tracking-wide text-cream">
                 📍 จุดถัดไป
               </div>
               <div className="p-4">

@@ -25,9 +25,9 @@ import { Icon, type IconName } from "./Icon";
 
 const VARIANTS = {
   /** การกระทำหลักของฟอร์ม/โมดัล */
-  primary: "bg-maple-dark text-white hover:bg-maple",
+  primary: "bg-maple-dark text-white hover:brightness-90",
   /** การกระทำที่ทำแล้วกู้ไม่ได้ — สีคนละตัวกับ primary โดยตั้งใจ (เดิมใช้สีเดียวกัน) */
-  danger: "bg-alert text-white hover:brightness-110",
+  danger: "bg-alert text-white hover:brightness-90",
   /** การกระทำหลักบนพื้นที่ที่โทนเขียวสนเหมาะกว่า (หัวเว็บ · หน้า /unlock) */
   pine: "bg-pine text-cream hover:bg-pine-dark",
   /** ทางเลือกรอง — มีขอบ ไม่มีพื้น */

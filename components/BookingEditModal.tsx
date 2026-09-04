@@ -173,7 +173,7 @@ export function BookingEditModal({
           <button
             onClick={handleSave}
             disabled={!title.trim() || uploading}
-            className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+            className="flex-1 rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90 disabled:opacity-40"
           >
             บันทึก
           </button>

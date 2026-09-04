@@ -283,7 +283,7 @@ export function NearbyPlacesModal({
           <button
             onClick={() => handleAddToPlan(r)}
             disabled={addingKey != null}
-            className="rounded-lg bg-maple px-2.5 py-1 text-2xs font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+            className="rounded-lg bg-maple-dark px-2.5 py-1 text-2xs font-semibold text-white hover:brightness-90 disabled:opacity-40"
           >
             + ลงแผน
           </button>

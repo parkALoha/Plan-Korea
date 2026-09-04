@@ -83,7 +83,7 @@ export function PlaceDetailModal({
         onConfirm ? (
           <button
             onClick={onConfirm}
-            className="w-full rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark"
+            className="w-full rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90"
           >
             ยืนยันเลือกที่นี่
           </button>

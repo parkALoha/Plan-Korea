@@ -84,7 +84,7 @@ export function EmergencyCard({
                     {c.local && (
                       <a
                         href={`tel:${c.local}`}
-                        className="rounded-lg bg-maple px-2.5 py-1 text-xs font-bold text-cream"
+                        className="rounded-lg bg-maple-dark px-2.5 py-1 text-xs font-bold text-cream"
                       >
                         📞 {c.local}
                       </a>

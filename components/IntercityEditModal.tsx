@@ -101,7 +101,7 @@ export function IntercityEditModal({
         <button
           onClick={handleSave}
           disabled={!from.trim() || !to.trim() || totalMinutes <= 0}
-          className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+          className="flex-1 rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90 disabled:opacity-40"
         >
           เพิ่ม
         </button>

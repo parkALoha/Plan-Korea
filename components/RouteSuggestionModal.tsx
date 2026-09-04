@@ -142,7 +142,7 @@ export function RouteSuggestionModal({
               onApply(suggestion.orderedStops.map((s) => s.id));
               onClose();
             }}
-            className="flex-1 rounded-xl bg-maple py-3 text-sm font-semibold text-white hover:bg-maple-dark disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-content-soft"
+            className="flex-1 rounded-xl bg-maple-dark py-3 text-sm font-semibold text-white hover:brightness-90 disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-content-soft"
           >
             ใช้ลำดับนี้
           </button>
