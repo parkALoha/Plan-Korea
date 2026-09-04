@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import {
   deleteTripDaysByIds,
+  renameTrip,
   insertTripDays,
   stopCountInDays,
   tripDayDatesOf,
@@ -118,7 +119,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
   const stop = await guard(req, tripId);
   if (stop) return stop;
 
-  let body: { startDate?: unknown; endDate?: unknown };
+  let body: { startDate?: unknown; endDate?: unknown; title?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -126,6 +127,50 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
   }
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return NextResponse.json({ error: "body ต้องเป็นอ็อบเจกต์" }, { status: 400 });
+  }
+
+  /**
+   * 🔴 **เปลี่ยนชื่อทริป — เพิ่ม 4 ก.ย. 2026 (ผู้ใช้สั่ง)** · ก่อนหน้านี้ **ไม่มีทางเปลี่ยนชื่อเลยทั้งเว็บ**
+   *
+   * ⚠️ ทำ **ก่อน** งานเรื่องวัน และ **คืนผลเลยถ้าไม่มี `startDate`/`endDate` มาด้วย**
+   *    ⇒ เปลี่ยนชื่ออย่างเดียวไม่ต้องส่งวันที่มาหลอก ๆ · และไม่เดินผ่านตรรกะเพิ่ม/ถอนวันโดยไม่จำเป็น
+   * 🎯 ***ลำดับนี้ไม่ใช่รสนิยม*** — `updateTripDates` เป็นก้าวที่ย้อนได้ยากกว่า (มันพาการถอนวันตามมา)
+   *    `§3.3`: *สิ่งที่ย้อนไม่ได้ต้องไปทีหลัง* · เปลี่ยนชื่อย้อนง่ายที่สุด จึงไปก่อน
+   */
+  if (body.title !== undefined) {
+    if (typeof body.title !== "string") {
+      return NextResponse.json({ error: "title ต้องเป็นข้อความ" }, { status: 400 });
+    }
+    // 🔴 `trim` ก่อนวัดความยาว — ไม่งั้น "   " ผ่านด่านแล้วลงฐานเป็นชื่อว่าง (บทเรียนจาก `displayName`)
+    const title = body.title.trim();
+    if (title === "" || Array.from(title).length > 120) {
+      return NextResponse.json(
+        { error: "ชื่อทริปต้องมี 1–120 ตัวอักษร" },
+        { status: 400 },
+      );
+    }
+    const dbTitle = await createServerSupabase();
+    const { data: renamed, error: renErr } = await renameTrip(dbTitle, tripId, title);
+    if (renErr) {
+      if (renErr.code === "42501") {
+        return NextResponse.json({ error: renErr.message, code: "42501" }, { status: 403 });
+      }
+      return NextResponse.json({ error: renErr.message, code: renErr.code }, { status: 502 });
+    }
+    // 🔴 **0 แถว = RLS กรองออก (ไม่ใช่ owner) ไม่ใช่ "สำเร็จแต่ไม่มีอะไรเปลี่ยน"**
+    //    ตอบ `200 ok` ตรงนี้ = บอกผู้ใช้ว่าชื่อเปลี่ยนแล้วทั้งที่ฐานไม่ขยับ
+    if (!renamed || renamed.length === 0) {
+      return NextResponse.json(
+        { error: "เปลี่ยนชื่อไม่ได้ — ต้องเป็นเจ้าของทริป", code: "NOT_OWNER" },
+        { status: 403 },
+      );
+    }
+    if (body.startDate === undefined && body.endDate === undefined) {
+      return NextResponse.json(
+        { ok: true, title: renamed[0].title },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
   }
 
   const { startDate, endDate } = body;

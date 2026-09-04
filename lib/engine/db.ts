@@ -1052,6 +1052,22 @@ export function updateTripDates(db: Db, tripId: string, startDate: string, endDa
     .select("id");
 }
 
+/**
+ * เปลี่ยนชื่อทริป — `E5` · P1-Lead · 4 ก.ย. 2026 (ผู้ใช้สั่ง)
+ *
+ * 🔴 **ก่อนหน้านี้ไม่มีทางเปลี่ยนชื่อทริปเลยทั้งเว็บ** — ตั้งตอนสร้างแล้วติดชื่อนั้นถาวร
+ *    (`grant update (title, …) on trips` มีมาตั้งแต่ 25 ส.ค. **แต่ไม่มีใครเรียก**)
+ *    🎯 ***สิทธิ์ที่ไม่มีใครเรียก ไม่ได้แปลว่าฟีเจอร์มีอยู่*** — รูปเดียวกับ `display_name` เมื่อเช้า
+ *
+ * 🔴 **แยกจาก `updateTripDates` โดยตั้งใจ ไม่รวมเป็นตัวเดียวที่รับอ็อบเจกต์**
+ * ชุดคอลัมน์ที่เขียนได้ต้องตัดสินที่นี่ ไม่ใช่ที่ payload ของ HTTP (`§3.4` การขยายชุดฟิลด์)
+ * · `.eq("id", tripId)` — `trips_update` เป็นของ `owner` อยู่แล้ว **แต่บรรทัดนี้คือชั้นที่สอง**
+ *   ถ้า policy ผ่อนวันหนึ่ง มันคือสิ่งเดียวที่ยังผูกแถวไว้กับ id จาก URL
+ */
+export function renameTrip(db: Db, tripId: string, title: string) {
+  return engineTable(db, "trips").update({ title }).eq("id", tripId).select("id, title");
+}
+
 /** เพิ่มวันที่ยังไม่มี · `date` เป็น `YYYY-MM-DD` — `timezone` ปล่อย null ตาม `D37` (ใช้ของทริป) */
 export function insertTripDays(db: Db, tripId: string, dates: readonly string[]) {
   return engineTable(db, "trip_days")
