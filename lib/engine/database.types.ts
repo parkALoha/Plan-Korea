@@ -1,14 +1,3 @@
-// ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติ — ห้ามแก้มือ
-// สร้างด้วย `npm run gen:types` = `supabase gen types typescript --project-id <ref>`
-//
-// 🔴 เปลี่ยนแหล่ง 28 ส.ค. 2026 — เดิมสร้างจาก OpenAPI ของ PostgREST (`scripts/gen-db-types.mjs`)
-//    เหตุผล: OpenAPI **ไม่มีความสัมพันธ์เลย** (`Relationships` ว่าง 27/27) และ **ตัด FK หลายคอลัมน์
-//    ทิ้งทั้ง 11 เส้น** → การฝัง (`table(col)`) ไม่ถูกตรวจ และถอด `as unknown as` ไม่ได้เลย
-//    · ตัวนี้ให้ FK ครบ **รวม composite** เช่น `trip_stops_day_fk` (`trip_id` + `trip_day_id`)
-//
-// ⚠️ ข้อจำกัดที่ยังเหลือ: `Args` ของ RPC มาเป็น `p_x?: T` (ละได้) **ไม่ใช่ `T | null`**
-//    ทั้งที่ฐานรับ `null` ได้จริง (พารามิเตอร์เป็น `default null`) → ที่เรียกต้อง *ละ* ไม่ใช่ส่ง `null`
-
 export type Json =
   | string
   | number
@@ -21,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -40,6 +29,8 @@ export type Database = {
           legacy_added_by: string | null
           link: string | null
           note: string | null
+          price_amount: number | null
+          price_currency: string | null
           status: string
           time: string | null
           title: string
@@ -62,6 +53,8 @@ export type Database = {
           legacy_added_by?: string | null
           link?: string | null
           note?: string | null
+          price_amount?: number | null
+          price_currency?: string | null
           status?: string
           time?: string | null
           title: string
@@ -84,6 +77,8 @@ export type Database = {
           legacy_added_by?: string | null
           link?: string | null
           note?: string | null
+          price_amount?: number | null
+          price_currency?: string | null
           status?: string
           time?: string | null
           title?: string
@@ -682,23 +677,29 @@ export type Database = {
       }
       hidden_places: {
         Row: {
-          catalog_place_id: string
+          catalog_place_id: string | null
+          custom_place_id: string | null
           hidden_at: string
           hidden_by_user: string | null
+          id: string
           legacy_hidden_by: string | null
           trip_id: string
         }
         Insert: {
-          catalog_place_id: string
+          catalog_place_id?: string | null
+          custom_place_id?: string | null
           hidden_at?: string
           hidden_by_user?: string | null
+          id?: string
           legacy_hidden_by?: string | null
           trip_id: string
         }
         Update: {
-          catalog_place_id?: string
+          catalog_place_id?: string | null
+          custom_place_id?: string | null
           hidden_at?: string
           hidden_by_user?: string | null
+          id?: string
           legacy_hidden_by?: string | null
           trip_id?: string
         }
@@ -708,6 +709,13 @@ export type Database = {
             columns: ["catalog_place_id"]
             isOneToOne: false
             referencedRelation: "catalog_places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hidden_places_custom_place_id_fkey"
+            columns: ["custom_place_id"]
+            isOneToOne: false
+            referencedRelation: "custom_places"
             referencedColumns: ["id"]
           },
           {
@@ -1131,6 +1139,9 @@ export type Database = {
           name_en: string | null
           name_local: string | null
           phone: string | null
+          price_amount: number | null
+          price_currency: string | null
+          price_source: string | null
           trip_id: string
           updated_at: string
           updated_by_user: string | null
@@ -1153,6 +1164,9 @@ export type Database = {
           name_en?: string | null
           name_local?: string | null
           phone?: string | null
+          price_amount?: number | null
+          price_currency?: string | null
+          price_source?: string | null
           trip_id: string
           updated_at?: string
           updated_by_user?: string | null
@@ -1175,6 +1189,9 @@ export type Database = {
           name_en?: string | null
           name_local?: string | null
           phone?: string | null
+          price_amount?: number | null
+          price_currency?: string | null
+          price_source?: string | null
           trip_id?: string
           updated_at?: string
           updated_by_user?: string | null
@@ -1214,6 +1231,7 @@ export type Database = {
         Row: {
           created_at: string
           invited_by: string | null
+          pinned_at: string | null
           role: string
           trip_id: string
           user_id: string
@@ -1221,6 +1239,7 @@ export type Database = {
         Insert: {
           created_at?: string
           invited_by?: string | null
+          pinned_at?: string | null
           role: string
           trip_id: string
           user_id: string
@@ -1228,6 +1247,7 @@ export type Database = {
         Update: {
           created_at?: string
           invited_by?: string | null
+          pinned_at?: string | null
           role?: string
           trip_id?: string
           user_id?: string
@@ -1555,6 +1575,7 @@ export type Database = {
           version: string
         }[]
       }
+      assert_cache_lockdown: { Args: never; Returns: undefined }
       assert_engine_dev: {
         Args: never
         Returns: {
@@ -1698,6 +1719,10 @@ export type Database = {
           reason: string
         }[]
       }
+      set_trip_pinned: {
+        Args: { p_pinned: boolean; p_trip_id: string }
+        Returns: undefined
+      }
       soft_delete_booking: { Args: { p_id: string }; Returns: undefined }
       soft_delete_checklist_item: { Args: { p_id: string }; Returns: undefined }
       soft_delete_custom_place: { Args: { p_id: string }; Returns: undefined }
@@ -1744,12 +1769,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1773,11 +1798,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1798,11 +1823,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1823,11 +1848,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1840,11 +1865,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
