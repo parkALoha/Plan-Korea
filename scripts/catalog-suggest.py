@@ -18,7 +18,7 @@
     --dry     พิมพ์อย่างเดียว ไม่แตะฐาน  (ค่าเริ่มต้น)
     --apply   เขียนลง catalog_places     (ต้องมี SUPABASE_SERVICE_ROLE_KEY)
 """
-import collections, json, os, re, subprocess, sys, unicodedata
+import collections, json, os, re, subprocess, sys, time, unicodedata
 
 FIELDS = ("places.id,places.displayName,places.primaryTypeDisplayName,places.rating,"
           "places.userRatingCount,places.location,places.types,places.addressComponents")
@@ -138,8 +138,37 @@ def nearby(key, lat, lng, radius, limit, lang="th", types=None):
         raise SystemExit(f"curl ล้ม rc={r.returncode}: {r.stderr[:200]}")
     d = json.loads(r.stdout or "{}")
     if "error" in d:
-        raise SystemExit(f"Google: {d['error'].get('status')} {d['error'].get('message','')[:160]}")
+        raise GoogleError(d["error"].get("status", "?"), d["error"].get("message", "")[:160])
     return d.get("places", [])
+
+
+class GoogleError(RuntimeError):
+    def __init__(self, status, message):
+        self.status = status
+        super().__init__(f"Google: {status} {message}")
+
+
+# 🔴 **อาการชั่วคราวของ Google — ต้องลองใหม่ ไม่ใช่ล้มทั้งรอบ** (P5 · 4 ก.ย. 2026)
+# วัดจริง: รอบนำเข้าของกิน 78 เมืองล้มที่เมืองกลาง ๆ ด้วย `INTERNAL` **สองรอบติด**
+# (`UNAVAILABLE` หนึ่งครั้ง · `INTERNAL` หนึ่งครั้ง) — ทั้งสองครั้ง **ไม่มีอะไรถูกเขียนเลย**
+# เพราะสคริปต์เก็บครบทุกเมืองก่อนแล้วค่อยเขียนทีเดียว ⇒ **ปลอดภัย แต่เสียงานทั้งรอบ**
+# ⚠️ **`RESOURCE_EXHAUSTED` (429) อยู่ในลิสต์นี้ด้วยโดยตั้งใจ** — P7 เจอว่าโค้ดของเขา
+#    แปลง `429` เป็น "0 สถานที่" ⇒ ได้ตารางที่บอกว่าเมืองว่างซึ่งผิด
+#    🎯 ***ที่นี่ยอมช้าลง ดีกว่าได้เลขที่อ่านว่า "ไม่มีข้อมูล"***
+_RETRYABLE = {"INTERNAL", "UNAVAILABLE", "DEADLINE_EXCEEDED", "RESOURCE_EXHAUSTED"}
+
+
+def nearby_retry(key, lat, lng, radius, limit, types=None, tries=4):
+    """ยิง `nearby` พร้อมลองใหม่แบบถอยหลังเพิ่มขึ้น — **ล้มจริงถึงค่อยโยน**"""
+    for i in range(tries):
+        try:
+            return nearby(key, lat, lng, radius, limit, types=types)
+        except GoogleError as e:
+            if e.status not in _RETRYABLE or i == tries - 1:
+                raise
+            wait = 2 ** i
+            print(f"     ⏳ {e.status} — ลองใหม่ใน {wait}s ({i + 1}/{tries - 1})")
+            time.sleep(wait)
 
 def comp(place, kind):
     for c in place.get("addressComponents", []):
@@ -549,7 +578,7 @@ def food_pass(key, cities, all_names, seen_gpid, seen_name, taken_slug, limit_fo
     """
     cand, branch_drop = [], []
     for c in cities:
-        for p in nearby(key, c["lat"], c["lng"], radius, limit_food, types=FOOD_TYPES):
+        for p in nearby_retry(key, c["lat"], c["lng"], radius, limit_food, types=FOOD_TYPES):
             ok, _ = city_of(p, c, all_names)
             if not ok:
                 continue
@@ -685,7 +714,7 @@ def main():
     #       ⇒ ต้องมีคนไปนั่งยิง API เองทุกครั้ง · ตัวนี้ทำให้มันบอกเองได้
     skipped_names = collections.Counter()
     for c in cities:
-        got = nearby(key, c["lat"], c["lng"], radius, limit)
+        got = nearby_retry(key, c["lat"], c["lng"], radius, limit)
         picked = []
         for p in got:
             # 🔴 แจกด้วยเขตปกครอง ไม่ใช่ระยะทาง · เมืองที่ไม่มีในคลัง = ข้าม (ไม่เดา)
