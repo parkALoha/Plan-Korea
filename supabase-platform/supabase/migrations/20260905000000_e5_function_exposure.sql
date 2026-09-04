@@ -58,21 +58,55 @@ stable
 security definer
 set search_path = ''
 as $$
-  with f as (
-    select p.oid, n.nspname::text as sch, p.proname::text as fn,
+  with ns as (
+    select n.oid, n.nspname::text as sch, n.nspowner, n.nspacl
+      from pg_catalog.pg_namespace n
+     where n.nspname = any(p_schemas)
+  ),
+  f as (
+    select p.oid, n.sch, p.proname::text as fn,
            pg_catalog.pg_get_function_identity_arguments(p.oid) as args,
            p.proowner, p.proacl
       from pg_catalog.pg_proc p
-      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = any(p_schemas)
+      join ns n on n.oid = p.pronamespace
   ),
   -- 🔴 ชื่อ schema ที่ resolve ไม่ได้ **ต้องส่งเสียง** — รูปเดียวกับแถว `MISSING` ของ `table_exposure`
   --    ไม่งั้นพิมพ์ schema ผิด → ได้ผลว่าง → **อ่านเป็น "ไม่มีอะไรเปิด"**
+  -- ⚠️ **แก้ 5 ก.ย. 2026**: ฉบับแรกเช็คจาก `f` (ตารางฟังก์ชัน) ⇒ ***schema ที่มีอยู่จริงแต่ไม่มีฟังก์ชันเลย
+  --    จะถูกรายงานว่า `MISSING`*** ซึ่งเป็นคำโกหกคนละแบบกับที่ตั้งใจกัน · เช็คจาก `ns` แทน
   d_missing as (
-    select q.name, 'MISSING'::text, ''::text, ''::text,
+    select q.name, null::text, null::text, ''::text,
            'ไม่มี schema ชื่อนี้ — พิมพ์ผิด/ยังไม่ลง'::text
       from unnest(p_schemas) as q(name)
-     where not exists (select 1 from f where f.sch = q.name)
+     where not exists (select 1 from ns where ns.sch = q.name)
+  ),
+  /**
+   * 🔴 **สิทธิ์ `USAGE` ของ schema — P4 ขอ และเขาถูก**
+   * ผมเขียนถึงเขาเองว่า *"`PUBLIC execute` ไม่มีผลถ้าไม่มี `USAGE` บน schema — ต้องตรวจคู่กันเสมอ"*
+   * **แล้วส่งเครื่องมือที่พูดถึง `USAGE` ไม่ได้เลยให้เขาไปใช้**
+   * 🎯 ***ระบุการจับคู่ได้ถูกต้อง แล้วสร้างเครื่องมือที่ตอบได้ครึ่งเดียวของการจับคู่นั้น***
+   *
+   * 🔴 **ผลถ้าไม่มีแถวนี้**: ด่านที่สร้างบนมันจะแดงใส่ `app.*` ~10 ตัวที่ `PUBLIC | EXECUTE`
+   *    ทั้งที่ **ไม่มี `USAGE` บน `app` ⇒ เรียกไม่ได้อยู่แล้ว** ⇒ ***แดงใส่ของที่ทำถูก***
+   *    และ `§3.4` บอกว่ากลไกแบบนั้น **จะถูกลบทั้งใบ พร้อมของที่มันเคยกันไว้**
+   * · ⚠️ ทางที่ผิดคือให้ผู้เรียกยกเว้น `app.*` ทิ้ง — **นั่นคือตัดคำถามออกเพื่อให้เขียว**
+   *   และมันจะกลืน *ฟังก์ชันใน `app` ที่วันหนึ่งเข้าถึงได้จริง* ไปด้วย
+   *
+   * รูปแถว: `function_name` และ `args` เป็น `null` · `privilege = 'USAGE'`
+   * ⇒ ผู้เรียกคำนวณเองได้: ***เรียกได้ ก็ต่อเมื่อ (มี EXECUTE) **และ** (มี USAGE บน schema นั้น)***
+   * · 🔴 `acldefault('n', nspowner)` สำคัญเท่ากับฝั่งฟังก์ชัน — `coalesce(nspacl,'{}')` เมื่อไหร่
+   *   **จะได้ปัญหาเดียวกันที่ย้ายมาอีกชั้น** (P4 ชี้)
+   */
+  d_usage as (
+    select ns.sch, null::text, null::text,
+           case when a.grantee = 0 then 'PUBLIC'
+                else pg_catalog.pg_get_userbyid(a.grantee) end,
+           a.privilege_type::text
+      from ns
+      cross join lateral aclexplode(
+        coalesce(ns.nspacl, pg_catalog.acldefault('n', ns.nspowner))) a
+     where a.privilege_type = 'USAGE'
+       and (a.grantee = 0 or a.grantee <> ns.nspowner)
   ),
   d_grant as (
     select f.sch, f.fn, f.args,
@@ -90,8 +124,10 @@ as $$
   )
   select * from d_missing
   union all
+  select * from d_usage
+  union all
   select * from d_grant
-  order by 1, 2, 3, 4, 5;
+  order by 1, 2 nulls first, 3, 4, 5;
 $$;
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -144,9 +180,29 @@ begin
   -- ⑤ schema ที่ไม่มีจริง ต้องได้แถว MISSING ไม่ใช่ผลว่าง
   select count(*) into n
     from public.function_exposure(array['schema_ที่ไม่มีอยู่จริง'])
-   where grantee = '' and privilege like 'ไม่มี schema%';
+   where privilege like 'ไม่มี schema%';
   if n <> 1 then
     raise exception 'assert ล้ม: schema ที่ไม่มีจริงไม่ได้แถว MISSING — ผลว่างจะอ่านเป็น "ไม่มีอะไรเปิด"';
+  end if;
+
+  -- ⑥ 🔴 **ทิศบวกของแถวชนิดใหม่ (`USAGE`)** — P4 ขอ และเหตุผลของเขาคือรูปเดียวกับ ③④
+  --    วันที่ query ส่วน `d_usage` พัง **ผลจะว่าง** ⇒ ด่านที่ใช้มันจะอ่านว่า
+  --    *"ไม่มีใครมี USAGE เลย ⇒ ทุกอย่างเรียกไม่ได้"* ⇒ **เขียวสนิททั้งแผง**
+  --    🎯 ***ตัววัดที่พังเงียบ ให้คำตอบที่ปลอดภัยที่สุดเสมอ — และนั่นคือสิ่งที่ทำให้ไม่มีใครสงสัย***
+  select count(*) into n
+    from public.function_exposure(array['public'])
+   where function_name is null and privilege = 'USAGE';
+  if n = 0 then
+    raise exception 'assert ล้ม: function_exposure ไม่คืนแถว USAGE ของ schema — ด่านที่ใช้มันจะเขียวสนิทโดยไม่ได้ตรวจอะไร';
+  end if;
+
+  -- ⑦ schema ที่มีอยู่จริงแต่ **ไม่มีฟังก์ชันเลย** ต้องไม่ถูกรายงานว่า MISSING
+  --    (ฉบับแรกเช็คจากตารางฟังก์ชัน ⇒ schema ว่างจะกลายเป็น "ไม่มี schema นี้" ซึ่งเป็นคำโกหกคนละแบบ)
+  select count(*) into n
+    from public.function_exposure(array['information_schema'])
+   where privilege like 'ไม่มี schema%';
+  if n <> 0 then
+    raise exception 'assert ล้ม: schema ที่มีอยู่จริงถูกรายงานว่า MISSING';
   end if;
 end $assert$;
 
