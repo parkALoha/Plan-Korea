@@ -52,7 +52,7 @@ type PlaceDetailsResponse = {
 type Locale = string;
 
 const CACHE_COLUMNS =
-  "maps_query, google_place_id, opening_hours, rating, user_rating_count, primary_type, reviews, name_local, address_local, locale";
+  "maps_query, google_place_id, opening_hours, rating, user_rating_count, primary_type, reviews";
 
 type CacheRow = {
   maps_query: string;
@@ -62,9 +62,6 @@ type CacheRow = {
   user_rating_count: number | null;
   primary_type: string | null;
   reviews: unknown;
-  name_local: string | null;
-  address_local: string | null;
-  locale: string | null;
 };
 
 function parseLocale(raw: string | null): Locale | null {
@@ -103,18 +100,19 @@ function rowToResponse(row: CacheRow, nameLocal: string | null, addressLocal: st
   };
 }
 
-/** แคชไว้แล้วแต่ยังไม่มีชื่อท้องถิ่น (หรือเป็นคนละภาษากับที่ขอ) → เติมให้ครั้งเดียวแล้วเก็บลงแถวเดิม
- *  แถวเก่าทั้งหมดที่มีอยู่ก่อนเฟส 14 จะค่อยๆ ถูกเติมเองเมื่อถูกเรียกใช้ ไม่ต้อง backfill ทั้งตาราง */
-async function backfillLocalName(db: SupabaseClient,
-  row: CacheRow, locale: Locale) {
-  /**
-   * 🔴 **เดิมบรรทัดถัดจากนี้เขียนผลกลับลงแถวเดิม — ถอดออกแล้ว** (`Q3` ก้าวที่ 1)
-   * `update` จาก route = สิทธิ์ที่ผู้ใช้มีเท่ากัน → **เขียนทับแถวของคนอื่นได้**
-   * ซึ่งแรงกว่า `insert` ที่เราถอดไปอีก · งานเบื้องหลังเป็นคนเติมชื่อท้องถิ่นแทน
-   *
-   * ✅ **ผู้ใช้ยังได้ชื่อท้องถิ่นถูกต้องเสมอ** — บรรทัดล่างคืนค่าที่เพิ่งดึงจาก Google
-   *    สิ่งที่เสียคือ *การเก็บไว้ใช้ซ้ำ* → **ต้นทุน ไม่ใช่ความถูกต้อง**
-   */
+/**
+ * ชื่อ/ที่อยู่ภาษาท้องถิ่น **ไม่ได้อยู่ในแถวของ `place_details_cache`** — `D77` ย้ายไป
+ * `place_details_local_cache` ตั้งแต่ 25 ส.ค. 2026 · และตารางนั้น **ปิดสนิทจาก route โดยตั้งใจ**
+ * (`rlsMatrix.test.ts:5433` บังคับว่า `select` ต้องได้ `42501`) ⇒ ที่นี่อ่านมันไม่ได้ และไม่ควรอ่าน
+ *
+ * 🔴 **นี่คือรากของบั๊กที่ทำให้แคชทั้งใบตายเงียบตั้งแต่วันนั้น** — `CACHE_COLUMNS` ยังขอ 3 คอลัมน์นั้นอยู่
+ * → `select` ได้ `42703` → `data = null` → **ยิง Google ทุกคำขอ ทุกคน** (P1 ชี้ · P3 ยืนยันกับสคีมา 4 ก.ย. 2026)
+ *
+ * ✅ ขอชื่อท้องถิ่นจาก Google เมื่อผู้เรียกระบุ `locale` — **พฤติกรรมเท่าเดิมเป๊ะ** เพราะตัวเขียนถูกถอด
+ *    ไปแล้วตอน `Q3` ก้าวที่ 1 (แถวจึงไม่เคยมีชื่อท้องถิ่นให้ใช้ซ้ำอยู่แล้ว) · สิ่งที่กลับมาคือ *7 คอลัมน์ที่เหลือ*
+ */
+async function localNameFor(row: CacheRow, locale: Locale | null) {
+  if (locale == null) return { nameLocal: null, addressLocal: null };
   return await fetchLocalName(row.maps_query, locale);
 }
 
@@ -250,10 +248,7 @@ async function resolveMany(
       const row = cachedRows.get(q);
       if (!row) return [q, await resolveFromGoogle(db, q, live, locale)];
 
-      const needsLocalName = locale != null && row.locale !== locale;
-      const local = needsLocalName
-        ? await backfillLocalName(db, row, locale)
-        : { nameLocal: row.name_local, addressLocal: row.address_local };
+      const local = await localNameFor(row, locale);
 
       const result = rowToResponse(row, local.nameLocal, local.addressLocal);
       if (live) result.currentOpeningHours = await fetchCurrentOpeningHoursLive(q);

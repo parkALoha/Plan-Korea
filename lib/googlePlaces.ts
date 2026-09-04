@@ -139,7 +139,9 @@ export async function searchPlacesText(
       },
       body: JSON.stringify(body),
       // แคชผลลัพธ์ไว้ 30 วัน เหมือน route อื่นๆ ในโปรเจกต์นี้ (ยกเว้น noCache)
-      ...(noCache ? { cache: "no-store" as const } : { next: { revalidate: 2592000 } }),
+      ...(noCache
+        ? { cache: "no-store" as const }
+        : { cache: "force-cache" as const, next: { revalidate: 2592000 } }),
     } as RequestInit,
     "places search"
   );
@@ -185,7 +187,16 @@ export async function autocompletePlaces(
         "X-Goog-Api-Key": apiKey,
       },
       body: JSON.stringify(body),
-    },
+      /**
+       * 🔴 **แคชสั้น ๆ ต่อ prefix — ไม่ขัดกับเหตุผลเดิมที่ route เขียนว่า "ไม่แคช"**
+       * เหตุผลนั้นคือ *ผลลัพธ์ขึ้นกับทุกตัวอักษร* ซึ่งยังจริง · แต่คีย์แคชของ Next แยกตาม
+       * **URL + method + headers + body** ⇒ prefix ต่างกัน = คนละแถวอยู่แล้ว ไม่ปนกัน
+       * ✅ สิ่งที่มันกัน: คนพิมพ์ → ลบ → พิมพ์ใหม่ท่าเดิม (เกิดบ่อยมากในช่องค้นหาโรงแรม)
+       *    และผู้ใช้หลายคนที่พิมพ์คำเดียวกัน · 30 วิ สั้นพอที่ผลจะไม่ค้างจนรู้สึกได้
+       */
+      cache: "force-cache" as const,
+      next: { revalidate: 30 },
+    } as RequestInit,
     "autocomplete"
   );
   if (!out.ok) return { suggestions: [], error: out.reason };
@@ -250,6 +261,7 @@ export async function searchNearby(
           },
         },
       }),
+      cache: "force-cache" as const,
       next: { revalidate: 2592000 },
     } as RequestInit,
     "nearby search"
@@ -284,7 +296,9 @@ export async function getPlaceDetails(
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": fieldMask,
       },
-      ...(noCache ? { cache: "no-store" as const } : { next: { revalidate: 2592000 } }),
+      ...(noCache
+        ? { cache: "no-store" as const }
+        : { cache: "force-cache" as const, next: { revalidate: 2592000 } }),
     } as RequestInit,
     "place details"
   );
