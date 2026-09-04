@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CreateTripForm } from "@/components/CreateTripForm";
+import { DestinationExplorer } from "@/components/DestinationExplorer";
+import type { CityOption } from "@/components/TripDestinationPicker";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -214,9 +216,22 @@ function TripCard({ trip }: { trip: TripListItem }) {
         <p className="mt-1 text-xs font-medium text-content sm:text-sm">
           {tripDateRangeLabel(trip.start_date, trip.end_date)}
         </p>
-        {destinationLabel && (
-          <p className="mt-0.5 truncate text-xs text-content sm:text-sm">📍 {destinationLabel}</p>
-        )}
+        {/**
+         * 🔴 **บรรทัดสถานที่ต้องมีที่ของมันเสมอ แม้ไม่มีข้อมูล** (ผู้ใช้ทักเอง 4 ก.ย. 2026:
+         * *"มันควรมีอะไรที่เหมือนกัน เช่นการวางบรรทัดของข้อความ และ icon"*)
+         *
+         * เดิมเรนเดอร์แบบมีเงื่อนไข ⇒ การ์ดที่ไม่มีจุดหมายเตี้ยกว่าเพื่อน **แถว 👥 จึงไม่อยู่ระดับเดียวกัน**
+         * (P1 วัด: การ์ดที่มี 📍 แถว 👥 อยู่ที่ 210px · ที่ไม่มี อยู่ที่ 184px)
+         * 🎯 ***จองที่ว่างไว้ ไม่ใช่เติมข้อความปลอม*** — ใส่ "ยังไม่ระบุเมือง" จะเป็นการบอกสิ่งที่เราไม่รู้
+         *    (ทริปเก่าบางใบไม่มีจุดหมายเพราะตอนนั้นยังไม่บังคับ ไม่ใช่เพราะผู้ใช้ตั้งใจเว้น)
+         * · `aria-hidden` ตอนว่าง — โปรแกรมอ่านหน้าจอไม่ต้องอ่านช่องว่างที่มีไว้จัดหน้า
+         */}
+        <p
+          className="mt-0.5 truncate text-xs text-content sm:text-sm"
+          aria-hidden={destinationLabel ? undefined : true}
+        >
+          {destinationLabel ? `📍 ${destinationLabel}` : "\u00a0"}
+        </p>
         <p className="mt-1.5 text-xs text-content-soft">
           {trip.memberCount > 0 ? (
             <>👥 {trip.memberCount}</>
@@ -345,6 +360,8 @@ export function HomeScreen() {
   }, [user]);
 
   const trips = state.status === "ready" ? state.trips : null;
+  /** เมืองที่กดมาจากเมนู "เลือกปลายทาง" — เปิดฟอร์มพร้อมค่าตั้งต้น · `[]` = กดปุ่มสร้างเปล่า ๆ */
+  const [seedCities, setSeedCities] = useState<CityOption[]>([]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabKey>("all");
   const [sort, setSort] = useState<SortKey>("date");
@@ -475,13 +492,27 @@ export function HomeScreen() {
             </button>
           </div>
         ) : state.trips.length === 0 ? (
-          // สถานะว่าง — พฤติกรรมเดิมของ TripStatusFallback ห้ามหาย (E5 ข้อ 3) แค่ย้ายมาอยู่ที่ Home
-          // โดยตรงแทนที่จะรอ useActiveTripId() ตัดสินว่า "none" เพราะ Home ไม่ได้ resolve ทริปเดียวอีกแล้ว
-          <div className="flex flex-col items-center gap-4 py-10 text-center">
-            <p className="text-content-soft">{COPY.noTripsYet}</p>
-            {/* หน้าเปล่ากินเต็มความกว้างคอลัมน์ ฟอร์มจึงต้องถูกจำกัดตรงนี้ — ในโมดัลไม่ต้อง */}
-            <div className="w-full max-w-xs">
-              <CreateTripForm />
+          /**
+           * 🔴 **ผู้ใช้ใหม่ที่ยังไม่มีทริปสักใบ — เดิมเห็นหน้าเปล่า + ฟอร์มเปล่า**
+           * เขาไม่รู้ว่าเว็บนี้ทำอะไรได้ และไม่รู้ว่าจะเริ่มยังไง · ***นี่คือคุณค่าหลักของงานนี้ ไม่ใช่ผลพลอยได้***
+           * ⇒ ให้เมนู "เลือกปลายทาง" กินเต็มหน้าแทน · ฟอร์มเปล่ายังอยู่ใต้สุดสำหรับคนที่รู้อยู่แล้วว่าจะไปไหน
+           */
+          <div className="py-2">
+            <h1 className="text-2xl font-extrabold tracking-tight text-content sm:text-3xl">
+              {E5_COPY.explorer.heading}
+            </h1>
+            <p className="mb-4 mt-1 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
+            <DestinationExplorer
+              onPickCity={(city) => {
+                setSeedCities([city]);
+                setCreateOpen(true);
+              }}
+            />
+            <div className="mt-8 border-t border-line pt-6">
+              <p className="mb-3 text-sm text-content-soft">{COPY.noTripsYet}</p>
+              <div className="w-full max-w-xs">
+                <CreateTripForm />
+              </div>
             </div>
           </div>
         ) : (
@@ -492,7 +523,7 @@ export function HomeScreen() {
              */}
             <div className="mb-4">
               <h1 className="text-2xl font-extrabold tracking-tight text-content sm:text-3xl">
-                {COPY.upcomingTrips}
+                {COPY.myTrips}
               </h1>
               <p className="mt-1 text-sm text-content-soft">
                 {user.status === "ready" && user.displayName
@@ -584,6 +615,22 @@ export function HomeScreen() {
                 ))}
               </div>
             )}
+
+            {/**
+             * 🔴 **เมนูปลายทางอยู่ *ใต้* ทริปของฉัน เมื่อผู้ใช้มีทริปแล้ว**
+             * คนที่มีทริปอยู่แล้วเปิดหน้านี้มาเพื่อ **เข้าทริปเดิม** ไม่ใช่เพื่อเริ่มทริปใหม่
+             * ⇒ วางเมนูไว้บนจะดันของที่เขามาหาให้ต้องเลื่อน · **สลับลำดับเองเมื่อยังไม่มีทริป** (ดูกิ่งข้างบน)
+             */}
+            <section className="mt-10 border-t border-line pt-6">
+              <h2 className="text-lg font-bold text-content">{E5_COPY.explorer.heading}</h2>
+              <p className="mb-3 mt-0.5 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
+              <DestinationExplorer
+                onPickCity={(city) => {
+                  setSeedCities([city]);
+                  setCreateOpen(true);
+                }}
+              />
+            </section>
           </>
         )}
       </div>
@@ -608,8 +655,17 @@ export function HomeScreen() {
           จะเลื่อนตัวเองขึ้นให้พอดีจอ ไม่ตัดเนื้อทิ้ง → ความสูงของกล่องไม่เกี่ยวอีกต่อไป
           สิ่งที่เหลืออยู่คือช่องว่างเปล่าใต้ปุ่ม ซึ่งผู้ใช้ทักเอง */}
       {createOpen && (
-        <Modal onClose={() => setCreateOpen(false)} title={COPY.newTrip} size="md">
-          <CreateTripForm />
+        <Modal
+          onClose={() => {
+            setCreateOpen(false);
+            // 🔴 ล้างเมืองตั้งต้นตอนปิด — ไม่งั้นกดปุ่ม "+ สร้างทริปใหม่" รอบถัดไปจะได้เมืองของรอบก่อนติดมา
+            //    โดยที่ผู้ใช้ไม่ได้เลือก **และไม่มีอะไรบอกว่ามันมาจากไหน**
+            setSeedCities([]);
+          }}
+          title={COPY.newTrip}
+          size="md"
+        >
+          <CreateTripForm initialDestinations={seedCities} />
         </Modal>
       )}
     </main>

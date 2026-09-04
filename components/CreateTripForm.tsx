@@ -19,7 +19,14 @@ import { E5_COPY } from "@/lib/i18n";
  */
 const COPY = E5_COPY.createTrip;
 
-export function CreateTripForm() {
+/**
+ * 🔴 **`initialDestinations` เพิ่ม 4 ก.ย. 2026** — เมนู "เลือกปลายทาง" บนหน้าแรกกดเมืองแล้ว
+ * เปิดฟอร์มนี้โดยเติมปลายทางไว้แล้ว **แต่ไม่สร้างทริป** · ผู้ใช้สั่งเอง:
+ * > *"เขาเลือก ประเทศ หรือเมือง **แต่ไม่ได้ระบุวันที่เพราะเขาจะกรอกเอง**"*
+ * 🎯 ***สร้างทันทีที่กด = ทริปที่วันที่มั่ว ซึ่งวันนี้ลบไม่ได้ด้วย***
+ * · เป็น **ค่าตั้งต้น ไม่ใช่ค่าที่ล็อก** — ผู้ใช้เพิ่ม/ลบเมืองในฟอร์มได้ตามปกติ
+ */
+export function CreateTripForm({ initialDestinations = [] }: { initialDestinations?: CityOption[] } = {}) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -39,7 +46,7 @@ export function CreateTripForm() {
    * · ⚠️ **route ยังรับคำขอที่ไม่มี `cityIds` เหมือนเดิมโดยตั้งใจ** — ด่านนี้อยู่ที่ UI ชั้นเดียว
    *   ถ้าวันหนึ่ง 1.3 ลงแล้ว (แก้เมืองทีหลังได้) ข้อบังคับนี้ผ่อนได้ **และควรผ่อน**
    */
-  const [destinations, setDestinations] = useState<CityOption[]>([]);
+  const [destinations, setDestinations] = useState<CityOption[]>(initialDestinations);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // เซสชันหมดอายุแยกจาก error ทั่วไป — ต้องมีปุ่มเข้าสู่ระบบใหม่ ไม่ใช่แค่ข้อความ (P1 27 ส.ค. 2026)
