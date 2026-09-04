@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseConfigured, supabase, type TripStop } from "@/lib/supabase";
 import { buildUuidToDayKey, mapStopRows } from "@/hooks/dayKeyMaps";
 import { useTripDays } from "@/hooks/useTripDays";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
 import { writeGuard } from "@/lib/writeGuard";
 import { showToast } from "@/lib/toast";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
@@ -60,6 +60,12 @@ export function useStops(tripId: string | null, planId: string | null) {
   const dayToUuid = useRef<Map<string, string>>(new Map());
   const uuidToDay = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * 🔴 **ของสดลงจอไปแล้วหรือยัง — `E6-AC7`** · รูปเดียวกับ `useBookings` (เหตุผลเต็มอยู่ที่นั่น)
+   * `init()` ไม่ได้ยิงเอง — การยิงอยู่ที่ `reload()` ซึ่งเอฟเฟกต์ที่สองเรียกเมื่อสะพานวันพร้อม
+   * · ธงใบเดียวครอบ **ทั้งสองคีย์** (`stops` · `stopPlaces`) เพราะ `reload()` ลงจอพร้อมกันทั้งคู่
+   */
+  const freshApplied = useRef(false);
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -98,8 +104,9 @@ export function useStops(tripId: string | null, planId: string | null) {
     setStops(mapped);
     // 🔴 ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ (P1/P7) — state ในเครื่องอัปเดตได้ปกติ (จะถูกต้องเองเมื่อ
     // สะพานดีขึ้น) แต่แคชออฟไลน์ต้องไม่ถูกทำลายด้วยความว่างที่เกิดจากบั๊ก ไม่ใช่จากทริปที่ไม่มีจุดแวะจริง
+    freshApplied.current = true; // 🔴 ตั้ง **หลัง** ลงจอจริง (ดูเหตุผลที่ประกาศธง) · ครอบทั้ง `stops` และ `stopPlaces`
     if (!reportDayBridgeDropIfAny(rawRows.length, mapped.length)) {
-      writeCache(`stops:${planId}`, mapped);
+      writeHandoffNoisily(`stops:${planId}`, mapped, "stops");
     }
     /**
      * 🔴 **คีย์แยกใบ ไม่ยัดรวมกับ `stops:<planId>`** (`E6-AC13`)
@@ -113,7 +120,7 @@ export function useStops(tripId: string | null, planId: string | null) {
      * · รูปเดียวกับกฎ *ห้ามทับแคชด้วยผลที่หดเพราะสะพานวันไม่ครบ* บรรทัดบน — คนละสาเหตุ เหตุผลเดียวกัน
      */
     if (shouldCacheSideMap(payload.places)) {
-      writeCache(`stopPlaces:${planId}`, payload.places);
+      writeHandoffNoisily(`stopPlaces:${planId}`, payload.places, "stopPlaces");
     }
   }, [planId, mapRows]);
 
@@ -126,17 +133,41 @@ export function useStops(tripId: string | null, planId: string | null) {
     const channelName = `trip_stops_changes_${Math.random().toString(36).slice(2)}`;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    // ไม่มี `await` เหลือแล้วหลัง `E6-AC11` ก้าวที่ 3 — ไม่มีการแข่งกันให้ยกเลิก (`cancelled` ถูกถอด)
-    function init() {
-      const cachedPlaces = readCache<Record<string, Place>>(`stopPlaces:${planId}`);
-      // ไม่มีแคช = ไม่มี side-map (เสื่อมไปที่ `PLACES` + `customPlaces`) ไม่ใช่ error
-      if (cachedPlaces) setCatalogPlaces(cachedPlaces);
+    /**
+     * 🔴 **`cancelled` กลับมาเพราะการอ่านแคชเป็น async แล้ว** (`E6-AC7` · P7 · 4 ก.ย. 2026)
+     * คอมเมนต์เดิม *"ไม่มี `await` เหลือแล้ว … `cancelled` ถูกถอด"* จริงเฉพาะตอน `localStorage` อ่าน sync
+     */
+    let cancelled = false;
 
-      const cached = readCache<TripStop[]>(`stops:${planId}`);
-      if (cached) {
-        setStops(sortStops(cached));
-        setLoaded(true);
-      }
+    /**
+     * 🔴 **การอ่านแคชต้องไม่ขวาง `subscribe()`** — เหตุผลเต็มอยู่ที่ `useDaySettings.ts` (บล็อกเดียวกัน)
+     * ย่อ: `await` การอ่านดิสก์ก่อน `subscribe()` แปลว่า **ดิสก์ที่ไม่ตอบ = ไม่มี realtime ตลอดกาล**
+     * · `daySettingsSubscribe.test.tsx` (P3) จับฉบับแรกของผมได้ **และของจริงแย่กว่าที่มันวัด**
+     *
+     * 🔴 **อ่านสองคีย์ *พร้อมกัน* ไม่ใช่ต่อกัน** — คีย์แยกใบตั้งแต่ `E6-AC13`
+     * ต่อกัน = รอสองรอบดิสก์ ซึ่งหลัง `AC7` แต่ละรอบเป็น async **สองชั้น** (IDB → ฝาแฝด)
+     * ⇒ หน่วงจนของสดชนะเกือบทุกครั้ง **แล้วแคชจะไม่เคยได้ขึ้นจอเลยตอนออนไลน์**
+     */
+    function hydrateFromCache() {
+      void Promise.all([
+        readHandoff<Record<string, Place>>(`stopPlaces:${planId}`),
+        readHandoff<TripStop[]>(`stops:${planId}`),
+      ]).then(([cachedPlaces, cached]) => {
+        if (cancelled) return;
+        // 🔴 **ใส่แคชก็ต่อเมื่อของสดยังไม่มา** — `reload()` อยู่คนละเอฟเฟกต์ (รอสะพานวัน) จึงแข่งกันได้
+        //    ตอน `localStorage` ข้อนี้จริงฟรี ๆ เพราะอ่าน sync · IndexedDB ไม่แถมมาให้ (ดู `useBookings`)
+        if (freshApplied.current) return;
+        // ไม่มีแคช = ไม่มี side-map (เสื่อมไปที่ `PLACES` + `customPlaces`) ไม่ใช่ error
+        if (cachedPlaces) setCatalogPlaces(cachedPlaces);
+        if (cached) {
+          setStops(sortStops(cached));
+          setLoaded(true);
+        }
+      });
+    }
+
+    function init() {
+      hydrateFromCache();
 
       // 🔴 **`E6-AC11` ก้าวที่ 3 (30 ส.ค. 2026 · P3): เลิกยิง `/days` เอง เลิกสร้างสะพานเอง**
       //    ย้ายไปเอฟเฟกต์แยกข้างล่างที่ขึ้นกับ `useTripDays()` — **เอฟเฟกต์นี้เหลือแค่ แคช + channel**
@@ -156,8 +187,10 @@ export function useStops(tripId: string | null, planId: string | null) {
       noteRealtimeSubscribed("trip_stops");
     }
 
+    freshApplied.current = false; // ธงเป็นของ *(tripId, planId)* คู่ปัจจุบัน — ไม่รีเซ็ตแล้วสลับแผนจะกันแคชของแผนใหม่
     init();
     return () => {
+      cancelled = true;
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type PlaceNote } from "@/lib/supabase";
 import { writeGuard } from "@/lib/writeGuard";
-import { readCache, writeCache } from "@/lib/localCache";
+import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 
@@ -32,11 +33,20 @@ export function usePlaceNotes(tripId: string | null, planId: string | null) {
     tripIdRef.current = tripId;
   }, [tripId]);
 
+  /**
+   * ยิงของสด **และเก็บลงเครื่องเสมอ** — `E6-AC7`
+   *
+   * 🔴 **ปิดช่องที่มีมาก่อนหน้านี้ ไม่ใช่แค่ย้ายที่เก็บ** (P7 · 4 ก.ย. 2026)
+   * เดิม `writeCache` อยู่ใน `init()` **ที่เดียว** ⇒ ของสดที่มาจาก *realtime* กับ *`reload()`*
+   * **ไม่เคยลงแคชเลย** → แก้โน้ตแล้วปิดแอปทันที เปิดออฟไลน์ **ได้โน้ตรุ่นก่อนแก้**
+   * 🎯 *ขั้นที่ข้ามได้จะถูกข้ามสักวัน* — เอาการเขียนออกจากมือผู้เรียกทั้งสามทาง (ท่าเดียวกับ `useChecklist`)
+   */
   const fetchNotes = useCallback(async (tripId: string, plan: string) => {
     const rows = await fetchReadJson<PlaceNote[]>(
       `/api/engine/trips/${tripId}/place-notes?planId=${encodeURIComponent(plan)}`
     );
     if (!rows) return null;
+    writeHandoffNoisily(`placeNotes:${plan}`, rows, "placeNotes");
     return Object.fromEntries(rows.map((n) => [n.place_id, n]));
   }, []);
 
@@ -51,22 +61,28 @@ export function usePlaceNotes(tripId: string | null, planId: string | null) {
         return;
       }
 
-      const cached = readCache<PlaceNote[]>(`placeNotes:${planId}`);
-      if (cached) {
-        setNotes(Object.fromEntries(cached.map((n) => [n.place_id, n])));
-        setLoaded(true);
-      }
-
-      const map = await fetchNotes(tripId, planId);
+      // 🔴 `E6-AC7` — IndexedDB อ่าน async → ลำดับ hydrate→fetch ไม่มาฟรีอีกแล้ว (ดู `hydrateThenFetch`)
+      const outcome = await hydrateThenFetch<PlaceNote[]>({
+        readCache: () => readHandoff<PlaceNote[]>(`placeNotes:${planId}`),
+        fetchFresh: async () => {
+          const map = await fetchNotes(tripId, planId);
+          // ต้อง **โยน** เพื่อแยก "อ่านไม่ได้" ออกจาก "ยิงได้แต่ยังไม่มีโน้ต" (`[]` เป็นคำตอบที่ถูกต้อง)
+          if (!map) throw new Error("place notes unreachable");
+          return Object.values(map);
+        },
+        // ไม่ส่ง `writeCache` — `fetchNotes` เขียนให้แล้วทุกทาง
+        applyCache: (rows) => setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n]))),
+        applyFresh: (rows) => setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n]))),
+        applyError: () => {},
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      if (map) {
-        setNotes(map);
-        writeCache(`placeNotes:${planId}`, Object.values(map));
-        setAvailable(true);
-      } else {
-        // 🔴 อ่านไม่ได้ ≠ ไม่มีโน้ต · `available=false` ทำให้ UI ไม่เสนอปุ่มที่กดแล้วล้มแน่ ๆ
-        setAvailable(false);
-      }
+      /**
+       * 🔴 **อ่านไม่ได้ ≠ ไม่มีโน้ต** · `available=false` ทำให้ UI ไม่เสนอปุ่มที่กดแล้วล้มแน่ ๆ
+       * ⚠️ **`"cache-only"` ต้องเป็น `false` ด้วย** — มีของอ่านได้ แต่ *เขียน* ไม่ได้แน่นอนเพราะเน็ตล้ม
+       *    (พฤติกรรมเดิมเป๊ะ: เดิมดูว่า `map` เป็น `null` ไหม ซึ่งเป็นจริงทุกครั้งที่ยิงไม่สำเร็จ)
+       */
+      setAvailable(outcome === "fresh");
       setLoaded(true);
 
       channel = supabase

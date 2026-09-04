@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, TripDaySettings } from "@/lib/supabase";
-import { readCache, writeCache } from "@/lib/localCache";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
 import { writeGuard } from "@/lib/writeGuard";
 import { showToast } from "@/lib/toast";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
@@ -19,6 +19,12 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
   const tripIdRef = useRef<string | null>(null);
   const dayIdRef = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * 🔴 **ของสดลงจอไปแล้วหรือยัง — `E6-AC7`** · รูปเดียวกับ `useBookings` (เหตุผลเต็มอยู่ที่นั่น)
+   * `init()` ไม่ได้ยิงเอง — การยิงอยู่ที่ `reload()` ซึ่งเอฟเฟกต์ที่สองเรียกเมื่อสะพานวันพร้อม
+   * ⇒ **ลำดับ "แคชห้ามทับของสด" ต้องเขียนเอง ไม่ได้มาจาก `hydrateThenFetch`**
+   */
+  const freshApplied = useRef(false);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
   useEffect(() => {
@@ -29,18 +35,43 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
     const channelName = `trip_day_settings_changes_${Math.random().toString(36).slice(2)}`;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    // ไม่มี `await` เหลือแล้วหลัง `E6-AC11` ก้าวที่ 2 — จึงไม่มีการแข่งกันให้ยกเลิก (`cancelled` ถูกถอด)
-    function init() {
+    /**
+     * 🔴 **`cancelled` กลับมาเพราะการอ่านแคชเป็น async แล้ว** (`E6-AC7` · P7 · 4 ก.ย. 2026)
+     * คอมเมนต์เดิมเขียนว่า *"ไม่มี `await` เหลือแล้ว … `cancelled` ถูกถอด"* ซึ่งจริงตอน `localStorage` อ่าน sync
+     * · เอฟเฟกต์ผูก `[tripId, planId]` → สลับแผนระหว่างอ่านดิสก์ = รอบเก่าทับ state ของรอบใหม่
+     */
+    let cancelled = false;
 
-      if (!supabaseConfigured || !tripId || !planId) return void setLoaded(true);
-
-      const cached = readCache<TripDaySettings[]>(`daySettings:${planId}`);
-      if (cached) {
+    /**
+     * 🔴 **การอ่านแคชต้องไม่ขวาง `subscribe()` — แยกออกมาเป็นงานคนละเส้น** (P7 · 4 ก.ย. 2026)
+     *
+     * ฉบับแรกของผมทำ `init()` เป็น `async` แล้ว `await` การอ่านดิสก์ **ก่อน** `subscribe()`
+     * ⇒ `subscribe()` ขยับไปอยู่หลัง microtask · `daySettingsSubscribe.test.tsx` (P3) จับได้ทันที
+     * 🎯 **และเทสต์นั้นถูก ไม่ใช่เข้มเกิน — ของจริงแย่กว่าที่มันวัด:**
+     *    ถ้า IndexedDB **ไม่ตอบเลย** (กิ่งที่ P2 เจอโดยอุบัติเหตุ · `hydrateThenFetch.test.ts:133`)
+     *    **`subscribe()` จะไม่เกิดตลอดกาล** → แอปไม่ได้รับ realtime อีกเลย **โดยไม่มีอะไรฟ้อง**
+     * · ⚠️ `useHotels`/`usePlans`/`useCustomPlaces` ไม่เจอข้อนี้เพราะมัน `await hydrateThenFetch`
+     *   ซึ่ง **settle เสมอ** (ฝั่งเน็ตเป็นคนพามันจบ) · ที่นี่ `await` การอ่านดิสก์ล้วน ๆ **ไม่มีใครพามันจบ**
+     * 🔴 **บทเรียน: `await` ที่เพิ่มเข้าไปในเส้นทางเดิม ไม่ได้แค่ทำให้ช้าลง — มันส่งต่อ *การไม่จบ* ให้ทุกอย่างที่อยู่ข้างหลัง**
+     */
+    function hydrateFromCache() {
+      void readHandoff<TripDaySettings[]>(`daySettings:${planId}`).then((cached) => {
+        if (cancelled || !cached) return;
+        // 🔴 **ใส่แคชก็ต่อเมื่อของสดยังไม่มา** — `reload()` อยู่คนละเอฟเฟกต์ (รอสะพานวัน) จึงแข่งกันได้
+        //    ตอน `localStorage` ข้อนี้จริงฟรี ๆ เพราะอ่าน sync · IndexedDB ไม่แถมมาให้ (ดู `useBookings`)
+        if (freshApplied.current) return;
         const m: Record<string, TripDaySettings> = {};
         for (const row of cached) m[row.day_id] = row;
         setSettings(m);
         setLoaded(true);
-      }
+      });
+    }
+
+    function init() {
+
+      if (!supabaseConfigured || !tripId || !planId) return void setLoaded(true);
+
+      hydrateFromCache();
 
       // 🔴 **`E6-AC11` ก้าวที่ 2 (30 ส.ค. 2026 · P3): เลิกยิง `/days` เอง เลิกสร้างสะพานเอง**
       //    ย้ายไปเอฟเฟกต์แยกข้างล่างที่ขึ้นกับ `useTripDays()` — **เอฟเฟกต์นี้เหลือแค่ แคช + channel**
@@ -61,9 +92,11 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       noteRealtimeSubscribed("trip_day_plan_settings");
     }
 
+    freshApplied.current = false; // ธงเป็นของ *(tripId, planId)* คู่ปัจจุบัน — ไม่รีเซ็ตแล้วสลับแผนจะกันแคชของแผนใหม่
     init();
 
     return () => {
+      cancelled = true;
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
@@ -105,8 +138,9 @@ export function useDaySettings(tripId: string | null, planId: string | null) {
       };
     }
     setSettings(map);
+    freshApplied.current = true; // 🔴 ตั้ง **หลัง** ลงจอจริง (ดูเหตุผลที่ประกาศธง)
     if (!reportDayBridgeDropIfAny(rows.length, Object.keys(map).length)) {
-      writeCache(`daySettings:${planId}`, Object.values(map));
+      writeHandoffNoisily(`daySettings:${planId}`, Object.values(map), "daySettings");
     }
   }, [planId]);
 
