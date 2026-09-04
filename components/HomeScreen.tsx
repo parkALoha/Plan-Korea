@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CardBadge, CoverCard } from "@/components/CoverCard";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
@@ -14,7 +14,6 @@ import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
 import { readCache, writeCache } from "@/lib/localCache";
-import { showToast } from "@/lib/toast";
 import { clearDeviceData } from "@/lib/auth/deviceData";
 
 type TripDestination = {
@@ -102,7 +101,6 @@ const COPY = E5_COPY.home;
  * ไม่ได้ ไม่ใช่ทริปไม่มีคน ปฏิบัติแบบเดียวกับ `displayName: null` ใน `TripHeader.tsx` (ห้ามเงียบ)
  */
 type TabKey = "all" | "upcoming" | "solo" | "group";
-type SortKey = "date" | "name";
 
 /**
  * ตัวกรองของหน้าแรก — **ฟังก์ชันล้วน แยกจากคอมโพเนนต์เพื่อให้ยิงเทสต์ได้ตรง ๆ**
@@ -190,48 +188,6 @@ function TripCountdownBadge({ startDate, endDate }: { startDate: string; endDate
 }
 
 /**
- * ปุ่มปักหมุด — **ปุ่มจริง อยู่ *นอก* `CoverCard`** (P2 · 4 ก.ย. 2026 · P1 อนุมัติ)
- *
- * ## 🔴 ทำไมไม่ได้อยู่ข้างในการ์ด
- * `CoverCard` เรนเดอร์เป็น `<Link>` เมื่อมี `href` ⇒ ***`<button>` ซ้อนใน `<a>` เป็น HTML ที่ผิด***
- * เบราว์เซอร์จะ *ยกปุ่มออกมานอกลิงก์เอง* ตอน parse ⇒ ตำแหน่งเพี้ยนแบบที่ไม่มีอะไรฟ้อง
- * ✅ จึงห่อ `relative` แล้ววางปุ่มเป็นพี่น้องของการ์ด — **ไม่ต้องเติมช่องใหม่ให้เปลือกที่ใช้ร่วมกันสามที่**
- *
- * ## 🔴 อยู่ **มุมล่างขวาของเนื้อ** ไม่ใช่มุมบนบนรูปปก — เหตุผลเดียวกับป้ายนับถอยหลัง
- * บนรูปปกคอนทราสต์เดาไม่ได้ (สีต่างกันทุกใบ) · **บนพื้นเนื้อการ์ดวัดได้** และไม่ชนป้ายที่มุมขวาบน
- *
- * ## 🔴 ถ้อยคำเป็น *การกระทำของคุณ* ไม่ใช่ *สถานะของทริป*
- * `pinned_at` อยู่บน `trip_members` ของผู้เรียก ⇒ **Alice ปักแล้ว Bob ไม่เห็น**
- * ⇒ `aria-label` เป็นคำสั่งที่จะเกิดเมื่อกด · สถานะปัจจุบันสื่อด้วย `aria-pressed` ซึ่งเป็นช่องของมันเอง
- */
-function PinButton({ pinned, busy, onToggle }: { pinned: boolean; busy: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={busy}
-      aria-pressed={pinned}
-      aria-label={pinned ? COPY.pinRemove : COPY.pinAdd}
-      title={pinned ? COPY.pinRemove : COPY.pinAdd}
-      className={`absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full text-sm transition disabled:opacity-50 ${
-        pinned
-          ? "bg-maple-dark text-white shadow-sm shadow-ink/20"
-          : "bg-surface text-content-soft ring-1 ring-line hover:text-content"
-      }`}
-    >
-      {/* 🔴 ไอคอนไม่ใช่ข้อความ — ใส่ `aria-hidden` ไม่งั้นโปรแกรมอ่านหน้าจอจะอ่านชื่ออีโมจิต่อท้าย label */}
-      <span aria-hidden>📌</span>
-    </button>
-  );
-}
-
-/**
- * แว่นขยาย — **SVG ไม่ใช่อีโมจิ** (ผู้ใช้สั่ง 4 ก.ย. 2026)
- * อีโมจิมีสีของตัวเองและ OS เป็นคนวาด ⇒ หน้าตาต่างกันทุกเครื่อง และไม่เกี่ยวกับชุดสีเรา
- * `stroke="currentColor"` ⇒ เป็นสีของข้อความ ตามพื้นหลังและตามธีมเสมอ
- * 📌 อยู่ที่เดียว เพราะถูกใช้สองที่: บล็อกท้ายช่องค้นหา (จอใหญ่) · ปุ่มเปิดโมดัล (จอโทรศัพท์)
- */
-/**
  * แอตทริบิวต์ที่ปิด **ตัวช่วยพิมพ์ของเบราว์เซอร์** สำหรับช่องค้นหาในเว็บ (P2 · 4 ก.ย. 2026 · ผู้ใช้ทัก)
  *
  * ผู้ใช้เห็นกล่องดำมีหางชี้ขึ้นมาบังใต้ช่อง แสดงคำที่เพิ่งพิมพ์ (`ญี่ป`)
@@ -286,19 +242,14 @@ function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
 
 function TripCard({
   trip,
-  busy,
-  onTogglePin,
   viewerName,
 }: {
   trip: TripListItem;
-  busy: boolean;
-  onTogglePin: (trip: TripListItem) => void;
   /** ชื่อผู้ใช้ที่ล็อกอินอยู่ — `null` ตอนยังอ่านไม่เสร็จ · ใช้วาดวงกลมของ *เขาเอง* เท่านั้น */
   viewerName: string | null;
 }) {
   const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
-    <div className="relative">
     <CoverCard
       href={`/trip/${trip.id}`}
       /**
@@ -349,21 +300,14 @@ function TripCard({
        * 🎯 ***จองที่ว่างไว้ ไม่ใช่เติมข้อความปลอม*** — "ยังไม่ระบุเมือง" คือการบอกสิ่งที่เราไม่รู้
        *    (ทริปเก่าไม่มีจุดหมายเพราะตอนนั้น *ยังไม่บังคับ* ไม่ใช่เพราะผู้ใช้ตั้งใจเว้น)
        */}
-      {/* 🔴 `pr-10` — ปุ่มปักหมุดลอยอยู่มุมล่างขวา และตอนนี้แถวสมาชิกที่เคยกันที่ไว้ให้ถูกย้ายขึ้นไปแล้ว
-          ⇒ ถ้าไม่เผื่อ ชื่อเมืองยาว ๆ จะวิ่งไปอยู่ใต้ปุ่ม **อ่านไม่ออกและกดไม่ได้ทั้งคู่** */}
+      {/* `pr-10` ที่เคยเผื่อไว้ให้ปุ่มปักหมุดถูกถอดแล้ว — ปุ่มไม่มีแล้ว จึงไม่มีอะไรให้หลบ */}
       <p
-        className="mt-0.5 truncate pr-10 text-xs text-content sm:text-sm"
+        className="mt-0.5 truncate text-xs text-content sm:text-sm"
         aria-hidden={destinationLabel ? undefined : true}
       >
         {destinationLabel ? `📍 ${destinationLabel}` : "\u00a0"}
       </p>
     </CoverCard>
-      <PinButton
-        pinned={Boolean(trip.pinnedAt)}
-        busy={busy}
-        onToggle={() => onTogglePin(trip)}
-      />
-    </div>
   );
 }
 
@@ -589,7 +533,6 @@ export function HomeScreen() {
   const [seedCities, setSeedCities] = useState<CityOption[]>([]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabKey>("all");
-  const [sort, setSort] = useState<SortKey>("date");
   /** โมดัลค้นหาของจอโทรศัพท์ — จอ `sm` ขึ้นไปใช้ช่องในแถบหัวแทน ไม่เคยเปิดตัวนี้ */
   const [searchOpen, setSearchOpen] = useState(false);
   /**
@@ -630,71 +573,15 @@ export function HomeScreen() {
       (t) => matchesTripQuery(t, query) && matchesTripTab(t, tab, todayIso)
     );
     /**
-     * 🔴 **หมุดขึ้นก่อนเสมอ · แต่ *ข้างใน* แต่ละกลุ่มยังเรียงตามที่ผู้ใช้เลือก** (P2 · 4 ก.ย. 2026)
-     *
-     * ทางที่ปฏิเสธ: เรียงกลุ่มหมุดตาม `pinnedAt` (ปักล่าสุดขึ้นก่อน)
-     * ⇒ **ตัวเลือก "เรียงตาม" จะไม่มีผลกับกลุ่มบน** ซึ่งอ่านเหมือนตัวเลือกนั้นพัง
-     * 🎯 ***หมุดตอบว่า "ใบไหนสำคัญ" · ตัวเลือกเรียงตอบว่า "เรียงยังไง" — คนละคำถาม ไม่ควรมาทับกัน***
-     * · `pinnedAt` จึงถูกใช้เป็น **ตัวแบ่งกลุ่ม** อย่างเดียว ไม่ได้ใช้เป็นลำดับ
-     *   (คอลัมน์เป็น timestamp ไม่ใช่ boolean เพราะฝั่งฐานอยากให้ *เลือกได้* ว่าจะใช้ลำดับ — ที่นี่เลือกไม่ใช้)
+     * 🔴 **เรียงตามวันเดินทางอย่างเดียว — ไม่มีตัวเลือกให้ผู้ใช้กด** (ผู้ใช้สั่งเอง 4 ก.ย. 2026)
+     * > *"ฟีลเตอร์เอาออก เพราะปกติก็เรียงตามวันเดินทาง มันสมเหตุสมผลแล้ว"*
+     * 🎯 ***ตัวเลือกที่ทุกคนใช้ค่าเริ่มต้นเสมอ ไม่ใช่ตัวเลือก มันคือของที่กินที่บนจอ***
+     * · เคยมี `เรียงตามชื่อ` ด้วย — ถอดออกพร้อมกัน · เรียงตามชื่อบนรายการที่คนมีไม่กี่ใบ ไม่ช่วยอะไร
+     * ⚠️ ถ้าวันหลังมีคนมีทริปเป็นร้อยใบ ให้เอากลับมา **พร้อมเหตุผลว่าจำนวนเท่าไหร่ถึงต้องมี**
      */
-    const byChoice = (a: TripListItem, b: TripListItem) =>
-      sort === "name"
-        ? a.title.localeCompare(b.title, "th")
-        : a.start_date.localeCompare(b.start_date);
-    return list.sort((a, b) => {
-      const pa = a.pinnedAt ? 0 : 1;
-      const pb = b.pinnedAt ? 0 : 1;
-      return pa !== pb ? pa - pb : byChoice(a, b);
-    });
-  }, [trips, query, tab, sort, todayIso]);
+    return list.sort((a, b) => a.start_date.localeCompare(b.start_date));
+  }, [trips, query, tab, todayIso]);
 
-  /**
-   * ปัก/ถอนหมุด — **มองเห็นทันที แล้วค่อยยืนยันกับเซิร์ฟเวอร์** · ล้ม = เด้งกลับ + บอกให้รู้
-   *
-   * 🔴 **เด้งกลับด้วยการ *ยิงค่าที่รู้ว่าถูก* ไม่ใช่ `!pinned` ซ้ำ** — ระหว่างรอ ผู้ใช้กดใบอื่นได้
-   * และ `setState` แบบ functional เห็นสถานะล่าสุดเสมอ · การกลับด้านซ้ำจะพลาดถ้ามีอะไรมาแก้คั่น
-   * ⚠️ `busyId` กันกดรัวใบ *เดิม* ⇒ ไม่มีคำขอสองใบแข่งกันบนทริปเดียว · ใบอื่นยังกดได้ตามปกติ
-   *
-   * 🔴 **เขียนแคชด้วย** — ไม่งั้นเปิดหน้าใหม่ตอนออฟไลน์จะเห็นหมุดชุดเก่า **ซึ่งอ่านเหมือนกดไม่ติด**
-   * (แคชคือสิ่งที่ผู้ใช้เห็นก่อนของสดมาเสมอ ตามที่เขียนไว้ในเอฟเฟกต์โหลด)
-   */
-  const [pinBusyId, setPinBusyId] = useState<string | null>(null);
-  const applyPin = useCallback((tripId: string, value: string | null) => {
-    setState((prev) => {
-      if (prev.status !== "ready") return prev;
-      const trips = prev.trips.map((t) => (t.id === tripId ? { ...t, pinnedAt: value } : t));
-      writeCache(TRIP_LIST_CACHE_KEY, {
-        ownerId: readCache<CachedTripList>(TRIP_LIST_CACHE_KEY)?.ownerId ?? null,
-        trips,
-      } satisfies CachedTripList);
-      return { status: "ready", trips };
-    });
-  }, []);
-
-  const togglePin = useCallback(
-    async (trip: TripListItem) => {
-      const previous = trip.pinnedAt ?? null;
-      const next = previous === null;
-      setPinBusyId(trip.id);
-      // ค่าที่วางชั่วคราว: เวลาเครื่อง — **ใช้เป็นแค่ "ไม่ null"** เพราะลำดับไม่ได้มาจากค่านี้ (ดูตัวเรียงข้างบน)
-      applyPin(trip.id, next ? new Date().toISOString() : null);
-      try {
-        const r = await fetch(`/api/engine/trips/${trip.id}/pin`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pinned: next }),
-        });
-        if (!r.ok) throw new Error(String(r.status));
-      } catch {
-        applyPin(trip.id, previous);
-        showToast("error", COPY.pinFailed);
-      } finally {
-        setPinBusyId(null);
-      }
-    },
-    [applyPin],
-  );
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content">
@@ -971,17 +858,6 @@ export function HomeScreen() {
                   </button>
                 ))}
               </div>
-              <label className="ml-auto flex items-center gap-1.5 text-xs text-content-soft">
-                {COPY.sortLabel}
-                <select
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value as SortKey)}
-                  className="rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-content"
-                >
-                  <option value="date">{COPY.sortByDate}</option>
-                  <option value="name">{COPY.sortByName}</option>
-                </select>
-              </label>
             </div>
 
             {visibleTrips.length === 0 ? (
@@ -1017,8 +893,6 @@ export function HomeScreen() {
                   <TripCard
                     key={trip.id}
                     trip={trip}
-                    busy={pinBusyId === trip.id}
-                    onTogglePin={(t) => void togglePin(t)}
                     viewerName={user.status === "ready" ? user.displayName ?? null : null}
                   />
                 ))}
