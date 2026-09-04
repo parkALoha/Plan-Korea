@@ -6,6 +6,7 @@ import { CardBadge, CoverCard } from "@/components/CoverCard";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
 import type { CityOption } from "@/components/TripDestinationPicker";
+import { AccountMenu } from "@/components/AccountMenu";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
 import { SiteNav } from "@/components/SiteNav";
@@ -914,12 +915,17 @@ export function HomeScreen() {
                 {COPY.login}
               </Link>
             ) : user.status === "ready" ? (
-              /* avatar เป็น *ทางไปบัญชี* ไม่ใช่ป้ายชื่อ — จึงอยู่คู่กับ ⚙️ และเล็กลง */
-              <Link href="/account" aria-label={COPY.account} className="rounded-full">
-                <InitialAvatar name={user.displayName ?? "?"} className="h-9 w-9 text-sm" />
-              </Link>
+              /**
+               * 🔴 **จอ `lg` ขึ้นไปเท่านั้น** — ต่ำกว่านั้น `SiteNav` มีปุ่ม "บัญชี" อยู่ที่ล่างจอแล้ว
+               * (ผู้ใช้สั่งเอง 5 ก.ย. 2026 · เหตุผลเต็มอยู่ที่ `components/AccountMenu.tsx`)
+               * ⚠️ `hidden lg:block` ต้องคู่กับ `lg:hidden` ของ `SiteNav` เสมอ — **ย้ายอันเดียวจะได้
+               *    ช่วงจอที่ไม่มีทางเข้าหน้าบัญชีเลย หรือมีสองทางพร้อมกัน** และไม่มีอะไรฟ้อง
+               */
+              <div className="hidden lg:block">
+                <AccountMenu displayName={user.displayName ?? "?"} />
+              </div>
             ) : (
-              <span className="h-9 w-9" aria-hidden />
+              <span className="hidden h-9 w-9 lg:block" aria-hidden />
             )}
           </div>
         </div>

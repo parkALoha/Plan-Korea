@@ -145,7 +145,10 @@ export default async function AccountPage() {
         className="relative inline-flex items-center gap-1.5 rounded-pill border border-action-outline bg-surface-raised px-3 py-1.5 text-sm font-medium text-content transition-colors before:absolute before:-inset-[7px] before:content-[''] hover:border-pine hover:text-pine"
       >
         <span aria-hidden>←</span>
-        ทริปของฉัน
+        {/* 🔴 *"กลับหน้าหลัก"* ไม่ใช่ *"ทริปของฉัน"* (ผู้ใช้สั่งเอง 5 ก.ย. 2026)
+            หน้าแรกไม่ได้มีแค่รายการทริปแล้ว — มี "ไปไหนดี?" และ (เมื่อมีแผน) "ทริปแนะนำ" ด้วย
+            🎯 ***ปุ่มย้อนกลับควรบอก *ที่ที่จะไป* ไม่ใช่ *ส่วนหนึ่งของสิ่งที่อยู่ที่นั่น*** */}
+        กลับหน้าหลัก
       </Link>
       <div className="mt-3 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold">บัญชีของฉัน</h1>
