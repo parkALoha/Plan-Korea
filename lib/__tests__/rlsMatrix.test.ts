@@ -1401,6 +1401,78 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       ).toBe((before ?? []).length);
     });
 
+    /**
+     * 🔴 **`trip_days_no_orphan_stops` ยิงเฉพาะการลบ *ตรง ๆ* — cascade จาก `trips` ไม่ยิง**
+     * เจ้าของ: P4 (อ่านเจอ) · P1 (วัดในสนามซ้อม) · **เคสนี้ปิดช่องที่สนามซ้อมปิดไม่ได้: ยิงบน engine-dev จริง**
+     *
+     * ```
+     * 20260825140656:186-189
+     *   before delete on public.trip_days
+     *   for each row **when (pg_trigger_depth() = 0)**      ← ยิงเฉพาะตอนมีคนสั่งลบ trip_days เอง
+     * ```
+     * 🎯 ***ด่านเดียวกัน ยิงหรือไม่ยิง ขึ้นกับว่าใครเป็นคนเริ่มการลบ — และไม่มีอะไรในชื่อมันบอก***
+     * · 🔴 **และข้อความของ trigger เองพูดถึง cascade** (*"cascade จะลบทิ้งเงียบ ๆ"*)
+     *   ⇒ มันรู้จักเส้นทางนั้น **แล้วเลือกไม่กันมันโดยตั้งใจ** · คนอ่านข้อความนั้นจะเข้าใจตรงข้ามได้ง่ายมาก
+     *
+     * ## ⚠️ ทำไมเคสนี้ต้องมี **ทั้งสองครึ่ง**
+     * ครึ่ง ② อย่างเดียว (*"ลบทริปแล้วจุดแวะหาย"*) **เขียวได้เท่ากันถ้า trigger ไม่มีอยู่เลย**
+     * ⇒ ครึ่ง ① พิสูจน์ว่า trigger **มีชีวิตอยู่จริงในฐานนี้ ณ รอบนี้** แล้วครึ่ง ② ถึงมีความหมาย
+     * · 📌 P1 ลบ `__probe_grant__` (0 จุดแวะ) แล้วเกือบนับ *"ผ่าน"* เป็นหลักฐานว่าคำทำนายเขาถูก —
+     *   **เคสที่ไม่มีจุดแวะ แยกสองสมมติฐานไม่ออกตามนิยาม**
+     *
+     * ## 🔴 สิ่งที่เคสนี้ตรึงไว้ และทำไมมันจะถูกใช้เร็ว ๆ นี้
+     * ***ไม่มีอะไรที่ชั้นฐานกันการลบทริปที่มีจุดแวะเลย*** ⇒ route ลบทริป (ยังไม่มี) **ต้องกันเองทั้งหมด**
+     * · วันที่มีคนถอด `when (pg_trigger_depth() = 0)` ออก เคสนี้จะแดง — **และนั่นคือสิ่งที่ควรเกิด**
+     *   เพราะ route ที่ถูกออกแบบบนสมมติฐาน *"ฐานไม่กัน"* จะเริ่มได้ `P0001` ที่ไม่เคยเจอ
+     */
+    it("🔴 cascade จาก `delete from trips` **ไม่ยิง** trigger — ต่างจากการลบวันตรง ๆ", async () => {
+      const { data: t, error: tErr } = await A.rpc("create_trip", {
+        p_title: `cascade-${stamp}`, p_start_date: "2026-10-11", p_end_date: "2026-10-12",
+      });
+      if (tErr) throw new Error(`สร้างทริปของเคส cascade: ${tErr.message}`);
+      const tripC = (t as { id: string }).id;
+
+      const plan = await A.from("trip_plans").select("id").eq("trip_id", tripC).limit(1).single();
+      if (plan.error) throw new Error(`อ่านแผน: ${plan.error.message}`);
+      const day = await A.from("trip_days").select("id").eq("trip_id", tripC).order("date").limit(1).single();
+      if (day.error) throw new Error(`อ่านวัน: ${day.error.message}`);
+
+      const stop = await A.from("trip_stops")
+        .insert({ trip_id: tripC, plan_id: plan.data.id, trip_day_id: day.data.id, kind: "hotel", rank: "a" })
+        .select("id").single();
+      if (stop.error) throw new Error(`สร้างจุดแวะ: ${stop.error.message}`);
+      const stopId = stop.data.id as string;
+
+      const stopRows = async () => {
+        const { data, error } = await admin.from("trip_stops").select("id").eq("id", stopId);
+        if (error) throw new Error(`admin อ่าน trip_stops: ${error.message}`);
+        return (data ?? []).length;
+      };
+      expect(await stopRows(), "setup: จุดแวะไม่ได้ถูกสร้าง").toBe(1);
+
+      // ── ① คู่ควบคุม: ลบ **วัน** ตรง ๆ → trigger ต้องยิง · ไม่มีข้อนี้ ครึ่ง ② ไม่ได้พิสูจน์อะไร
+      const direct = await A.from("trip_days").delete().eq("id", day.data.id);
+      expect(
+        direct.error?.message ?? "",
+        "ลบวันที่มีจุดแวะตรง ๆ แล้วผ่าน = trigger ไม่มีชีวิตในฐานนี้\n" +
+          "  ⇒ ครึ่ง ② ข้างล่างจะเขียวโดยไม่ได้พิสูจน์เรื่อง `pg_trigger_depth` เลย",
+      ).toContain("จุดแวะ");
+      expect(await stopRows(), "trigger แดงแล้วแต่จุดแวะหาย").toBe(1);
+
+      // ── ② ลบ **ทริป** → cascade ⇒ depth ≥ 1 ⇒ trigger ไม่ยิง ⇒ ผ่าน และกวาดจุดแวะทิ้ง
+      const del = await admin.from("trips").delete().eq("id", tripC);
+      expect(
+        del.error,
+        `ลบทริปที่มีจุดแวะไม่ได้: ${del.error?.message}\n` +
+          "  🔴 ถ้าเป็น P0001 = มีคนถอด `when (pg_trigger_depth() = 0)` ออก ⇒ cascade ถูกกันแล้ว\n" +
+          "     **ดีขึ้น** — แต่ route ที่ออกแบบบนสมมติฐาน 'ฐานไม่กัน' จะเริ่มได้ error ที่ไม่เคยเจอ",
+      ).toBeNull();
+      expect(
+        await stopRows(),
+        "ลบทริปสำเร็จแต่จุดแวะยังอยู่ = cascade ไม่ทำงาน (แถวกำพร้า)",
+      ).toBe(0);
+    });
+
     it("🔴 anon ลบวันไม่ได้ — กันที่ชั้นสิทธิ์ ก่อนถึง policy", async () => {
       const id = await mkDay(A, "2026-11-05");
       await D.from("trip_days").delete().eq("id", id);
