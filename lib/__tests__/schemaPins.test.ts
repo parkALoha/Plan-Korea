@@ -1490,7 +1490,7 @@ describe("🔴 E5 — ตัวเขียนใน `lib/engine/db.ts` ต้�
     //    🎯 ***ด่านนี้ใช้ `.eq("trip_id")` เป็น *ตัวแทน* ของ "ผูกกับทริปใน URL" — สำหรับ `insert`
     //       ตัวแทนตัวนั้นวัดไม่ได้ ไม่ใช่ว่าของจริงไม่มี***
     "insertTripDays", "insertTripDestinations2",
-    // 🔴 **`updateTripDates` ย้ายออกไป `WRITES_TRIPS_TABLE` แล้ว (P4 เสนอ · P1 รับ · 4 ก.ย. 2026)**
+    // 🔴 **`updateTripDates` ย้ายออกไป `WRITES_ROOT_TABLE` แล้ว (P4 เสนอ · P1 รับ · 4 ก.ย. 2026)**
     //    เหตุผลเดิมของ P1 ถูก **แต่วางผิดทะเบียน** และเขาเขียนสัญญาณนั้นไว้เอง (*"ตัวเดียวในลิสต์ที่เป็นแบบนี้"*)
     //    ```
     //    สมาชิกที่เหลือทุกตัว  แตะ **ตารางลูก** ที่ *มี* `trip_id` แล้วเลือกไม่ผูก   → ยกเว้นแล้ว **ลดได้**
@@ -1512,7 +1512,15 @@ describe("🔴 E5 — ตัวเขียนใน `lib/engine/db.ts` ต้�
    * ⇒ เคสข้างล่างบังคับเงื่อนไขนั้นจริง · ต่างจากตอนอยู่ใน `KNOWN_UNSCOPED` ที่ **ไม่มีอะไรตรวจมันเลย**
    *   นอกจากคอมเมนต์ที่บรรยายสภาพของโค้ดอีกที่หนึ่ง (รูปที่ `§3.4` บอกว่าหมดอายุโดยไม่มีใครแตะ)
    */
-  const WRITES_TRIPS_TABLE = new Set(["updateTripDates"]);
+  const WRITES_ROOT_TABLE = new Map<string, string>([
+    ["updateTripDates", "trips"],
+    // 🔴 เพิ่ม 4 ก.ย. 2026 (P1) — `profiles` ก็ไม่มีคอลัมน์ `trip_id` ด้วยเหตุผลเดียวกัน
+    //    ตัวผูกคือ `.eq("id", userId)` โดย `userId` มาจาก **session ฝั่งเซิร์ฟเวอร์** ไม่ใช่จาก body
+    //    ⇒ ผ่านเงื่อนไข ③ ด้วยการผูกที่ *แข็งกว่า* `tripId` จาก URL เสียอีก
+    //    ⚠️ **แต่เงื่อนไข ③ วัดได้แค่ว่า "เป็นพารามิเตอร์" — มันไม่รู้ว่าพารามิเตอร์นั้นมาจากไหน**
+    //       ⇒ วันที่มีคนส่ง `body.userId` เข้ามาแทน `user.id` ด่านนี้จะยังเขียว · **ตัวที่กันคือ route**
+    ["updateDisplayName", "profiles"],
+  ]);
 
   /**
    * แกะตัวผูกแถวออกจากเนื้อฟังก์ชัน — คืน *ตัวแปรที่ใช้ใน `.eq("id", …)`* กับ *รายชื่อพารามิเตอร์*
@@ -1563,7 +1571,7 @@ describe("🔴 E5 — ตัวเขียนใน `lib/engine/db.ts` ต้�
     expect(writers.size, "หาตัวเขียนใน db.ts ไม่เจอเลย = ตัวสกัดพัง ไม่ใช่ด่านผ่าน").toBeGreaterThan(10);
 
     const offenders = [...writers]
-      .filter(([n, scoped]) => !scoped && !KNOWN_UNSCOPED.has(n) && !WRITES_TRIPS_TABLE.has(n))
+      .filter(([n, scoped]) => !scoped && !KNOWN_UNSCOPED.has(n) && !WRITES_ROOT_TABLE.has(n))
       .map(([n]) => n);
     expect(
       offenders.sort(),
@@ -1584,27 +1592,38 @@ describe("🔴 E5 — ตัวเขียนใน `lib/engine/db.ts` ต้�
   });
 
   /**
-   * 🔴 **`WRITES_TRIPS_TABLE` ต้องบังคับคุณสมบัติจริง ไม่ใช่แค่เป็นรายชื่อที่ถูกยกเว้น**
+   * 🔴 **`WRITES_ROOT_TABLE` ต้องบังคับคุณสมบัติจริง ไม่ใช่แค่เป็นรายชื่อที่ถูกยกเว้น**
    * สามเงื่อนไข · **ผิดได้ทั้งสามทาง** — ถ้าไม่มีข้อไหนเลย ทะเบียนนี้ก็คือ `KNOWN_UNSCOPED` ที่เปลี่ยนชื่อ
    */
-  it("🔴 ทะเบียน WRITES_TRIPS_TABLE — ต้องแตะ `trips` จริง และผูกแถวด้วย id จาก *พารามิเตอร์*", () => {
+  it("🔴 ทะเบียน WRITES_ROOT_TABLE — ตารางต้องไม่มี `trip_id` จริง และผูกแถวด้วย id จาก *พารามิเตอร์*", () => {
     const bodies = dalWriterBodies();
     // ควบคุมฝั่งบวก — ตัวสกัดพังต้องไม่กลายเป็น "ผ่านหมด"
     expect(bodies.size, "หาตัวเขียนใน db.ts ไม่เจอเลย = ตัวสกัดพัง ไม่ใช่ด่านผ่าน").toBeGreaterThan(10);
+    const types = readFileSync(new URL("../engine/database.types.ts", import.meta.url), "utf8");
 
-    for (const name of WRITES_TRIPS_TABLE) {
+    for (const [name, table] of WRITES_ROOT_TABLE) {
       const body = bodies.get(name);
       // ① ชื่อที่ตายแล้วต้องหลุดออก — เหมือนครึ่ง `gone` ของทะเบียนข้างบน
-      expect(body, `'${name}' ไม่ใช่ตัวเขียนใน db.ts แล้ว — ลบออกจาก WRITES_TRIPS_TABLE`).toBeTruthy();
+      expect(body, `'${name}' ไม่ใช่ตัวเขียนใน db.ts แล้ว — ลบออกจาก WRITES_ROOT_TABLE`).toBeTruthy();
       if (!body) continue;
 
-      // ② ต้องแตะตาราง `trips` จริง — ไม่ใช่ถูกยกเว้นเพราะชื่อฟังก์ชันฟังดูเกี่ยวกับทริป
+      // ② ต้องแตะ *ตารางที่ทะเบียนอ้าง* จริง — ไม่ใช่ถูกยกเว้นเพราะชื่อฟังก์ชันฟังดูเข้าพวก
       //    (`§3.4`: ห้ามจัดสมาชิกออกจากหมวดด้วย *ชื่อ* — ชื่อบอกว่าตั้งใจทำอะไร ไม่ได้บอกว่าแตะอะไร)
       expect(
-        /engineTable\(\s*db\s*,\s*["'`]trips["'`]\s*\)/.test(body),
-        `'${name}' ไม่ได้แตะตาราง 'trips' — ถ้ามันแตะตารางลูก มันต้องมี \`.eq("trip_id")\` ตามด่านหลัก\n` +
-          "  ทะเบียนนี้มีไว้สำหรับตารางที่ **ไม่มีคอลัมน์ `trip_id`** เท่านั้น",
+        new RegExp(`engineTable\\(\\s*db\\s*,\\s*["\'\`]${table}["\'\`]\\s*\\)`).test(body),
+        `'${name}' ไม่ได้แตะตาราง '${table}' ตามที่ขึ้นทะเบียนไว้`,
       ).toBe(true);
+
+      // ②ก 🔴 **เงื่อนไขที่ทำให้ทะเบียนนี้ไม่ใช่ `KNOWN_UNSCOPED` ที่เปลี่ยนชื่อ**
+      //     ตารางนั้นต้อง **ไม่มีคอลัมน์ `trip_id` จริง ๆ** — พิสูจน์จาก `database.types.ts`
+      //     ซึ่ง gen มาจากฐานจริง ⇒ **ไม่ใช่คำกล่าวอ้างของคนเขียนทะเบียน**
+      //     🎯 ***ฉบับก่อนหน้าฮาร์ดโค้ดคำว่า `trips` ⇒ เงื่อนไขนี้เป็นจริงโดยการเลือกคำ ไม่ใช่โดยการวัด***
+      const row = new RegExp(`\\n      ${table}: \\{\\n        Row: \\{\\n([\\s\\S]*?)\\n        \\}`).exec(types);
+      expect(row, `อ่านคอลัมน์ของ '${table}' จาก database.types.ts ไม่ออก = ตัวตรวจพัง`).toBeTruthy();
+      expect(
+        /^\s*trip_id\s*[?:]/m.test(row![1]),
+        `'${table}' **มี** คอลัมน์ trip_id ⇒ ต้องใช้ \`.eq("trip_id", …)\` ตามด่านหลัก ไม่ใช่มาอยู่ทะเบียนนี้`,
+      ).toBe(false);
 
       // ③ 🔴 หัวใจ: แถวถูกเลือกด้วย `.eq("id", X)` โดย **`X` ต้องเป็นพารามิเตอร์ของฟังก์ชัน**
       //    ไม่ใช่ค่าที่แกะจาก body ของคำขอ — *ที่มาของค่า* คือสิ่งที่ทำให้มันปลอดภัย ไม่ใช่ตัวฟังก์ชัน
@@ -1653,7 +1672,7 @@ describe("🔴 E5 — ตัวเขียนใน `lib/engine/db.ts` ต้�
    * แล้ว *ทั้งสองใบจะเชื่อว่าอีกใบเป็นคนตรวจ* ⇒ ไม่มีใครตรวจเลย
    */
   it("ทะเบียนยกเว้นสองใบต้องไม่มีชื่อซ้ำกัน", () => {
-    const both = [...WRITES_TRIPS_TABLE].filter((n) => KNOWN_UNSCOPED.has(n));
+    const both = [...WRITES_ROOT_TABLE.keys()].filter((n) => KNOWN_UNSCOPED.has(n));
     expect(both.sort(), `ชื่อพวกนี้อยู่ทั้งสองทะเบียน — เลือกใบเดียว: ${both.join(", ")}`).toEqual([]);
   });
 });
