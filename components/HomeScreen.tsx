@@ -229,10 +229,13 @@ function TripCard({
   trip,
   busy,
   onTogglePin,
+  viewerName,
 }: {
   trip: TripListItem;
   busy: boolean;
   onTogglePin: (trip: TripListItem) => void;
+  /** ชื่อผู้ใช้ที่ล็อกอินอยู่ — `null` ตอนยังอ่านไม่เสร็จ · ใช้วาดวงกลมของ *เขาเอง* เท่านั้น */
+  viewerName: string | null;
 }) {
   const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
@@ -268,15 +271,34 @@ function TripCard({
       >
         {destinationLabel ? `📍 ${destinationLabel}` : "\u00a0"}
       </p>
-      <p className="mt-1.5 text-xs text-content-soft">
+      {/**
+       * 🔴 **แถวสมาชิกเป็น *รูปโปรไฟล์* แบบเดียวกับบัญชีบนแถบหัว ไม่ใช่อีโมจิ 👥** (ผู้ใช้สั่งเอง 4 ก.ย. 2026)
+       * ⇒ ใช้ `InitialAvatar` ตัวเดียวกับที่แถบหัวใช้ · **คอมโพเนนต์เดียวกัน ไม่ใช่หน้าตาคล้ายกัน**
+       *   (รูปเดียวกับที่เขาสั่งเรื่องการ์ด: *"รูปแบบ มันควรใช้ component เดียวกับพวกนี้นะ"*)
+       *
+       * ## 🔴 รูปที่ขึ้นคือ **ของผู้ใช้เอง** — และนั่นเป็นข้อเท็จจริง ไม่ใช่ตัวยืน
+       * `GET /api/engine/trips` คืนแต่ `memberCount` (ตัวเลข) **ไม่มีชื่อสมาชิกคนอื่นเลย**
+       * ⇒ วาดวงกลมให้ครบจำนวนโดยเดาตัวอักษร = **สร้างคนที่ไม่มีอยู่** · เราจึงวาดเฉพาะคนที่เรารู้จริง
+       * · ผู้ใช้เป็นสมาชิกของทุกใบในรายการนี้เสมอ (ไม่งั้นมันจะไม่อยู่ในรายการ) ⇒ รูปนี้ถูกเสมอ
+       * · ที่เหลือบอกเป็น `+n` ซึ่งเป็น **จำนวน ไม่ใช่ตัวตน** — พูดเท่าที่รู้
+       * 🎯 ***`+2` อ่านว่า "อีกสองคน" · วงกลมสองวงที่เดาตัวอักษรมา อ่านว่า "สองคนนี้" — อย่างหลังเป็นคำโกหก***
+       * 📌 ขอ P1 เพิ่มชื่อย่อสมาชิกใน route แล้ว · วันที่มันมา ที่นี่จะวาดคนจริงได้ครบ
+       *
+       * ⚠️ **`memberCount === 0` = อ่านไม่ได้ ไม่ใช่ไม่มีคน** — คงรูปเดิม (`?` สีเตือน) ไว้
+       *    ทริปทุกใบมีเจ้าของอย่างน้อยหนึ่งคนเสมอ ⇒ `0` เป็นค่าที่เป็นไปไม่ได้ แปลว่าอ่าน `trip_members` ไม่สำเร็จ
+       */}
+      <div className="mt-1.5 flex items-center gap-1.5 text-xs text-content-soft">
         {trip.memberCount > 0 ? (
-          <>👥 {trip.memberCount}</>
+          <>
+            <InitialAvatar name={viewerName ?? "?"} className="h-6 w-6 text-2xs" />
+            {trip.memberCount > 1 && <span>+{trip.memberCount - 1}</span>}
+          </>
         ) : (
           <span className="text-maple-dark" title={COPY.memberCountUnknown}>
             👥 ?
           </span>
         )}
-      </p>
+      </div>
     </CoverCard>
       <PinButton
         pinned={Boolean(trip.pinnedAt)}
@@ -655,6 +677,70 @@ export function HomeScreen() {
             </span>
           </Link>
 
+          {/**
+           * 🔴 **ช่องค้นหาอยู่ *แถวเดียวกับชื่อเว็บ*** (ผู้ใช้สั่งเอง 4 ก.ย. 2026 · ย้ายจากแถวที่สอง)
+           *
+           * ⚠️ **ฉบับก่อนหน้าแยกเป็นแถวที่สองโดยตั้งใจ** ด้วยเหตุผลว่าที่ 375px จะเหลือที่ไม่พอสำหรับ
+           * ชื่อ+ค้นหา+ปุ่มบัญชีพร้อมกัน — **ผู้ใช้เห็นแล้วและสั่งย้าย · ข้อนั้นตายแล้ว**
+           * ✅ ที่ทำให้มันอยู่ได้จริงคือ **ให้ทั้งสามอย่างยอมหดคนละแบบ ไม่ใช่แย่งที่กันแบบตายตัว**
+           * ```
+           * ชื่อเว็บ    min-w-0 + truncate   ยอมถูกตัดท้าย (ชื่อไทยหายก่อน ชื่อหลักอยู่)
+           * ค้นหา      flex-1 + min-w-0     กินที่ที่เหลือ · `max-w-md` กันไม่ให้ยืดยาวบนจอ 27"
+           * ปุ่มบัญชี   shrink-0             **ไม่ยอมหด** — เป็นทางออกจากหน้านี้ กดพลาดไม่ได้
+           * ```
+           * · ขึ้นเฉพาะตอน**มีทริปให้ค้น** — ช่องค้นหาบนหน้าที่ไม่มีอะไรให้ค้น คือช่องที่พิมพ์แล้วไม่มีอะไรเกิดขึ้น
+           *   🎯 และตอนไม่มีทริป **ชื่อเว็บจะได้ที่คืนทั้งแถบ** ⇒ ผู้ใช้ใหม่เห็นชื่อเต็มไม่ถูกตัด
+           *
+           * 🔴 **รูปช่องค้นหาตามภาพที่ผู้ใช้ส่งมา** (4 ก.ย. 2026): พื้นสว่าง · ขอบมน ·
+           * **ปุ่มแว่นขยายเป็นบล็อกสีทึบชิดขวา** — ไม่ใช่ไอคอนจาง ๆ ลอยอยู่ข้างใน
+           *
+           * ## 🔴 ใช้ `<label>` ไม่ใช่ `<button>` — และความต่างนี้ไม่ใช่เรื่องเทคนิค
+           * การกรองเป็นแบบ **สดตามที่พิมพ์** ⇒ ไม่มี "การค้นหา" ให้กดสั่ง
+           * ⇒ ทำเป็น `<button>` จะได้ปุ่มที่ **กดแล้วไม่มีอะไรเกิดขึ้น** ซึ่งเป็นข้อที่เพิ่งแก้ไปที่การ์ดทริปแนะนำ
+           * ✅ `<label htmlFor>` ทำให้กดตรงบล็อกสีแล้ว **เคอร์เซอร์ไปอยู่ในช่อง** — เป็นสิ่งที่คนคาดหวังจริง
+           *    และเป็นพฤติกรรมมาตรฐานของเบราว์เซอร์ **ไม่ต้องเขียน `onClick` เลยสักบรรทัด**
+           *
+           * ⚠️ **สีบล็อกใช้ `maple-dark` ไม่ใช่น้ำเงินตามภาพ** — ภาพเป็นเว็บอื่น · น้ำเงินไม่มีในชุดสีเรา
+           *    และวางบนแถบเขียวจะกลายเป็นสีที่สามที่ไม่เกี่ยวกับอะไรเลย · `maple-dark`/ขาว = **4.98 ผ่าน AA**
+           */}
+          {trips !== null && trips.length > 0 && (
+            <label
+              htmlFor="home-trip-search"
+              className="group flex min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 transition focus-within:ring-2 focus-within:ring-cream sm:max-w-md"
+            >
+              <input
+                id="home-trip-search"
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={COPY.searchPlaceholder}
+                aria-label={COPY.searchPlaceholder}
+                className="min-w-0 flex-1 bg-transparent py-2 pl-3.5 pr-2 text-sm text-content outline-none placeholder:text-content-soft"
+              />
+              {/**
+               * 🔴 **แว่นขยายเป็น SVG ไม่ใช่อีโมจิ `🔍`** (ผู้ใช้สั่งเอง 4 ก.ย. 2026)
+               * อีโมจิ **มีสีของตัวเอง ระบบปฏิบัติการเป็นคนวาด** ⇒ วางบนบล็อกสีแล้วได้แก้วแก้มฟ้า
+               * ที่ไม่เกี่ยวกับชุดสีเรา · และ**หน้าตาต่างกันทุกเครื่อง** (macOS · Windows · Android คนละรูป)
+               * ⇒ `stroke="currentColor"` ทำให้มันเป็น *สีของข้อความ* ⇒ **ตามธีมและตามพื้นหลังเสมอ**
+               * · `strokeWidth 2.2` + `strokeLinecap round` ให้น้ำหนักใกล้เคียงตัวอักษรหนาข้าง ๆ
+               */}
+              <span className="mr-1 flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-maple-dark text-white transition group-focus-within:bg-maple">
+                <svg
+                  aria-hidden
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  className="h-4 w-4"
+                >
+                  <circle cx="11" cy="11" r="6.5" />
+                  <path d="m16 16 4.5 4.5" />
+                </svg>
+              </span>
+            </label>
+          )}
+
           <div className="flex shrink-0 items-center gap-2">
             {user.status === "anon" ? (
               <Link
@@ -681,32 +767,6 @@ export function HomeScreen() {
           </div>
         </div>
 
-        {/**
-         * 🔴 **ช่องค้นหาอยู่ในแถบหัวตามที่ผู้ใช้ขอ — แต่เป็น *แถวที่สอง* ไม่ใช่แทรกในแถวแรก**
-         * แถวแรกมีชื่อเว็บ + ปุ่มบัญชี · ยัดช่องค้นหาเข้าไปด้วยบนจอ 375px จะเหลือที่ให้ทั้งสามอย่าง
-         * ไม่พอ แล้วชื่อเว็บจะถูกบีบจนหาย ซึ่งเป็นสิ่งที่ใบก่อนหน้าเพิ่งเอากลับมา
-         * · ขึ้นเฉพาะตอน**มีทริปให้ค้น** — ช่องค้นหาบนหน้าที่ไม่มีอะไรให้ค้น คือปุ่มที่กดแล้วไม่มีอะไรเกิดขึ้น
-         */}
-        {trips !== null && trips.length > 0 && (
-          <div className="mx-auto max-w-[110rem] px-4 pb-3">
-            {/* 🔴 ช่องค้นหา **ไม่ยืดตาม container** — บนจอ 27" มันจะกลายเป็นแถบยาว 1700px
-                ซึ่งไม่ได้ช่วยอะไร (คำค้นยาวไม่กี่ตัวอักษร) และดูเหมือนแถบตกแต่ง ไม่ใช่ช่องกรอก
-                🎯 *container กว้างเพื่อให้ **การ์ด** มีที่ ไม่ใช่เพื่อให้ทุกอย่างยืดตาม* */}
-            <div className="relative max-w-xl">
-              <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm">
-                🔍
-              </span>
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={COPY.searchPlaceholder}
-                aria-label={COPY.searchPlaceholder}
-                className="w-full rounded-xl bg-cream/15 py-2 pl-9 pr-3 text-sm text-cream placeholder:text-cream/60"
-              />
-            </div>
-          </div>
-        )}
       </header>
 
       <div className="mx-auto max-w-[110rem] px-4 pt-5">
@@ -853,6 +913,7 @@ export function HomeScreen() {
                     trip={trip}
                     busy={pinBusyId === trip.id}
                     onTogglePin={(t) => void togglePin(t)}
+                    viewerName={user.status === "ready" ? user.displayName ?? null : null}
                   />
                 ))}
               </div>
