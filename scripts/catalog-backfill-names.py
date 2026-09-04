@@ -29,6 +29,12 @@ en  3rd Sister Dumplings · Adam Food Centre · AIRSIDE · A Dong Silk
     --apply          เขียนลง catalog_place_names
     --limit N        ทำแค่ N แห่งแรก (ใช้ตรวจก่อนยิงเต็ม)
     --country NAME   จำกัดประเทศ (`catalog_countries.name_en`)
+    --from-json F    ข้ามเฟสยิง Google · เขียนจากผลที่เก็บไว้แล้ว
+
+## 🔴 ทำไมแยกสองเฟส (ยิง Google ↔ เขียนฐาน)
+เฟสยิงแพงและใช้เวลา (~2,194 ใบ · ~8 นาที) · เฟสเขียนถูกและ **ต้องรอ ack ตาม `TEAM.md §3.3`**
+รวมสองเฟสไว้ในคำสั่งเดียว = **รอคิวฐานทีไร ก็จ่ายค่า Google ใหม่ทุกที**
+🎯 ***ของที่แพงไม่ควรผูกชะตากับของที่ต้องรอคน***
 
 🔴 `--apply` **แตะฐาน dev** — ต้องประกาศและได้ ack ก่อน (`TEAM.md §3.3`)
 🔴 ต้องมี `GOOGLE_MAPS_API_KEY` — `set -a && . .env.local && set +a`
@@ -92,7 +98,18 @@ def main():
     apply_ = "--apply" in a
     limit = int(a[a.index("--limit") + 1]) if "--limit" in a else 0
     country = a[a.index("--country") + 1] if "--country" in a else None
+    from_json = a[a.index("--from-json") + 1] if "--from-json" in a else None
     lang = a[a.index("--lang") + 1] if "--lang" in a else "th"
+
+    if from_json:
+        got = json.load(open(from_json))
+        h = collections.Counter(g["locale"] for g in got)
+        print(f"  อ่านจาก {from_json}: {len(got)} แถว · locale: "
+              + " · ".join(f"{k}={v}" for k, v in h.most_common()))
+        if not apply_:
+            print("\n  🔴 โหมด --dry — **ไม่ได้เขียนฐานเลย** · เติม --apply เพื่อเขียนจริง")
+            return 0
+        return write_names(got)
 
     key = os.environ.get("GOOGLE_MAPS_API_KEY")
     if not key:
