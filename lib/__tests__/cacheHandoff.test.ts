@@ -148,6 +148,29 @@ describe("🔴 E6-AC7 — สะพานสองที่เก็บ", () => 
     expect(noted.calls[0]).toBe("offlineStore/hotels/write");
   });
 
+  /**
+   * 🔴 **สมมติฐานที่ไฟล์นี้ทั้งใบตั้งอยู่บนมัน และไม่เคยถูกตรึง** (P3 ไปเทียบให้ 4 ก.ย. 2026)
+   *
+   * สะพานหาฝาแฝดเจอ **ก็ต่อเมื่อคีย์ของสองที่เก็บเป็นสตริงเดียวกันเป๊ะ**
+   * · `tripCacheKey` อยู่ `lib/localCache.ts` (P1 ถือ) · `tripKey` อยู่ `lib/engine/offlineStore.ts` (P7 ถือ)
+   * 🎯 **คนละไฟล์ คนละเจ้าของ ไม่มีอะไรผูกกัน — ใครแก้ข้างเดียวได้ทุกเมื่อ และไม่มีอะไรส่งเสียง**
+   * ⇒ ผู้ใช้ทุกคน **เสียแคชตอนอัปเกรดแบบเงียบ ๆ** · ทุกเคสข้างบนยังเขียวหมด เพราะมันป้อนคีย์เอง
+   * · ⚠️ **นี่คือรูป `TEAM.md §3.4` เป๊ะ** — ข้อเท็จจริงที่ถูกเก็บคนละที่กับสิ่งที่ทำให้มันจริง
+   *   · P3 เทียบด้วยตาแล้วบอกว่าตรง **ซึ่งจริงวันนี้ และเป็นเหตุผลที่ต้องมีเคส ไม่ใช่เหตุผลที่ไม่ต้องมี**
+   */
+  it("⑨ 🔴 คีย์ของสองที่เก็บต้องเป็นสตริงเดียวกัน — ไม่งั้นสะพานหาฝาแฝดไม่เจอ และเงียบ", async () => {
+    const { tripCacheKey } = await import("@/lib/localCache");
+    const { tripKey } = await import("@/lib/engine/offlineStore");
+    expect(
+      tripKey("t1", "hotels"),
+      "`tripKey` (IndexedDB) กับ `tripCacheKey` (localStorage) ต่างกัน = `readHandoff` หาฝาแฝดไม่เจอ\n" +
+        "  → ผู้ใช้ที่อัปเกรดเสียแคชทั้งหมดเงียบ ๆ · **แก้ให้ตรงกัน อย่าแก้เคสนี้**"
+    ).toBe(tripCacheKey("t1", "hotels"));
+    // เคสควบคุม: ตัวเทียบต้องแยกของที่ต่างกันได้จริง ไม่ใช่ `toBe` ที่ผ่านเพราะทั้งคู่เป็น `undefined`
+    expect(tripKey("t1", "hotels")).not.toBe(tripKey("t2", "hotels"));
+    expect(tripKey("t1", "hotels")).toContain("t1");
+  });
+
   it("⑧ เคสควบคุมฝั่งลบ: เขียนสำเร็จต้อง **ไม่** ตะโกน", async () => {
     const { writeHandoffNoisily } = await import("@/lib/engine/cacheHandoff");
     writeHandoffNoisily(KEY, ["ใหม่"], "hotels");
