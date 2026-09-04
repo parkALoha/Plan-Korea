@@ -36,6 +36,7 @@ import { ImmigrationSheet, formatDateEn } from "@/components/ImmigrationSheet";
 import { LayoverBadges } from "@/components/LayoverBadges";
 import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { PlaceDetailModal } from "@/components/PlaceDetailModal";
+import { RowIconBox, TripListRow } from "@/components/TripListRow";
 import { PlaceThumb } from "@/components/PlaceThumb";
 import { isImageAttachment } from "@/lib/url";
 import { useHotels } from "@/hooks/useHotels";
@@ -189,71 +190,47 @@ function SummaryDayCard({
               // แถวเตือน/เดดไลน์ใช้คู่สี panel-maple เหมือนเดิม — ในแถวนั้นปล่อยให้สีตัวอักษรไหลลงมา
               // จากตัวแถว ไม่ทับด้วย text-content ไม่งั้นจะได้ครีมบนครีมตอนธีมมืด
               const alert = event.alert === true;
-              const body = (
-                <div className="flex w-full items-start gap-2 text-left">
-                  <div
-                    className={`w-12 shrink-0 text-center text-2xs leading-tight ${
-                      alert ? "opacity-80" : "text-content-soft"
-                    }`}
-                  >
-                    <div className={`font-semibold tabular-nums ${alert ? "" : "text-content"}`}>
-                      {event.time}
-                    </div>
-                    {event.endTime && <div className="tabular-nums">↓ {event.endTime}</div>}
-                  </div>
-                  {place ? (
-                    <PlaceThumb
-                      query={placeQueryKey(place)}
-                      category={place.category}
-                      size="md"
-                    />
-                  ) : (
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-xl">
-                      {event.icon}
-                    </span>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className={`font-semibold ${alert ? "" : "text-content"} ${
-                        place ? "hover:underline" : ""
-                      }`}
-                    >
+              return (
+                <TripListRow
+                  key={i}
+                  muted={alert}
+                  className={alert ? "bg-panel-maple/70 text-panel-maple-ink" : ""}
+                  leading={
+                    place ? (
+                      <PlaceThumb query={placeQueryKey(place)} category={place.category} size="md" />
+                    ) : (
+                      <RowIconBox size="md">{event.icon}</RowIconBox>
+                    )
+                  }
+                  time={event.time}
+                  endTime={event.endTime}
+                  onOpen={place ? () => setViewEventPlace(place) : undefined}
+                  openLabel={place ? `ดูรายละเอียด ${place.nameTh}` : undefined}
+                  title={
+                    <>
                       {place ? `${event.icon} ` : ""}
                       {(en && event.titleEn) || event.title}
-                    </div>
-                    {place && (
-                      <div className={`text-xs ${alert ? "opacity-80" : "text-content-soft"}`}>
-                        📍 {en ? placeNameEn(place, namesEn) : place.nameTh}
-                      </div>
-                    )}
-                    {/* เรทติ้ง/เวลาเปิด-ปิดจาก Google ชุดเดียวกับแถวจุดแวะ — ไม่ยิง API เพิ่ม (แคชร่วมกัน) */}
-                    {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
-                    {event.detail && !en && (
-                      <div
-                        className={`mt-0.5 text-xs leading-relaxed ${
-                          alert ? "opacity-80" : "text-content-soft"
-                        }`}
-                      >
-                        {event.detail}
-                      </div>
-                    )}
-                    {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
-                  </div>
-                </div>
-              );
-              return (
-                <div
-                  key={i}
-                  className={`px-3 py-2.5 sm:px-4 ${alert ? "bg-panel-maple/70 text-panel-maple-ink" : ""}`}
+                    </>
+                  }
+                  subtitle={place ? `📍 ${en ? placeNameEn(place, namesEn) : place.nameTh}` : undefined}
                 >
-                  {place ? (
-                    <button onClick={() => setViewEventPlace(place)} className="w-full">
-                      {body}
-                    </button>
-                  ) : (
-                    body
+                  {/* 🔴 ใช้ size="md" (48px) ไม่ใช่ 2xl (96px) เหมือนหน้าแผน โดยตั้งใจ —
+                      หน้านี้เป็นหน้า *อ่าน* และ *สั่งพิมพ์* ไม่ใช่หน้าแก้ · รูปใหญ่ขึ้นเท่าตัว
+                      จะดันเอกสารที่พิมพ์ให้ยาวขึ้นโดยไม่เพิ่มข้อมูลอะไร
+                      ⇒ เลย์เอาต์มาจาก TripListRow ชุดเดียวกัน แต่ความหนาแน่นคุมโดยที่เรียก */}
+                  {(place || (event.detail && !en) || event.layover) && (
+                    <div className="px-3 pb-2.5 sm:px-4">
+                      {/* เรทติ้ง/เวลาเปิด-ปิดจาก Google ชุดเดียวกับแถวจุดแวะ — ไม่ยิง API เพิ่ม (แคชร่วมกัน) */}
+                      {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
+                      {event.detail && !en && (
+                        <div className={`text-xs leading-relaxed ${alert ? "opacity-80" : "text-content-soft"}`}>
+                          {event.detail}
+                        </div>
+                      )}
+                      {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
+                    </div>
                   )}
-                </div>
+                </TripListRow>
               );
             })}
           </div>
@@ -301,67 +278,55 @@ function SummaryDayCard({
                     }`
                   : t("noPlaceData");
 
-          const body = (
-            <div className="flex w-full items-start gap-2 text-left">
-              <div className="w-12 shrink-0 text-center text-2xs leading-tight text-content-soft">
-                <div className="font-semibold text-content">{sched.arrival}</div>
-                <div>{sched.departure}</div>
-              </div>
-              {/* รูปตัวอย่าง: รูปที่เราอัปโหลดเองมาก่อน ไม่มีก็ใช้รูปแรกจาก Google (เฟส 22)
-                  — หน้าสรุปเดิมเป็นตัวหนังสือล้วนจนดูไม่ออกว่าแต่ละที่หน้าตาแบบไหน */}
-              {place &&
-                (stop.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset
-                  <img
-                    src={stop.photo_url}
-                    alt=""
-                    loading="lazy"
-                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
-                  />
-                ) : (
-                  <PlaceThumb
-                    query={placeQueryKey(place)}
-                    category={place.category}
-                    size="md"
-                  />
-                ))}
-              <div className="min-w-0 flex-1">
-                <div className={`font-semibold text-content ${place ? "hover:underline" : ""}`}>
-                  {title}
-                </div>
-                <div className="text-xs text-content-soft">
-                  {t("stayFor")} {sched.resolvedDwellMinutes} {t("minutes")}
-                  {stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""}
-                </div>
-                {/* เรทติ้ง/ประเภทร้านจาก Google — ข้อมูลชุดเดียวกับที่การ์ดในคลังโชว์ ไม่ต้องยิง API เพิ่ม
-                    (usePlaceDetails แคชร่วมกันทั้งแท็บ) */}
-                {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
-                {stop.note && !en && (
-                  <NoteBody
-                    note={stop.note}
-                    className="mt-1 border-l-2 border-pine-soft pl-2 text-xs text-content-soft"
-                  />
-                )}
-              </div>
-            </div>
-          );
-
           return (
-            <div key={stop.id} className="px-3 py-2.5 sm:px-4">
+            <div key={stop.id}>
+              {/* เส้นเชื่อมระหว่างแถว — โหมด/เวลาเดินทางจากจุดก่อนหน้า อยู่นอกแถวโดยตั้งใจ
+                  เพราะมันเป็นของ *ช่องว่างระหว่าง* สองจุด ไม่ใช่ของจุดใดจุดหนึ่ง */}
               {i > 0 && mode && sched.travelMinutesFromPrev != null && (
-                <div className="mb-1.5 pl-14 text-2xs text-content-soft">
+                <div className="px-3 pt-2 text-2xs text-content-soft sm:px-4">
                   {TRAVEL_MODE_EMOJI[mode]}{" "}
                   {en ? TRAVEL_MODE_LABEL_EN[mode] : TRAVEL_MODE_LABEL[mode]} ~
                   {sched.travelMinutesFromPrev} {t("minutes")}
                 </div>
               )}
-              {place ? (
-                <button onClick={() => setViewIndex(i)} className="w-full">
-                  {body}
-                </button>
-              ) : (
-                body
-              )}
+              <TripListRow
+                leading={
+                  stop.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ
+                    <img
+                      src={stop.photo_url}
+                      alt=""
+                      loading="lazy"
+                      className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                    />
+                  ) : place ? (
+                    <PlaceThumb query={placeQueryKey(place)} category={place.category} size="md" />
+                  ) : (
+                    <RowIconBox size="md">📍</RowIconBox>
+                  )
+                }
+                time={sched.arrival}
+                endTime={sched.departure}
+                onOpen={place ? () => setViewIndex(i) : undefined}
+                openLabel={place ? `${t("stayFor")} ${title}` : undefined}
+                title={title}
+                subtitle={`${t("stayFor")} ${sched.resolvedDwellMinutes} ${t("minutes")}${
+                  stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""
+                }`}
+              >
+                {(place || (stop.note && !en)) && (
+                  <div className="px-3 pb-2.5 sm:px-4">
+                    {/* เรทติ้ง/ประเภทร้านจาก Google — ชุดเดียวกับที่การ์ดในคลังโชว์ ไม่ยิง API เพิ่ม */}
+                    {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
+                    {stop.note && !en && (
+                      <NoteBody
+                        note={stop.note}
+                        className="mt-1 border-l-2 border-pine-soft pl-2 text-xs text-content-soft"
+                      />
+                    )}
+                  </div>
+                )}
+              </TripListRow>
             </div>
           );
         })}
