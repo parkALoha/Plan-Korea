@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { createServerSupabase, requireUser } from "@/lib/auth/server";
-import { profileOf, tripsVisibleToMe } from "@/lib/engine/db";
+import { requireUser } from "@/lib/auth/server";
 import { Card } from "@/components/ui/Card";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { SignOutButton } from "./SignOutButton";
 import { CopyUserId } from "./CopyUserId";
 import { DisplayNameField } from "./DisplayNameField";
+import { TripsSummary } from "./TripsSummary";
 
 /**
  * หน้าบัญชีของผู้ใช้ — เดิมเป็นหน้าเครื่องมือตรวจของ `E1` (เจ้าของเดิม: P1-Lead)
@@ -108,28 +108,6 @@ export default async function AccountPage() {
   const providers = (user.identities ?? []).map((i) => i.provider);
   const email = user.email ?? "—";
 
-  /* อ่านโปรไฟล์ **ฝั่งเซิร์ฟเวอร์ตรง ๆ** ไม่ยิง `GET /api/engine/profile` ของตัวเอง —
-     หน้านี้เป็น Server Component อยู่แล้ว การยิง HTTP กลับมาหาตัวเองคือรอบเน็ตเวิร์กที่ไม่ต้องมี
-     และทำให้ช่องกรอกว่างตอนโหลดแรกโดยไม่จำเป็น · `route.ts` ใช้ `profileOf` ตัวเดียวกันนี้
-     🔴 `maybeSingle()` คืน `null` ได้จริง — บัญชีเก่าที่ไม่มีแถวใน `profiles` (P1 ยืนยันว่าเกิดได้)
-        นั่นคือเหตุผลที่ `DisplayNameField` ต้องรับ `null` ได้ ไม่ใช่รับสตริงเปล่า */
-  const db = await createServerSupabase();
-  const { data: profile } = await profileOf(db, user.id);
-
-  /* ทริปของคนนี้ — **ของจริงที่มีอยู่แล้ว ไม่ใช่ของที่ปั้นมาเติมหน้าให้เต็ม**
-     หน้านี้เคยมีของแสดงแค่ 3 อย่าง ผู้ใช้บอกเองว่า *"ดูโล่ง ดูไม่เต็ม"* (4 ก.ย. 2026)
-     🔴 ทางที่ **ไม่** เอา: ปั้นการ์ด "เร็ว ๆ นี้" เพิ่มให้ดูแน่น — นั่นคือเติมหน้าด้วยของที่ยังไม่มี
-     ✅ ทางที่เอา: เอา *ของจริงที่ยังไม่เคยถูกแสดง* ขึ้นมา — ทริป · วันเปิดบัญชี · วันเข้าใช้ล่าสุด
-     · `tripsVisibleToMe` เป็น helper เดียวกับที่หน้าแรกใช้ ⇒ ไม่มีคิวรีรูปใหม่ให้ต้องตรวจสิทธิ์ซ้ำ
-     · ล้มก็แค่ไม่โชว์บล็อกนี้ — **บัญชียังใช้ได้ทุกอย่างโดยไม่มีมัน** จึงไม่ทำให้ทั้งหน้าพัง */
-  const { data: tripRows } = await tripsVisibleToMe(db);
-  const trips = tripRows ?? [];
-  const today = new Date().toISOString().slice(0, 10);
-  // ทริปถัดไป = ใบที่ยังไม่จบ เรียงตามวันเริ่ม · ไม่มี = ผ่านไปหมดแล้ว หรือยังไม่มีทริปเลย
-  const upcoming = trips
-    .filter((t) => (t.end_date ?? t.start_date ?? "") >= today)
-    .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""))[0];
-
   const lastSignIn = thaiDate(user.last_sign_in_at);
   const createdAt = thaiDate(user.created_at);
 
@@ -188,7 +166,7 @@ export default async function AccountPage() {
 
       <SectionTitle>โปรไฟล์</SectionTitle>
       <Card className="p-4">
-        <DisplayNameField initialName={profile?.display_name ?? null} />
+        <DisplayNameField />
       </Card>
 
       <SectionTitle>การเข้าสู่ระบบ</SectionTitle>
@@ -229,28 +207,7 @@ export default async function AccountPage() {
 
       <SectionTitle>ทริปของฉัน</SectionTitle>
       <Card className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm">
-            <strong className="text-base">{trips.length}</strong> ทริป
-          </span>
-          <Link
-            href="/"
-            className="relative shrink-0 text-2xs font-medium text-pine before:absolute before:-inset-3 before:content-[''] hover:underline"
-          >
-            ดูทั้งหมด →
-          </Link>
-        </div>
-        {upcoming ? (
-          <p className="mt-2 border-t border-line pt-2 text-2xs text-content-soft">
-            ถัดไป ·{" "}
-            <strong className="text-sm font-medium text-content">{upcoming.title}</strong>
-            {thaiDate(upcoming.start_date) ? ` — ${thaiDate(upcoming.start_date)}` : ""}
-          </p>
-        ) : (
-          <p className="mt-2 border-t border-line pt-2 text-2xs text-content-soft">
-            {trips.length > 0 ? "ทริปทั้งหมดผ่านไปแล้ว" : "ยังไม่มีทริป — สร้างใบแรกได้ที่หน้าทริป"}
-          </p>
-        )}
+        <TripsSummary />
       </Card>
 
       {/* 🔴 การ์ดนี้ *จองที่* ไม่ใช่ฟีเจอร์ — ยังไม่ได้เริ่มอะไรเลย
