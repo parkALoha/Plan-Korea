@@ -28,6 +28,12 @@ name: cache-heartbeat
 #    ถ้าวันหนึ่งเลขนี้ขึ้นเป็น `2` ให้เช็คว่าเป็น "คีย์ใหม่ที่ยังไม่ได้อุ่น" (ของจริงที่ต้องสน) หรือ
 #    "สถานที่ไร้รูปเพิ่มอีกแห่ง" (ยกเพดานตามได้) — แยกด้วยการดูว่าคีย์ไหนเปลี่ยนจากรอบก่อน ไม่ใช่ดูแค่ตัวเลข
 #
+# 🔴 แก้ 5 ก.ย. 2026 (P1 จับ heartbeat แดงหลัง `db:push` · P6 ไล่) — `1` → `9`
+#    คลังโต 202→2,396 ระหว่างวัน ⇒ มีสถานที่ไร้รูปเพิ่มอีก 8 แห่ง (ของเดิม 1 + ใหม่ 8) **ยิง Google
+#    Place Details ตรงทีละคีย์ยืนยันแล้วทั้ง 9** ว่า resolve เป็นสถานที่จริง (มีแถวใน
+#    `place_details_cache` ครบ) แต่ไม่มี field `photos` เลยสักคีย์ — ไม่ใช่ backlog ที่ตัวอุ่นไล่ไม่ทัน
+#    รายละเอียด/รายชื่อคีย์ทั้ง 9 อยู่ที่หัวไฟล์ `cacheHeartbeat.test.ts` § แก้ 5 ก.ย. 2026
+#
 # 🔴 แก้ 4 ก.ย. 2026 — ผู้ใช้อนุมัติแล้ว เปิด `schedule` พร้อมกับ `cache-warm.yml` (รายชั่วโมงเหมือนกัน)
 #    **เจตนา: ตัวเขียนอัตโนมัติที่แตะฐานจริง+ยิง Google จริง ต้องไม่มีวันรันโดยไม่มีใครเฝ้า** — ถ้าเปิดแค่
 #    `cache-warm.yml` แล้วลืมไฟล์นี้ จะได้ตัวอุ่นที่ทำงานเงียบๆ โดยไม่มีอะไรบอกถ้ามันเริ่มพัง
@@ -62,9 +68,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
 
-      # 🔴 _DETAILS=0 · _PHOTOS=1 (P6 · 3 ก.ย. 2026) — ทั้งคู่อุ่นครบจริง วัดซ้ำเองยืนยันก่อนแก้ทั้งคู่
+      # 🔴 _DETAILS=0 · _PHOTOS=9 (P6 · แก้ 5 ก.ย. 2026 จาก 1 — ดูคอมเมนต์ด้านบน) — ทั้งคู่ยืนยันด้วย
+      #    ของจริงก่อนแก้ (Google Place Details ตรงทีละคีย์ ไม่ใช่แค่ดูตัวเลขที่ heartbeat รายงาน)
       #    RLS_MATRIX_REQUIRED=1 ตามธรรมเนียมไฟล์อื่นทุกไฟล์ในชุดสด — "ข้าม" ต้องกลายเป็น "ล้ม"
-      #    _PHOTOS=1 ไม่ใช่ 0 เพราะสถานที่หนึ่งไม่มีรูปจริง — ดูคอมเมนต์ด้านบนก่อนเปลี่ยนเลขนี้
       - name: จำนวนคีย์ที่ยังไม่ได้อุ่น เทียบเพดาน
         run: npx vitest run lib/__tests__/cacheHeartbeat.test.ts
         env:
@@ -72,4 +78,4 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
           CACHE_MAX_MISSING_DETAILS: "0"
-          CACHE_MAX_MISSING_PHOTOS: "1"
+          CACHE_MAX_MISSING_PHOTOS: "9"

@@ -118,16 +118,37 @@ function cronScheduleEnabled(): boolean {
  * ตัวอุ่นทำงาน แต่คือเป้าที่ระบบควรอยู่ที่นั่นเสมอเมื่อทุกอย่างทำงานถูก
  * ```
  * CACHE_MAX_MISSING_DETAILS = 0   (place_details_cache — วัดจริง 3 ก.ย. 2026: 174/174 อุ่นครบ)
- * CACHE_MAX_MISSING_PHOTOS  = 1   (place_photo_cache — 173/174 · 1 สถานที่ไม่มีรูปใน Google เลย
- *                                   ตัวอุ่นข้ามมันโดยตั้งใจ fail-closed แทนเขียน [] ที่แยกไม่ออกตอนอ่าน)
+ * CACHE_MAX_MISSING_PHOTOS  = 9   (place_photo_cache — แก้ 5 ก.ย. 2026 ตามที่หัวไฟล์ข้อ 129 สั่งให้ทำ
+ *                                   ไม่ใช่ขยับเพดานเฉยๆ)
  * ```
  * `CACHE_MAX_MISSING_DETAILS`/`CACHE_MAX_MISSING_PHOTOS` ยังปรับได้จาก env โดยไม่ต้องแก้ไฟล์นี้
  * (`cache-heartbeat.yml` ตั้งค่าเดียวกันซ้ำไว้อย่างชัดเจน ไม่ใช่พึ่ง default เงียบๆ — ตั้งใจให้เห็นในไฟล์ workflow)
  *
+ * ## 🔴 แก้ 5 ก.ย. 2026 (P1 จับที่ heartbeat แดงหลัง `db:push` · P6 ไล่) — `1` → `9` ด้วยหลักฐานจริง ไม่ใช่เดา
+ * คลังโต 202→2,396 ระหว่างวัน ทำให้ตัวอุ่นเจอสถานที่ไร้รูปเพิ่มอีก 8 แห่ง (จากเดิม 1) — **ยิง Google
+ * Place Details ตรงด้วย field mask `photos` ทีละคีย์จริง ไม่ใช่ดูแค่ตัวเลขที่ heartbeat รายงาน:**
+ * ```
+ * place_id:ChIJh4WW2wTlYjUR5L4qhUEIDXs  → "Poko"                                    ไม่มี photos เลย
+ * place_id:ChIJIZgbaZtV3jARv3JBmaitP7I  → ศูนย์พระเครื่องตลาดอาจารย์มนัสจังหวัดสุโขทัย   ไม่มี photos เลย
+ * place_id:ChIJ68cOawDfbTURwsnlhQIFOBo  → "여수 버스터미널" (เยซู บัสเทอร์มินอล)            ไม่มี photos เลย
+ * place_id:ChIJ3TOZnjvF7zYR4d4FpzQpw_I  → "Underground Shopping Mall"                ไม่มี photos เลย
+ * place_id:ChIJ5ewgD7KvmzYR2nlrNnrW3DI  → "Zhangjiajie Commercial Building"          ไม่มี photos เลย
+ * place_id:ChIJUzTWjHjG7zYR0K7Na9z18oI  → "Ziwei Restaurant"                        ไม่มี photos เลย
+ * place_id:ChIJu7fpLU7G7zYRBkA0fwpK78I  → "Yuanli Hotpot"                           ไม่มี photos เลย
+ * place_id:ChIJZ1R7ldGvmzYRABzVPeT6Yuw  → "Hetian Coffee"                           ไม่มี photos เลย
+ * "Hanoi Train Street Hanoi" (searchText) → "Ngõ 224 Lê Duẩn"                       ไม่มี photos เลย
+ * ```
+ * · ทุกคีย์ **resolve เป็นสถานที่จริงสำเร็จ** (มีแถวใน `place_details_cache` ครบทั้ง 9 อยู่แล้ว) — ไม่ใช่
+ *   คีย์ที่ตัวอุ่นยังไล่ไม่ทัน ยืนยันด้วยการรัน `cache-warm.yml` ซ้ำ (`limit=20`) หลังแก้ `testTimeout`
+ *   (`b544333`) แล้ว: `เป้า 9 · เขียน 0 · ไม่มีรูป/ล้ม 9` — ตัวอุ่นพยายามแล้วจริง ไม่ใช่ข้ามไป
+ * 🎯 **นี่คือกรณีที่หัวไฟล์ (บรรทัด 116-119) ตั้งใจไว้พอดี** — ค่าจริงของ "สภาพคงตัว" เปลี่ยนเพราะคลังโต
+ *   ไม่ใช่เพราะตัวอุ่นพัง ⇒ แก้ที่ *default ในไฟล์นี้* ตรงๆ ไม่ใช่ผ่านช่อง `CACHE_CEILING_GRACE_UNTIL`
+ *   (ช่องนั้นมีไว้สำหรับการค้าง**ชั่วคราว**ระหว่างไล่คลังทัน — เคสนี้เป็นเป้าหมายถาวรใหม่)
+ *
  * ⚠️ **เลขทั้งสองยังต้องมีคนดูแล ไม่ใช่ค่าคงที่ตลอดกาล** — ถ้าเพิ่มคลังโดยตั้งใจ (เช่นเมืองใหม่)
  * ต้องขยับเพดานขึ้นชั่วคราวพร้อมกัน (ทั้งที่นี่และ `cache-heartbeat.yml`) ไม่งั้นด่านนี้จะแดงใส่คนที่ทำถูก
- * · ถ้า `_PHOTOS` ขึ้นเป็น `2` ให้เช็คว่าเป็น "คีย์ใหม่ที่ยังไม่ได้อุ่น" หรือ "สถานที่ไร้รูปเพิ่มอีกแห่ง"
- *   ด้วยการดูว่าคีย์ไหนเปลี่ยนจากรอบก่อน ไม่ใช่ดูแค่ตัวเลข (P1 เสนอ)
+ * · ถ้า `_PHOTOS` ขึ้นเป็น `10` ให้เช็คว่าเป็น "คีย์ใหม่ที่ยังไม่ได้อุ่น" หรือ "สถานที่ไร้รูปเพิ่มอีกแห่ง"
+ *   ด้วยการยิง Google Place Details ตรงต่อคีย์ที่ขึ้นใหม่ ไม่ใช่ดูแค่ตัวเลข (P1 เสนอ · P6 ทำตามรอบนี้แล้วยืนยันว่าใช้ได้จริง)
  * · **ช่วงเตือน (② ด้านบน) ตั้งไว้ที่ 20** — ค่าที่ P1 เลือกเอง ไม่ได้วัดจากอะไร ปรับได้ตามที่เห็นควร
  */
 
@@ -175,10 +196,11 @@ describe("Q3 ก้าวที่ 2 — cache-heartbeat", () => {
       const missingDetails = warmTargets({ catalog: rows, cachedKeys: detailKeys });
       const missingPhotos = warmTargets({ catalog: rows, cachedKeys: photoKeys });
       // 🔴 ผ่อนได้เฉพาะตอนอยู่ในช่วง grace (ตั้งโดยมนุษย์ที่ยืนยันแล้วว่า cron รันจริง) —
-      //    หมดอายุแล้ว = เมิน CACHE_MAX_MISSING_* ทั้งสอง กลับไปใช้ default (0/1) เสมอ ไม่ต้องมีคนถอด
+      //    หมดอายุแล้ว = เมิน CACHE_MAX_MISSING_* ทั้งสอง กลับไปใช้ default (0/9) เสมอ ไม่ต้องมีคนถอด
       const grace = graceCeilingActive();
       const maxDetails = grace ? envInt("CACHE_MAX_MISSING_DETAILS", 0) : 0;
-      const maxPhotos = grace ? envInt("CACHE_MAX_MISSING_PHOTOS", 1) : 1;
+      // 🔴 `9` คือของจริงที่ยืนยันด้วย Google Place Details แล้ว ไม่ใช่ backlog ชั่วคราว — ดูหัวไฟล์ § แก้ 5 ก.ย. 2026
+      const maxPhotos = grace ? envInt("CACHE_MAX_MISSING_PHOTOS", 9) : 9;
 
       // 🔴 ถ้า schedule ยังปิดอยู่ (รอผู้ใช้อนุมัติ) และเกินเพดาน — ตัวอุ่นไม่มีทางไล่ทันอยู่แล้ว
       //    ตามนิยาม พูดตรงๆ ว่าทำไม แทนปล่อยให้ข้อความเพดานข้างล่างอ่านเหมือนบั๊กโค้ด (ดูหัวไฟล์)
