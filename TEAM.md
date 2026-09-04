@@ -678,6 +678,7 @@ grep -nE '^\s*(- )?(run|uses):' .github/workflows/ci.yml
 | 6 | `execute on app.read_only_uncovered_tables()` | เรียกตัวตรวจความครอบคลุม · ไม่ให้สิทธิ์บนตารางใดเลย | `20260827200000_…` |
 | 7 | `execute on app.assert_cache_lockdown()` | ให้ cron ของ `Q3` เรียกตัวตรวจได้ | `…160000` + wrapper `…200000` + definer `…210000` |
 | 8 | `update (published_template_at) on trips` | ติดธง "ทริปแนะนำ" — **คอลัมน์เดียว** · ไคลเอนต์ต้องติดเองไม่ได้ (assert บังคับทั้งสองทิศ) | `20260904190000_…` |
+| 9 | `execute on list_public_destinations() · list_public_cities(text) · list_trip_templates()` **ให้ `anon`** | เปิดหน้าแรกให้คนยังไม่ล็อกอิน (ผู้ใช้สั่ง) — **RPC เท่านั้น ห้าม grant ตาราง** · assert บังคับทั้งสองทิศ | `20260904200000_…` |
 
 🔴 **บทเรียนของข้อ 6/7 ที่ต้องอ่านก่อนขอข้อถัดไป — `grant execute` อย่างเดียว *ไม่พอ*:**
 ```
