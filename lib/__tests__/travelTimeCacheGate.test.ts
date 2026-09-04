@@ -31,7 +31,7 @@ const fetchRealSpy = vi.hoisted(() => vi.fn());
 const fromSpy = vi.hoisted(() => vi.fn());
 
 /**
- * 🔴 **เติม `WebSocket` ให้ global ก่อนโมดูลไหนถูก import — ไม่ใช่ stub ของ export เรา**
+ * 🔴 **เติมสิ่งที่ *สนาม* ขาด ก่อนโมดูลไหนถูก import — ไม่ใช่ stub ของ export เรา**
  *
  * `lib/supabase.ts:11` เรียก `createClient()` **ตอน import** และ `supabase-js` โยนทิ้งตรง ๆ
  * บน Node 20 (CI ปักหมุด 20.12.2 · ยืนยันด้วยการรันจริง 4 ก.ย. 2026):
@@ -49,26 +49,30 @@ const fromSpy = vi.hoisted(() => vi.fn());
  *
  * ⚠️ คลาสเปล่าพอ เพราะ `RealtimeClient` แค่ *ถือ* คอนสตรักเตอร์ไว้ ยังไม่ต่อจนกว่าจะ `.subscribe()`
  *    ซึ่ง route นี้ไม่เรียก · ถ้าวันหนึ่งมีใครทำให้มันต่อจริง **เทสต์จะค้าง ไม่ใช่เขียวเงียบ**
+ *
+ * ## 🔴 และ `NEXT_PUBLIC_SUPABASE_*` ก็อยู่ในบล็อกนี้ด้วยเหตุผลเดียวกัน (P4 เสนอ · แทนที่ท่าเดิมของผม)
+ * `route` ข้ามเส้นทางแคชทั้งเส้นเมื่อ `supabaseConfigured` เป็น `false`
+ * ⇒ **เคส ②③④ จะเขียวเพราะไม่มีอะไรถูกรัน** · เคส ① (ทิศบวก) เป็นตัวเดียวที่จับได้
+ *
+ * ฉบับแรกของผมแก้ด้วยการ **override `supabaseConfigured: true` ทับ export ของเราเอง**
+ * · P4 ชี้ว่ามีท่าที่ไม่ต้องเขียนทับ: **ตั้ง env ให้ครบ แล้วโมดูลจริงคำนวณ `true` ด้วยเส้นทางของมันเอง**
+ * 🎯 ***ข้อได้เปรียบที่แท้จริงไม่ใช่ความสะอาด — คือวันที่มีคนเปลี่ยนนิยามของ `supabaseConfigured`***
+ *    ท่า override จะตรึงค่า `true` ที่ล้าไว้เงียบ ๆ · ท่านี้ตามนิยามใหม่ไปเอง
+ * · 📌 **และผลพลอยได้: `vi.mock("@/lib/supabase")` ไม่จำเป็นอีกเลย** — ถอดทิ้งแล้ว (5 → 4 mock)
+ *   ยืนยันด้วยการรัน: ถอดออกแล้ว 15/15 ยังเขียว (รวม `mockShape`)
+ * · ⚠️ ใช้ `||=` ไม่ใช่ `=` — เครื่องที่มี `.env.local` จริงต้องไม่ถูกเขียนทับ
  */
 vi.hoisted(() => {
   if (typeof (globalThis as { WebSocket?: unknown }).WebSocket === "undefined") {
     (globalThis as { WebSocket?: unknown }).WebSocket = class {};
   }
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||= "https://probe.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||= "probe-anon-key";
 });
 
 vi.mock("@/lib/rateLimit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/rateLimit")>()),
   rateLimitGuard: rateSpy,
-}));
-/**
- * 🔴 **`supabaseConfigured` ต้อง override ต่อจาก spread เสมอ ห้ามปล่อยให้เป็นของจริง**
- * ของจริงอ่าน `process.env.NEXT_PUBLIC_SUPABASE_URL` ซึ่งในสนามเทสต์อาจไม่มี → `false`
- * → route ข้ามเส้นทางแคชทั้งเส้น → **เคส ②③④ เขียวเพราะไม่มีอะไรถูกรัน**
- * · **เคส ① (ทิศบวก) คือตัวเดียวที่จับอาการนี้ได้** — มันจะแดงทันที
- */
-vi.mock("@/lib/supabase", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/supabase")>()),
-  supabaseConfigured: true,
 }));
 vi.mock("@/lib/auth/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth/server")>()),
