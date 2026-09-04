@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { buildUuidToDayKey } from "@/hooks/dayKeyMaps";
 import { useTripDays } from "@/hooks/useTripDays";
 import { supabase, supabaseConfigured, TripBooking, BookingCategory, BookingStatus } from "@/lib/supabase";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
+import { tripKey } from "@/lib/engine/offlineStore";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
@@ -52,6 +53,19 @@ function useBookingsStore(tripId: string | null) {
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
   const [loaded, setLoaded] = useState(() => !supabaseConfigured);
 
+  /**
+   * 🔴 **ของสดลงจอไปแล้วหรือยัง — `E6-AC7`** (P7 · 4 ก.ย. 2026)
+   *
+   * ฮุคนี้ **ไม่เข้ารูป `hydrateThenFetch`** เพราะ `init()` ไม่ได้ยิงเอง: การยิงอยู่ที่ `reload()`
+   * ซึ่งเอฟเฟกต์ที่สองเรียกเมื่อ `dayRows` มาถึง (ต้องมีสะพานก่อน ไม่งั้น `day_id` แมปผิด)
+   * ⇒ **ลำดับ "แคชห้ามทับของสด" ต้องเขียนเอง ไม่ได้มาจากตัวช่วย**
+   *
+   * 🎯 ตอน `localStorage` ข้อนี้เป็นจริงฟรี ๆ: อ่าน sync ⇒ แคชลงจอ**ก่อน**เสมอ
+   * · IndexedDB อ่าน async → **`reload()` เสร็จก่อนการอ่านดิสก์ได้** → แคชทับตั๋วชุดใหม่ด้วยชุดเก่า
+   * · ⚠️ **และเครื่องที่เจอคือเครื่องปกติ** (เน็ตเร็ว ดิสก์ช้า) ไม่ใช่เคสขอบ
+   */
+  const freshApplied = useRef(false);
+
   // 🔴 สลับทริปแล้วต้องไม่เห็นตั๋วของทริปเก่า — ดู `useHotels.tsx` สำหรับเหตุผลเต็ม
   //    (provider ไม่ถูก remount ตอนสลับทริป · คีย์แคชที่ scope แล้วแก้ได้แค่ครึ่งเดียว)
   const [shownTripId, setShownTripId] = useState<string | null>(tripId);
@@ -69,6 +83,16 @@ function useBookingsStore(tripId: string | null) {
     if (!supabaseConfigured || !tripId) return;
     const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
 
+    /**
+     * 🔴 **ธงเป็นของ *ทริป* ไม่ใช่ของฮุค — ไม่รีเซ็ตแล้วสลับ A→B จะกันแคชของ B**
+     * ทั้งที่ยังไม่มีของสดของ B มาแทน ⇒ **จอว่างจนกว่าเน็ตจะตอบ · ออฟไลน์ = ว่างถาวร**
+     *
+     * ⚠️ **รีเซ็ตที่นี่ ไม่ใช่ในบล็อก `shownTripId` ข้างบน** — `react-hooks/refs` ห้ามแตะ ref ตอน render
+     * (และห้ามถูก: ref ที่ถูกเขียนตอน render ทำให้ผลของ render ขึ้นกับลำดับที่ React ไม่รับประกัน)
+     * ✅ เอฟเฟกต์นี้ผูก `[tripId]` เหมือนกัน และรัน **ก่อน** `init()` อ่านธง — ลำดับจึงยังถูก
+     */
+    freshApplied.current = false;
+
     const channelName = `bookings_changes_${Math.random().toString(36).slice(2)}`;
     // ไม่มี `await` เหลือแล้วหลัง `E6-AC11` ก้าวที่ 4 — ไม่มีการแข่งกันให้ยกเลิก
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -76,8 +100,10 @@ function useBookingsStore(tripId: string | null) {
     async function init() {
       // 🔴 คืนการใช้แคชที่ผมทำหายตอนเขียนใหม่ — `eslint` จับให้ (import ค้างโดยไม่มีใครใช้)
       //    แคชคือสิ่งที่ทำให้หน้าขึ้นทันทีตอนเปิดและยังอ่านได้ตอนเน็ตหลุด (เฟส 18)
-      const cached = readTripCache<TripBooking[]>(activeTripId, "bookings");
-      if (cached) {
+      const cached = await readHandoff<TripBooking[]>(tripKey(activeTripId, "bookings"));
+      // 🔴 **ใส่แคชก็ต่อเมื่อของสดยังไม่มา** — เหตุผลเต็มอยู่ที่ `freshApplied` ข้างบน
+      //    (กติกาข้อ ② ของ `hydrateThenFetch` · ที่นี่เขียนมือเพราะรูปของฮุคไม่เข้ากับตัวช่วย)
+      if (cached && !freshApplied.current) {
         setBookings(sortBookings(cached));
         setLoaded(true);
       }
@@ -133,11 +159,12 @@ function useBookingsStore(tripId: string | null) {
       ...r, day_id: r.trip_day_id ? uuidToDay.current.get(r.trip_day_id) ?? null : null,
     }));
     setBookings(sortBookings(mapped));
+    freshApplied.current = true; // 🔴 ตั้ง **หลัง** ลงจอจริง — ตั้งก่อนแล้วยิงล้ม จะกันแคชโดยไม่มีของมาแทน
     reportDayBridgeDropIfAny(
       rows.filter((r) => r.trip_day_id !== null).length,
       mapped.filter((r) => r.day_id !== null).length
     );
-    writeTripCache(tripId, "bookings", mapped);
+    writeHandoffNoisily(tripKey(tripId, "bookings"), mapped, "bookings");
   }, []);
 
   useEffect(() => {

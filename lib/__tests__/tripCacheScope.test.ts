@@ -117,15 +117,12 @@ describe("คีย์แคชที่ผูกกับทริป", () => {
    * 🔴 เคสบนบอกได้แค่ *"ไม่มีของผิด"* — เคสนี้บอกว่า *"มีของถูกอยู่จริง"*
    * ถ้าใครลบการอ่านแคชทิ้งทั้งก้อน เคสบนจะยังเขียว แต่เคสนี้จะแดง
    *
-   * ## 🔴 รับ *สองกลไก* ตั้งแต่ `E6-AC7` (P7 · 4 ก.ย. 2026)
-   * ```
-   * localStorage  readTripCache + writeTripCache   ← ของเดิม
-   * IndexedDB     tripKey(tripId, name)            ← ของใหม่ · `offlineStore.tripKey` สร้างคีย์รูปเดียวกัน
-   * ```
+   * ## 🔴 ตัวบังคับคือ `tripKey(` แล้ว ไม่ใช่ `readTripCache` (P7 · 4 ก.ย. 2026 · `E6-AC7`)
+   * ทั้ง 5 ไฟล์ย้ายไป IndexedDB ครบ ⇒ **ไม่มี hook ไหนเรียก `readTripCache`/`writeTripCache` อีกเลย**
    * · **ไม่ใช่การผ่อนเกณฑ์** — คำถามยังเป็นข้อเดิม (*"ไฟล์นี้มีตัวบังคับ `tripId` ลงคีย์อยู่จริงไหม"*)
    *   เปลี่ยนแค่ *ชื่อของตัวที่บังคับ* เพราะที่เก็บเปลี่ยน
-   * · ⚠️ ยอมรับทั้งสองพร้อมกันระหว่างที่ยังย้ายไม่ครบ — **ตัด `readTripCache` ออกจากรายการนี้เมื่อไม่มี
-   *   hook ไหนเหลือใช้มันแล้ว** ไม่งั้นเกณฑ์จะกว้างค้างไว้หลังเหตุผลหมดไป
+   * · 📌 **ฉบับกลางทางรับทั้งสองชื่อ** ตอนที่ย้ายไปได้ 3 จาก 5 · ตัดขาเก่าทิ้งทันทีที่ครบ
+   *   **เกณฑ์ที่กว้างค้างไว้หลังเหตุผลหมดไป คือเกณฑ์ที่ยอมรับของที่เราตั้งใจเลิกใช้**
    */
   it("hook ที่ถือข้อมูลของทริป ต้อง import ตัวที่บังคับ scope จริง ๆ", () => {
     const mustScopeByTrip = [
@@ -137,14 +134,11 @@ describe("คีย์แคชที่ผูกกับทริป", () => {
     ];
     const missing = mustScopeByTrip.filter((f) => {
       const src = readFileSync(join(process.cwd(), "hooks", f), "utf8");
-      const viaLocalStorage = src.includes("readTripCache") && src.includes("writeTripCache");
-      const viaIndexedDb = src.includes("tripKey(");
-      return !viaLocalStorage && !viaIndexedDb;
+      return !src.includes("tripKey(");
     });
     expect(
       missing,
-      "ไฟล์พวกนี้ต้องผูกคีย์แคชกับ `tripId` — ผ่าน `readTripCache`/`writeTripCache` (localStorage)\n" +
-        `  หรือ \`tripKey(tripId, …)\` (IndexedDB): ${missing.join(", ")}`
+      `ไฟล์พวกนี้ต้องผูกคีย์แคชกับ \`tripId\` ผ่าน \`tripKey(tripId, …)\`: ${missing.join(", ")}`
     ).toEqual([]);
   });
 

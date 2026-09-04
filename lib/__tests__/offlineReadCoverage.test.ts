@@ -80,7 +80,19 @@ export function fetchesEngineApi(strippedCode: string): boolean {
  * 🔴 นั่นคือคำถามของ `AC7` (เรื่อง*ที่เก็บ*) · `AC4` ถามแค่ว่า *ออฟไลน์แล้วมีอะไรให้อ่านไหม*
  * → ทางเก่าบน `localStorage` (`readCache`/`readTripCache`) **นับว่าผ่าน** · ด่านนี้จึงตั้งได้ก่อน `AC7` จบ
  */
-const CACHE_READERS = ["storeGet", "readCache", "readTripCache", "readOwnedCache", "hydrateThenFetch"] as const;
+const CACHE_READERS = [
+  "storeGet",
+  "readCache",
+  "readTripCache",
+  "readOwnedCache",
+  "hydrateThenFetch",
+  // 🔴 เพิ่ม 4 ก.ย. 2026 ตอน `E6-AC7` ย้าย `useBookings`/`useOvernightOverrides` — **ด่านนี้แดงใส่ผมเอง**
+  //    ทั้งสองอ่านผ่าน `readHandoff` ตรง ๆ (ไม่ผ่าน `hydrateThenFetch` เพราะรูปของฮุคไม่เข้า)
+  //    ⇒ ด่านอ่านว่า *"ไม่แคช"* ทั้งที่แคชอยู่ · **รูปเดียวกับตอน `readOwnedCache` เป๊ะ ซึ่งจดไว้ข้างล่างแล้ว**
+  //    🎯 **ทะเบียนชื่อผู้อ่านล้าทุกครั้งที่มีผู้อ่านชื่อใหม่ — และมันแดงใส่คนที่ทำถูก**
+  //       ที่ยอมรับได้เพราะ *แดง* ไม่ใช่ *เขียว*: ทางกลับกันคือด่านที่เงียบตอนมีคนเลิกแคชจริง ๆ
+  "readHandoff",
+] as const;
 
 export function readsFromCache(strippedCode: string): boolean {
   return new RegExp(CACHE_READERS.map((n) => `\\b${n}\\b`).join("|")).test(strippedCode);

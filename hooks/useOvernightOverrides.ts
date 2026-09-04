@@ -6,7 +6,8 @@ import { supabaseConfigured } from "@/lib/supabase";
 import { useTripDays } from "@/hooks/useTripDays";
 import { toOvernightOverrides } from "@/lib/engine/overnightShape";
 import { writeGuard } from "@/lib/writeGuard";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
+import { tripKey } from "@/lib/engine/offlineStore";
 import { showToast } from "@/lib/toast";
 import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/engine/dayBridgeIncomplete";
 
@@ -57,23 +58,43 @@ export function useOvernightOverrides(tripId: string | null) {
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
     const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว
-    // 🔴 **ไม่มี `async`/`cancelled` แล้ว** — `E6-AC11` ย้ายการยิง `/days` ไป provider
-    //    เอฟเฟกต์นี้จึงเป็นการ *แปลงค่าที่มีอยู่แล้ว* ล้วน ๆ · ไม่มี await = ไม่มีการแข่งกันให้ยกเลิก
-    // 🔴 `rows === null` = **ยังไม่ได้คำตอบ หรืออ่านไม่ได้** — ไม่ใช่ "ทริปไม่มีวัน" (`[]` ต่างหากที่แปลว่านั้น)
-    //    ปล่อยผ่านเป็น `[]` ตรงนี้จะทำให้แคชถูกทับด้วยผลว่าง ซึ่งเป็นบั๊กที่ `reportDayBridgeDropIfAny` กันอยู่
+    /**
+     * 🔴 **`cancelled` กลับมาเพราะการอ่านแคชเป็น async แล้ว — และนั่นคือราคาที่ `E6-AC7` เก็บจริง**
+     * (P7 · 4 ก.ย. 2026 · คอมเมนต์เดิมตรงนี้เขียนว่า *"ไม่มี `async`/`cancelled` แล้ว"* ซึ่งหมดอายุพร้อมบรรทัดนี้)
+     *
+     * `E6-AC11` ทำให้เอฟเฟกต์นี้เป็นการ *แปลงค่าที่มีอยู่แล้ว* ล้วน ๆ ⇒ ไม่มี await = ไม่มีการแข่งกัน
+     * · `localStorage` อ่าน sync จึงเข้ากับข้อนั้นพอดี · **IndexedDB ไม่**
+     * 🎯 **เอฟเฟกต์นี้ผูกกับ `rows`/`bridge` ซึ่งเปลี่ยนได้ระหว่างการอ่านดิสก์** → รอบเก่าที่อ่านช้ากว่า
+     *   จะ `setOverrides(ของเก่า)` **ทับผลที่รอบใหม่คำนวณไปแล้ว** · **นี่คือของที่ *การย้าย* พาเข้ามา
+     *   ไม่ใช่ของที่มีอยู่เดิม** (`TEAM.md §3.4` — sync→async เอาการรับประกันที่เคยได้ฟรีออกไป)
+     *
+     * 🔴 `rows === null` = **ยังไม่ได้คำตอบ หรืออ่านไม่ได้** — ไม่ใช่ "ทริปไม่มีวัน" (`[]` ต่างหากที่แปลว่านั้น)
+     *    ปล่อยผ่านเป็น `[]` ตรงนี้จะทำให้แคชถูกทับด้วยผลว่าง ซึ่งเป็นบั๊กที่ `reportDayBridgeDropIfAny` กันอยู่
+     */
+    let cancelled = false;
 
-    function apply() {
-      const cached = readTripCache<Overrides>(activeTripId, "overnightOverrides");
-      if (cached) {
-        setOverrides(cached);
+    async function apply() {
+      /**
+       * 🔴 **อ่านแคชเฉพาะตอนไม่มี `rows` ให้คำนวณ — ไม่ใช่อ่านก่อนเสมอเหมือนเดิม**
+       * ของเดิมอ่านแคชก่อนทุกครั้ง แล้วถ้ามี `rows` ก็คำนวณทับในทันที **ซึ่ง React ยุบเป็นเฟรมเดียว
+       * ⇒ ค่าที่อ่านมาไม่เคยขึ้นจอเลยเมื่อมี `rows`** — มันเป็นงานที่ตายอยู่แล้วตอน sync
+       * ✅ พอเป็น async การอ่านนั้นไม่ได้แค่ตายเปล่า **มันกลายเป็นตัวแข่ง** → ตัดทิ้งตรงนี้เลย
+       *    **ได้พฤติกรรมเดิมเป๊ะ และเอาการแข่งกันออกจากเส้นทางที่มี `rows` ทั้งเส้น**
+       */
+      if (!rows) {
+        const cached = await readHandoff<Overrides>(tripKey(activeTripId, "overnightOverrides"));
+        if (cancelled) return;
+        if (cached) setOverrides(cached);
         setLoaded(true);
+        return;
       }
 
       // 🔴 **`E6-AC11` (30 ส.ค. 2026 · P3): เลิกยิง `/days` เอง — อ่านจาก `useTripDays()` แหล่งเดียว**
       //    เดิม hook นี้ยิงเองแล้วสร้าง `buildDayBridge([], rows)` ใบของตัวเอง เหมือนอีก 3 ตัว
       //    → สะพาน 4 ใบที่ต้องเพี้ยนพร้อมกันถึงจะมีคนเห็น · ใบนี้เพี้ยนไปแล้วจริงเมื่อวันเดียวกัน
       //      (`bridge.matched` เป็น `0` เสมอ → แถบ 🚧 ค้าง + แคชไม่เคยถูกเขียน)
-      if (!rows) return void setLoaded(true);
+      // 📌 ยาม `if (!rows) return void setLoaded(true)` ที่เคยอยู่บรรทัดนี้ **ย้ายขึ้นไปบนสุดแล้ว**
+      //    (กิ่งเดียวกับการอ่านแคช) — ปล่อยไว้ตรงนี้จะเป็นโค้ดที่เข้าไม่ถึง ไม่ใช่ยามซ้อนชั้น
 
       // 🔴 **สะพานว่าง ≠ ไม่มีใครตั้งค่าที่นอน** — ถ้าไม่บอก หน้าจอจะเงียบเหมือนไม่มีข้อมูล
       //    ทั้งที่จริงคือ `E7` ยังไม่ได้ย้ายวันมาสักวัน (`P-21` ในรูปที่จะกัดตอน cutover)
@@ -108,12 +129,15 @@ export function useOvernightOverrides(tripId: string | null) {
       //      **แต่ `matched` ที่อยู่ในบรรทัดถัดมาไม่ถูกตรวจ** — เจอตอน `B6` เปิดหน้าจริงแล้วแถบยังค้าง
       //    ✅ ตัวที่ถูกคือ `dayKeyToDbId.size` = จำนวนวันที่แมปได้จริง (uuid→uuid หนึ่งตัวต่อวันในฐาน)
       if (!reportDayBridgeDropIfAny(rows.length, bridge.dayKeyToDbId.size)) {
-        writeTripCache(activeTripId, "overnightOverrides", next);
+        writeHandoffNoisily(tripKey(activeTripId, "overnightOverrides"), next, "overnightOverrides");
       }
       setLoaded(true);
     }
 
-    apply();
+    void apply();
+    return () => {
+      cancelled = true;
+    };
   }, [tripId, rows, bridge]);
 
   const setOvernightCity = useCallback(
@@ -145,7 +169,7 @@ export function useOvernightOverrides(tripId: string | null) {
       if (!ok) {
         setOverrides(before);
       } else {
-        writeTripCache(tripId, "overnightOverrides", next);
+        writeHandoffNoisily(tripKey(tripId, "overnightOverrides"), next, "overnightOverrides");
       }
     },
     [overrides]
