@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { testClient } from "./_testClient";
 import { readEnvKey, requireLiveCreds } from "./_helpers";
@@ -12,6 +14,30 @@ import { warmTargets } from "@/lib/engine/cacheWarmList";
 function envInt(name: string, fallback: number): number {
   const raw = (process.env[name] ?? "").trim();
   return raw === "" ? fallback : Number(raw);
+}
+
+/**
+ * 🔴 แก้ 4 ก.ย. 2026 (P1 ยกให้ตัดสิน หลังคลังโต 202→921 ทำให้ขาด 719 พอดี) — heartbeat ต้องแยก
+ * *"ตัวอุ่นปิดอยู่ตามที่ตั้งใจ (รอผู้ใช้อนุมัติ schedule)"* ออกจาก *"ตัวอุ่นพัง"* คนละข้อความ ไม่งั้น
+ * ทีมจะอ่านของที่ถูกต้องว่าเป็นบั๊ก แล้ว (ตามที่จดกันไว้ทั้งวัน) ด่านที่แดงใส่คนที่ทำถูกจะถูกลบทั้งใบ
+ *
+ * ✅ **อ่านจาก `cache-warm.yml` เอง — ไม่สร้างทะเบียน/ธงที่สองให้ต้องซิงก์มือ** ถ้าวันหนึ่งมีคนเปิด
+ * `schedule` แล้วลืมอัปเดตอะไรที่นี่ ข้อความจะกลับมาเป็น "ทำงานจริงแล้วยังพัง" เองอัตโนมัติ — ไฟล์เดียว
+ * เป็นความจริงทั้งสองฝั่ง (จะเปิดจริงหรือยัง)
+ *
+ * 🔴 **ยังคง fail แน่นอน ไม่ทำให้เขียว** — schedule ปิดจริง = ตัวอุ่นไม่ทำงานจริง = ขาดจะโตต่อไปเรื่อยๆ
+ * นั่นยังเป็นสภาพที่ไม่ควรอ่านว่า "ผ่าน" ได้ (P1 ปฏิเสธไปแล้วว่าจะไม่สร้าง assertion ที่ไม่มีวันแดง)
+ * สิ่งที่เปลี่ยนคือ *ข้อความ* ไม่ใช่ *สถานะ* — คนอ่าน log ต้องรู้ทันทีว่านี่ไม่ใช่ regression ให้ไปตามหา
+ */
+function cronScheduleEnabled(): boolean {
+  let text: string;
+  try {
+    text = readFileSync(join(process.cwd(), ".github/workflows/cache-warm.yml"), "utf8");
+  } catch {
+    return false; // อ่านไฟล์ไม่ได้ = ไม่รู้ว่าเปิดหรือยัง → fail-closed ไปทาง "ยังไม่พร้อม"
+  }
+  // `  schedule:` (ไม่มี `#` นำหน้า) ใต้ `on:` — คอมเมนต์ไว้คือ `  # schedule:` ซึ่งไม่ match รูปนี้
+  return text.split("\n").some((line) => /^\s*schedule:\s*$/.test(line));
 }
 
 /**
@@ -117,6 +143,25 @@ describe("Q3 ก้าวที่ 2 — cache-heartbeat", () => {
       const missingPhotos = warmTargets({ catalog: rows, cachedKeys: photoKeys });
       const maxDetails = envInt("CACHE_MAX_MISSING_DETAILS", 0);
       const maxPhotos = envInt("CACHE_MAX_MISSING_PHOTOS", 1);
+
+      // 🔴 ถ้า schedule ยังปิดอยู่ (รอผู้ใช้อนุมัติ) และเกินเพดาน — ตัวอุ่นไม่มีทางไล่ทันอยู่แล้ว
+      //    ตามนิยาม พูดตรงๆ ว่าทำไม แทนปล่อยให้ข้อความเพดานข้างล่างอ่านเหมือนบั๊กโค้ด (ดูหัวไฟล์)
+      const scheduleOn = cronScheduleEnabled();
+      const overDetails = missingDetails.length > maxDetails;
+      const overPhotos = missingPhotos.length > maxPhotos;
+      if (!scheduleOn && (overDetails || overPhotos)) {
+        const detail = [
+          overDetails && `place_details_cache ขาด ${missingDetails.length} (เพดาน ${maxDetails})`,
+          overPhotos && `place_photo_cache ขาด ${missingPhotos.length} (เพดาน ${maxPhotos})`,
+        ].filter(Boolean).join(" · ");
+        expect(
+          scheduleOn,
+          `🟡 ตัวอุ่นปิดอยู่ตามที่ตั้งใจ (schedule ใน cache-warm.yml ยังไม่เปิด — รอผู้ใช้อนุมัติ) ` +
+            `ไม่ใช่ตัวอุ่นพัง\n   เกินเพดานตอนนี้เพราะเหตุนี้: ${detail}\n   ` +
+            `เพดานใช้ไม่ได้จนกว่า schedule จะเปิดจริง — อย่าไล่หาบั๊กในโค้ดตัวอุ่น/ตัวเลือกคีย์`,
+        ).toBe(true);
+        return;
+      }
 
       expect(
         missingDetails.length,
