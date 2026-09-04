@@ -120,6 +120,15 @@ export type ScheduleStopInput = {
   placeId: string;
   dwellMinutes: number | null;
   travelMode: TravelMode | null;
+  /**
+   * เวลาถึงที่ผู้ใช้ *กรอกเอง* — "HH:MM" หรือ null = ให้คำนวณตามปกติ
+   * (ผู้ใช้สั่ง 4 ก.ย. 2026: "เวลาถึง และเวลาสิ้นสุด ของแต่ละจุด ผู้ใช้ควรจะกรอกเองแก้เองได้")
+   * 🔴 หมุดไม่ได้ *ห้าม* ตารางเดินต่อ — จุดถัดไปยังไหลจากหมุดนี้เหมือนเดิมทุกประการ
+   *    มันแค่ตัด cursor มาเริ่มที่นี่ ⇒ ยังเป็นตารางใบเดียว ไม่ใช่สองระบบ
+   */
+  fixedStartTime?: string | null;
+  /** เวลาสิ้นสุดที่กรอกเอง — ทับ `dwellMinutes` เมื่อมีค่า (ระยะเวลากลายเป็นผลลัพธ์ ไม่ใช่ input) */
+  fixedEndTime?: string | null;
 };
 
 export type ScheduledStop = ScheduleStopInput & {
@@ -132,6 +141,18 @@ export type ScheduledStop = ScheduleStopInput & {
   arrivalMinutes: number;
   departureMinutes: number;
   travelMinutesFromPrev: number | null;
+  /**
+   * นาทีที่ *ไปไม่ทัน* หมุดเวลาที่กรอกไว้ — null = ไม่มีหมุด หรือทันสบาย
+   *
+   * 🔴 ต้องมีค่านี้ ไม่ใช่แค่ย้าย cursor เงียบ ๆ: ถ้าผู้ใช้ปักว่าถึง 09:00 แต่เดินทางจริง
+   *    ไปถึงได้เร็วสุด 09:40 ตารางที่ *แสดง 09:00 เฉย ๆ* คือตารางที่โกหก — และมันจะโกหก
+   *    เงียบที่สุดตอนใกล้ออกเดินทางจริง ซึ่งเป็นตอนที่พึ่งมันมากที่สุด
+   */
+  timeConflictMinutes: number | null;
+  /** true = เวลาถึงมาจากหมุดที่ผู้ใช้กรอก ไม่ใช่ค่าคำนวณ (UI ใช้บอกที่มา) */
+  startIsFixed: boolean;
+  /** true = เวลาสิ้นสุดมาจากหมุดที่ผู้ใช้กรอก ⇒ `resolvedDwellMinutes` เป็นผลลัพธ์ ไม่ใช่ค่าที่ตั้ง */
+  endIsFixed: boolean;
 };
 
 /** จุดอ้างอิงบนแผนที่ที่ใช้ถามเวลาเดินทางได้ — จุดแวะใช้ place.id, ที่พักใช้ hotelAnchorId (lib/hotelLegs.ts,
@@ -153,6 +174,34 @@ export type DaySchedule = {
    *  ใช้เทียบเดดไลน์ตายตัวที่อาจอยู่ข้ามเที่ยงคืนไปวันถัดไป (เช่น ต้องออกไปขึ้นเครื่องตี 1) */
   endOfDayMinutes: number;
 };
+
+/**
+ * แปลงเวลาบนหน้าปัด ("HH:MM") เป็นนาทีสะสมรอบที่ *ใกล้* `cursor` ที่สุด
+ *
+ * `cursor` ในตัวคำนวณเป็นนาทีสะสมไม่ห่อรอบ (วันข้ามเที่ยงคืนได้ค่า >1440) แต่หมุดที่ผู้ใช้
+ * กรอกเป็นเวลาบนหน้าปัดล้วน — ไม่มีข้อมูลว่าวันไหน ⇒ ต้องเดา และเดาที่ถูกคือ "รอบที่ใกล้ที่สุด"
+ * ไม่ใช่ "รอบเดียวกับ cursor" (จะเด้งย้อน 24 ชม.) และไม่ใช่ "รอบถัดไปเสมอ" (จะเด้งไป 24 ชม.)
+ */
+function nearestOccurrence(clock: string | null | undefined, cursor: number): number | null {
+  const t = clock ? timeToMinutes(clock) : null;
+  if (t == null) return null;
+  const base = Math.floor(cursor / 1440) * 1440;
+  let best = base + t;
+  for (const cand of [base + t - 1440, base + t + 1440]) {
+    if (Math.abs(cand - cursor) < Math.abs(best - cursor)) best = cand;
+  }
+  return best;
+}
+
+/** รอบถัดไปของเวลาบนหน้าปัดที่ **มากกว่า** `after` เสมอ — ใช้กับเวลาสิ้นสุดที่ต้องอยู่หลังเวลาถึง */
+function nextOccurrenceAfter(clock: string | null | undefined, after: number): number | null {
+  const t = clock ? timeToMinutes(clock) : null;
+  if (t == null) return null;
+  const base = Math.floor(after / 1440) * 1440;
+  let v = base + t;
+  while (v <= after) v += 1440;
+  return v;
+}
 
 /**
  * ไล่คำนวณเวลาถึง/ออกของแต่ละจุดแวะในวันนั้น จากเวลาเริ่มต้นวัน + เวลาเดินทางระหว่างจุด + เวลาที่อยู่แต่ละจุด
@@ -192,14 +241,33 @@ export function computeSchedule(
       from && to ? travelMinutesBetween(from, to, stop.travelMode) : null;
     if (travelMinutesFromPrev != null) cursor += travelMinutesFromPrev;
 
+    /* หมุดเวลาถึง — ผู้ใช้กรอกเอง
+       🔴 `nearestOccurrence` ไม่ใช่ `base + t` เฉย ๆ: cursor เป็นนาทีสะสม *ไม่ห่อรอบ* (อาจ >1440)
+          ส่วนหมุดเป็นเวลาบนหน้าปัด ⇒ ต้องเลือกรอบวันที่ใกล้ cursor ที่สุด ไม่งั้น
+          จุดที่ปัก 00:30 ของทริปข้ามเที่ยงคืนจะเด้งย้อนกลับไป 24 ชม. */
+    const pinnedStart = nearestOccurrence(stop.fixedStartTime, cursor);
+    const startIsFixed = pinnedStart != null;
+    /* ปักเวลาที่ *เร็วกว่า* ที่เดินทางไปถึงได้ = ไปไม่ทัน — เดินตารางตามหมุดต่อไป
+       แต่ **จดส่วนต่างไว้** ให้ UI บอกได้ · ปัดหมุดทิ้งเงียบ ๆ จะกลายเป็นตารางที่ดูสวยแต่ทำไม่ได้ */
+    const timeConflictMinutes = pinnedStart != null && pinnedStart < cursor ? cursor - pinnedStart : null;
+    if (pinnedStart != null) cursor = pinnedStart;
+
     const arrivalMinutes = cursor;
     const arrival = minutesToTime(cursor);
-    // 🔴 `?? DWELL_MINUTES_FALLBACK` ปิดท้ายเสมอ — ครอบทั้ง *ไม่มี place* และ *มี place แต่หมวดไม่อยู่ในตาราง*
-    //    (หมวดจากฐานไม่ถูกจำกัดด้วย `CHECK` ดูหัวตาราง) · เดิมเคสหลังให้ `undefined` → `cursor += undefined` → `NaN` ทั้งวัน
+
+    /* หมุดเวลาสิ้นสุด — มีแล้วระยะเวลาที่อยู่กลายเป็น *ผลลัพธ์* ไม่ใช่ค่าที่ตั้ง
+       ต้องหาโอกาสถัดไปจาก *เวลาถึง* และต้อง > เวลาถึงเสมอ ⇒ ปัก 22:00–01:00 (ข้ามคืน) ได้ตรง
+       ⚠️ **ดัดแปลงจากฉบับทรี `main` ตรงนี้จุดเดียว** — ที่นี่มีชั้น fallback ของตัวเอง
+          (`?? DWELL_MINUTES_FALLBACK` ปิดท้าย เพราะหมวดจากฐานไม่ถูกจำกัดด้วย `CHECK`)
+          หมุดจึงต้องมาก่อนทั้งโซ่ ไม่ใช่แทรกกลาง — ไม่งั้น `NaN` ทั้งวันกลับมา */
+    const pinnedEnd = nextOccurrenceAfter(stop.fixedEndTime, arrivalMinutes);
+    const endIsFixed = pinnedEnd != null;
     const resolvedDwellMinutes =
-      stop.dwellMinutes ??
-      (place ? dwellMinutesOf(place.category) : undefined) ??
-      DWELL_MINUTES_FALLBACK;
+      pinnedEnd != null
+        ? pinnedEnd - arrivalMinutes
+        : (stop.dwellMinutes ??
+          (place ? dwellMinutesOf(place.category) : undefined) ??
+          DWELL_MINUTES_FALLBACK);
     cursor += resolvedDwellMinutes;
     const departureMinutes = cursor;
     const departure = minutesToTime(cursor);
@@ -213,6 +281,9 @@ export function computeSchedule(
       arrivalMinutes,
       departureMinutes,
       travelMinutesFromPrev,
+      timeConflictMinutes,
+      startIsFixed,
+      endIsFixed,
     });
   });
 

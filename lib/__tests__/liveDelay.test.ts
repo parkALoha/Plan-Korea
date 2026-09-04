@@ -32,6 +32,9 @@ function sched(id: string, arrivalMinutes: number): ScheduledStop {
     arrivalMinutes,
     departureMinutes: arrivalMinutes + 60,
     travelMinutesFromPrev: null,
+    timeConflictMinutes: null,
+    startIsFixed: false,
+    endIsFixed: false,
   };
 }
 
