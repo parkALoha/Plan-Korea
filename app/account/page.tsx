@@ -137,7 +137,11 @@ export default async function AccountPage() {
           (`app/today` · `NearbyPlacesModal` · `MoveStopMenu`) — **ตามของที่มี ไม่เปิดระบบที่สอง** */}
       <Link
         href="/"
-        className="relative inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface-raised px-3 py-1.5 text-sm font-medium text-content-soft transition-colors before:absolute before:-inset-[7px] before:content-[''] hover:border-pine hover:text-pine"
+        /* 🔴 `border-action-outline` + `text-content` ไม่ใช่ `border-line` + `text-content-soft`
+           ธีมมืด `--line` ได้ **1.43:1** กับพื้น ⇒ ปุ่มแทบไม่มีรูปร่าง (ผู้ใช้รายงานเอง 4 ก.ย. 2026)
+           `--line` เป็นเส้นคั่น *เนื้อหา* — ขอบ *ปุ่ม* เป็นคนละหน้าที่ จึงเป็นคนละโทเคน
+           ธีมสว่างค่าเท่าเดิมทุกพิกเซล (`--action-outline` = `#f7ead6` = ค่าเดิมของ `--line`) */
+        className="relative inline-flex items-center gap-1.5 rounded-pill border border-action-outline bg-surface-raised px-3 py-1.5 text-sm font-medium text-content transition-colors before:absolute before:-inset-[7px] before:content-[''] hover:border-pine hover:text-pine"
       >
         <span aria-hidden>←</span>
         ทริปของฉัน

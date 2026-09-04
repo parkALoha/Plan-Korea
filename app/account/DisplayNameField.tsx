@@ -53,6 +53,13 @@ export function DisplayNameField() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  /**
+   * 🔴 **ยืนยันก่อนบันทึก** (ผู้ใช้สั่ง 4 ก.ย. 2026) — ตามแพทเทิร์นที่มีอยู่แล้วที่
+   * `TripSettingsModal.tsx:70-88` (ช่องชื่อเหมือนกัน) **ไม่เปิดระบบยืนยันใบที่สอง**
+   * · ยืนยัน = พื้นทึบ · ยกเลิก = พื้นทึบสีเมเปิล — ผู้ใช้เคยสั่งเองว่า
+   *   *"ตัวหนังสือเปล่า ๆ ข้างปุ่มพื้นทึบ อ่านเป็นลิงก์ ไม่ใช่ปุ่ม"*
+   */
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -97,6 +104,7 @@ export function DisplayNameField() {
   const canSave = ready && dirty && trimmed !== "" && !tooLong && !busy;
 
   async function save() {
+    setConfirming(false);
     setBusy(true);
     setError(null);
     setOk(false);
@@ -153,9 +161,13 @@ export function DisplayNameField() {
             setName(e.target.value);
             setOk(false);
             setError(null);
+            /* 🔴 พิมพ์ต่อระหว่างรอยืนยัน = ยกเลิก — ไม่งั้นจะยืนยัน *ค่าใหม่* ทั้งที่ตอนกดเห็น *ค่าเก่า* */
+            setConfirming(false);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && canSave) save();
+            /* Enter เปิดขั้นยืนยัน ไม่บันทึกทันที — ขั้นยืนยันจะไร้ความหมายถ้า Enter ข้ามมันได้ */
+            if (e.key === "Enter" && canSave) setConfirming(true);
+            if (e.key === "Escape") setConfirming(false);
           }}
           placeholder={
             load.status === "loading"
@@ -167,19 +179,47 @@ export function DisplayNameField() {
           aria-invalid={tooLong || undefined}
           className="min-w-0 flex-1 rounded-control border border-line bg-surface px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
         />
-        <button
-          type="button"
-          onClick={save}
-          disabled={!canSave}
-          className="shrink-0 rounded-control bg-pine px-3 py-2 text-sm font-medium text-cream hover:bg-pine-dark disabled:opacity-40"
-        >
-          {busy ? "กำลังบันทึก…" : "บันทึก"}
-        </button>
+        {confirming ? (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={save}
+              disabled={!canSave}
+              className="rounded-control bg-action px-3 py-2 text-sm font-medium text-cream hover:bg-action-hover disabled:opacity-40"
+            >
+              ยืนยัน
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-control bg-maple px-3 py-2 text-sm font-medium text-cream hover:bg-maple-dark"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={!canSave}
+            /* 🔴 `bg-action` ไม่ใช่ `bg-pine` — ธีมมืดสนเดิมได้ 2.27:1 กับพื้น (เกณฑ์ปุ่ม 3:1)
+               ⇒ ปุ่มมองไม่เห็น (ผู้ใช้รายงานเอง) · ดูเหตุผลที่โทเคนใน `globals.css` */
+            className="shrink-0 rounded-control bg-action px-3 py-2 text-sm font-medium text-cream hover:bg-action-hover disabled:opacity-40"
+          >
+            {busy ? "กำลังบันทึก…" : "บันทึก"}
+          </button>
+        )}
       </div>
       {/* ตัวนับโผล่เฉพาะตอนใกล้เต็ม — โชว์ตลอดเวลาคือเสียงรบกวนสำหรับชื่อ 5 ตัวอักษร */}
       {(tooLong || used > NAME_MAX - 15) && (
         <p className={`mt-1 text-2xs ${tooLong ? "text-maple-dark" : "text-content-soft"}`}>
           {used}/{NAME_MAX} ตัวอักษร
+        </p>
+      )}
+      {/* 🔴 บอกว่า *กำลังจะบันทึกอะไร* — ขั้นยืนยันที่ไม่บอกว่ายืนยันอะไร คือปุ่มเพิ่มมาหนึ่งครั้งเฉย ๆ */}
+      {confirming && (
+        <p className="mt-1 text-2xs text-content-soft">
+          เปลี่ยนชื่อที่แสดงเป็น <strong className="font-semibold text-content">{trimmed}</strong> — เพื่อนร่วมทริปจะเห็นชื่อนี้
         </p>
       )}
       {load.status === "error" && <p className="mt-1 text-2xs text-maple-dark">{load.message}</p>}
