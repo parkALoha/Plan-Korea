@@ -64,7 +64,8 @@ export type EngineTable =
   | "checklist_items"
   | "trip_day_plan_settings"
   | "bookings"
-  | "trip_plans";
+  | "trip_plans"
+  | "profiles";
 
 /**
  * 🔴 **ไคลเอนต์ถูก *ส่งเข้ามา* ไม่ใช่ import — และนี่คือทั้งหมดของ `E3`**
@@ -1692,4 +1693,45 @@ export function pinnedTripIdsOf(db: Db, userId: string) {
     .eq("user_id", userId)
     .not("pinned_at", "is", null)
     .order("pinned_at", { ascending: false });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// โปรไฟล์ผู้ใช้ — `E5` · P1-Lead · 4 ก.ย. 2026 (ผู้ใช้สั่งรื้อหน้า `/account`)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * โปรไฟล์ของผู้เรียก
+ *
+ * 🔴 **`.eq("id", userId)` ไม่ใช่การกันไว้เฉย ๆ** — รูปเดียวกับ `pinnedTripIdsOf`
+ * `profiles_select` เปิดให้อ่านโปรไฟล์ของ**เพื่อนร่วมทริป**ได้ (ไม่งั้นแสดงชื่อคนในทริปไม่ได้)
+ * ⇒ ไม่ระบุ `id` = อาจได้โปรไฟล์คนอื่นมาแสดงเป็นของตัวเอง
+ * 🎯 ***RLS ตอบว่า "เห็นได้ไหม" ไม่ได้ตอบว่า "ของใคร"***
+ */
+export function profileOf(db: Db, userId: string) {
+  return engineTable(db, "profiles")
+    .select("id, display_name, locale, home_country")
+    .eq("id", userId)
+    .maybeSingle();
+}
+
+/**
+ * แก้ชื่อที่แสดง
+ *
+ * ## 🔴 ทำไมเขียนคอลัมน์เดียว ไม่ใช่รับอ็อบเจกต์แล้ว spread
+ * `20260825122247:71` ให้ `grant update (display_name, locale, home_country)` — **สามคอลัมน์**
+ * ⇒ ฟังก์ชันที่รับอ็อบเจกต์แล้วส่งต่อทั้งก้อน จะพาคีย์ที่ผู้เรียกเผลอใส่มาไปถึงฐานด้วย
+ * 🎯 ***ชุดคอลัมน์ที่เขียนได้ ต้องถูกตัดสินที่นี่ ไม่ใช่ที่ payload ของ HTTP***
+ * · ⚠️ วันที่มีหน้าให้แก้ `locale`/`home_country` **ให้เพิ่มฟังก์ชันแยก อย่าเปลี่ยนตัวนี้ให้รับอ็อบเจกต์**
+ *   — `§3.4`: การขยายชุดฟิลด์ทำให้ช่องที่เคยปลอดภัยเพราะชุดมันเล็ก กว้างพอจะเดินผ่าน
+ *
+ * ## 🔴 `.eq("id", userId)` ต้องมี แม้ policy จะกันอยู่แล้ว
+ * ถ้า policy ผ่อนวันหนึ่ง (เช่นให้แอดมินแก้ของคนอื่น) บรรทัดนี้คือสิ่งเดียวที่ยังกันไว้
+ * · และถ้าไม่มีมัน `update` จะกลายเป็น "แก้ทุกแถวที่ RLS ยอม" ซึ่งกว้างกว่าที่ผู้เรียกขอเสมอ
+ */
+export function updateDisplayName(db: Db, userId: string, displayName: string) {
+  return engineTable(db, "profiles")
+    .update({ display_name: displayName })
+    .eq("id", userId)
+    .select("id, display_name")
+    .maybeSingle();
 }
