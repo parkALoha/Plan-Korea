@@ -629,7 +629,7 @@ export function HomeScreen() {
        * · `sticky` เพราะตอนนี้มันมีของที่ต้องใช้ (กลับหน้าแรก · บัญชี) — แถบที่เลื่อนหายไปคือแถบที่ไม่มีใครใช้
        */}
       <header className="focus-ring-on-dark sticky top-0 z-20 bg-pine text-cream shadow-sm shadow-ink/10">
-        <div className="mx-auto flex max-w-[110rem] items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-[110rem] flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg">
             {/**
              * 🔴 **มาร์กจริงต้องอยู่บน *พื้นครีมทึบ* ไม่ใช่ `bg-cream/15`** (P2 · 4 ก.ย. 2026)
@@ -688,6 +688,13 @@ export function HomeScreen() {
            * ค้นหา      flex-1 + min-w-0     กินที่ที่เหลือ · `max-w-md` กันไม่ให้ยืดยาวบนจอ 27"
            * ปุ่มบัญชี   shrink-0             **ไม่ยอมหด** — เป็นทางออกจากหน้านี้ กดพลาดไม่ได้
            * ```
+           *
+           * ## 🔴 **ต่ำกว่า 430px มันตกไปเป็นแถวของตัวเอง — และนั่นไม่ใช่การถอยจากคำสั่งผู้ใช้**
+           * วัดที่ 375px (iPhone SE) ตอนบังคับให้อยู่แถวเดียว: ช่องเหลือ **90px** ⇒ เห็นแค่ `"ค้"`
+           * 🎯 ***ช่องค้นหาที่อ่านไม่ออกว่าเป็นช่องค้นหา ไม่ได้อยู่บนแถวนั้นจริง มันแค่กินที่อยู่***
+           * ⇒ `flex-wrap` + `min-w-[11rem]` ⇒ **อยู่แถวเดียวทุกที่ที่มันพอดี · ตกลงมาเมื่อไม่พอ**
+           * · `order-last` ตอนตกแถว ⇒ ลำดับเป็น ชื่อเว็บ → บัญชี → ค้นหา **ไม่ใช่แทรกกลาง**
+           * · เกณฑ์ `430px` มาจากการวัด ไม่ใช่ breakpoint สำเร็จรูป: iPhone 14 Pro Max = 430 พอดี
            * · ขึ้นเฉพาะตอน**มีทริปให้ค้น** — ช่องค้นหาบนหน้าที่ไม่มีอะไรให้ค้น คือช่องที่พิมพ์แล้วไม่มีอะไรเกิดขึ้น
            *   🎯 และตอนไม่มีทริป **ชื่อเว็บจะได้ที่คืนทั้งแถบ** ⇒ ผู้ใช้ใหม่เห็นชื่อเต็มไม่ถูกตัด
            *
@@ -706,7 +713,7 @@ export function HomeScreen() {
           {trips !== null && trips.length > 0 && (
             <label
               htmlFor="home-trip-search"
-              className="group flex min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 transition focus-within:ring-2 focus-within:ring-cream sm:max-w-md"
+              className="group order-last flex w-full min-w-[11rem] cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 transition focus-within:ring-2 focus-within:ring-cream min-[430px]:order-none min-[430px]:w-auto min-[430px]:flex-1 sm:max-w-md"
             >
               <input
                 id="home-trip-search"
@@ -757,13 +764,6 @@ export function HomeScreen() {
             ) : (
               <span className="h-9 w-9" aria-hidden />
             )}
-            <Link
-              href="/account"
-              aria-label={COPY.account}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-cream/10 text-lg hover:bg-cream/20"
-            >
-              ⚙️
-            </Link>
           </div>
         </div>
 
