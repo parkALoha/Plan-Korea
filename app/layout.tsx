@@ -18,11 +18,11 @@ const thaiSans = Noto_Sans_Thai({
 export const metadata: Metadata = {
   // 🔴 ชื่อ/คำอธิบายต้องเป็นกลาง — แอปนี้ถือทริปหลายประเทศแล้ว (P1 เปิดทริปญี่ปุ่นแล้วแท็บเบราว์เซอร์
   //    ยังเขียนว่า "แพลนเที่ยวเกาหลี" · 4 ก.ย. 2026) — เนื้อหาเฉพาะทริปอยู่ในหน้า ไม่ใช่ใน metadata ของ root
-  title: "แพลนทริป",
+  title: "luitrip",
   description: "เว็บวางแผนทริป เลือกสถานที่และจัดตารางร่วมกัน",
   // ติดตั้งลงหน้าจอโฮมได้ (เฟส 18) — manifest มาจาก app/manifest.ts
   // iOS ไม่อ่านไอคอนจาก manifest ต้องใช้ apple-touch-icon แยกต่างหาก
-  appleWebApp: { capable: true, title: "แพลนทริป", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "luitrip", statusBarStyle: "default" },
   icons: {
     icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
