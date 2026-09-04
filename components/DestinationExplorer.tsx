@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CityOption, CountryOption } from "@/components/TripDestinationPicker";
+import { CoverCard } from "@/components/CoverCard";
 import { E5_COPY } from "@/lib/i18n";
 
 const COPY = E5_COPY.explorer;
@@ -160,21 +161,32 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
                และต้องเลื่อนยาวมากเมื่อประเทศมี 23 เมือง) */
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]">
               {cityState.items.map((city) => (
-                <button
+                /**
+                 * 🔴 **การ์ดเมืองใช้เปลือกเดียวกับการ์ดทริป** — ผู้ใช้สั่งเอง (รอบที่สองของข้อเดิม):
+                 * > *"รูปแบบ มันควรใช้ component เดียวกับพวกนี้นะ"*
+                 * 🎯 ***เขาไม่ได้ขอให้หน้าตาคล้าย เขาขอให้เป็นตัวเดียวกัน*** — ก๊อป class จะกลับมารอบสาม
+                 * · `coverLayout="banner"` เพราะกริดเมืองเป็น 2 คอลัมน์ตั้งแต่มือถือ (การ์ดกว้าง ~152px)
+                 *   แถบข้างจะเหลือที่ให้รูปน้อยจนดูไม่ออกว่าเมืองอะไร — ต่างจากการ์ดทริปที่มือถือเป็นคอลัมน์เดียว
+                 * · **ไม่มี `badge`** — การ์ดเมืองไม่มีอะไรที่มีความหมายให้ใส่ (ไม่มีวัน ไม่มีสมาชิก)
+                 *   ⇒ ***ช่องที่มีที่ว่างแต่ว่างได้*** ไม่ใช่ช่องที่ต้องกรอกของปลอม
+                 */
+                <CoverCard
                   key={city.id}
                   onClick={() => onPickCity(city)}
-                  className="group overflow-hidden rounded-2xl border border-line bg-surface-raised text-left transition hover:border-maple/40 hover:shadow-md hover:shadow-ink/5"
+                  coverLayout="banner"
+                  cover={<CityThumb slug={city.legacy_slug} />}
+                  title={city.name_th}
+                  titleClassName="text-sm font-semibold"
                 >
-                  <CityThumb slug={city.legacy_slug} />
-                  <div className="p-2.5">
-                    <div className="truncate text-sm font-semibold text-content">{city.name_th}</div>
-                    {/* ชื่ออังกฤษ/ท้องถิ่นเป็นบรรทัดรอง — **จองที่ไว้เสมอ** ให้ทุกใบสูงเท่ากัน
-                        ไม่งั้นเมืองที่ไม่มีชื่อท้องถิ่นจะทำให้แถวนั้นเตี้ยกว่าเพื่อน */}
-                    <div className="truncate text-xs text-content-soft">
-                      {city.name_local || city.name_en || " "}
-                    </div>
-                  </div>
-                </button>
+                  {/* ชื่ออังกฤษ/ท้องถิ่นเป็นบรรทัดรอง — **จองที่ไว้เสมอ** ให้ทุกใบสูงเท่ากัน
+                      รูปเดียวกับบรรทัด 📍 ของการ์ดทริป: เมืองที่ไม่มีชื่อท้องถิ่นต้องไม่ทำให้แถวนั้นเตี้ยกว่าเพื่อน */}
+                  <p
+                    className="truncate text-xs text-content-soft"
+                    aria-hidden={city.name_local || city.name_en ? undefined : true}
+                  >
+                    {city.name_local || city.name_en || "\u00a0"}
+                  </p>
+                </CoverCard>
               ))}
             </div>
           )}

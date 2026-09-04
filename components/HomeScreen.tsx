@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { CardBadge, CoverCard } from "@/components/CoverCard";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
 import type { CityOption } from "@/components/TripDestinationPicker";
@@ -175,74 +176,53 @@ function TripCountdownBadge({ startDate, endDate }: { startDate: string; endDate
     tone = "bg-maple-dark text-white";
   }
 
-  return (
-    <span
-      className={`absolute right-2 top-2 rounded-full px-2.5 py-1 text-2xs font-semibold shadow-sm shadow-ink/20 ${tone}`}
-    >
-      {label}
-    </span>
-  );
+  return <CardBadge tone={tone}>{label}</CardBadge>;
 }
 
 function TripCard({ trip }: { trip: TripListItem }) {
   const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
-    <Link
+    <CoverCard
       href={`/trip/${trip.id}`}
-      className="group relative flex overflow-hidden rounded-2xl border border-line bg-surface-raised transition hover:border-maple/40 hover:shadow-md hover:shadow-ink/5 sm:flex-col"
+      /**
+       * 🔴 `adaptive` — แถบข้างบนมือถือ → แบนเนอร์บนตั้งแต่ `sm` · **ไม่ใช่รสนิยม**
+       * กริดทริปบนมือถือเป็นคอลัมน์เดียว · แบนเนอร์ทำให้เห็นจาก ~5 ใบเหลือ ~2.5 ใบต่อจอ (วัดแล้ว)
+       * 🎯 มือถือเป็นฝั่งที่ผู้ใช้พอใจอยู่แล้ว — การรื้อ desktop ต้องไม่จ่ายด้วยความแน่นของมือถือ
+       */
+      coverLayout="adaptive"
+      cover={<TripCoverImage destinations={trip.destinations} />}
+      badge={<TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />}
+      title={trip.title}
     >
-      {/* 🔴 รูปปกขึ้นบนเต็มความกว้าง — ของเดิมเป็นแถบข้าง `w-20` ที่เล็กเกินกว่าจะอ่านออกว่าเป็นเมืองอะไร
-          ⇒ มันกินพื้นที่โดยไม่ได้ทำงาน · ใน grid การ์ดมีความกว้างของตัวเอง รูปจึงได้ทำหน้าที่จริง */}
+      {/* 🔴 ผู้ใช้ขอเอง: *"ชื่อทริปใหญ่และเด่นขึ้น · วันที่/สถานที่สว่างขึ้นให้อ่านง่าย"*
+          `text-content-soft` → `text-content` สำหรับวันที่/สถานที่ **ซึ่งเป็นข้อมูลที่คนใช้เลือกทริป**
+          เหลือ `soft` ไว้เฉพาะจำนวนสมาชิก — ***ถ้าทุกบรรทัดเด่นเท่ากัน ก็ไม่มีบรรทัดไหนเด่น*** */}
+      <p className="mt-1 text-xs font-medium text-content sm:text-sm">
+        {tripDateRangeLabel(trip.start_date, trip.end_date)}
+      </p>
       {/**
-       * 🔴 **มือถือ = แถบข้าง · `sm` ขึ้นไป = แบนเนอร์บน — ไม่ใช่รูปเดียวสองที่**
-       * แบนเนอร์บนมือถือทำให้การ์ดสูงขึ้นเกือบเท่าตัว ⇒ เห็นจาก **~5 ใบเหลือ ~2.5 ใบ** ต่อจอ
-       * 🎯 ***มือถือเป็นฝั่งที่ผู้ใช้พอใจอยู่แล้ว — การรื้อ desktop ต้องไม่จ่ายด้วยความแน่นของมือถือ***
-       * (ผมทำแบนเนอร์ทั้งสองที่ก่อน แล้วเห็นตอนยิงจอ 375px จริง ไม่ใช่ตอนอ่านโค้ด)
+       * 🔴 **บรรทัดสถานที่ต้องมีที่ของมันเสมอ แม้ไม่มีข้อมูล** (ผู้ใช้ทักเอง 4 ก.ย. 2026)
+       * เดิมเรนเดอร์แบบมีเงื่อนไข ⇒ การ์ดที่ไม่มีจุดหมายเตี้ยกว่าเพื่อน **แถว 👥 ไม่อยู่ระดับเดียวกัน**
+       * (วัดก่อน/หลัง: `472 · 447 · 472 · 472 · 472` → `472` ทุกใบ)
+       * 🎯 ***จองที่ว่างไว้ ไม่ใช่เติมข้อความปลอม*** — "ยังไม่ระบุเมือง" คือการบอกสิ่งที่เราไม่รู้
+       *    (ทริปเก่าไม่มีจุดหมายเพราะตอนนั้น *ยังไม่บังคับ* ไม่ใช่เพราะผู้ใช้ตั้งใจเว้น)
        */}
-      <div className="shrink-0 sm:shrink">
-        <TripCoverImage destinations={trip.destinations} />
-      </div>
-      {/* 🔴 ป้ายเกาะ **การ์ด** ไม่ใช่เกาะรูป — บนมือถือรูปเป็นแถบกว้าง 96px ป้ายจะไปทับงานศิลป์
-          และอ่านเหมือนสติกเกอร์แปะผิดที่ · เกาะการ์ด = ตำแหน่งเดียวใช้ได้ทั้งสองความกว้าง */}
-      <TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />
-      <div className="min-w-0 flex-1 p-3">
-        {/* กันชื่อยาววิ่งไปใต้ป้าย — บน `sm` ป้ายอยู่เหนือแบนเนอร์ ไม่ทับบรรทัดนี้ จึงไม่ต้องเผื่อ */}
-        {/* 🔴 ผู้ใช้ขอเอง: *"ชื่อทริปใหญ่และเด่นขึ้น · วันที่/สถานที่สว่างขึ้นให้อ่านง่าย"*
-            `text-content-soft` (#6b6058) → `text-content` สำหรับวันที่/สถานที่ **ซึ่งเป็นข้อมูลที่คนใช้เลือกทริป**
-            เหลือ `soft` ไว้เฉพาะจำนวนสมาชิก ซึ่งเป็นข้อมูลรอง — ***ถ้าทุกบรรทัดเด่นเท่ากัน ก็ไม่มีบรรทัดไหนเด่น*** */}
-        <h3 className="truncate pr-20 text-base font-bold leading-snug text-content sm:pr-0 sm:text-lg">
-          {trip.title}
-        </h3>
-        <p className="mt-1 text-xs font-medium text-content sm:text-sm">
-          {tripDateRangeLabel(trip.start_date, trip.end_date)}
-        </p>
-        {/**
-         * 🔴 **บรรทัดสถานที่ต้องมีที่ของมันเสมอ แม้ไม่มีข้อมูล** (ผู้ใช้ทักเอง 4 ก.ย. 2026:
-         * *"มันควรมีอะไรที่เหมือนกัน เช่นการวางบรรทัดของข้อความ และ icon"*)
-         *
-         * เดิมเรนเดอร์แบบมีเงื่อนไข ⇒ การ์ดที่ไม่มีจุดหมายเตี้ยกว่าเพื่อน **แถว 👥 จึงไม่อยู่ระดับเดียวกัน**
-         * (P1 วัด: การ์ดที่มี 📍 แถว 👥 อยู่ที่ 210px · ที่ไม่มี อยู่ที่ 184px)
-         * 🎯 ***จองที่ว่างไว้ ไม่ใช่เติมข้อความปลอม*** — ใส่ "ยังไม่ระบุเมือง" จะเป็นการบอกสิ่งที่เราไม่รู้
-         *    (ทริปเก่าบางใบไม่มีจุดหมายเพราะตอนนั้นยังไม่บังคับ ไม่ใช่เพราะผู้ใช้ตั้งใจเว้น)
-         * · `aria-hidden` ตอนว่าง — โปรแกรมอ่านหน้าจอไม่ต้องอ่านช่องว่างที่มีไว้จัดหน้า
-         */}
-        <p
-          className="mt-0.5 truncate text-xs text-content sm:text-sm"
-          aria-hidden={destinationLabel ? undefined : true}
-        >
-          {destinationLabel ? `📍 ${destinationLabel}` : "\u00a0"}
-        </p>
-        <p className="mt-1.5 text-xs text-content-soft">
-          {trip.memberCount > 0 ? (
-            <>👥 {trip.memberCount}</>
-          ) : (
-            <span className="text-maple-dark" title={COPY.memberCountUnknown}>
-              👥 ?
-            </span>
-          )}
-        </p>
-      </div>
-    </Link>
+      <p
+        className="mt-0.5 truncate text-xs text-content sm:text-sm"
+        aria-hidden={destinationLabel ? undefined : true}
+      >
+        {destinationLabel ? `📍 ${destinationLabel}` : "\u00a0"}
+      </p>
+      <p className="mt-1.5 text-xs text-content-soft">
+        {trip.memberCount > 0 ? (
+          <>👥 {trip.memberCount}</>
+        ) : (
+          <span className="text-maple-dark" title={COPY.memberCountUnknown}>
+            👥 ?
+          </span>
+        )}
+      </p>
+    </CoverCard>
   );
 }
 
