@@ -581,6 +581,28 @@ export function HomeScreen() {
   const [sort, setSort] = useState<SortKey>("date");
   /** โมดัลค้นหาของจอโทรศัพท์ — จอ `sm` ขึ้นไปใช้ช่องในแถบหัวแทน ไม่เคยเปิดตัวนี้ */
   const [searchOpen, setSearchOpen] = useState(false);
+  /**
+   * 🔴 **ปิดโมดัลเองเมื่อจอโตข้าม `sm`** — ปุ่มที่เปิดมันเป็น `sm:hidden` **แต่โมดัลไม่ได้หายตามปุ่ม**
+   * ⇒ หมุนจอ / ลากขยายหน้าต่างตอนเปิดอยู่ = ได้โมดัลค้นหา **ทับช่องค้นหาที่โผล่มาในแถบหัวพอดี**
+   *   สองอันเดียวกัน ผูกกับ state ตัวเดียวกัน วางซ้อนกัน — และไม่มีอะไรอธิบายให้ผู้ใช้เข้าใจ
+   * 🎯 ***ซ่อนปุ่มด้วย CSS ไม่ได้ปิดสถานะที่ปุ่มนั้นเปิดไว้*** — CSS ซ่อนของที่ *มองเห็น* ไม่ได้ย้อน *สิ่งที่เกิดไปแล้ว*
+   * · `640px` = จุดเดียวกับ `sm:` ของ Tailwind ที่สลับช่องค้นหา — **ผูกไว้ที่นี่เพราะเปลี่ยนไม่พร้อมกันไม่ได้**
+   */
+  useEffect(() => {
+    if (!searchOpen) return;
+    const mq = window.matchMedia("(min-width: 640px)");
+    /**
+     * 🔴 **ฟังอย่างเดียว ไม่เช็ค `mq.matches` ทันทีในเอฟเฟกต์** — `setState` ตรง ๆ ในเอฟเฟกต์
+     * ผิดกฎ `react-hooks/set-state-in-effect` ของรีโปนี้ (`npm run lint` แดง ไม่ใช่แค่เตือน)
+     * · และเคสนั้นเกิดไม่ได้อยู่แล้ว: ปุ่มที่เปิดโมดัลเป็น `sm:hidden` ⇒ **กดตอนจอโตไม่ได้ตั้งแต่แรก**
+     *   ⚠️ ข้อนี้จริงเพราะ *ปุ่มถูกซ่อน* ไม่ใช่เพราะ *state ป้องกันตัวเอง* — วันที่มีทางเปิดทางอื่น ต้องกลับมาดูตรงนี้
+     */
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setSearchOpen(false);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [searchOpen]);
   const mounted = useMounted();
   /** 🔴 วันนี้ต้องมาจากฝั่ง client เท่านั้น — เหตุผลเดียวกับ `TripCountdownBadge` (หน้านี้ถูก prerender) */
   const todayIso = mounted ? new Date().toISOString().slice(0, 10) : "";
