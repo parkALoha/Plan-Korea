@@ -39,7 +39,9 @@
         "-p",
         "3300"
       ],
-      "port": 3300
+      "port": 3300,
+      "autoPortComment": "🔴 ห้าม autoPort — 3300 เป็นพอร์ตที่ Google OAuth redirect ผูกไว้ในแดชบอร์ด Supabase ถ้าเปลี่ยนพอร์ตอัตโนมัติ ปุ่ม 'เข้าด้วย Google' จะพังด้วย redirect_uri_mismatch และอาการจะดูเหมือนปัญหาของ Google ไม่ใช่ของพอร์ต",
+      "autoPort": false
     },
     {
       "name": "korea-trip-plan-prod",
@@ -51,6 +53,38 @@
         "3101"
       ],
       "port": 3101
+    },
+    {
+      "comment": "production build ของทรี platform บนพอร์ต 3300 — ต้องเป็น prod ไม่ใช่ dev เพราะ ServiceWorkerRegistrar ปิด SW ตอน dev โดยตั้งใจ ทำให้ทดสอบออฟไลน์ได้ผลลบที่ไม่มีความหมาย · พอร์ตต้องเป็น 3300 เพราะ Google OAuth redirect ผูกไว้กับพอร์ตนี้ในแดชบอร์ด Supabase (เหตุผลเดียวกับ platform-dev) · ต้อง npm run build ในทรี platform ก่อน",
+      "name": "platform-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/park/plan-korea-platform",
+        "run",
+        "start",
+        "--",
+        "-p",
+        "3300"
+      ],
+      "port": 3300,
+      "autoPort": false
+    },
+    {
+      "comment": "production build ของ **worktree ที่ปักหมุด** (/tmp/prod-verify) — ใช้ตอนต้องวัดออฟไลน์/SW โดยไม่ให้ WIP ของคนอื่นในทรีร่วมปนเข้าบิลด์ ⇒ หลักฐานผูกกับ sha จริงและทำซ้ำได้ · ต้อง `git worktree add --detach /tmp/prod-verify <sha>` + `cp -al node_modules` + `cp .env.local` + `npm run build` ที่นั่นก่อน · พอร์ต 3300 บังคับเพราะ OAuth redirect ผูกไว้",
+      "name": "platform-prod-pinned",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/tmp/prod-verify",
+        "run",
+        "start",
+        "--",
+        "-p",
+        "3300"
+      ],
+      "port": 3300,
+      "autoPort": false
     }
   ]
 }
