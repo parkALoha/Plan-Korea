@@ -65,7 +65,7 @@ function datesInRange(startISO: string, endISO: string): string[] {
 type DayRow = { id: string; date: string };
 
 /**
- * body: `{ startDate: "YYYY-MM-DD", endDate: "YYYY-MM-DD", force?: boolean }`
+ * body: `{ startDate: "YYYY-MM-DD", endDate: "YYYY-MM-DD" }`  ← **ไม่มี `force` แล้ว** (ดูหัวข้อ `409` ข้างล่าง)
  *
  * ## ลำดับการเขียน — **สองเกณฑ์ ไม่ใช่หนึ่ง** (เกณฑ์ที่สองมาจาก P4 · 4 ก.ย. 2026)
  * ```
