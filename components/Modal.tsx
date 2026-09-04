@@ -21,6 +21,7 @@ export function Modal({
   headerExtra,
   footer,
   size = "lg",
+  align = "sheet",
   fillHeight = false,
   bodyClassName = "",
   children,
@@ -37,6 +38,19 @@ export function Modal({
   /** แถวปุ่มท้ายกล่อง — อยู่นิ่งเสมอ ไม่ต้องเลื่อนหา */
   footer?: ReactNode;
   size?: "md" | "lg";
+  /**
+   * ที่วางกล่องบน **จอโทรศัพท์** — จอ `sm` ขึ้นไปอยู่กลางจอเหมือนกันทั้งสองค่า
+   * ```
+   * "sheet"  ชิดขอบล่าง เต็มความกว้าง มุมบนมน   ← ค่าเริ่มต้น · ของที่ต้องใช้นิ้วโต้ตอบนาน
+   * "top"    ใต้แถบหัว มุมมนทุกด้าน มีขอบข้าง    ← ของที่เปิดจากปุ่ม *บนแถบหัว*
+   * ```
+   * 🔴 **เกณฑ์คือ *ปุ่มที่เปิดมันอยู่ตรงไหน* ไม่ใช่ขนาดของกล่อง** (P2 · 4 ก.ย. 2026 · ผู้ใช้ทัก)
+   * โมดัลค้นหาถูกเปิดจากไอคอนมุมบนขวา แล้วกล่องไปโผล่ **ชิดขอบล่างสุด** ⇒ สายตาต้องกระโดดข้ามทั้งจอ
+   * 🎯 ***กล่องที่โผล่ไกลจากสิ่งที่กด อ่านเหมือนของคนละชิ้น ไม่ใช่ผลของการกดนั้น***
+   * · `"sheet"` ยังถูกสำหรับของที่นิ้วต้องทำงานนาน (เลือกจากรายการยาว ๆ) — ***อยู่ใกล้นิ้ว***
+   *   ⇒ **สองค่านี้ตอบคนละคำถาม ไม่มีค่าไหนดีกว่าอีกค่าโดยทั่วไป**
+   */
+  align?: "sheet" | "top";
   /**
    * สูงคงที่ `90vh` เสมอ แทนที่จะ *ไม่เกิน* `90vh` — สำหรับโมดัลที่เนื้อหาโหลดทีหลัง
    *
@@ -81,7 +95,9 @@ export function Modal({
    */
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+      className={`fixed inset-0 z-50 flex justify-center bg-black/50 sm:items-center ${
+        align === "top" ? "items-start p-3 pt-[4.25rem] sm:p-4" : "items-end"
+      }`}
       onClick={onClose}
     >
       {/* ใช้โทเคน surface/content ไม่ใช่ bg-white/text-ink — /today กับ /summary รองรับธีมมืดแล้ว
@@ -94,9 +110,9 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex ${fillHeight ? "h-[90vh]" : "max-h-[90vh]"} w-full flex-col rounded-t-2xl bg-surface-raised text-content outline-none sm:rounded-2xl ${
-          size === "md" ? "max-w-md" : "max-w-lg"
-        }`}
+        className={`flex ${fillHeight ? "h-[90vh]" : "max-h-[90vh]"} w-full flex-col bg-surface-raised text-content outline-none sm:rounded-2xl ${
+          align === "top" ? "rounded-2xl shadow-lg shadow-ink/20" : "rounded-t-2xl"
+        } ${size === "md" ? "max-w-md" : "max-w-lg"}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 px-5 pt-5">

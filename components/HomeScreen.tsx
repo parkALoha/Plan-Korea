@@ -1025,7 +1025,37 @@ export function HomeScreen() {
        * · ปิดโมดัล **ไม่ล้างคำค้น** — ตัวกรองยังทำงานต่อ และปุ่มในแถบหัวเปลี่ยนสถานะบอกไว้แล้ว
        */}
       {searchOpen && (
-        <Modal onClose={() => setSearchOpen(false)} title={COPY.searchOpen} size="md">
+        <Modal
+          onClose={() => setSearchOpen(false)}
+          title={COPY.searchOpen}
+          size="md"
+          /**
+           * 🔴 **`top` ไม่ใช่ `sheet`** — ปุ่มที่เปิดมันอยู่ *มุมบนขวาของแถบหัว*
+           * กล่องที่โผล่ชิดขอบล่างสุดทำให้สายตาต้องกระโดดข้ามทั้งจอ (ผู้ใช้ทักเอง 4 ก.ย. 2026)
+           * 🎯 ***กล่องที่โผล่ไกลจากสิ่งที่กด อ่านเหมือนของคนละชิ้น ไม่ใช่ผลของการกดนั้น***
+           * · และช่องพิมพ์เดิมอยู่ที่ y=558 จาก 667 ⇒ **แป้นพิมพ์ขึ้นมาก็บังพอดี**
+           */
+          align="top"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                disabled={query.trim() === ""}
+                className="rounded-lg px-3 py-2 text-sm text-content-soft disabled:opacity-40"
+              >
+                {COPY.searchClear}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchOpen(false)}
+                className="ml-auto rounded-lg bg-maple-dark px-4 py-2 text-sm font-semibold text-white"
+              >
+                {COPY.searchShowResults(visibleTrips.length)}
+              </button>
+            </>
+          }
+        >
           <label
             htmlFor="home-trip-search-modal"
             className="flex cursor-text items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 ring-1 ring-line focus-within:ring-2 focus-within:ring-maple"
@@ -1041,23 +1071,6 @@ export function HomeScreen() {
               className="min-w-0 flex-1 bg-transparent text-base text-content outline-none placeholder:text-content-soft"
             />
           </label>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              disabled={query.trim() === ""}
-              className="rounded-lg px-3 py-2 text-sm text-content-soft disabled:opacity-40"
-            >
-              {COPY.searchClear}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSearchOpen(false)}
-              className="rounded-lg bg-maple-dark px-4 py-2 text-sm font-semibold text-white"
-            >
-              {COPY.searchShowResults(visibleTrips.length)}
-            </button>
-          </div>
         </Modal>
       )}
 
