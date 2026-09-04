@@ -205,7 +205,7 @@ begin
   with src as materialized (
     select cp.id as old_id, gen_random_uuid() as new_id,
            cp.city_id, cp.category, cp.lat, cp.lng,
-           cp.maps_query, cp.description, cp.google_place_id
+           cp.maps_query, cp.google_place_id
       from public.custom_places cp
      where cp.trip_id = v_tpl.id
        -- 🔴 **`deleted_at is null` ต้องเขียนที่นี่ ทั้งที่ไม่มี query ไหนในโปรเจกต์เขียนมัน**
@@ -221,9 +221,13 @@ begin
   ),
   ins as (
     insert into public.custom_places
-      (id, trip_id, city_id, category, lat, lng, maps_query, description, google_place_id, added_by_user)
+      -- 🔴 **ไม่มี `description`** — `20260825140057:63` สร้างมันไว้ **แต่มันถูก drop ไปแล้ว**
+      --    ฉบับแรกของไฟล์นี้ก๊อปคอลัมน์ตามที่อ่านจาก migration ใบสร้าง ⇒ `column cp.description does not exist`
+      --    🎯 ***DDL ตอนสร้าง ≠ สคีมาวันนี้ — และ `database.types.ts` (gen จากฐาน) บอกเรื่องนี้อยู่แล้ว
+      --       ผมเปิดไฟล์นั้นเช็ค `deleted_at` ในวันเดียวกัน แล้วไปอ่านรายชื่อคอลัมน์จาก migration แทน***
+      (id, trip_id, city_id, category, lat, lng, maps_query, google_place_id, added_by_user)
     select s.new_id, v_new.id, s.city_id, s.category, s.lat, s.lng,
-           s.maps_query, s.description, s.google_place_id, v_uid
+           s.maps_query, s.google_place_id, v_uid
       from src s
     returning id
   )
