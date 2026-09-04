@@ -12,6 +12,7 @@ import { uploadStopPhoto, removeStopPhoto } from "@/lib/stopPhoto";
 import { InsertBetweenRow } from "./InsertBetweenRow";
 import NoteBody from "./NoteBody";
 import { NoteListEditor } from "./NoteListEditor";
+import { StopTimeEditor } from "./StopTimeEditor";
 import { PhotoLightbox } from "./PhotoLightbox";
 import { RowIconBox, TripListRow } from "./TripListRow";
 import { PlaceThumb } from "./PlaceThumb";
@@ -41,6 +42,7 @@ export function SortableStopRow({
   onView,
   onUpdateDwell,
   onUpdateNote,
+  onUpdateFixedTimes,
   onUpdatePhoto,
   onRemoveStop,
   onInsertBefore,
@@ -72,6 +74,8 @@ export function SortableStopRow({
   onView: () => void;
   onUpdateDwell: (minutes: number) => void;
   onUpdateNote: (note: string | null) => void;
+  /** กรอก/แก้เวลาถึง-เวลาสิ้นสุดเอง — null = ปลดหมุด กลับไปใช้ค่าคำนวณ (migration 0032) */
+  onUpdateFixedTimes: (next: { start: string | null; end: string | null }) => void;
   onUpdatePhoto: (photoUrl: string | null) => void;
   onRemoveStop: () => void;
   /** เปิด modal หาร้านอาหารแทรกก่อนจุดแวะนี้ — undefined เมื่อเป็นจุดแวะแรกของวัน (ยังไม่มี "ก่อนหน้า" ให้อ้างอิง) */
@@ -94,6 +98,7 @@ export function SortableStopRow({
     opacity: isDragging ? 0.5 : 1,
   };
   const [editingNote, setEditingNote] = useState(false);
+  const [editingTime, setEditingTime] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(false);
@@ -237,6 +242,25 @@ export function SortableStopRow({
         }
         time={sched.arrival}
         endTime={sched.departure}
+        /* วันที่ล็อกแล้วแก้เวลาไม่ได้ เหมือนที่ลาก/แก้โน้ตไม่ได้ — ล็อกคือล็อกทั้งใบ */
+        onTimeClick={locked ? undefined : () => setEditingTime((v) => !v)}
+        timeLabel={`แก้เวลาถึง/เวลาสิ้นสุดของ ${sched.place?.nameTh ?? "จุดแวะนี้"}`}
+        timeNote={
+          sched.timeConflictMinutes != null ? (
+            /* ⚠️ ต้องดังกว่า 📌 — "ตารางบอกเวลาที่ไปไม่ทัน" คือความผิดพลาดที่แพงที่สุดของหน้านี้
+               และมันจะเงียบที่สุดตอนใกล้ออกเดินทางจริง ซึ่งเป็นตอนที่พึ่งมันมากที่สุด */
+            <span
+              className="rounded bg-alert-soft px-1 py-0.5 text-2xs font-semibold text-alert-ink"
+              title={`เวลาที่กรอกไว้เร็วกว่าที่เดินทางไปถึงได้ ${sched.timeConflictMinutes} นาที`}
+            >
+              ⚠️ ไม่ทัน {sched.timeConflictMinutes} น.
+            </span>
+          ) : sched.startIsFixed || sched.endIsFixed ? (
+            <span className="text-2xs text-content-soft/70" title="เวลานี้กรอกเอง ไม่ได้คำนวณให้">
+              📌
+            </span>
+          ) : undefined
+        }
         onOpen={stop.kind !== "intercity" && sched.place ? onView : undefined}
         openLabel={sched.place ? `ดูรายละเอียด ${sched.place.nameTh}` : undefined}
         corner={
@@ -385,6 +409,21 @@ export function SortableStopRow({
           </div>
         }
       />
+      {editingTime && (
+        <StopTimeEditor
+          /* remount เมื่อหมุดในฐานเปลี่ยน (อีกคนแก้ผ่าน Realtime) — ดูเหตุผลใน StopTimeEditor */
+          key={`${stop.fixed_start_time ?? ""}|${stop.fixed_end_time ?? ""}`}
+          start={stop.fixed_start_time ?? null}
+          end={stop.fixed_end_time ?? null}
+          computedStart={sched.arrival}
+          computedEnd={sched.departure}
+          onSave={(next) => {
+            onUpdateFixedTimes(next);
+            setEditingTime(false);
+          }}
+          onCancel={() => setEditingTime(false)}
+        />
+      )}
       {stop.kind === "transfer" && sched.place && (
         <TransferAdvicePanel
           advice={transferAdvice}

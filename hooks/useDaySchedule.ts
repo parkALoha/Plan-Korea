@@ -169,6 +169,10 @@ export function useDaySchedule({
         placeId: s.place_id,
         dwellMinutes: s.dwell_minutes,
         travelMode: (s.travel_mode as TravelMode | null) ?? null,
+        /* หมุดเวลาที่ผู้ใช้กรอกเอง (migration 0032) — `?? null` เพราะแถวเก่าจาก state fallback
+           ไม่มีฟิลด์นี้ · undefined กับ null ต้องอ่านเป็น "ไม่มีหมุด" เหมือนกัน */
+        fixedStartTime: s.fixed_start_time ?? null,
+        fixedEndTime: s.fixed_end_time ?? null,
       }));
       return computeSchedule(effectiveStartTime, inputs, placesById, resolveTravelMinutes, {
         start: startAnchor,

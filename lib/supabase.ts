@@ -105,6 +105,17 @@ export type TripStop = {
   intercity_to?: string | null;
   /** ใช้เมื่อ kind === "intercity" — "bus" | "ktx" | "other" */
   intercity_mode?: string | null;
+  /**
+   * เวลาถึง/เวลาสิ้นสุดที่ผู้ใช้ **กรอกเอง** (migration 0032) — "HH:MM" · null = คำนวณตามปกติ
+   *
+   * optional เพราะแถวเก่าจาก state fallback ตอนยังไม่ได้ตั้งค่า Supabase ไม่มีฟิลด์นี้
+   * — รูปเดียวกับ `photo_url`/`kind` ที่จดเหตุผลไว้ข้างบน
+   * 🔴 คอลัมน์เป็น `text` + CHECK `^([01][0-9]|2[0-3]):[0-5][0-9]$` ⇒ ฝั่งนี้ต้องส่ง null
+   *    ไม่ใช่ `""` เวลาผู้ใช้ล้างช่อง ไม่งั้น DB ปฏิเสธทั้งคำสั่ง (บั๊ก 7.3 เคยกัดที่ start_time
+   *    ซึ่งเป็น text **ที่ไม่มี CHECK** ⇒ ตอนนั้น "" หลุดลงฐานไปเงียบ ๆ · ที่นี่จะไม่เงียบ)
+   */
+  fixed_start_time?: string | null;
+  fixed_end_time?: string | null;
   /** ใช้เมื่อ kind === "transfer" (migration 0025) — เวลาที่ต้องไปให้ทัน "HH:MM" เช่น เวลาบิน
    *  ว่าง = ไม่มีเดดไลน์ เป็นแค่แถวเดินทางไปสนามบินเฉยๆ */
   transfer_target_time?: string | null;

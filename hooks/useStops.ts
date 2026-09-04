@@ -341,6 +341,33 @@ export function useStops(planId: string | null) {
     );
   }, [guard]);
 
+  /**
+   * เวลาถึง/เวลาสิ้นสุดที่ผู้ใช้กรอกเอง — ส่ง null เพื่อ *ปลดหมุด* กลับไปใช้ค่าคำนวณ
+   * 🔴 ล้างช่องแล้วต้องได้ `null` ไม่ใช่ `""` — คอลัมน์มี CHECK รูปแบบเวลาอยู่ (migration 0032)
+   *    `""` จะถูก DB ปฏิเสธทั้งคำสั่ง ⇒ writeGuard เด้ง toast ให้เห็น ไม่หายเงียบ
+   */
+  const updateFixedTimes = useCallback(
+    async (stopId: string, patch: { start?: string | null; end?: string | null }) => {
+      const norm = (v: string | null | undefined) => (v == null || v === "" ? null : v);
+      const fields: Record<string, string | null> = {};
+      if ("start" in patch) fields.fixed_start_time = norm(patch.start);
+      if ("end" in patch) fields.fixed_end_time = norm(patch.end);
+      if (Object.keys(fields).length === 0) return;
+
+      if (!supabaseConfigured) {
+        setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, ...fields } : s)));
+        return;
+      }
+      await guard("เวลาที่กรอกเอง", () =>
+        supabase
+          .from("trip_stops")
+          .update({ ...fields, updated_at: new Date().toISOString() })
+          .eq("id", stopId)
+      );
+    },
+    [guard]
+  );
+
   const updateTravelMode = useCallback(async (stopId: string, travelMode: string | null) => {
     if (!supabaseConfigured) {
       setStops((prev) =>
@@ -523,6 +550,7 @@ export function useStops(planId: string | null) {
     updateStopPlace,
     updateDwellMinutes,
     updateTravelMode,
+    updateFixedTimes,
     updateNote,
     updatePhoto,
     updateOrderIndex,

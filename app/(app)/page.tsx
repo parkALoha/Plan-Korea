@@ -86,6 +86,7 @@ export default function Home() {
     updateDwellMinutes,
     updateTravelMode,
     updateNote,
+    updateFixedTimes,
     updatePhoto,
     removeStop,
     restoreStop,
@@ -471,6 +472,7 @@ export default function Home() {
                   onUpdateDwell={updateDwellMinutes}
                   onUpdateTravelMode={updateTravelMode}
                   onUpdateNote={updateNote}
+                  onUpdateFixedTimes={updateFixedTimes}
                   onUpdatePhoto={updatePhoto}
                   onAddPlace={() => openPickerForDay(day.id)}
                   onInsertPlace={(atIndex, center, prevPlace) =>

@@ -42,6 +42,7 @@ export function DayStopsSection({
   onUpdateDwell,
   onUpdateTravelMode,
   onUpdateNote,
+  onUpdateFixedTimes,
   onUpdatePhoto,
   onReorder,
   onAddPlace,
@@ -76,6 +77,7 @@ export function DayStopsSection({
   onUpdateDwell: (stopId: string, minutes: number) => void;
   onUpdateTravelMode: (stopId: string, mode: TravelMode) => void;
   onUpdateNote: (stopId: string, note: string | null) => void;
+  onUpdateFixedTimes: (stopId: string, next: { start: string | null; end: string | null }) => void;
   onUpdatePhoto: (stopId: string, photoUrl: string | null) => void;
   onAddPlace: () => void;
   /** เปิด modal หาร้านอาหารแทรกที่ตำแหน่ง atIndex ของวันนี้ ศูนย์กลางค้นหา = จุดก่อนหน้าตำแหน่งนั้น (หรือที่พัก/กลางเมืองถ้าแทรกก่อนจุดแรก) */
@@ -480,6 +482,7 @@ export function DayStopsSection({
                   }}
                   onUpdateDwell={(minutes) => onUpdateDwell(stop.id, minutes)}
                   onUpdateNote={(note) => onUpdateNote(stop.id, note)}
+                  onUpdateFixedTimes={(next) => onUpdateFixedTimes(stop.id, next)}
                   onUpdatePhoto={(photoUrl) => onUpdatePhoto(stop.id, photoUrl)}
                   onRemoveStop={() => onRemoveStop(stop.id)}
                   onInsertBefore={

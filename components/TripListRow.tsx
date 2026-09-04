@@ -39,6 +39,35 @@ import { cn } from "@/lib/cn";
  * ⚠️ **คอมโพเนนต์นี้ไม่รู้จัก `stop`/`event`** โดยตั้งใจ — รับแต่ชิ้นส่วนที่จะแสดง
  *   ที่เรียกเป็นคนแปลงข้อมูลของตัวเองให้ ⇒ เพิ่มลิสต์ที่ห้าได้โดยไม่ต้องแตะไฟล์นี้
  */
+/** กล่องเวลา — เป็นปุ่มเมื่อมี `onClick` เป็นข้อความเฉย ๆ เมื่อไม่มี · รูปร่างเดียวกันทั้งสองทาง */
+function TimeBox({
+  onClick,
+  label,
+  children,
+}: {
+  onClick?: () => void;
+  label?: string;
+  children: ReactNode;
+}) {
+  const cls = "flex shrink-0 items-baseline gap-1 whitespace-nowrap tabular-nums";
+  if (!onClick) return <span className={cls}>{children}</span>;
+  /* `before:-inset-*` ขยาย *พื้นที่แตะ* โดยไม่ขยับเลย์เอาต์ — ตัวเลข 19px สูงราว 22px
+     ซึ่งต่ำกว่า 44pt ที่นิ้วโป้งต้องการ และแถวนี้ถูกกดตอนเดินอยู่จริง */
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={cn(
+        cls,
+        "relative rounded-md text-left before:absolute before:-inset-x-2 before:-inset-y-2.5 before:content-[''] hover:bg-surface-soft"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function TripListRow({
   leading,
   time,
@@ -52,6 +81,9 @@ export function TripListRow({
   className,
   detail,
   actions,
+  onTimeClick,
+  timeLabel,
+  timeNote,
   children,
 }: {
   /** รูปย่อหรือกรอบไอคอน — ควรกว้าง 96px (`PlaceThumb size="2xl"`) ให้ทุกแถวตรงคอลัมน์กัน */
@@ -82,6 +114,15 @@ export function TripListRow({
   detail?: ReactNode;
   /** แถวปุ่มใต้คำอธิบาย (ปรับเวลา · เพิ่มรูป · ลบ) — แยกจาก `detail` เพราะปุ่มไม่ใช่ข้อความ */
   actions?: ReactNode;
+  /**
+   * ใส่แล้ว *เวลา* กดได้ เพื่อกรอก/แก้เอง (ผู้ใช้สั่ง 4 ก.ย. 2026)
+   * ⚠️ ไม่เกิด button ซ้อน button — `onOpen` ห่อเฉพาะ *รูป* กับ *ชื่อเรื่อง* ไม่ได้ห่อทั้งแถว
+   */
+  onTimeClick?: () => void;
+  /** ชื่อที่ screen reader อ่านสำหรับปุ่มเวลา — ตัวเลขอย่างเดียวไม่บอกว่ากดแล้วได้อะไร */
+  timeLabel?: string;
+  /** ป้ายเล็กข้างเวลา — 📌 กรอกเอง · ⚠️ ไปไม่ทัน · บอก *ที่มาของตัวเลข* ไม่ใช่ของตกแต่ง */
+  timeNote?: ReactNode;
   /** เนื้อหาอื่นที่ไม่เข้าสองช่องบน — ตัวแก้ที่กางเต็ม · แผงคำแนะนำ */
   children?: ReactNode;
 }) {
@@ -115,12 +156,13 @@ export function TripListRow({
                      ตกคนละบรรทัดจริง (4 ก.ย. 2026) · ช่วงเวลาหนึ่งช่วงต้องอ่านเป็น *ก้อนเดียว*
                      ไม่งั้นตาอ่านเป็นเวลาสองอันคนละเรื่อง — และมันจะเกิดเฉพาะแถวที่มีเวลาจบ
                      ซึ่งเป็นส่วนน้อย ⇒ หลุดรีวิวได้ง่ายมาก */
-                <span className="flex shrink-0 items-baseline gap-1 whitespace-nowrap tabular-nums">
+                <TimeBox onClick={onTimeClick} label={timeLabel}>
                   <span className="text-lg font-bold leading-none text-content">{time}</span>
                   {endTime && (
                     <span className="text-2xs font-medium text-content-soft">→ {endTime}</span>
                   )}
-                </span>
+                  {timeNote}
+                </TimeBox>
               )}
               {corner && <span className="ml-auto flex shrink-0 items-center gap-1">{corner}</span>}
             </div>
