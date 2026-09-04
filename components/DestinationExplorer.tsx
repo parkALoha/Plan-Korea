@@ -172,8 +172,21 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
                   }
                   titleClassName="text-sm font-semibold"
                 >
-                  <p className="truncate text-xs text-content-soft" aria-hidden>
-                    {"\u00a0"}
+                  {/**
+                   * 🔴 **ช่องที่เคยจองว่างไว้ ตอนนี้มีของจริงแล้ว** (`c8a0379`)
+                   * · `cityCount` — `null` **ไม่ใช่** `0` ⇒ อ่านคลังไม่ได้ ต้องได้ช่องว่างเหมือนเดิม
+                   *   ***"0 เมือง" ตอนที่เราแค่อ่านไม่ได้ คือการบอกสิ่งที่เราไม่รู้*** (P1 ชี้ · ตรงกับที่ผมปฏิเสธมาตลอด)
+                   * · `sampleCities` เรียงตาม `created_at` — 🔴 **ห้ามเรียกว่า "ยอดนิยม"** เราไม่มีข้อมูลความนิยม
+                   *   ⇒ ใช้ `📍` เฉย ๆ เหมือนบรรทัดจุดหมายของการ์ดทริป **ไม่ใส่คำที่อ้างการจัดอันดับ**
+                   */}
+                  <p className="mt-1 truncate text-xs font-medium text-content sm:text-sm">
+                    {typeof c.cityCount === "number" ? COPY.cityCount(c.cityCount) : "\u00a0"}
+                  </p>
+                  <p
+                    className="mt-0.5 truncate text-xs text-content sm:text-sm"
+                    aria-hidden={c.sampleCities?.length ? undefined : true}
+                  >
+                    {c.sampleCities?.length ? `📍 ${c.sampleCities.join(" · ")}` : "\u00a0"}
                   </p>
                 </CoverCard>
               ))}

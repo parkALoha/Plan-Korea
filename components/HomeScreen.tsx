@@ -383,11 +383,21 @@ export function HomeScreen() {
       <header className="focus-ring-on-dark sticky top-0 z-20 bg-pine text-cream shadow-sm shadow-ink/10">
         <div className="mx-auto flex max-w-[110rem] items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg">
-            <span
-              aria-hidden
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream/15 text-lg"
-            >
-              🧭
+            {/**
+             * 🔴 **มาร์กจริงต้องอยู่บน *พื้นครีมทึบ* ไม่ใช่ `bg-cream/15`** (P2 · 4 ก.ย. 2026)
+             * โลโก้ที่ผู้ใช้ส่งมาเป็น **เขียวสน** และแถบหัวก็เป็นพื้นเขียวเข้ม ⇒ **เขียวบนเขียว มองแทบไม่เห็น**
+             * (P1 เตือนไว้ก่อนแล้ว และเขาจงใจไม่ทำเวอร์ชันสีอ่อนให้ เพราะ *การเปลี่ยนสีโลโก้ของผู้ใช้
+             *  เป็นการตัดสินใจด้านดีไซน์ ไม่ใช่งานแปลงไฟล์* — ถูก)
+             *
+             * ✅ เลือกทาง **"มาร์กในชิปครีม"** ไม่ใช่ *"ตัดมาร์กทิ้ง เหลือแต่ตัวอักษร"*:
+             * · ช่องไอคอนมีอยู่แล้วในแถบหัว (เดิมเป็นอีโมจิ 🧭) — สลับของข้างในพอ ไม่ต้องรื้อโครง
+             * · **ตรงกับไอคอนแอปที่ P1 ทำไว้** ซึ่งวางมาร์กบนพื้นครีมเหมือนกัน ⇒ คนเห็นรูปเดียวกันทั้งบนเว็บและบนโฮมสกรีน
+             * · **ไม่ต้องรอไฟล์เวอร์ชันสีอ่อนจากผู้ใช้** — ทางที่สามในสามทางของ P1 คือการหยุดรอ
+             * ⚠️ ต้นฉบับเป็น jpeg 2048px มี artifact รอบเส้นอยู่แล้ว · **ใช้ที่ 36px มองไม่เห็น** แต่ห้ามขยายใหญ่กว่านี้
+             */}
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-cream">
+              {/* eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/ ที่ทีมวางเอง */}
+              <img src="/logo-mark.png" alt="" className="h-7 w-7 object-contain" />
             </span>
             <span className="min-w-0">
               <span className="block truncate text-base font-extrabold leading-tight">{COPY.brand}</span>

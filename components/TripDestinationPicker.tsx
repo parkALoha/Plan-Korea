@@ -6,7 +6,22 @@ import { E5_COPY } from "@/lib/i18n";
 
 const COPY = E5_COPY.destinationPicker;
 
-export type CountryOption = { id: string; name_th: string; name_en: string };
+export type CountryOption = {
+  id: string;
+  name_th: string;
+  name_en: string;
+  /**
+   * จำนวนเมืองในคลังของประเทศนี้ — `GET /api/engine/countries` (P1 · `c8a0379`)
+   * 🔴 **`null` ≠ `0`** · `0` = เปิดประเทศแล้วแต่ยังไม่มีเมือง (ข้อเท็จจริง) · `null` = อ่านคลังไม่ได้รอบนี้ (ยังไม่รู้)
+   */
+  cityCount?: number | null;
+  /**
+   * ชื่อเมืองตัวอย่าง — เรียงตาม `created_at`
+   * 🔴 **ห้ามเรียกว่า "เมืองยอดนิยม" ทั้งใน UI และในโค้ด** (P1 ย้ำ) — คลัง seed เมืองหลักก่อน
+   * ⇒ สามชื่อแรก *เป็น* เมืองหลักโดยผลข้างเคียง **ไม่ใช่โดยการวัด** · เราไม่มีข้อมูลความนิยมเลย
+   */
+  sampleCities?: string[] | null;
+};
 
 export type CityOption = {
   id: string;
