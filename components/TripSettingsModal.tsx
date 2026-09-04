@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "./Modal";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useTripMembers } from "@/hooks/useTripMembers";
+import { showToast } from "@/lib/toast";
 
 /**
  * ของที่ตั้งครั้งเดียวแล้วแทบไม่แตะอีก — ชื่อที่ใช้ติดจุดแวะ / ล็อกทั้งทริป (เฟส 20.3)
@@ -22,6 +26,7 @@ import { Modal } from "./Modal";
  * ยังเขียนไม่ได้ทั้งเว็บ** (ไม่มี `PATCH` โปรไฟล์ที่ไหนเลย — โซน API) → ข้อความในกล่องบอกตรงนี้ไว้
  */
 export function TripSettingsModal({
+  tripId,
   who,
   accountName,
   onWhoChange,
@@ -30,6 +35,8 @@ export function TripSettingsModal({
   onToggleLockAll,
   onClose,
 }: {
+  /** ทริปที่กำลังตั้งค่า — ใช้ยิงลบ และใช้เช็คว่าผู้ใช้เป็นเจ้าของไหม */
+  tripId: string;
   who: string;
   accountName: string;
   onWhoChange: (value: string) => void;
@@ -173,6 +180,118 @@ export function TripSettingsModal({
           ใช้ตอนแผนนิ่งแล้วก่อนออกเดินทาง — เปิดดูบนมือถือได้โดยไม่กลัวเผลอลากจุดแวะหลุด
         </p>
       </section>
+
+      <TripDeleteSection tripId={tripId} />
     </Modal>
+  );
+}
+
+/**
+ * **ย้ายทริปไปถังขยะ** — `DELETE /api/engine/trips/<id>` (หลังบ้านโดย P1 · `f9e7693`)
+ * เจ้าของ UI: P2-UI/UX · 4 ก.ย. 2026 · **ผู้ใช้เลือกตำแหน่งนี้เอง**
+ *
+ * ## 🔴 ทำไมอยู่ในหน้าทริป ไม่ใช่บนการ์ดหน้าแรก
+ * ผมเสนอสองทางให้ผู้ใช้เลือกจาก *สิ่งที่เขาเห็น* (ไม่ใช่จากชื่อหน้าจอ) · เขาเลือกทางนี้
+ * · การ์ดหน้าแรกสะอาดเหมือนเดิม — เขาเพิ่งสั่งถอดปุ่มปักหมุดออกด้วยคำว่า *"มันรก"* ในชั่วโมงเดียวกัน
+ * · 🎯 ***และตอนกดลบ เขาเห็นเต็ม ๆ แล้วว่ากำลังลบทริปไหน*** — บนการ์ดต้องเชื่อว่ากดถูกใบ
+ *
+ * ## 🔴 คำต้องเป็น "ย้ายไปถังขยะ" ไม่ใช่ "ลบถาวร" — มันคือ soft delete
+ * `deleted_at` ถูกตั้ง · ข้อมูลยังอยู่ครบ · กู้คืนได้ ⇒ **เขียนว่ากู้ไม่ได้ = โกหก**
+ * · ⚠️ **และห้ามใช้ `confirm()` ของเบราว์เซอร์** — ยืนยันสองขั้นในกล่องนี้ รูปเดียวกับ `confirmingLock` ข้างบน
+ *
+ * ## 🔴 `wasTemplate` ต้องบอก — และมันคือข้อที่เงียบที่สุดในทั้งใบ
+ * ถ้าทริปนี้เคยเป็น *ทริปแนะนำ* ธงจะถูกล้างตอนลบ ⇒ ***กู้คืนแล้วมันจะไม่กลับไปเป็นทริปแนะนำเอง***
+ * ไม่บอก = ผู้ใช้รู้ตอนสายเกินไป **และไม่มีทางเดาได้เลยว่าทำไม**
+ *
+ * ## ⚠️ เห็นเฉพาะเจ้าของ — และ "ยังไม่รู้" ต้องไม่เท่ากับ "ไม่ใช่เจ้าของ"
+ * `role === "owner"` เท่านั้นที่ลบได้ (ฝั่งฐานบังคับอยู่แล้ว) ⇒ คนอื่นไม่ควรเห็นปุ่มตั้งแต่แรก
+ * 🔴 **แต่ตอนยังโหลดสมาชิกไม่เสร็จ เราไม่รู้ ⇒ ไม่แสดง** · โผล่ทีหลังดีกว่าโผล่แล้วหาย
+ */
+function TripDeleteSection({ tripId }: { tripId: string }) {
+  const { members, loaded } = useTripMembers(tripId);
+  const user = useCurrentUser();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const router = useRouter();
+
+  const isOwner =
+    loaded &&
+    user.status === "ready" &&
+    members.some((m) => m.userId === user.id && m.role === "owner");
+  if (!isOwner) return null;
+
+  async function remove() {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/engine/trips/${tripId}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(String(r.status));
+      const body = (await r.json()) as {
+        dayCount?: number;
+        stopCount?: number;
+        wasTemplate?: boolean;
+      };
+      /**
+       * 🔴 **บอกว่า *เก็บอะไรไป* ไม่ใช่แค่ "ลบแล้ว"** — ตัวเลขคือสิ่งที่ทำให้ผู้ใช้รู้ทันทีว่ากดถูกใบไหม
+       * · และ `wasTemplate` ต้องอยู่ในข้อความเดียวกัน **ไม่ใช่ toast ที่สอง** ซึ่งจะถูกอ่านข้าม
+       */
+      const parts = [
+        `เก็บทริปนี้ไว้ในถังขยะแล้ว`,
+        typeof body.dayCount === "number" ? `${body.dayCount} วัน` : null,
+        typeof body.stopCount === "number" ? `${body.stopCount} จุดแวะ` : null,
+      ].filter(Boolean);
+      showToast("success", parts.join(" · "));
+      if (body.wasTemplate) {
+        showToast("info", "ทริปนี้เคยเป็นทริปแนะนำ — กู้คืนแล้วต้องตั้งเป็นทริปแนะนำใหม่อีกครั้ง");
+      }
+      /**
+       * ออกจากหน้าทริปที่เพิ่งถูกเก็บ — อยู่ต่อจะเห็นหน้าที่ชี้ไปยังของที่ไม่อยู่ในรายการแล้ว
+       * 🔴 `router.replace` ไม่ใช่ `push` — **ไม่งั้นกดย้อนกลับจะเด้งเข้าหน้าทริปที่เพิ่งเก็บไป**
+       *    ซึ่งจะโหลดไม่ขึ้นและอ่านเหมือนเว็บพัง · `refresh()` ให้รายการหน้าแรกไม่ค้างของเก่า
+       */
+      router.replace("/");
+      router.refresh();
+    } catch {
+      setBusy(false);
+      showToast("error", "เก็บทริปไม่สำเร็จ — ลองใหม่อีกครั้ง");
+    }
+  }
+
+  return (
+    <section className="pt-5">
+      <div className="mb-1.5 text-sm font-semibold text-content">ถังขยะ</div>
+      {confirming ? (
+        <div className="rounded-lg border border-maple bg-maple-soft/40 p-3">
+          <p className="text-sm text-content">
+            เก็บทริปนี้ไว้ในถังขยะใช่ไหม — ทริปจะหายจากรายการ แต่ยังกู้คืนได้ทีหลัง
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => void remove()}
+              disabled={busy}
+              className="rounded-lg bg-pine px-3 py-2 text-xs font-medium text-cream hover:bg-pine-dark disabled:opacity-50"
+            >
+              ยืนยัน เก็บเข้าถังขยะ
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+              className="rounded-lg bg-maple px-3 py-2 text-xs font-medium text-cream hover:bg-maple-dark disabled:opacity-50"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="w-full rounded-lg border border-line px-3 py-2.5 text-sm font-medium text-content hover:bg-surface-soft"
+        >
+          🗑️ ย้ายทริปนี้ไปถังขยะ
+        </button>
+      )}
+      <p className="mt-1.5 text-xs text-content-soft">
+        ไม่ได้ลบถาวร — วัน จุดแวะ และที่พักยังอยู่ครบ กู้คืนได้จากหน้าบัญชี
+      </p>
+    </section>
   );
 }
