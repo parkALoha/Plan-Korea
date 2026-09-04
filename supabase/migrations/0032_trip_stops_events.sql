@@ -50,13 +50,35 @@ begin;
 
 -- ── ด่านกันรันผิดฐาน ───────────────────────────────────────────────────────
 -- 🔴 `main` ไม่มี `app.project_identity` แบบที่ platform ใช้กันเรื่องนี้
---    สิ่งที่ตรวจได้จริงคือ *รูปของฐาน* — ถ้าไม่ใช่ฐานของเว็บทริปนี้ ตารางพวกนี้จะไม่ครบ
---    ไม่ได้กันได้ 100% แต่กันเคสที่เกิดจริงได้: ชี้ผิดโปรเจกต์แล้วเจอฐานเปล่า/ฐานอื่น
+--
+-- 🔴 **ฉบับแรกของด่านนี้เขียวพอดีบนฐานที่มันควรแดงที่สุด** (P1 ยิงถามฐานจริงแล้วพบ · 4 ก.ย. 2026)
+--    ผมเขียนไว้เองว่ากัน *"ชี้ผิดโปรเจกต์แล้วเจอฐานเปล่า/ฐานอื่น"* — **แต่ฐานอื่นที่มีโอกาส
+--    ถูกชี้ผิดมากที่สุดในทีมนี้ไม่ใช่ฐานเปล่า มันคือฐาน dev ของ `platform`** ซึ่งมี
+--    `trip_stops` · `trip_plans` · `kind` **ครบทั้งสามอย่าง** ⇒ ด่านผ่านฉลุย
+--    🎯 รูป *"เขียวหลอกเชิงสภาพแวดล้อม"* — สนามที่เลือกมาทดสอบขาดคุณสมบัติที่บั๊กต้องใช้
+--
+-- ✅ ตัวแยกที่ใช้ได้จริง — วัดจาก DDL ของทั้งสองฝั่ง ไม่ใช่เดา:
+--    main      `place_id text not null` (0006:6)          · **ไม่มี** catalog_place_id
+--    platform  `catalog_place_id uuid` (…140656_e2_trip_stops:65) · **ไม่มี** place_id เปล่า
+--    ⇒ สองเงื่อนไขนี้แยกสองฐานออกจากกันได้แน่นอน
+-- ⚠️ **ยังไม่ 100%** — ฐานที่สามที่หน้าตาเหมือน `main` ก็ยังผ่าน · แต่มันกันฐานที่ชี้ผิดได้จริง
+--    ในทีมนี้ ซึ่งคือความต่างทั้งหมดระหว่าง "ด่านที่ทำงาน" กับ "ด่านที่อ่านเหมือนทำงาน"
 do $guard$
 begin
   if to_regclass('public.trip_stops') is null or to_regclass('public.trip_plans') is null then
     raise exception 'ผิดฐาน: ไม่พบ trip_stops/trip_plans — ใบนี้ใช้กับฐานของเว็บทริปเกาหลีเท่านั้น';
   end if;
+
+  if not exists (
+        select 1 from information_schema.columns
+         where table_schema = 'public' and table_name = 'trip_stops' and column_name = 'place_id')
+     or exists (
+        select 1 from information_schema.columns
+         where table_schema = 'public' and table_name = 'trip_stops' and column_name = 'catalog_place_id')
+  then
+    raise exception 'ผิดฐาน: นี่คือสคีมาของ platform (มี catalog_place_id / ไม่มี place_id) — ใบนี้ใช้กับฐานเว็บทริปเกาหลีเท่านั้น';
+  end if;
+
   if not exists (
     select 1 from information_schema.columns
      where table_schema = 'public' and table_name = 'trip_stops' and column_name = 'kind'
