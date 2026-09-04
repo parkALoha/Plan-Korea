@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CardBadge, CoverCard } from "@/components/CoverCard";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
@@ -250,12 +250,12 @@ type TripMember = { userId: string; role: string; displayName: string | null };
  * `GET /api/engine/trips` คืน **จำนวน** ไม่คืน **ตัวตน** ⇒ วาดวงกลมให้ครบโดยเดาตัวอักษร = สร้างคนที่ไม่มีอยู่
  * ⇒ ต้องขอของจริงจาก `GET /api/engine/trips/[tripId]/members` (มีอยู่แล้ว ไม่ต้องสร้าง route ใหม่)
  *
- * ## ✅ ยิงเฉพาะทริปที่ *มีอะไรให้ยิง* — ไม่ใช่ทุกใบ
+ * ## ✅ ยิง *เมื่อจำเป็นต้องใช้* — ไม่ใช่ทุกใบตอนโหลดหน้า
  * ```
- * memberCount <= 1   ไม่ยิงเลย   สมาชิกคนเดียวคือผู้ใช้เอง ซึ่งเรารู้ชื่ออยู่แล้ว
- * memberCount  > 1   ยิงหนึ่งครั้ง
+ * memberCount  > 1   ยิงตอนการ์ดโผล่   ต้องใช้ชื่อมาวาดวงกลมทันที
+ * memberCount <= 1   ยิงตอนกดเปิด      การ์ดวาดวงกลมของผู้ใช้เองได้อยู่แล้ว
  * ```
- * 🎯 ***ทริปส่วนตัวเป็นส่วนใหญ่ ⇒ ค่าใช้จ่ายจริงต่ำกว่า "หนึ่งคำขอต่อการ์ด" มาก***
+ * 🎯 ***ทริปส่วนตัวเป็นส่วนใหญ่ ⇒ หน้าแรกไม่ยิงอะไรเพิ่มเลยตอนโหลด และยังกดดูได้ครบทุกใบ***
  * · ⚠️ **แต่ก็ยังเป็น N คำขอสำหรับคนที่มีทริปกลุ่มเยอะ** — ทางที่ถูกกว่านี้คือให้ route รายการ
  *   ส่งชื่อย่อมาด้วยตั้งแต่แรก **ขอ P1 ไว้แล้ว** · วันที่ฟิลด์นั้นมา ให้ลบการยิงตรงนี้ทิ้ง
  *
@@ -275,8 +275,19 @@ function TripMembers({
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<TripMember[] | "error" | null>(null);
 
+  /**
+   * 🔴 **โหลดเมื่อ *จำเป็นต้องใช้* ไม่ใช่เมื่อการ์ดโผล่**
+   * ```
+   * memberCount > 1   โหลดตอนการ์ดโผล่   ← ต้องใช้ *ชื่อ* มาวาดวงกลมบนการ์ดทันที
+   * memberCount <= 1  โหลดตอนกดเปิด      ← การ์ดวาดวงกลมของผู้ใช้เองได้อยู่แล้ว ไม่ต้องรอใคร
+   * ```
+   * 🎯 ***ทริปเดี่ยวเป็นส่วนใหญ่ ⇒ หน้าแรกไม่ยิงอะไรเพิ่มเลยตอนโหลด และยังกดดูได้ครบทุกใบ***
+   * · `open` อยู่ใน deps เพราะการเปิดโมดัลคือ *เงื่อนไขที่สองที่ทำให้ต้องโหลด*
+   * · `members !== null` แล้วไม่โหลดซ้ำ — กดปิดเปิดใหม่ใช้ของเดิม
+   */
   useEffect(() => {
-    if (memberCount <= 1) return;
+    if (members !== null) return;
+    if (memberCount <= 1 && !open) return;
     let cancelled = false;
     async function load() {
       try {
@@ -292,7 +303,7 @@ function TripMembers({
     return () => {
       cancelled = true;
     };
-  }, [tripId, memberCount]);
+  }, [tripId, memberCount, open, members]);
 
   // 🔴 `0` = อ่านไม่ได้ ไม่ใช่ไม่มีคน — ทริปทุกใบมีเจ้าของอย่างน้อยหนึ่งคนเสมอ
   if (memberCount <= 0) {
@@ -311,7 +322,16 @@ function TripMembers({
    */
   const shown = known ? known.slice(0, 5) : [];
   const rest = memberCount - (shown.length || 1);
-  const clickable = memberCount > 1;
+  /**
+   * 🔴 **กดได้ทุกใบ รวมทริปที่มีคนเดียว** (ผู้ใช้แย้งข้อเดิมของผม 4 ก.ย. 2026)
+   * ผมเคยตัดปุ่มออกเมื่อ `memberCount === 1` ด้วยเหตุผลว่า *"กดเข้าไปก็เห็นแค่ตัวเอง"*
+   * · เขาตอบว่า: ***"กดเข้าไปก็เห็นไงว่า สมาชิก 1 คน รายการคือ …"***
+   * 🎯 ***"เห็นแค่ตัวเอง" คือ *คำตอบ* ไม่ใช่ *ความว่างเปล่า*** — มันยืนยันว่าทริปนี้ยังไม่มีใครอื่น
+   *    ซึ่งเป็นสิ่งที่คนอยากรู้จริง ๆ ก่อนจะแชร์ให้ใคร
+   * · และมันทำให้การ์ดทุกใบ **ทำงานเหมือนกัน** — ของที่กดได้บ้างไม่ได้บ้างโดยไม่มีอะไรบอก
+   *   คือของที่ผู้ใช้ต้องลองเองทีละใบถึงจะรู้
+   */
+  const clickable = true;
 
   const stack = (
     <span className="flex items-center gap-1">
@@ -550,6 +570,25 @@ type TripsState =
   | { status: "error" };
 
 export function HomeScreen() {
+
+  /**
+   * 🔴 **ปุ่ม "+ สร้างทริปใหม่" พาไปที่ตัวเลือก ไม่ได้เปิดโมดัลแล้ว** (ผู้ใช้สั่ง 4 ก.ย. 2026)
+   * เดิมกดแล้วโมดัลกรอกรายละเอียดเด้งขึ้นทันที ⇒ **บังคับให้เริ่มจากศูนย์เสมอ**
+   * ทั้งที่หน้านี้มีทางลัดอยู่แล้วสองทาง (*ทริปแนะนำ* ที่จัดไว้ให้ · *ไปไหนดี?* ที่เลือกจากประเทศ)
+   * แต่ทั้งคู่อยู่ **ใต้รายการทริปของผู้ใช้** ⇒ คนที่มีทริปเยอะไม่มีทางเห็นถ้าไม่เลื่อนลงไปเอง
+   * 🎯 ***โมดัลไม่ได้ปิดแค่หน้าจอ มันปิดตัวเลือกที่เราอุตส่าห์ทำไว้*** — ผู้ใช้เป็นคนชี้เอง
+   */
+  const chooseRef = useRef<HTMLDivElement>(null);
+  function scrollToChoices() {
+    const el = chooseRef.current;
+    if (!el) return;
+    // ⚠️ เคารพ prefers-reduced-motion — เลื่อนลื่นทำให้บางคนเวียนหัว
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    // 🔴 เลื่อนอย่างเดียวไม่พอสำหรับคนใช้คีย์บอร์ด/โปรแกรมอ่านจอ — โฟกัสต้องตามไปด้วย
+    //    ไม่งั้นกด Tab ต่อจะกลับไปอยู่ต้นหน้า ซึ่งคือที่ที่เขาเพิ่งขอออกมา
+    el.focus({ preventScroll: true });
+  }
   const user = useCurrentUser();
   const { mode: systemMode } = useSystemMode();
   const readOnly = systemMode.state === "ok" && systemMode.readOnly;
@@ -1019,18 +1058,23 @@ export function HomeScreen() {
              * ⇒ ***หัวข้อเปล่าอ่านเหมือนเว็บพัง · ไม่มีหัวข้อเลยอ่านเหมือนยังไม่มีฟีเจอร์*** — อย่างหลังจริงกว่า
              * 📌 เสียบเมื่อ P1 ส่ง shape มา · **ผมจะไม่เดาชื่อฟิลด์ล่วงหน้า**
              */}
-            <RecommendedTrips />
+            {/* 🔴 กล่องนี้คือปลายทางของปุ่ม "+ สร้างทริปใหม่" — ครอบ *ทั้งสอง* ทางเลือกโดยตั้งใจ
+                ผู้ใช้บอกว่าต้องการเห็น **ทริปแนะนำ หรือ เลือกจากไปไหนดี** ⇒ เลื่อนไปที่อันใดอันหนึ่ง
+                จะซ่อนอีกอันไว้ใต้จอ · `tabIndex={-1}` ให้โฟกัสไปลงได้ แต่ไม่เพิ่มลำดับ Tab ให้คนอื่น */}
+            <div ref={chooseRef} tabIndex={-1} className="scroll-mt-4 outline-none">
+              <RecommendedTrips />
 
-            <section className="mt-10 border-t border-line pt-6">
-              <h2 className="text-lg font-bold text-content">{E5_COPY.explorer.heading}</h2>
-              <p className="mb-3 mt-0.5 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
-              <DestinationExplorer
-                onPickCity={(city) => {
-                  setSeedCities([city]);
-                  setCreateOpen(true);
-                }}
-              />
-            </section>
+              <section className="mt-10 border-t border-line pt-6">
+                <h2 className="text-lg font-bold text-content">{E5_COPY.explorer.heading}</h2>
+                <p className="mb-3 mt-0.5 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
+                <DestinationExplorer
+                  onPickCity={(city) => {
+                    setSeedCities([city]);
+                    setCreateOpen(true);
+                  }}
+                />
+              </section>
+            </div>
           </>
         )}
       </div>
@@ -1039,7 +1083,7 @@ export function HomeScreen() {
           ตอนมีทริปอยู่แล้ว (สถานะว่างมีฟอร์มเต็มบนหน้าอยู่แล้ว ไม่ต้องมีปุ่มลอยซ้อนอีกจุด) */}
       {trips !== null && trips.length > 0 && (
         <button
-          onClick={() => setCreateOpen(true)}
+          onClick={scrollToChoices}
           disabled={readOnly}
           aria-label={COPY.newTrip}
           title={readOnly ? COPY.readOnlyFab : undefined}
