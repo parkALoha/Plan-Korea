@@ -81,7 +81,7 @@ export function useHiddenPlaces(tripId: string | null) {
        * ⚠️ **ที่นี่ทิศของความผิดพลาดไม่สมมาตร** — ซ่อนแล้วเห็น (แคชหาย) แย่กว่า เห็นแล้วซ่อน (แคชเก่า)
        * เพราะอย่างหลังผู้ใช้กดซ่อนซ้ำได้ · อย่างแรกคือของที่เขาตัดสินใจไปแล้ว **ถูกลบทิ้งเงียบ ๆ**
        */
-      await hydrateThenFetch<Record<string, HiddenPlaceRow>>({
+      void hydrateThenFetch<Record<string, HiddenPlaceRow>>({
         readCache: () => storeGet<Record<string, HiddenPlaceRow>>(cacheKey),
         fetchFresh: async () => {
           const map = await fetchInto(activeTripId);
@@ -91,14 +91,27 @@ export function useHiddenPlaces(tripId: string | null) {
           return map;
         },
         // ไม่ส่ง `writeCache` — `fetchInto` เขียนให้แล้วทุกทาง (ดูเหตุผลที่หัวมัน) · ส่งด้วยจะเขียนซ้ำสองรอบ
-        applyCache: (map) => setHidden(map),
-        applyFresh: (map) => setHidden(map),
+        /**
+         * 🔴 **`setLoaded` อยู่ในกิ่ง apply ไม่ใช่หลัง `await`** (P7 · 4 ก.ย. 2026 · `E6-AC7`)
+         * `hydrateThenFetch` **ไม่ settle เลย** ถ้าดิสก์ไม่ตอบ — พิสูจน์แล้วที่
+         * `hydrateThenFetch.test.ts:169` ซึ่ง assert `settled === false` ตรง ๆ
+         * ⇒ ทุกอย่างที่อยู่ *หลัง* `await` (รวม `subscribe()`) **ไม่เกิดตลอดกาล**
+         * 🎯 **เคสนั้นเขียนไว้ว่า "ผลต่อผู้ใช้เป็นศูนย์" — จริงตอนไม่มีอะไรต่อท้าย `await`
+         *    และผมทำให้มันไม่จริงตอนย้าย hook นี้มา IndexedDB**
+         */
+        applyCache: (map) => {
+          setHidden(map);
+          setLoaded(true);
+        },
+        applyFresh: (map) => {
+          setHidden(map);
+          setLoaded(true);
+        },
         // ไม่มีทั้งของสดและของในเครื่อง → คงค่าเริ่มต้น `{}` · `fetchReadJson` ยิง toast ให้แล้ว
-        applyError: () => {},
+        applyError: () => setLoaded(true),
         isCancelled: () => cancelled,
       });
-      if (cancelled) return;
-      setLoaded(true);
+      // 🔴 ไม่เช็ค `cancelled` ตรงนี้แล้ว — ไม่มี `await` คั่นอีกต่อไป มันจึงเป็น `false` เสมอ
 
       channel = supabase
         .channel(channelName)

@@ -64,7 +64,7 @@ function useCustomPlacesStore(tripId: string | null) {
 
     async function init() {
       // 🔴 `E6-AC7` — IndexedDB อ่าน async → ลำดับ hydrate→fetch ไม่มาฟรีอีกแล้ว (ดู `hydrateThenFetch`)
-      await hydrateThenFetch<CustomPlace[]>({
+      void hydrateThenFetch<CustomPlace[]>({
         readCache: () => readHandoff<CustomPlace[]>(tripKey(activeTripId, "customPlaces")),
         fetchFresh: async () => {
           const rows = await fetchPlaces(activeTripId);
@@ -73,14 +73,28 @@ function useCustomPlacesStore(tripId: string | null) {
           return rows;
         },
         // ไม่ส่ง `writeCache` — `fetchPlaces` เขียนให้แล้วทุกทาง
-        applyCache: (rows) => setCustomPlaces(rows),
-        applyFresh: (rows) => setCustomPlaces(rows),
-        applyError: () => {}, // ไม่มีทั้งของสดและของในเครื่อง → คง `[]` · `fetchReadJson` ยิง toast แล้ว
+        /**
+         * 🔴 **`setLoaded` ย้ายเข้ามาในกิ่ง apply — ไม่ใช่รอหลัง `await`** (P7 · 4 ก.ย. 2026 · `E6-AC7`)
+         * `hydrateThenFetch` **ไม่ settle เลย** ถ้าดิสก์ไม่ตอบ (พิสูจน์แล้วที่ `hydrateThenFetch.test.ts:169`
+         * ซึ่ง assert `settled === false` ตรง ๆ) · เดิมที่นั่นเขียนว่า *"ผลต่อผู้ใช้เป็นศูนย์"*
+         * **ซึ่งจริงตอนไม่มีอะไรต่อท้าย `await` — และผมเพิ่งทำให้มันไม่จริงตอนย้าย hook นี้**
+         * ⇒ ดิสก์ค้าง = `setLoaded(true)` ไม่เกิด **และ `subscribe()` ไม่เกิด** ทั้งที่ของสดขึ้นจอไปแล้ว
+         * 🎯 **`await` ที่เพิ่มเข้าไปในเส้นทางเดิม ส่งต่อ *การไม่จบ* ให้ทุกอย่างที่อยู่ข้างหลังมัน**
+         */
+        applyCache: (rows) => {
+          setCustomPlaces(rows);
+          setLoaded(true);
+        },
+        applyFresh: (rows) => {
+          setCustomPlaces(rows);
+          setLoaded(true);
+        },
+        // ไม่มีทั้งของสดและของในเครื่อง → คง `[]` · `fetchReadJson` ยิง toast แล้ว
+        applyError: () => setLoaded(true),
         isCancelled: () => cancelled,
       });
-      if (cancelled) return;
-      setLoaded(true);
-
+      // 🔴 ไม่เช็ค `cancelled` ตรงนี้แล้ว — ไม่มี `await` คั่นอีกต่อไป มันจึงเป็น `false` เสมอ
+      //    (เช็คที่ตรวจของที่เป็นไปไม่ได้ อ่านเหมือนเช็คที่ทำงาน — แย่กว่าไม่มี)
       channel = supabase
         .channel(channelName)
         .on(

@@ -72,7 +72,7 @@ export function useChecklist(tripId: string | null) {
        * 🎯 **ของที่ต้องเตรียมก่อนบิน คือของที่คนเปิดดูตอน *ไม่มีเน็ต* พอดี** — พาสปอร์ต ปลั๊ก ยา
        * ⚠️ และมันหลุดสายตาเพราะ `mobile-arch.md §13.1` เขียนว่ากลุ่มนี้ "แคชแล้ว" โดยไม่ได้ไล่ทีละตัว
        */
-      await hydrateThenFetch<ChecklistItem[]>({
+      void hydrateThenFetch<ChecklistItem[]>({
         readCache: () => storeGet<ChecklistItem[]>(tripKey(activeTripId, "checklist")),
         fetchFresh: async () => {
           const rows = await fetchRows(activeTripId);
@@ -82,13 +82,27 @@ export function useChecklist(tripId: string | null) {
           return rows;
         },
         // ไม่ส่ง `writeCache` — `fetchRows` เขียนให้แล้วทุกทาง (ดูเหตุผลที่หัวมัน)
-        applyCache: (rows) => setItems(rows),
-        applyFresh: (rows) => setItems(rows),
-        applyError: () => {}, // ไม่มีทั้งของสดและของในเครื่อง → คง `[]` · `fetchReadJson` ยิง toast แล้ว
+        /**
+         * 🔴 **`setLoaded` อยู่ในกิ่ง apply ไม่ใช่หลัง `await`** (P7 · 4 ก.ย. 2026 · `E6-AC7`)
+         * `hydrateThenFetch` **ไม่ settle เลย** ถ้าดิสก์ไม่ตอบ — พิสูจน์แล้วที่
+         * `hydrateThenFetch.test.ts:169` ซึ่ง assert `settled === false` ตรง ๆ
+         * ⇒ ทุกอย่างที่อยู่ *หลัง* `await` (รวม `subscribe()`) **ไม่เกิดตลอดกาล**
+         * 🎯 **เคสนั้นเขียนไว้ว่า "ผลต่อผู้ใช้เป็นศูนย์" — จริงตอนไม่มีอะไรต่อท้าย `await`
+         *    และผมทำให้มันไม่จริงตอนย้าย hook นี้มา IndexedDB**
+         */
+        applyCache: (rows) => {
+          setItems(rows);
+          setLoaded(true);
+        },
+        applyFresh: (rows) => {
+          setItems(rows);
+          setLoaded(true);
+        },
+        // ไม่มีทั้งของสดและของในเครื่อง → คง `[]` · `fetchReadJson` ยิง toast แล้ว
+        applyError: () => setLoaded(true),
         isCancelled: () => cancelled,
       });
-      if (cancelled) return;
-      setLoaded(true);
+      // 🔴 ไม่เช็ค `cancelled` ตรงนี้แล้ว — ไม่มี `await` คั่นอีกต่อไป มันจึงเป็น `false` เสมอ
 
       channel = supabase
         .channel(channelName)

@@ -61,30 +61,17 @@ export function usePlaceNotes(tripId: string | null, planId: string | null) {
         return;
       }
 
-      // 🔴 `E6-AC7` — IndexedDB อ่าน async → ลำดับ hydrate→fetch ไม่มาฟรีอีกแล้ว (ดู `hydrateThenFetch`)
-      const outcome = await hydrateThenFetch<PlaceNote[]>({
-        readCache: () => readHandoff<PlaceNote[]>(`placeNotes:${planId}`),
-        fetchFresh: async () => {
-          const map = await fetchNotes(tripId, planId);
-          // ต้อง **โยน** เพื่อแยก "อ่านไม่ได้" ออกจาก "ยิงได้แต่ยังไม่มีโน้ต" (`[]` เป็นคำตอบที่ถูกต้อง)
-          if (!map) throw new Error("place notes unreachable");
-          return Object.values(map);
-        },
-        // ไม่ส่ง `writeCache` — `fetchNotes` เขียนให้แล้วทุกทาง
-        applyCache: (rows) => setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n]))),
-        applyFresh: (rows) => setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n]))),
-        applyError: () => {},
-        isCancelled: () => cancelled,
-      });
-      if (cancelled) return;
       /**
-       * 🔴 **อ่านไม่ได้ ≠ ไม่มีโน้ต** · `available=false` ทำให้ UI ไม่เสนอปุ่มที่กดแล้วล้มแน่ ๆ
-       * ⚠️ **`"cache-only"` ต้องเป็น `false` ด้วย** — มีของอ่านได้ แต่ *เขียน* ไม่ได้แน่นอนเพราะเน็ตล้ม
-       *    (พฤติกรรมเดิมเป๊ะ: เดิมดูว่า `map` เป็น `null` ไหม ซึ่งเป็นจริงทุกครั้งที่ยิงไม่สำเร็จ)
+       * 🔴 **`subscribe()` ขึ้นมาก่อน `await` โดยตั้งใจ** (P7 · 4 ก.ย. 2026)
+       * `hydrateThenFetch` **ไม่ settle เลย** ถ้าดิสก์ไม่ตอบ (`hydrateThenFetch.test.ts:169`
+       * assert `settled === false` ตรง ๆ) ⇒ ทุกอย่างหลัง `await` **ไม่เกิดตลอดกาล**
+       * · ฮุคอื่นแก้ด้วยการ `void` ทั้งก้อน · **ที่นี่ทำไม่ได้เพราะ `available` ต้องใช้ `outcome`**
+       *   → ยกเฉพาะสิ่งที่ *ไม่* ต้องรอผล (การสมัคร realtime) ขึ้นมาไว้ข้างหน้าแทน
+       * ⚠️ **ราคาที่ยังจ่ายอยู่:** ดิสก์ค้าง → `available` ค้างที่ค่าเริ่มต้น (`true`)
+       *   ⇒ UI ยังเสนอปุ่มโน้ต · กดแล้วจะล้มแบบมีเสียง (`writeGuard`) **ไม่ใช่ล้มเงียบ**
+       *   จึงยอมรับได้ · จดไว้เพราะมันเป็นของที่เหลือ ไม่ใช่ของที่แก้แล้ว
+       * · 📌 realtime ที่มาก่อนข้อมูลชุดแรกไม่เป็นไร — handler แค่ debounce แล้วยิงใหม่
        */
-      setAvailable(outcome === "fresh");
-      setLoaded(true);
-
       channel = supabase
         .channel(channelName)
         .on("postgres_changes", { event: "*", schema: "public", table: "place_notes" }, () => {
@@ -98,6 +85,37 @@ export function usePlaceNotes(tripId: string | null, planId: string | null) {
         })
         .subscribe();
       noteRealtimeSubscribed("place_notes");
+
+      // 🔴 `E6-AC7` — IndexedDB อ่าน async → ลำดับ hydrate→fetch ไม่มาฟรีอีกแล้ว (ดู `hydrateThenFetch`)
+      const outcome = await hydrateThenFetch<PlaceNote[]>({
+        readCache: () => readHandoff<PlaceNote[]>(`placeNotes:${planId}`),
+        fetchFresh: async () => {
+          const map = await fetchNotes(tripId, planId);
+          // ต้อง **โยน** เพื่อแยก "อ่านไม่ได้" ออกจาก "ยิงได้แต่ยังไม่มีโน้ต" (`[]` เป็นคำตอบที่ถูกต้อง)
+          if (!map) throw new Error("place notes unreachable");
+          return Object.values(map);
+        },
+        // ไม่ส่ง `writeCache` — `fetchNotes` เขียนให้แล้วทุกทาง
+        // 🔴 `setLoaded` อยู่ในกิ่ง apply ด้วยเหตุผลเดียวกับ `subscribe()` ข้างบน — ดิสก์ค้างต้องไม่ค้างจอ
+        applyCache: (rows) => {
+          setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n])));
+          setLoaded(true);
+        },
+        applyFresh: (rows) => {
+          setNotes(Object.fromEntries(rows.map((n) => [n.place_id, n])));
+          setLoaded(true);
+        },
+        applyError: () => setLoaded(true),
+        isCancelled: () => cancelled,
+      });
+      if (cancelled) return;
+      /**
+       * 🔴 **อ่านไม่ได้ ≠ ไม่มีโน้ต** · `available=false` ทำให้ UI ไม่เสนอปุ่มที่กดแล้วล้มแน่ ๆ
+       * ⚠️ **`"cache-only"` ต้องเป็น `false` ด้วย** — มีของอ่านได้ แต่ *เขียน* ไม่ได้แน่นอนเพราะเน็ตล้ม
+       *    (พฤติกรรมเดิมเป๊ะ: เดิมดูว่า `map` เป็น `null` ไหม ซึ่งเป็นจริงทุกครั้งที่ยิงไม่สำเร็จ)
+       */
+      setAvailable(outcome === "fresh");
+      setLoaded(true);
     }
 
     init();
