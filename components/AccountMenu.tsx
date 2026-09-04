@@ -56,18 +56,40 @@ export function AccountMenu({ displayName }: { displayName: string }) {
 
   return (
     <div ref={boxRef} className="relative">
+      {/**
+       * 🔴 **ไอคอนคน ไม่ใช่ชื่อ และไม่ใช่วงกลมตัวย่อ** — ผู้ใช้สั่งสองรอบ ซึ่ง *ต้องอ่านรวมกัน*
+       * ```
+       * รอบ ① (4 ก.ย.)  "ไม่เอาสัญลักษณ์นี้"                    ← ชี้ที่ **วงกลมตัวอักษรย่อ**
+       * รอบ ② (5 ก.ย.)  "แก้ ก้องทดสอบ … เป็น icon profile ยังดีกว่า"
+       * ```
+       * 🎯 ***อ่านรวมสองรอบ: เขาไม่ได้ไม่ชอบ "ไอคอน" — เขาไม่ชอบ "วงกลมตัวอักษรย่อ"***
+       * ⚠️ ระหว่างสองรอบผมเปลี่ยนเป็น **ชื่อ + ลูกศร** ซึ่งเป็นการเดาที่ผิด — และผมเดาผิด
+       *    เพราะอ่านรอบแรกว่า *"ไม่เอาไอคอน"* ทั้งที่เขาชี้ที่ *รูปแบบ* ของไอคอน ไม่ใช่ตัวไอคอน
+       *
+       * · ชื่อยังอยู่ใน `aria-label` ⇒ **โปรแกรมอ่านหน้าจอยังบอกได้ว่าเป็นบัญชีของใคร** ไม่ได้หายไปกับตัวอักษร
+       * · `stroke="currentColor"` ⇒ ตามสีข้อความของแถบหัว **ไม่ต้องมีสีของตัวเอง** (เหมือนแว่นขยาย)
+       */}
       <button
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex max-w-[12rem] items-center gap-1.5 rounded-lg bg-cream/10 px-3 py-1.5 text-sm font-medium hover:bg-cream/20"
+        aria-label={`${COPY.account} · ${displayName}`}
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-cream/10 hover:bg-cream/20"
       >
-        <span className="min-w-0 truncate">{displayName}</span>
-        <span aria-hidden className="text-2xs opacity-80">
-          ▾
-        </span>
+        <svg
+          aria-hidden
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.9}
+          strokeLinecap="round"
+          className="h-[1.15rem] w-[1.15rem]"
+        >
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M4.8 20c.9-3.6 3.7-5.4 7.2-5.4s6.3 1.8 7.2 5.4" />
+        </svg>
       </button>
 
       {open && (

@@ -58,7 +58,10 @@ export function SiteNav() {
               href={tab.href}
               aria-current={active ? "page" : undefined}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
-                active ? "text-maple" : "text-content-soft"
+                /* 🔴 `maple-dark` ไม่ใช่ `maple` — วัดในหน้าจริง: `maple` (#d9683a) บนพื้นแถบ = **3.27 ตก AA**
+                   ตัวอักษร 11px ⇒ ต้อง 4.5 · และ **ปุ่มที่กำลังเลือกอยู่คือปุ่มที่ต้องอ่านออกที่สุด**
+                   🎯 ***สีที่ใช้บอก "กำลังอยู่ตรงนี้" กลับเป็นสีที่อ่านยากที่สุดในแถบ*** */
+                active ? "text-maple-dark" : "text-content-soft"
               }`}
             >
               <span aria-hidden className="text-lg leading-none">

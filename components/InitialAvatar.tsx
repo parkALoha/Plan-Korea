@@ -18,7 +18,11 @@ export function InitialAvatar({
     <span
       {...(label ? { "aria-label": label } : { "aria-hidden": true })}
       title={label}
-      className={`flex shrink-0 items-center justify-center rounded-full bg-maple-soft font-bold text-maple-dark ${className}`}
+      /* 🔴 คู่ `panel-maple` (พื้น+ตัวอักษร) ไม่ใช่ `maple-soft` + `maple-dark` — วัดในหน้าจริง 5 ก.ย. 2026
+         คู่เดิมได้ **4.01 ตก WCAG AA** (วงกลมนี้ 12px ตัวหนา = ข้อความปกติ ต้อง 4.5)
+         🎯 ***คู่ `panel-*` ถูกนิยามให้ใช้ *ด้วยกัน* จึงมีที่เดียวที่ต้องแก้เมื่อคอนทราสต์ตก —
+            ส่วน `maple-soft`/`maple-dark` เป็นสีแบรนด์คนละตัว ที่บังเอิญมาอยู่คู่กัน*** */
+      className={`flex shrink-0 items-center justify-center rounded-full bg-panel-maple font-bold text-panel-maple-ink ${className}`}
     >
       {initial}
     </span>

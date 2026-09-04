@@ -77,6 +77,7 @@ export function TripSettingsModal({
             />
             <div className="mt-2 flex gap-2">
               <button
+              type="button"
                 onClick={() => {
                   onWhoChange(nameDraft.trim());
                   setEditingName(false);
@@ -86,6 +87,7 @@ export function TripSettingsModal({
                 ยืนยันชื่อนี้
               </button>
               <button
+              type="button"
                 onClick={() => setEditingName(false)}
                 /* ยกเลิก = **ปุ่มพื้นทึบสีแดง** ทรงเดียวกับปุ่มยืนยัน (ผู้ใช้สั่ง 4 ก.ย. 2026)
                    🔴 รอบแรกผมทำเป็น *ตัวหนังสือสีแดง* ซึ่งยังไม่ใช่ — ผู้ใช้ทักว่า *"หน้าตายังไม่เป็นปุ่ม"*
@@ -108,6 +110,7 @@ export function TripSettingsModal({
                 {who || "—"}
               </p>
               <button
+              type="button"
                 onClick={() => {
                   setNameDraft(who);
                   setEditingName(true);
@@ -147,6 +150,7 @@ export function TripSettingsModal({
             </p>
             <div className="mt-2 flex gap-2">
               <button
+              type="button"
                 onClick={() => {
                   onToggleLockAll();
                   setConfirmingLock(false);
@@ -156,6 +160,7 @@ export function TripSettingsModal({
                 {allLocked ? "ยืนยัน ปลดล็อกทุกวัน" : "ยืนยัน ล็อกทุกวัน"}
               </button>
               <button
+              type="button"
                 onClick={() => setConfirmingLock(false)}
                 /* ยกเลิก = **ปุ่มพื้นทึบสีแดง** ทรงเดียวกับปุ่มยืนยัน (ผู้ใช้สั่ง 4 ก.ย. 2026)
                    🔴 รอบแรกผมทำเป็น *ตัวหนังสือสีแดง* ซึ่งยังไม่ใช่ — ผู้ใช้ทักว่า *"หน้าตายังไม่เป็นปุ่ม"*
@@ -169,6 +174,7 @@ export function TripSettingsModal({
           </div>
         ) : (
           <button
+              type="button"
             onClick={() => setConfirmingLock(true)}
             className="w-full rounded-lg border border-line px-3 py-2.5 text-sm font-medium text-content hover:bg-surface-soft"
           >
@@ -266,6 +272,7 @@ function TripDeleteSection({ tripId }: { tripId: string }) {
           </p>
           <div className="mt-2 flex gap-2">
             <button
+              type="button"
               onClick={() => void remove()}
               disabled={busy}
               className="rounded-lg bg-pine px-3 py-2 text-xs font-medium text-cream hover:bg-pine-dark disabled:opacity-50"
@@ -273,6 +280,7 @@ function TripDeleteSection({ tripId }: { tripId: string }) {
               ยืนยัน เก็บเข้าถังขยะ
             </button>
             <button
+              type="button"
               onClick={() => setConfirming(false)}
               disabled={busy}
               className="rounded-lg bg-maple px-3 py-2 text-xs font-medium text-cream hover:bg-maple-dark disabled:opacity-50"
@@ -283,6 +291,7 @@ function TripDeleteSection({ tripId }: { tripId: string }) {
         </div>
       ) : (
         <button
+              type="button"
           onClick={() => setConfirming(true)}
           className="w-full rounded-lg border border-line px-3 py-2.5 text-sm font-medium text-content hover:bg-surface-soft"
         >

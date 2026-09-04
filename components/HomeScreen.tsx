@@ -857,9 +857,11 @@ export function HomeScreen() {
            * 🔴 **รูปช่องค้นหาตามภาพที่ผู้ใช้ส่งมา** (4 ก.ย. 2026): พื้นสว่าง · ขอบมน ·
            * **ปุ่มแว่นขยายเป็นบล็อกสีทึบชิดขวา** — ไม่ใช่ไอคอนจาง ๆ ลอยอยู่ข้างใน
            *
-           * ## 🔴 ใช้ `<label>` ไม่ใช่ `<button>` — และความต่างนี้ไม่ใช่เรื่องเทคนิค
+           * ## 🔴 ใช้ `<label>` ไม่ใช่ `<button
+              type="button">` — และความต่างนี้ไม่ใช่เรื่องเทคนิค
            * การกรองเป็นแบบ **สดตามที่พิมพ์** ⇒ ไม่มี "การค้นหา" ให้กดสั่ง
-           * ⇒ ทำเป็น `<button>` จะได้ปุ่มที่ **กดแล้วไม่มีอะไรเกิดขึ้น** ซึ่งเป็นข้อที่เพิ่งแก้ไปที่การ์ดทริปแนะนำ
+           * ⇒ ทำเป็น `<button
+              type="button">` จะได้ปุ่มที่ **กดแล้วไม่มีอะไรเกิดขึ้น** ซึ่งเป็นข้อที่เพิ่งแก้ไปที่การ์ดทริปแนะนำ
            * ✅ `<label htmlFor>` ทำให้กดตรงบล็อกสีแล้ว **เคอร์เซอร์ไปอยู่ในช่อง** — เป็นสิ่งที่คนคาดหวังจริง
            *    และเป็นพฤติกรรมมาตรฐานของเบราว์เซอร์ **ไม่ต้องเขียน `onClick` เลยสักบรรทัด**
            *
@@ -968,6 +970,7 @@ export function HomeScreen() {
           <div className="flex flex-col items-center gap-4 py-10 text-center">
             <p className="text-content-soft">{COPY.tripsUnreadable}</p>
             <button
+              type="button"
               onClick={() => setRetryKey((k) => k + 1)}
               className="rounded-lg bg-maple px-4 py-2 text-sm font-semibold text-white hover:bg-maple-dark"
             >
@@ -1038,8 +1041,16 @@ export function HomeScreen() {
                 ).map(([key, label]) => (
                   <button
                     key={key}
+                    type="button"
                     role="tab"
                     aria-selected={tab === key}
+                    /**
+                     * 🔴 **`role="tab"` ที่ไม่มี `aria-controls` เป็นสัญญาที่ผิด**
+                     * โปรแกรมอ่านหน้าจอประกาศว่า *"แท็บ 1 จาก 4"* แล้วผู้ใช้จะกด `Ctrl+Alt+↓`
+                     * เพื่อกระโดดเข้าเนื้อของแท็บ — **แล้วไม่มีอะไรให้กระโดดไป**
+                     * ⇒ ชี้ไปที่กริดทริป ซึ่ง *เป็น* เนื้อของแท็บอยู่แล้วโดยพฤตินัย
+                     */
+                    aria-controls="trip-grid"
                     onClick={() => setTab(key)}
                     className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
                       tab === key
@@ -1059,6 +1070,7 @@ export function HomeScreen() {
               <div className="flex flex-col items-center gap-3 py-10 text-center">
                 <p className="text-content-soft">{COPY.noMatch}</p>
                 <button
+              type="button"
                   onClick={() => {
                     setQuery("");
                     setTab("all");
@@ -1081,7 +1093,7 @@ export function HomeScreen() {
                *    breakpoint ตายตัวจะพอดีเฉพาะจอที่เราบังเอิญทดสอบ · `auto-fill` ไล่ระดับเองทุกความกว้าง
                *    ซึ่งตรงกับที่ผู้ใช้ขอว่า *"ต้องทำเผื่อรองรับขนาดทุกหน้าจอ"*
                */
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
+              <div id="trip-grid" role="tabpanel" className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
                 {visibleTrips.map((trip) => (
                   <TripCard
                     key={trip.id}
@@ -1135,11 +1147,23 @@ export function HomeScreen() {
           ตอนมีทริปอยู่แล้ว (สถานะว่างมีฟอร์มเต็มบนหน้าอยู่แล้ว ไม่ต้องมีปุ่มลอยซ้อนอีกจุด) */}
       {trips !== null && trips.length > 0 && (
         <button
+          /**
+           * 🔴 **`type="button"` ไม่ใช่ของฟุ่มเฟือย** — `<button>` ที่ไม่ระบุ type
+           * **มีค่าเริ่มต้นเป็น `submit` ตามสเปก HTML** ⇒ วันที่มีคนห่อส่วนนี้ด้วย `<form>`
+           * ปุ่มนี้จะ submit ฟอร์มนั้นเงียบ ๆ · **ตอนนี้ยังไม่พังเพราะบังเอิญไม่มี `<form>` ครอบ**
+           * 🎯 ***ของที่ปลอดภัยเพราะสิ่งที่ยังไม่มี ไม่ได้ปลอดภัยเพราะตัวมันเอง*** (P1 ทัก · ยิงยืนยันแล้ว)
+           */
+          type="button"
           onClick={scrollToChoices}
           disabled={readOnly}
           aria-label={COPY.newTrip}
           title={readOnly ? COPY.readOnlyFab : undefined}
-          className="fixed bottom-20 right-4 z-30 flex h-14 lg:bottom-6 items-center gap-2 rounded-full bg-maple px-5 font-semibold text-white shadow-lg shadow-ink/20 hover:bg-maple-dark disabled:cursor-not-allowed disabled:opacity-40 sm:right-8"
+          /* 🔴 `bg-maple-dark` ไม่ใช่ `bg-maple` — วัดในหน้าจริง: ขาวบน `maple` (#d9683a) = **3.50 ตก AA**
+             ปุ่มนี้ 16px ตัวหนา ⇒ ยังไม่นับเป็น "ข้อความใหญ่" (ต้อง 18.66px) จึงต้อง 4.5 · `maple-dark` = 4.98 ✅
+             ⚠️ hover เดิมเป็น `maple-dark` อยู่แล้ว ⇒ **ปุ่มนี้ผ่านเกณฑ์เฉพาะตอนเอาเมาส์ไปชี้** ซึ่งบนมือถือไม่มี
+             🔴 **และ hover ต้องไปทาง *เข้มขึ้น* ไม่ใช่กลับไปหา `maple`** — ไม่งั้นจะได้ปุ่มที่ *ตกเกณฑ์เฉพาะตอนถูกชี้*
+                ซึ่งเป็นบั๊กเดิมกลับหัว · ใช้ `brightness-90` เพื่อให้คอนทราสต์ขึ้นเสมอ ไม่ใช่ลง */
+          className="fixed bottom-20 right-4 z-30 flex h-14 lg:bottom-6 items-center gap-2 rounded-full bg-maple-dark px-5 font-semibold text-white shadow-lg shadow-ink/20 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-40 sm:right-8"
         >
           {COPY.newTrip}
         </button>

@@ -168,7 +168,14 @@
   --panel-pine: #e2ede8; /* = pine-soft */
   --panel-pine-ink: #24382f; /* = pine-dark */
   --panel-maple: #fbe2d3; /* = maple-soft */
-  --panel-maple-ink: #b8502a; /* = maple-dark */
+  /**
+   * 🔴 **#b8502a เดิม = 4.01 กับ `--panel-maple` (#fbe2d3) ⇒ ตก WCAG AA (4.5)** — วัดในหน้าจริง 5 ก.ย. 2026
+   * โผล่ที่ **วงกลมตัวย่อสมาชิก** (`InitialAvatar` · 12px ตัวหนา = ข้อความปกติ ต้อง 4.5) และทุกพาเนลที่ใช้คู่นี้
+   * 🎯 ***คู่สีที่ถูกนิยามคู่กัน แต่ไม่เคยถูกวัดคู่กัน*** — ไม่มีใครผิด เพราะไม่มีจุดไหนที่บังคับให้วัด
+   * ⇒ #a5461f = **4.84 ✅** · เลิกเท่ากับ `maple-dark` แล้ว **ซึ่งเป็นเรื่องดี** เพราะมันคนละหน้าที่:
+   *   `maple-dark` = สีแบรนด์ · `panel-maple-ink` = **ตัวอักษรบนพื้น `panel-maple`** ⇒ ผูกกับคู่ของมัน
+   */
+  --panel-maple-ink: #a5461f;
   --panel-gold: #f6e6c8;
   --panel-gold-ink: #7a5312;
   --alert-ink: #a8342a;
@@ -376,7 +383,7 @@ button:not(:disabled):active {
     --panel-pine: #e2ede8;
     --panel-pine-ink: #24382f;
     --panel-maple: #fbe2d3;
-    --panel-maple-ink: #b8502a;
+    --panel-maple-ink: #a5461f;
     --panel-gold: #f6e6c8;
     --panel-gold-ink: #7a5312;
     --alert-ink: #a8342a;
