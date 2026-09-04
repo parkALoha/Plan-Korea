@@ -83,7 +83,12 @@ def comp(place, kind):
 
 # คำต่อท้ายที่ Google ใส่แต่ชื่อเมืองในคลังไม่มี (และกลับกัน)
 # 🔴 `shi`/`sheng`/`qu` มาจากจีน: Google คืน **พินอินเว้นวรรค + คำต่อท้าย** — `Cheng Du Shi` (成都市)
-_SUFFIX = ("city", "town", "village", "ward", "shi", "sheng", "qu", "go", "cho")
+# 🔴 เติม 4 ก.ย. 2026 (P5 วัดมา) — ไต้หวันคืน `county`/`township`/`district` ที่ระดับ admin1/admin2
+#    `_norm("Nantou County")` = `nantoucounty` ≠ `nantou` ⇒ **หนานโถว/ฮวาเหลียนได้ 0 แห่ง**
+#    ⚠️ **และครึ่งหนึ่งผ่าน**: `New Taipei City` · `Taipei City` ผ่านเพราะ `city` อยู่ในลิสต์อยู่แล้ว
+#    → ตัวเลขรวมจึงไม่ดูผิดสังเกต **นั่นคือเหตุผลที่ไม่มีใครเห็นมันจนกว่าจะไล่ทีละเมือง**
+_SUFFIX = ("city", "town", "village", "ward", "county", "township", "district",
+           "shi", "sheng", "qu", "go", "cho")
 
 # 🔴 **เมืองที่ Google ไม่มีชื่อเดียว — ต้องประกาศชื่ออื่นตรง ๆ**
 #    ฮ่องกงไม่มี `locality` และ `admin1` เป็น *เขต* ทั้งสาม ไม่ใช่ชื่อเมือง
@@ -145,24 +150,46 @@ def city_of(place, city, catalog_names):
     ```
     ① locality ตรงชื่อเมืองเป๊ะ                      Kotoku-in → Kamakura
     ② locality ตรงหลังตัดคำต่อท้าย                    "Shirakawa" ↔ "Shirakawa-go"
-    ③ admin1 ตรงชื่อเมือง (จังหวัดที่ชื่อเดียวกับเมือง)  โตเกียว: locality="Minato City" · admin1="Tokyo"
+    ③ admin2 ตรงชื่อเมือง (อำเภอ/เขต)                  ฮอยอัน: locality=— · admin2="Hoi An" · admin1="Da Nang"
+    ④ admin1 ตรงชื่อเมือง (จังหวัดที่ชื่อเดียวกับเมือง)  โตเกียว: locality="Minato City" · admin1="Tokyo"
     ```
+    🔴 **ชั้น admin2 เพิ่ม 4 ก.ย. 2026 (P5 วัดมา) — และมันปิดบั๊กที่*ดูสมเหตุสมผลทั้งสองฝั่ง*:**
+    เวียดนามควบรวมจังหวัดปี 2025 ⇒ `admin1` ของ **ฮอยอัน** คือ **`Da Nang`**
+    ⇒ ชั้น admin1 เดิมคืน `True` ให้ดานัง · **ฮอยอันได้ 0 · ดานังได้ของฮอยอันไปทั้งหมด**
+    ⚠️ **และการ์ด "ยกให้เมืองที่ตรงกว่า" เดิมช่วยไม่ได้ เพราะมันเขียนว่า `if loc and …`**
+       — ฮอยอัน **ไม่มี `locality`** ⇒ การ์ดทั้งอันถูกข้าม · ตัวที่รู้ว่าเป็นฮอยอันคือ `admin2`
+    🎯 ***การ์ดที่ผูกกับฟิลด์เดียว จะเงียบสนิทในเคสที่ฟิลด์นั้นว่าง — ซึ่งคือเคสที่มันควรทำงานที่สุด***
     🔴 **ชั้น ③ ต้องไม่แย่งของเมืองอื่นในคลัง** — ถ้า `locality` เป็นชื่อเมืองที่มีในคลังอยู่แล้ว
        ให้เมืองนั้นเป็นเจ้าของ **ไม่ใช่เมืองที่ชื่อตรงกับจังหวัด**
        (ไม่งั้น "Tokyo" จะกวาดสถานที่ของเมืองข้างเคียงที่อยู่ในจังหวัดเดียวกัน)
     ⚠️ **วัดมาแล้ว 4 ก.ย. 2026:** ถ้ามีแต่ชั้น ① → **โตเกียวได้ 0 · ชิราคาวาโกะได้ 0**
        ทั้งที่ทั้งสองเมืองมีของเพียบ — ผลลบที่มาจากกฎแคบเกิน ไม่ใช่จากข้อมูล
     """
-    loc, a1 = comp(place, "locality"), comp(place, "administrative_area_level_1")
+    loc = comp(place, "locality")
+    a2 = comp(place, "administrative_area_level_2")
+    a1 = comp(place, "administrative_area_level_1")
     mine = {_norm(n) for n in names_of(city)}
+
+    def owned_by_other(name):
+        """ชื่อนี้เป็นชื่อของเมือง *อื่น* ในคลังหรือเปล่า — ใช้ยกของให้เจ้าของที่เจาะจงกว่า"""
+        if not name:
+            return False
+        t = _norm(name)
+        return any(t in {_norm(x) for x in ns}
+                   for cn, ns in catalog_names.items() if cn != city["name_en"])
+
     if loc and _norm(loc) in mine:
         return True, "locality"
-    if a1 and _norm(a1) in mine:
-        # 🔴 ชั้น ③ — ยกให้เมืองที่ `locality` ตรงกว่า ถ้าเมืองนั้นมีในคลัง
-        #    ไม่งั้น "โตเกียว" (ที่ชื่อตรงกับจังหวัด) จะกวาดของเมืองข้างเคียงในจังหวัดเดียวกัน
-        if loc and any(_norm(loc) in {_norm(x) for x in ns} for cn, ns in catalog_names.items()
-                       if cn != city["name_en"]):
+    if a2 and _norm(a2) in mine:
+        # ชั้นนี้ยังต้องยกให้ `locality` ซึ่งเจาะจงกว่า ตามหลักเดียวกับชั้น admin1
+        if owned_by_other(loc):
             return False, "ยกให้เมืองที่ locality ตรงกว่า"
+        return True, "admin2"
+    if a1 and _norm(a1) in mine:
+        # 🔴 ชั้น ③ — ยกให้เมืองที่ระดับเจาะจงกว่าตรงกว่า ถ้าเมืองนั้นมีในคลัง
+        #    ไม่งั้น "โตเกียว" (ที่ชื่อตรงกับจังหวัด) จะกวาดของเมืองข้างเคียงในจังหวัดเดียวกัน
+        if owned_by_other(loc) or owned_by_other(a2):
+            return False, "ยกให้เมืองที่ locality/admin2 ตรงกว่า"
         return True, "admin1"
     # 🔴 **ชั้น ④ — นครรัฐ: ไม่มีทั้ง `locality` และ `admin1` เลย**
     #    วัดแล้ว 4 ก.ย. 2026: มาเก๊าคืนมาแค่ `country = "มาเก๊า"` ทั้ง 15 รายการ
@@ -175,6 +202,68 @@ def city_of(place, city, catalog_names):
         if ctry and _norm(ctry) in mine:
             return True, "country (นครรัฐ)"
     return False, "คนละเมือง"
+
+
+SELFTEST = [
+    # (ป้าย, addressComponents, ชื่อเมืองที่ถาม, ผลที่ต้องได้)
+    # ── รูปที่ P5 วัดจาก Places API จริง 4 ก.ย. 2026 (ไต้หวัน · เวียดนาม) ──
+    ("หนานโถว: county ที่ admin1", dict(administrative_area_level_2="Yuchi Township",
+                                        administrative_area_level_1="Nantou County"), "Nantou", True),
+    ("ฮวาเหลียน: county",          dict(administrative_area_level_2="Xiulin Township",
+                                        administrative_area_level_1="Hualien County"), "Hualien", True),
+    ("นิวไทเป: city (เคยผ่านอยู่แล้ว)", dict(administrative_area_level_2="Ruifang District",
+                                        administrative_area_level_1="New Taipei City"), "New Taipei", True),
+    ("ฮอยอัน: admin2 เป็นตัวชี้",   dict(administrative_area_level_2="Hoi An",
+                                        administrative_area_level_1="Da Nang"), "Hoi An", True),
+    ("ดานังห้ามกวาดของฮอยอัน",     dict(administrative_area_level_2="Hoi An",
+                                        administrative_area_level_1="Da Nang"), "Da Nang", False),
+    ("ดานังของจริงยังเป็นของดานัง", dict(locality="Da Nang",
+                                        administrative_area_level_1="Da Nang"), "Da Nang", True),
+    # ── รูปที่สคริปต์นี้จดไว้เองว่าวัดมาแล้วก่อนหน้า (เคสถดถอย) ──
+    ("โตเกียว: ward → admin1",     dict(locality="Minato City",
+                                        administrative_area_level_1="Tokyo"), "Tokyo", True),
+    ("ชิราคาวาโกะ: คำต่อท้ายต่าง",  dict(locality="Shirakawa",
+                                        administrative_area_level_1="Gifu"), "Shirakawa-go", True),
+    ("เฉิงตู: พินอินเว้นวรรค + 市",  dict(locality="Cheng Du Shi",
+                                        administrative_area_level_1="Sichuan Sheng"), "Chengdu", True),
+    ("ซีอาน: อะพอสทรอฟี",           dict(locality="Xi An Shi",
+                                        administrative_area_level_1="Shaanxi Sheng"), "Xi'an", True),
+    ("มาเก๊า: นครรัฐ ไม่มีสองระดับ", dict(country="Macao"), "Macao", True),
+    ("ฮ่องกง: admin1 เป็นเขต",       dict(administrative_area_level_1="Kowloon"), "Hong Kong", True),
+    ("โตเกียวห้ามแย่งเมืองในคลัง",   dict(locality="Yokohama",
+                                        administrative_area_level_1="Tokyo"), "Tokyo", False),
+]
+
+_SELFTEST_CITIES = ["Nantou", "Hualien", "New Taipei", "Hoi An", "Da Nang", "Tokyo",
+                    "Yokohama", "Shirakawa-go", "Chengdu", "Xi'an", "Macao", "Hong Kong"]
+
+
+def selftest():
+    """🔴 **รันเองทุกครั้งก่อนนำเข้า — ไม่ใช่แฟล็กที่ต้องมีคนนึกได้**
+
+    เหตุผลที่ต้องเป็นแบบนี้ ไม่ใช่แค่ไฟล์ probe ข้าง ๆ:
+    `city_of()` **พังแบบเงียบ** — ผลของมันคือ *"เมืองนี้ได้ n แห่ง"* ซึ่งอ่านเป็นตัวเลขปกติเสมอ
+    ไม่ว่าจะถูกหรือผิด · บั๊กสองตัวที่ P5 เจอ (4 ก.ย. 2026) ทำให้ **หนานโถว/ฮวาเหลียนได้ 0**
+    และ **ฮอยอันได้ 0 ส่วนดานังได้ของฮอยอันไปทั้งหมด** — และตัวเลขทั้งสองฝั่ง *ดูสมเหตุสมผล*
+
+    🎯 ***ด่านที่มีค่าที่สุดคือด่านของฟังก์ชันที่ผลลัพธ์ผิดของมันหน้าตาเหมือนผลลัพธ์ถูก***
+    ⚠️ **ไม่ยิงเน็ต ไม่แตะฐาน** — เป็น pure function ล้วน ราคาจึงเป็นศูนย์ ไม่มีเหตุให้ข้าม
+    """
+    cities = [{"name_en": n, "name_th": n, "name_local": None} for n in _SELFTEST_CITIES]
+    cat = {c["name_en"]: [c["name_en"], c["name_th"]] for c in cities}
+    by = {c["name_en"]: c for c in cities}
+    bad = []
+    for label, kw, city_en, want in SELFTEST:
+        p = {"addressComponents": [{"types": [k], "longText": v} for k, v in kw.items() if v]}
+        got, why = city_of(p, by[city_en], cat)
+        if got != want:
+            bad.append(f"{label}: {city_en} ได้ {got} ({why}) ต้องการ {want}")
+    # 🔴 ทะเบียนว่าง = ด่านเงียบ — เคสหายไปหมดต้องแดง ไม่ใช่ผ่าน
+    if len(SELFTEST) < 10:
+        raise SystemExit("🔴 selftest: เคสหายไป — ด่านนี้จะผ่านโดยไม่ตรวจอะไร")
+    if bad:
+        raise SystemExit("🔴 selftest ของ city_of ล้ม — **หยุดก่อนนำเข้า**\n   "
+                         + "\n   ".join(bad))
 
 
 def sql(query):
@@ -200,6 +289,8 @@ def main():
     limit = int(next((a.split("=", 1)[1] for a in args if a.startswith("--limit=")), "12"))
     radius = int(next((a.split("=", 1)[1] for a in args if a.startswith("--radius=")), "12000"))
     only = next((a.split("=", 1)[1] for a in args if a.startswith("--city=")), None)
+
+    selftest()   # 🔴 ก่อนทุกอย่าง — ราคาศูนย์ และมันคือสิ่งเดียวที่จับ city_of ที่พังเงียบได้
 
     key = os.environ.get("GOOGLE_MAPS_API_KEY")
     if not key:
