@@ -120,6 +120,27 @@ export function ImmigrationSheet({
     return namesEn[placeQueryKey(place)] ?? place.nameEn;
   }
 
+  /* 📏 **เอกสารนี้ต้องพอดีกระดาษ — วัดไว้ 4 ก.ย. 2026 หลังขยายสเกลตัวอักษรทั้งเว็บ (เฟส A1/B2)**
+     นี่คือกระดาษที่พกไปเผื่อมือถือหาย/แบตหมด · ถ้ามันล้นหน้าโดยไม่มีใครรู้ ก็จะรู้ตอนยืนอยู่
+     หน้าเคาน์เตอร์ ตม. แล้ว
+
+     วัดที่ความกว้างพื้นที่พิมพ์จริง (A4 ลบ margin 12mm ตาม `@page` = 703×1032px @96dpi)
+     โดยซ่อน `print:hidden` ก่อน (ของพวกนั้นไม่ไปกระดาษ — ตัววัดรอบแรกของผมนับรวมไปด้วย ซึ่งผิด):
+     ```
+                                        ก่อนขยายสเกล   หลังขยายสเกล
+       สูงรวมบนกระดาษ                        1333px        1724px
+       จำนวนหน้า                                 2             2      ← ไม่เพิ่ม
+       บล็อก "Daily outline" (break-inside-avoid) 618px       802px    ← เหลือระยะ 230px ถึง 1032
+       หน้า 1 ใช้ไป                            612px         819px
+     ```
+     🔴 **ตัวที่ต้องเฝ้าคือ "Daily outline"** เพราะมันเป็นก้อนที่แยกไม่ได้ (`print:break-inside-avoid`
+        ที่บรรทัด ~256) ⇒ ถ้ามันโตเกิน 1032px จะไม่มีหน้าไหนใส่ได้ทั้งก้อน
+        สิ่งที่ทำให้มันโต: **จำนวนวันของทริป · จำนวนสถานที่ต่อวัน · ขนาดตัวอักษร**
+        (เบราว์เซอร์จะแบ่งให้เองถ้าใหญ่เกิน ไม่ได้หาย — แต่เจตนาของ break-inside-avoid จะตายไป)
+
+     ⚠️ **ตัวเลขนี้มาจากการ *จำลอง* การแบ่งหน้าในเบราว์เซอร์ ไม่ใช่การพิมพ์จริง**
+        เครื่องมือที่ทีมมีเปิด print preview ไม่ได้ · การจำลองนับ `break-inside-avoid` แล้ว
+        แต่ไม่ได้จำลอง widow/orphan ของเบราว์เซอร์ ⇒ **ถ้าจะเชื่อเป็นข้อสรุปสุดท้าย ต้องมีคนสั่งพิมพ์ดูจริงหนึ่งครั้ง** */
   return (
     <div className="mx-auto max-w-3xl bg-surface-raised px-4 py-5 text-content print:px-0 print:py-0">
       {/* border-content ไม่ใช่ border-line — เส้นคาดหัวเอกสารกับเส้นใต้หัวตารางในหน้านี้ตั้งใจให้เข้ม
@@ -175,7 +196,7 @@ export function ImmigrationSheet({
             + Add names as printed in passport
           </button>
         )}
-        <p className="mt-1 text-[10px] text-content-soft print:hidden">
+        <p className="mt-1 text-2xs text-content-soft print:hidden">
           เก็บไว้ในเครื่องนี้เท่านั้น (localStorage) ไม่ได้ส่งขึ้นฐานข้อมูล — อีกเครื่องต้องกรอกเอง
         </p>
       </Section>
@@ -194,7 +215,7 @@ export function ImmigrationSheet({
             </tr>
           ))}
         </Table>
-        <p className="mt-1 text-[10px] text-content-soft">
+        <p className="mt-1 text-2xs text-content-soft">
           All times are local to the departure/arrival airport.
         </p>
       </Section>
@@ -213,20 +234,20 @@ export function ImmigrationSheet({
                   <span className="font-medium">
                     {hotel?.name_en || hotel?.hotel_name || "— not booked —"}
                   </span>
-                  <span className="block text-[11px] text-content-soft">{CITY_NAME_EN[leg.city]}</span>
+                  <span className="block text-2xs text-content-soft">{CITY_NAME_EN[leg.city]}</span>
                 </Td>
-                <Td className="text-[11px]">
+                <Td className="text-2xs">
                   {hotel?.address_en || hotel?.formatted_address || "—"}
                   {hotel?.address_local && (
                     <span className="block text-content-soft">{hotel.address_local}</span>
                   )}
                 </Td>
-                <Td className="whitespace-nowrap text-[11px]">{hotel?.phone || "—"}</Td>
+                <Td className="whitespace-nowrap text-2xs">{hotel?.phone || "—"}</Td>
               </tr>
             );
           })}
         </Table>
-        <p className="mt-1 text-[10px] text-content-soft">
+        <p className="mt-1 text-2xs text-content-soft">
           Blank English name/address/phone means the hotel was saved before this field existed —
           re-save it on the planner page to fill it in.
         </p>
@@ -239,9 +260,9 @@ export function ImmigrationSheet({
             return (
               <tr key={day.id} className="border-b border-content-soft/50 last:border-0">
                 <Td className="whitespace-nowrap">{formatDateEn(day.date)}</Td>
-                <Td className="text-[11px]">{day.weekdayEn}</Td>
+                <Td className="text-2xs">{day.weekdayEn}</Td>
                 <Td className="whitespace-nowrap font-medium">{day.cityEn}</Td>
-                <Td className="text-[11px]">{places.length > 0 ? places.join(", ") : "—"}</Td>
+                <Td className="text-2xs">{places.length > 0 ? places.join(", ") : "—"}</Td>
               </tr>
             );
           })}
@@ -265,7 +286,7 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-content text-left text-[11px] uppercase text-content-soft">
+          <tr className="border-b border-content text-left text-2xs uppercase text-content-soft">
             {head.map((h) => (
               <th key={h} className="py-1 pr-3 font-semibold">
                 {h}

@@ -45,7 +45,7 @@ export function TravelModeRow({
 
   if (locked) {
     return (
-      <div className="bg-surface-soft/60 px-4 py-1.5 text-[11px] text-content-soft">
+      <div className="bg-surface-soft/60 px-4 py-1.5 text-2xs text-content-soft">
         {prefix ? `${prefix} · ` : ""}
         {mode
           ? `${TRAVEL_MODE_EMOJI[mode]} ${TRAVEL_MODE_LABEL[mode]} ${isReal ? "" : "~"}${resolvedMinutes} นาทีเดินทาง ${isReal ? "(จริง)" : "(ประมาณการ)"}`
@@ -56,7 +56,7 @@ export function TravelModeRow({
 
   if (mode && !picking) {
     return (
-      <div className="flex flex-wrap items-center gap-1.5 bg-surface-soft/60 px-4 py-1.5 text-[11px] text-content-soft">
+      <div className="flex flex-wrap items-center gap-1.5 bg-surface-soft/60 px-4 py-1.5 text-2xs text-content-soft">
         <span>
           {prefix ? `${prefix} · ` : ""}
           {TRAVEL_MODE_EMOJI[mode]} {TRAVEL_MODE_LABEL[mode]} {isReal ? "" : "~"}
@@ -74,7 +74,7 @@ export function TravelModeRow({
 
   return (
     // ปุ่มเลือกโหมดสูงแค่ 23px บนมือถือ กดพลาดง่าย — ดันเป็น 32px ด้วย py-1.5 (จอ sm ขึ้นไปคงความกระชับเดิม)
-    <div className="flex flex-wrap items-center gap-1.5 bg-surface-soft/60 px-3 py-2 text-[11px] text-content-soft sm:px-4 sm:py-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 bg-surface-soft/60 px-3 py-2 text-2xs text-content-soft sm:px-4 sm:py-1.5">
       <span>{prefix ? `${prefix} — เดินทางแบบไหน:` : "เดินทางแบบไหน:"}</span>
       {TRAVEL_MODES.map((m) => (
         <button

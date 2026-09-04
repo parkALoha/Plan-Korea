@@ -83,7 +83,7 @@ export function PlaceDetailModal({
         onConfirm ? (
           <button
             onClick={onConfirm}
-            className="w-full rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark"
+            className="w-full rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90"
           >
             ยืนยันเลือกที่นี่
           </button>
@@ -137,7 +137,7 @@ export function PlaceDetailModal({
               alt="รูปที่เพิ่มไว้เองสำหรับสถานที่นี้ — กดเพื่อดูขนาดเต็ม"
               className="w-full rounded-lg object-cover"
             />
-            <span className="mt-1 block text-[11px] text-panel-pine-ink">แตะเพื่อดูขนาดเต็ม</span>
+            <span className="mt-1 block text-2xs text-panel-pine-ink">แตะเพื่อดูขนาดเต็ม</span>
           </button>
         )}
         {stopId && onUpdatePhoto && (
@@ -162,7 +162,7 @@ export function PlaceDetailModal({
                 />
               </label>
             )}
-            {photoError && <p className="mt-1 text-[11px] text-red-600">{photoError}</p>}
+            {photoError && <p className="mt-1 text-2xs text-red-600">{photoError}</p>}
           </div>
         )}
       </div>

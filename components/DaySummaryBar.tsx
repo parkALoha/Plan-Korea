@@ -82,7 +82,7 @@ export function DaySummaryBar({
   const timeRange = `${dayStart}–${dayEnd}`;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line bg-surface-soft/40 px-4 py-2.5 text-[11px] text-content-soft">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line bg-surface-soft/40 px-4 py-2.5 text-2xs text-content-soft">
       <span>📍 {places.length} จุด</span>
       <span>⏱️ เดินทางรวม ~{formatMinutes(travelMinutes)}</span>
       {timeRange && <span>🕘 {timeRange}</span>}
@@ -99,7 +99,7 @@ export function DaySummaryBar({
         </a>
       )}
       {truncated > 0 && (
-        <span className="basis-full text-[10px]">
+        <span className="basis-full text-2xs">
           * ลิงก์ Google Maps ใส่จุดแวะได้สูงสุด {MAX_WAYPOINTS} จุด อีก {truncated} จุดจึงไม่อยู่ในลิงก์
         </span>
       )}

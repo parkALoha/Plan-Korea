@@ -55,7 +55,7 @@ export function ChecklistPanel({
         <button
           onClick={handleAdd}
           disabled={!text.trim()}
-          className="shrink-0 rounded-lg bg-maple px-3 py-2 text-sm font-medium text-white hover:bg-maple-dark disabled:opacity-40"
+          className="shrink-0 rounded-lg bg-maple-dark px-3 py-2 text-sm font-medium text-white hover:brightness-90 disabled:opacity-40"
         >
           + เพิ่ม
         </button>
@@ -66,9 +66,9 @@ export function ChecklistPanel({
           <button
             key={c}
             onClick={() => setCategory(c)}
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            className={`rounded-full px-2.5 py-1 text-2xs font-medium ${
               category === c
-                ? "bg-maple text-white"
+                ? "bg-maple-dark text-white"
                 : "bg-surface-soft text-content-soft hover:bg-surface-soft/70"
             }`}
           >
@@ -88,7 +88,7 @@ export function ChecklistPanel({
             if (groupItems.length === 0) return null;
             return (
               <div key={c}>
-                <div className="mb-1.5 text-[11px] font-semibold text-content-soft">{CATEGORY_LABEL[c]}</div>
+                <div className="mb-1.5 text-2xs font-semibold text-content-soft">{CATEGORY_LABEL[c]}</div>
                 <ul className="space-y-1">
                   {groupItems.map((item) => (
                     <li
@@ -106,7 +106,7 @@ export function ChecklistPanel({
                         onClick={() => onToggle(item.id, !item.is_checked)}
                         className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm before:absolute before:-inset-[10px] before:content-[''] ${
                           item.is_checked
-                            ? "border-maple bg-maple text-white"
+                            ? "border-maple bg-maple-dark text-white"
                             : "border-line text-transparent hover:border-maple/60"
                         }`}
                         aria-label={item.text}
@@ -122,7 +122,7 @@ export function ChecklistPanel({
                           {item.text}
                         </div>
                         {item.is_checked && item.checked_by && (
-                          <div className="text-[11px] text-content-soft">ติ๊กโดย {item.checked_by}</div>
+                          <div className="text-2xs text-content-soft">ติ๊กโดย {item.checked_by}</div>
                         )}
                       </div>
                       <button

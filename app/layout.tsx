@@ -31,7 +31,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="th" className={`${thaiSans.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-cream">
+      <body className="min-h-full flex flex-col bg-surface">
         <ServiceWorkerRegistrar />
         <OfflineBanner />
         <ToastHost />

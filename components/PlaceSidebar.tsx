@@ -225,7 +225,7 @@ function PlaceSidebarContent({
             <button
               key={day.id}
               onClick={() => onFocusedDayIdChange(day.id)}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              className={`rounded-full px-2.5 py-1 text-2xs font-medium ${
                 day.id === focusedDayId
                   ? "bg-pine text-cream"
                   : "bg-surface-soft text-content-soft hover:bg-pine-soft"
@@ -383,7 +383,7 @@ function BottomSheet({
   return (
     <div className="fixed inset-0 z-40 lg:hidden">
       <div
-        className="animate-sheet-backdrop absolute inset-0 bg-ink/40"
+        className="animate-sheet-backdrop absolute inset-0 bg-black/50"
         onClick={onClose}
         aria-hidden
       />
@@ -453,7 +453,7 @@ export function PlaceSidebar({
           {/* ยกให้พ้นแถบเมนูล่าง (BottomNav) ที่สูง ~3.5rem ไม่งั้นทับกัน */}
           <button
             onClick={() => onMobileOpenChange(true)}
-            className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20"
+            className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-5 z-30 rounded-full bg-maple-dark px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-ink/20"
           >
             📍 สถานที่
           </button>

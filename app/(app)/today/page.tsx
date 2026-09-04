@@ -38,7 +38,6 @@ import { useTripWeather } from "@/hooks/useTripWeather";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useDaySchedule } from "@/hooks/useDaySchedule";
 import { useDaySettings } from "@/hooks/useDaySettings";
-import { BottomNav } from "@/components/BottomNav";
 import { WeatherBadge } from "@/components/WeatherBadge";
 import { EmergencyCard } from "@/components/EmergencyCard";
 import type { TravelMode } from "@/lib/schedule";
@@ -376,12 +375,14 @@ export default function TodayPage() {
   return (
     <main className="min-h-full bg-surface pb-24 text-content lg:pb-10">
       <header
-        className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream"
+        className="focus-ring-on-dark bg-pine px-4 pb-3 pt-3 text-cream"
         onPointerDown={handleSwipeStart}
         onPointerUp={handleSwipeEnd}
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          {/* ลิงก์ข้ามหน้า: ซ่อนบนมือถือเพราะ BottomNav (lg:hidden) ทำงานเดียวกันเป๊ะ
+              — เคยมีทั้งสองอย่างพร้อมกันบนจอเล็ก · จอใหญ่ BottomNav หาย ลิงก์นี้จึงต้องอยู่ */}
+          <div className="hidden items-center gap-3 lg:flex">
             <Link href="/" className="text-sm text-cream/80 hover:text-cream hover:underline">
               ← หน้าแผน
             </Link>
@@ -402,7 +403,7 @@ export default function TodayPage() {
             </div>
           </div>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="mt-1 flex items-center justify-between gap-2 lg:mt-3">
           <button
             onClick={() => setDayIndex((i) => Math.max(0, i - 1))}
             disabled={dayIndex === 0}
@@ -412,7 +413,7 @@ export default function TodayPage() {
             ‹
           </button>
           <div className="text-center">
-            <div className="text-xs uppercase tracking-wide text-gold">
+            <div className="text-xs uppercase tracking-wide text-gold-ink">
               {dateLabel} · วัน{day.weekdayTh}
               {!isRealToday && " · (ไม่ใช่วันนี้)"}
             </div>
@@ -435,7 +436,7 @@ export default function TodayPage() {
         {!isRealToday && (
           <button
             onClick={() => setDayIndex(todayIndex)}
-            className="mx-auto mt-2 block text-xs font-medium text-gold underline"
+            className="mx-auto mt-2 block text-xs font-medium text-gold-ink underline"
           >
             กลับไปวันนี้จริง
           </button>
@@ -452,89 +453,6 @@ export default function TodayPage() {
 
       {overallLoaded && activePlanId && (
         <div className="mx-auto max-w-2xl px-4 pt-4">
-          {plans.length > 0 && (
-            <div className="mb-3 text-center text-xs text-content-soft">
-              แผน: {plans.find((p) => p.id === activePlanId)?.name}
-            </div>
-          )}
-
-          {startAnchor && (
-            <div className="mb-3 rounded-xl bg-panel-pine/50 px-3 py-2 text-xs text-panel-pine-ink">
-              🏨 ออกจาก {startAnchor.label}
-            </div>
-          )}
-
-          {/* ตารางบิน/เวลาตายตัว — โครงแถวเดียวกับลิสต์ "ถัดจากนี้" ด้านล่างเป๊ะๆ
-              (เวลา w-12 · ไอคอน/รูป h-9 · ชื่อ truncate · ลูกศร › ตอนกดได้) */}
-          {allEvents.length > 0 && (
-            <section className="mb-5">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
-                ✈️ เวลาตายตัวของวันนี้
-              </h2>
-              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface-raised">
-                {allEvents.map((event, i) => {
-                  const place = resolveEventPlace(event, startHotelPlace, customPlaces);
-                  const alert = event.alert === true;
-                  const row = (
-                    <>
-                      <span
-                        className={`w-12 shrink-0 text-center font-semibold tabular-nums ${
-                          alert ? "" : "text-content-soft"
-                        }`}
-                      >
-                        {event.time}
-                      </span>
-                      {place ? (
-                        <PlaceThumb
-                          query={placeQueryKey(place)}
-                          category={place.category}
-                          className="h-9 w-9 shrink-0"
-                        />
-                      ) : (
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-base">
-                          {event.icon}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className={`block truncate ${alert ? "font-medium" : "text-content"}`}>
-                          {place ? `${event.icon} ` : ""}
-                          {event.title}
-                        </span>
-                        <span
-                          className={`block truncate text-xs ${alert ? "opacity-80" : "text-content-soft"}`}
-                        >
-                          {event.endTime ? `ถึง ${event.endTime}` : null}
-                          {event.endTime && place ? " · " : null}
-                          {place ? `📍 ${place.nameTh}` : null}
-                        </span>
-                        {event.layover && <LayoverBadges layover={event.layover} />}
-                      </span>
-                      {place && <span className="shrink-0 text-content-soft/50">›</span>}
-                    </>
-                  );
-                  const tone = alert ? "bg-panel-maple/70 text-panel-maple-ink" : "";
-                  return place ? (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setDetailEventPlace(place)}
-                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60 active:opacity-70 ${tone}`}
-                    >
-                      {row}
-                    </button>
-                  ) : (
-                    <div
-                      key={i}
-                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm ${tone}`}
-                    >
-                      {row}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
           {delayMinutes !== 0 && (
             <div
               role="status"
@@ -547,7 +465,11 @@ export default function TodayPage() {
             </div>
           )}
 
-          {dayStops.length === 0 && (
+          {/* 🔴 ต้องเช็ค allEvents ด้วย ไม่ใช่แค่ dayStops — วันเดินทาง (บิน/รถไฟข้ามเมือง) มีแผน
+              อยู่ใน allEvents แต่ไม่มี trip_stops สักแถว ⇒ เงื่อนไขเดิมบอกว่า "ยังไม่ได้วางแผน"
+              ทั้งที่ตารางบินอยู่ข้างล่างครบ · เดิมไม่มีใครเห็นเพราะข้อความอยู่ใต้ตารางบิน
+              พอย้ายการ์ด "จุดถัดไป" ขึ้นบนสุด มันเลยกลายเป็นสิ่งแรกที่ผู้ใช้เห็นในวันกลับ */}
+          {dayStops.length === 0 && allEvents.length === 0 && (
             <div className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-sm text-content-soft">
               วันนี้ยังไม่ได้วางแผนไว้เลย —{" "}
               <Link href="/" className="text-panel-pine-ink underline">
@@ -559,7 +481,7 @@ export default function TodayPage() {
           {/* จุดถัดไป — การ์ดเด่นสุดของหน้า */}
           {nextStop && nextSched && (
             <section className="mb-5 overflow-hidden rounded-2xl border-2 border-maple bg-surface-raised shadow-md shadow-maple/20">
-              <div className="bg-maple px-4 py-2 text-xs font-semibold uppercase tracking-wide text-cream">
+              <div className="bg-maple-dark px-4 py-2 text-xs font-semibold uppercase tracking-wide text-cream">
                 📍 จุดถัดไป
               </div>
               <div className="p-4">
@@ -725,6 +647,89 @@ export default function TodayPage() {
               </div>
             </section>
           )}
+          {plans.length > 0 && (
+            <div className="mb-3 text-center text-xs text-content-soft">
+              แผน: {plans.find((p) => p.id === activePlanId)?.name}
+            </div>
+          )}
+
+          {startAnchor && (
+            <div className="mb-3 rounded-xl bg-panel-pine/50 px-3 py-2 text-xs text-panel-pine-ink">
+              🏨 ออกจาก {startAnchor.label}
+            </div>
+          )}
+
+          {/* ตารางบิน/เวลาตายตัว — โครงแถวเดียวกับลิสต์ "ถัดจากนี้" ด้านล่างเป๊ะๆ
+              (เวลา w-12 · ไอคอน/รูป h-9 · ชื่อ truncate · ลูกศร › ตอนกดได้) */}
+          {allEvents.length > 0 && (
+            <section className="mb-5">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-soft">
+                ✈️ เวลาตายตัวของวันนี้
+              </h2>
+              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface-raised">
+                {allEvents.map((event, i) => {
+                  const place = resolveEventPlace(event, startHotelPlace, customPlaces);
+                  const alert = event.alert === true;
+                  const row = (
+                    <>
+                      <span
+                        className={`w-12 shrink-0 text-center font-semibold tabular-nums ${
+                          alert ? "" : "text-content-soft"
+                        }`}
+                      >
+                        {event.time}
+                      </span>
+                      {place ? (
+                        <PlaceThumb
+                          query={placeQueryKey(place)}
+                          category={place.category}
+                          className="h-9 w-9 shrink-0"
+                        />
+                      ) : (
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-base">
+                          {event.icon}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate ${alert ? "font-medium" : "text-content"}`}>
+                          {place ? `${event.icon} ` : ""}
+                          {event.title}
+                        </span>
+                        <span
+                          className={`block truncate text-xs ${alert ? "opacity-80" : "text-content-soft"}`}
+                        >
+                          {event.endTime ? `ถึง ${event.endTime}` : null}
+                          {event.endTime && place ? " · " : null}
+                          {place ? `📍 ${place.nameTh}` : null}
+                        </span>
+                        {event.layover && <LayoverBadges layover={event.layover} />}
+                      </span>
+                      {place && <span className="shrink-0 text-content-soft/50">›</span>}
+                    </>
+                  );
+                  const tone = alert ? "bg-panel-maple/70 text-panel-maple-ink" : "";
+                  return place ? (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setDetailEventPlace(place)}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60 active:opacity-70 ${tone}`}
+                    >
+                      {row}
+                    </button>
+                  ) : (
+                    <div
+                      key={i}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm ${tone}`}
+                    >
+                      {row}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
 
           {/* วันนี้เที่ยวครบทุกจุดแล้ว */}
           {dayStops.length > 0 && nextIndex === -1 && (
@@ -827,7 +832,7 @@ export default function TodayPage() {
                       >
                         <span className="shrink-0 text-pine">✓</span>
                         <span className="min-w-0 flex-1 truncate text-content-soft line-through">{label}</span>
-                        <span className="shrink-0 text-[11px] text-content-soft/60">แตะเพื่อยกเลิก</span>
+                        <span className="shrink-0 text-2xs text-content-soft/60">แตะเพื่อยกเลิก</span>
                       </button>
                       {sched?.place && (
                         <button
@@ -947,7 +952,6 @@ export default function TodayPage() {
       {zoomed && (
         <PhotoLightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(null)} />
       )}
-      <BottomNav />
     </main>
   );
 }

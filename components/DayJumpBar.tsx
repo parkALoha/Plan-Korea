@@ -98,7 +98,7 @@ export function DayJumpBar({ itinerary }: { itinerary: Day[] }) {
               }
               className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium ${
                 active
-                  ? "bg-ink text-cream"
+                  ? "bg-content text-surface"
                   : "bg-surface-soft text-content-soft hover:bg-maple-soft"
               }`}
             >

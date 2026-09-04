@@ -55,7 +55,7 @@ export function DayEventsPanel({
 
   return (
     <div className="border-b border-line">
-      <div className="flex items-baseline justify-between gap-2 bg-surface-soft/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+      <div className="flex items-baseline justify-between gap-2 bg-surface-soft/40 px-4 py-2 text-2xs font-semibold uppercase tracking-wide text-content-soft">
         <span>{heading}</span>
         <span className="shrink-0 font-normal normal-case text-content-soft/70">{legend}</span>
       </div>
@@ -89,7 +89,7 @@ export function DayEventsPanel({
                   {locked ? "🔒" : "✏️"}
                 </span>
 
-                <div className={`w-12 shrink-0 text-center text-[11px] leading-tight sm:w-14 ${alert ? "opacity-80" : "text-content-soft"}`}>
+                <div className={`w-12 shrink-0 text-center text-2xs leading-tight sm:w-14 ${alert ? "opacity-80" : "text-content-soft"}`}>
                   <div className={`font-semibold tabular-nums ${alert ? "" : "text-content"}`}>{event.time}</div>
                   {event.endTime && <div className="tabular-nums">↓ {event.endTime}</div>}
                 </div>
@@ -116,7 +116,7 @@ export function DayEventsPanel({
                       {place ? `${event.icon} ` : ""}
                       {event.title}
                       {event.flight && (
-                        <span className="ml-1.5 rounded bg-surface-soft px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-content-soft">
+                        <span className="ml-1.5 rounded bg-surface-soft px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-content-soft">
                           {event.flight.fromCode} → {event.flight.toCode}
                         </span>
                       )}

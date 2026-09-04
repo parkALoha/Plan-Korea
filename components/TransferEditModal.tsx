@@ -71,7 +71,7 @@ export function TransferEditModal({
       footer={
         <button
           onClick={handleSave}
-          className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark"
+          className="flex-1 rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90"
         >
           เพิ่ม
         </button>
@@ -87,7 +87,7 @@ export function TransferEditModal({
           ).sort((a, b) => Number(b.city === day.city) - Number(a.city === day.city));
           return (
             <div key={group.kind} className="mb-3 last:mb-0">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-content-soft/70">
+              <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-content-soft/70">
                 {group.label}
               </div>
               <div className="space-y-1.5">

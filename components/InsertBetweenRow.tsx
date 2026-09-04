@@ -32,7 +32,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
                 setOpen(false);
                 action.onClick();
               }}
-              className={`py-2 text-[11px] font-medium hover:underline sm:py-1 ${
+              className={`py-2 text-2xs font-medium hover:underline sm:py-1 ${
                 action.tone === "maple" ? "text-maple" : "text-pine-dark"
               }`}
             >
@@ -41,7 +41,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
           ))}
           <button
             onClick={() => setOpen(false)}
-            className="py-2 text-[11px] text-content-soft hover:underline sm:py-1"
+            className="py-2 text-2xs text-content-soft hover:underline sm:py-1"
           >
             ยกเลิก
           </button>
@@ -50,7 +50,11 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
         <button
           onClick={() => setOpen(true)}
           aria-label="แทรกจุดแวะตรงนี้"
-          className="my-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-line text-[11px] leading-none text-content-soft/50 hover:border-maple hover:bg-surface-raised hover:text-maple"
+          /* before:-inset-[12px] ขยายพื้นที่แตะจาก 20×20 เป็น 44×44 โดยวงกลมที่มองเห็นเท่าเดิม
+             — ท่าเดียวกับช่องติ๊กใน ChecklistPanel.tsx:101 (ใช้ padding/margin ติดลบแทน
+             จะไปดันแถวให้สูงขึ้น ซึ่งย้อนแย้งกับเหตุผลที่ปุ่มนี้ถูกทำให้เล็กตั้งแต่แรก)
+             วัดก่อนแก้: 20×20 คือเป้าที่เล็กที่สุดในหน้าแผน และมี 62 จุด */
+          className="relative my-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-line text-2xs leading-none text-content-soft/50 before:absolute before:-inset-[12px] before:content-[''] hover:border-maple hover:bg-surface-raised hover:text-maple"
         >
           +
         </button>

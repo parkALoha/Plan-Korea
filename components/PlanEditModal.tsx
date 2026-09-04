@@ -58,7 +58,7 @@ export function PlanEditModal({
             onClick={handleSubmit}
             disabled={!canSubmit}
             className={`flex-1 rounded-xl py-3 font-semibold text-white disabled:opacity-40 ${
-              mode === "delete" ? "bg-maple-dark hover:bg-maple" : "bg-maple hover:bg-maple-dark"
+              mode === "delete" ? "bg-alert hover:brightness-90" : "bg-maple-dark hover:brightness-90"
             }`}
           >
             {mode === "create" ? "สร้างแผน" : mode === "rename" ? "บันทึกชื่อ" : "ลบแผนนี้"}

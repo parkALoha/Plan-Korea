@@ -173,7 +173,7 @@ export function BookingEditModal({
           <button
             onClick={handleSave}
             disabled={!title.trim() || uploading}
-            className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+            className="flex-1 rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90 disabled:opacity-40"
           >
             บันทึก
           </button>
@@ -338,7 +338,7 @@ export function BookingEditModal({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- รูปมาจาก Supabase Storage สาธารณะ ไม่ใช่ static asset */}
                 <img src={fileUrl} alt="" className="w-full rounded-lg object-cover" />
-                <span className="mt-1 block text-[11px] text-pine-dark">แตะเพื่อดูขนาดเต็ม</span>
+                <span className="mt-1 block text-2xs text-pine-dark">แตะเพื่อดูขนาดเต็ม</span>
               </button>
             )}
             <div className="flex items-center gap-2">

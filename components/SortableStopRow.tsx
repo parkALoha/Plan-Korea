@@ -145,7 +145,7 @@ export function SortableStopRow({
           onUpdateDwell(Math.max(MIN_DWELL_MINUTES, sched.resolvedDwellMinutes - DWELL_STEP_MINUTES))
         }
         aria-label="ลดเวลาที่อยู่"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-soft text-base hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
+        className="relative flex h-9 w-9 items-center justify-center rounded-full bg-surface-soft text-base before:absolute before:-inset-[4px] before:content-[''] hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
       >
         −
       </button>
@@ -153,7 +153,7 @@ export function SortableStopRow({
       <button
         onClick={() => onUpdateDwell(sched.resolvedDwellMinutes + DWELL_STEP_MINUTES)}
         aria-label="เพิ่มเวลาที่อยู่"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-soft text-base hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
+        className="relative flex h-9 w-9 items-center justify-center rounded-full bg-surface-soft text-base before:absolute before:-inset-[4px] before:content-[''] hover:bg-maple-soft sm:h-7 sm:w-7 sm:text-xs"
       >
         +
       </button>
@@ -164,7 +164,7 @@ export function SortableStopRow({
     <button
       onClick={onRemoveStop}
       aria-label="เอาจุดแวะนี้ออก"
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-content-soft hover:bg-surface-soft sm:h-7 sm:w-7 sm:text-xs"
+      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-content-soft before:absolute before:-inset-[4px] before:content-[''] hover:bg-surface-soft sm:h-7 sm:w-7 sm:text-xs"
     >
       ✕
     </button>
@@ -237,7 +237,7 @@ export function SortableStopRow({
           </button>
         )}
 
-        <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft sm:w-14">
+        <div className="w-12 shrink-0 text-center text-2xs leading-tight text-content-soft sm:w-14">
           <div className="font-semibold text-content">{sched.arrival}</div>
           <div>{sched.departure}</div>
         </div>
@@ -507,11 +507,11 @@ export function SortableStopRow({
               </label>
             )
           )}
-          {photoError && <p className="text-[11px] text-red-600">{photoError}</p>}
+          {photoError && <p className="text-2xs text-red-600">{photoError}</p>}
         </div>
       )}
       {closedWarning && (
-        <div className="bg-maple-soft/60 px-4 pb-2 text-[11px] text-maple-dark">
+        <div className="bg-maple-soft/60 px-4 pb-2 text-2xs text-maple-dark">
           ⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว
           {closedHoursLabel ? ` — ${closedHoursLabel}` : " (ตามเวลาเปิด-ปิดจาก Google)"}
         </div>

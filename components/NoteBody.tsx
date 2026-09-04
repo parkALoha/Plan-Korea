@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* โน้ตของจุดแวะบางอันยาวจนแทบเป็นแพลนย่อยในตัวเอง (ลำดับที่จะเดิน เมนูที่จะสั่ง เวลาที่ต้องต่อคิว)
    ถ้าปล่อยเป็นข้อความก้อนเดียวเอียงๆ จะอ่านไม่ออกเลย — ตัวนี้เลยแปลงบรรทัด/บุลเล็ต/เวลา
@@ -111,23 +111,69 @@ export default function NoteBody({
   note,
   className = "",
   previewLines,
+  clampVisualLines,
 }: {
   note: string;
   /** สีและขนาดตัวอักษรให้ที่เรียกกำหนดเอง แต่ละหน้าคุมโทนต่างกัน */
   className?: string;
   /** ถ้าใส่ไว้ = ย่อเหลือกี่บรรทัดตอนยังไม่กด "ดูทั้งหมด" (ไม่ใส่ = โชว์เต็มเสมอ) */
   previewLines?: number;
+  /**
+   * ย่อตาม **บรรทัดที่ตาเห็น** ไม่ใช่บรรทัดเชิงตรรกะ (เฟส C2 · 4 ก.ย. 2026)
+   *
+   * 🔴 `previewLines` ตัดตามผลของ `noteLines()` ซึ่งแยกด้วย `\n` และ " · " เท่านั้น
+   *    ⇒ ย่อหน้าเดียวที่ยาวจนตัดขึ้นบรรทัดเอง มี lines.length = 1 เสมอ **prop นั้นจึงไม่ทำอะไรเลย**
+   *    วัดจริงบนคำบรรยายวันทั้ง 11 ใบ: บรรทัดเชิงตรรกะ 1–2 · บรรทัดที่ตาเห็น 2–7
+   *    ⇒ `previewLines={2}` จะไม่ตัดอะไรเลยใน 8 จาก 11 วัน
+   *
+   * ใช้ `line-clamp` ของ CSS แล้ววัด `scrollHeight > clientHeight` หลังเรนเดอร์เพื่อรู้ว่า
+   * **ล้นจริงหรือไม่** — ไม่งั้นโน้ตสั้นจะได้ปุ่ม "ดูทั้งหมด" ที่กดแล้วไม่มีอะไรเพิ่ม
+   * (ตรวจซ้ำเมื่อขนาดกล่องเปลี่ยน เพราะจำนวนบรรทัดที่ตาเห็นขึ้นกับความกว้าง — หมุนจอแล้วเปลี่ยน)
+   */
+  clampVisualLines?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const lines = noteLines(note);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || clampVisualLines == null) return;
+    const check = () => setOverflowing(el.scrollHeight - el.clientHeight > 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [clampVisualLines, note, expanded]);
+
   if (lines.length === 0) return null;
 
   const canCollapse = previewLines != null && lines.length > previewLines;
   const shown = canCollapse && !expanded ? lines.slice(0, previewLines) : lines;
+  const clamped = clampVisualLines != null && !expanded;
+  const showVisualToggle = clampVisualLines != null && (overflowing || expanded);
 
   return (
     <div className={`leading-relaxed ${className}`}>
-      <Blocks blocks={toBlocks(shown)} />
+      <div
+        ref={bodyRef}
+        style={clamped ? { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: clampVisualLines, overflow: "hidden" } : undefined}
+      >
+        <Blocks blocks={toBlocks(shown)} />
+      </div>
+      {showVisualToggle && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          className="mt-0.5 font-medium underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100"
+        >
+          {expanded ? "ย่อ" : "ดูทั้งหมด"}
+        </button>
+      )}
       {canCollapse && (
         <button
           type="button"

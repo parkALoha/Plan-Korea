@@ -50,7 +50,7 @@ function StationPicks({
           key={s.id}
           onClick={() => onPick(s.nameTh)}
           title={s.descriptionTh}
-          className={`rounded-full border px-2 py-1 text-[11px] ${
+          className={`rounded-full border px-2 py-1 text-2xs ${
             value === s.nameTh
               ? "border-maple bg-maple-soft text-maple-dark"
               : "border-line text-content-soft hover:border-maple/40"
@@ -101,7 +101,7 @@ export function IntercityEditModal({
         <button
           onClick={handleSave}
           disabled={!from.trim() || !to.trim() || totalMinutes <= 0}
-          className="flex-1 rounded-xl bg-maple py-3 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+          className="flex-1 rounded-xl bg-maple-dark py-3 font-semibold text-white hover:brightness-90 disabled:opacity-40"
         >
           เพิ่ม
         </button>

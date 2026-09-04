@@ -78,17 +78,17 @@ export function BookingsPanel({
           🎫 ตั๋ว/booking
           {/* สามตัวเลขแยกกัน ไม่ใช่ป้าย "รอจอง N" อันเดียว — อันเดียวไม่บอกว่าที่เหลืออีกกี่ใบคืออะไร */}
           {counts.toBook > 0 && (
-            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-amber-800">
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-semibold normal-case text-amber-800">
               ต้องจอง {counts.toBook}
             </span>
           )}
           {counts.booked > 0 && (
-            <span className="ml-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-emerald-700">
+            <span className="ml-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-2xs font-semibold normal-case text-emerald-700">
               จองแล้ว {counts.booked}
             </span>
           )}
           {counts.walkUp > 0 && (
-            <span className="ml-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-sky-700">
+            <span className="ml-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-2xs font-semibold normal-case text-sky-700">
               ซื้อหน้างาน {counts.walkUp}
             </span>
           )}
@@ -134,7 +134,7 @@ export function BookingsPanel({
                         เห็นครบว่าใบไหนต้องรีบ ใบไหนจบแล้ว (ของเดิมอยู่ล่างสุดและมีเฉพาะบางใบ) */}
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-content-soft">
                       <span
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${BOOKING_BADGE_CLASS[badge.tone]}`}
+                        className={`rounded-full px-1.5 py-0.5 text-2xs font-semibold ring-1 ring-inset ${BOOKING_BADGE_CLASS[badge.tone]}`}
                       >
                         {badge.label}
                       </span>
