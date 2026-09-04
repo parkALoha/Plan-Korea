@@ -65,6 +65,7 @@ export function CoverCard({
   cover,
   badge,
   title,
+  titleTrailing,
   titleClassName = "text-base font-bold leading-snug sm:text-lg",
   children,
 }: {
@@ -76,6 +77,16 @@ export function CoverCard({
   /** ป้ายมุมขวาบน — ไม่มีก็ได้ · เกาะ **การ์ด** ไม่ใช่เกาะรูป (บนมือถือรูปเป็นแถบแคบ ป้ายจะทับงานศิลป์) */
   badge?: ReactNode;
   title: ReactNode;
+  /**
+   * ของที่อยู่ **ขวาสุดของบรรทัดชื่อ** — ไม่มีก็ได้ (ผู้ใช้เสนอเอง 4 ก.ย. 2026:
+   * *"การวางตำแหน่งสมาชิกในทริป ควรย้ายไปด้านขวา แต่บรรทัดเดียวกับชื่อทริป"*)
+   *
+   * 🔴 **เป็นช่อง *ทางเลือก* ไม่ใช่ช่องบังคับ** — การ์ดประเทศ/เมืองไม่มีสมาชิกให้ใส่
+   *    บังคับเมื่อไหร่ = ต้องเติมของปลอม ซึ่งเป็นสิ่งที่เปลือกนี้ปฏิเสธมาตั้งแต่ต้น
+   * ⚠️ **สิ่งที่ใส่ต้องกว้างคงที่และแคบ** — มันแย่งที่กับชื่อโดยตรง · ชื่อ `truncate` จะสั้นลงตามที่ใส่
+   *    ⇒ เหมาะกับ avatar/ตัวเลข **ไม่เหมาะกับข้อความยาว**
+   */
+  titleTrailing?: ReactNode;
   titleClassName?: string;
   children?: ReactNode;
 }) {
@@ -88,10 +99,12 @@ export function CoverCard({
       {badge}
       <div className="min-w-0 flex-1 p-3">
         {/* 🔴 **ไม่เผื่อที่ขวาให้ป้ายแล้ว** — ป้ายอยู่มุมขวาบนของ *รูป* ซึ่งตอนนี้อยู่เหนือชื่อเสมอ
-            ⇒ ไม่มีการทับกันให้ต้องเผื่อ · เผื่อไว้เฉย ๆ = ชื่อถูกตัดสั้นลงโดยไม่มีเหตุผล */}
-        <h3 className={`truncate text-content ${titleClassName}`}>
-          {title}
-        </h3>
+            ⇒ ไม่มีการทับกันให้ต้องเผื่อ · เผื่อไว้เฉย ๆ = ชื่อถูกตัดสั้นลงโดยไม่มีเหตุผล
+            · `min-w-0` บนชื่อ = ตัวที่ทำให้ `truncate` ทำงานในแถว flex (ไม่มีแล้วมันจะดันของข้างขวาหลุดขอบ) */}
+        <div className="flex items-center gap-2">
+          <h3 className={`min-w-0 flex-1 truncate text-content ${titleClassName}`}>{title}</h3>
+          {titleTrailing}
+        </div>
         {children}
       </div>
     </>
