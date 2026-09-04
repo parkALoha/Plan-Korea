@@ -34,6 +34,15 @@ CATEGORY_MAP = [
                     "museum", "art_gallery", "historical_landmark", "historical_place",
                     "cultural_landmark", "monument"}),
     ("nightlife",  {"night_club", "bar"}),
+    # 🔴 ที่พัก — เพิ่ม 4 ก.ย. 2026 (P5) · **ต้องอยู่ในไฟล์นี้ด้วย ไม่ใช่แค่ `lib/placeCategory.ts`**
+    #    `categoryFromGoogleType()` ของ TS มีผู้เรียกเดียวคือ `NearbyPlacesModal.tsx:55`
+    #    ⇒ **มันไม่เคยแตะแถวที่สคริปต์นี้เขียน** · ตารางสองใบตัดสินเรื่องเดียวกันคนละที่
+    #    วัดแล้ว: `sakura-hotel-hatagaya` ในฐานเป็น `nightlife` เพราะ *ใบนี้* ไม่มี lodging
+    #    (แก้ TS อย่างเดียวแล้วเปิดเว็บดู — โรงแรมยังอยู่หมวด "ย่านเที่ยวกลางคืน" เหมือนเดิม)
+    ("hotel",      {"lodging", "hotel", "motel", "inn", "resort_hotel", "hostel",
+                    "guest_house", "bed_and_breakfast", "japanese_inn", "budget_japanese_inn",
+                    "extended_stay_hotel", "cottage", "farmstay", "private_guest_room",
+                    "campground", "camping_cabin", "rv_park"}),
 ]
 SEARCH_TYPES = ["tourist_attraction", "market", "shopping_mall"]
 
