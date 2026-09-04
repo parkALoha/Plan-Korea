@@ -288,6 +288,111 @@ function TripCard({
 }
 
 /**
+ * **ทริปแนะนำ** — หัวข้อที่ ② จากสามหัวข้อที่ผู้ใช้สั่ง · P2 · 4 ก.ย. 2026 (route โดย P1 `3965d3f`)
+ *
+ * ## 🔴 ไม่มีแผน = **ไม่เรนเดอร์อะไรเลย** ไม่ใช่หัวข้อที่มีข้อความว่า "ยังไม่มี"
+ * ช่วงแรก `published_template_at` ยังเป็น 0 แถวทั้งฐาน — เพราะการจัดแผนใบแรกเป็น **งานเนื้อหา ไม่ใช่งานโค้ด**
+ * 🎯 ***หัวข้อเปล่าอ่านเหมือนเว็บพัง · ไม่มีหัวข้อเลยอ่านเหมือนยังไม่มีฟีเจอร์ — อย่างหลังจริงกว่า***
+ * ⇒ วันที่มีคนจัดแผนใบแรก **หัวข้อจะโผล่เอง ไม่ต้องมีใครมาแก้ไฟล์นี้อีก**
+ *
+ * ## 🔴 อ่านไม่ได้ ก็เงียบเหมือนกัน — **และนี่คือที่ที่ผมยอมให้ต่างจากรายการทริปของฉัน**
+ * รายการทริปของฉันล้ม → ต้องบอก (`tripsUnreadable`) เพราะ **ผู้ใช้รู้ว่าเขามีทริปอยู่** ของหายไปคือเรื่องใหญ่
+ * ที่นี่ล้ม → เงียบ เพราะผู้ใช้ **ไม่รู้ว่ามีอะไรอยู่ตรงนี้ตั้งแต่แรก** ⇒ ข้อความเตือนจะแนะนำสิ่งที่เขาไม่ได้เสียไป
+ * ⚠️ **ไม่ใช่กติกาทั่วไป** — ใช้ได้เพราะส่วนนี้เป็น *ของเสริม* ล้วน · ส่วนที่ผู้ใช้มาหาต้องส่งเสียงเสมอ
+ */
+type TripTemplate = {
+  id: string;
+  title: string;
+  dayCount: number;
+  nightCount: number;
+  /**
+   * 🔴 **`slug: null` กับ `countryId` ที่ *หายไป* คนละความหมาย — P1 ตั้งใจให้ต่าง**
+   * ```
+   * slug: null        `legacy_slug` เป็น null ได้จริง  → ไม่มีรูปเมืองแน่นอน ⇒ ตกชั้นถัดไปได้เลย
+   * countryId หายไป   อ่านคลังไม่ได้รอบนั้น            → **ไม่รู้** ไม่ใช่ "เมืองนี้ไม่มีประเทศ"
+   * ```
+   * ⇒ ต้องเช็คด้วย `"countryId" in c` **ไม่ใช่ `c.countryId !== null`** · `null` ที่เราเติมเองจะเป็น
+   *   คำกล่าวอ้างที่ไม่ได้วัด (รูปเดียวกับที่หน้านี้ปฏิเสธ `memberCount: 0` ว่าแปลว่า "ไม่มีคน")
+   */
+  cities: { id: string; nameTh: string; slug: string | null; countryId?: string }[];
+};
+
+function RecommendedTrips() {
+  const [templates, setTemplates] = useState<TripTemplate[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const r = await fetch("/api/engine/trip-templates");
+        if (!r.ok) return;
+        const body = (await r.json()) as { templates?: TripTemplate[] };
+        if (!cancelled && Array.isArray(body.templates)) setTemplates(body.templates);
+      } catch {
+        // เงียบโดยตั้งใจ — เหตุผลอยู่หัวไฟล์ของบล็อกนี้
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (templates.length === 0) return null;
+
+  return (
+    <section className="mt-10 border-t border-line pt-6">
+      <h2 className="text-lg font-bold text-content">{COPY.recommended}</h2>
+      <p className="mb-3 mt-0.5 text-sm text-content-soft">{COPY.recommendedSubheading}</p>
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
+        {templates.map((t) => (
+          <CoverCard
+            key={t.id}
+            /**
+             * 🔴 **ไม่ส่งทั้ง `href` และ `onClick` — ปุ่ม "ใช้แผนนี้" เป็นใบถัดไป**
+             * `copy_trip_template` พร้อมในฐานแล้ว แต่ route ยังไม่มี ⇒ **ไม่ผูกปลายทางที่ยังไม่มี**
+             * ⇒ `CoverCard` เรนเดอร์เป็น `<div>` อ่านอย่างเดียว **ไม่ใช่ปุ่มที่กดแล้วเงียบ**
+             *   (เหตุผลเต็มอยู่ที่ `CoverCard.tsx` — ปุ่มที่ไม่ทำอะไร ยัง Tab ไปโดนและถูกประกาศว่า "ปุ่ม")
+             */
+            coverLayout="adaptive"
+            cover={<TripCoverImage destinations={templateDestinations(t)} />}
+            title={t.title}
+          >
+            <p className="mt-1 text-xs font-medium text-content sm:text-sm">
+              {COPY.tripLength(t.dayCount, t.nightCount)}
+            </p>
+            <p
+              className="mt-0.5 truncate text-xs text-content sm:text-sm"
+              aria-hidden={t.cities.length ? undefined : true}
+            >
+              {t.cities.length ? `📍 ${t.cities.map((c) => c.nameTh).join(" · ")}` : "\u00a0"}
+            </p>
+          </CoverCard>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * แปลงเมืองของ template ให้เข้ารูปที่ `TripCoverImage` รับ — **แปลงอย่างเดียว ไม่เดาอะไรเพิ่ม**
+ * 🔴 `countryId` ที่หายไปกลายเป็น `""` ⇒ `TripCoverImage` จะยิงหารูปประเทศไม่เจอแล้ว `onError`
+ *    ตกไปพื้นไล่สีเอง · **นั่นคือพฤติกรรมที่ถูก** เพราะเราไม่รู้ประเทศจริง ๆ
+ * ⚠️ ไม่ใช้ `nameEn` (template ไม่ส่งมา) — ใส่ `nameTh` ซ้ำจะเป็นข้อมูลที่เราแต่งเอง
+ *    ที่นี่ปลอดภัยเพราะ `TripCoverImage` อ่านแค่ `slug`/`countryId` **แต่ห้ามเอารูปนี้ไปใช้ที่อื่นโดยไม่อ่านบรรทัดนี้**
+ */
+function templateDestinations(t: TripTemplate): TripDestination[] {
+  return t.cities.map((c) => ({
+    cityId: c.id,
+    slug: c.slug ?? "",
+    nameTh: c.nameTh,
+    nameEn: "",
+    countryId: "countryId" in c && c.countryId ? c.countryId : "",
+    countryNameTh: "",
+  }));
+}
+
+/**
  * แยก "อ่านไม่ได้" ออกจาก "ไม่มีข้อมูล" — เดิม `.catch()` เดียวจับทั้ง 502 และออฟไลน์แล้ว fallback เป็น
  * `trips=[]` เงียบๆ ทำให้เน็ตสะดุดหน้างานจริงดูเหมือน "ทริปหายไปหมด" (P1 ชี้ 27 ส.ค. 2026 หลังเจอ
  * 502 จริงจาก cover_image_path ระหว่าง live-verify — เห็น "ยังไม่มีทริป" ทั้งที่มีทริปอยู่)
@@ -747,6 +852,8 @@ export function HomeScreen() {
              * ⇒ ***หัวข้อเปล่าอ่านเหมือนเว็บพัง · ไม่มีหัวข้อเลยอ่านเหมือนยังไม่มีฟีเจอร์*** — อย่างหลังจริงกว่า
              * 📌 เสียบเมื่อ P1 ส่ง shape มา · **ผมจะไม่เดาชื่อฟิลด์ล่วงหน้า**
              */}
+            <RecommendedTrips />
+
             <section className="mt-10 border-t border-line pt-6">
               <h2 className="text-lg font-bold text-content">{E5_COPY.explorer.heading}</h2>
               <p className="mb-3 mt-0.5 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
