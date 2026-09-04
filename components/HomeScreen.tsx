@@ -626,13 +626,23 @@ export function HomeScreen() {
               <img src="/logo-mark.png" alt="" className="h-7 w-7 object-contain" />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-base font-extrabold leading-tight">{COPY.brand}</span>
               {/**
-               * 🔴 **คำโปรยแสดงบนมือถือด้วยแล้ว** — เดิมซ่อน (`hidden sm:block`) เพราะชื่อเดิมเป็นไทย
-               * อยู่แล้ว จึงไม่ต้องอธิบาย · ตอนนี้ชื่อเป็น **`luitrip`** ⇒ **มือถือเป็นที่ที่คนไทยเจอชื่อ
-               * ครั้งแรกและไม่มีบริบทเลยถ้าซ่อนบรรทัดนี้** · วัดแล้วที่ 375px ยังไม่เบียดชื่อ/ปุ่มบัญชี
+               * 🔴 **ชื่อสองภาษาอยู่บรรทัดเดียวกัน** (ผู้ใช้สั่งเอง: *"ลุยทริป ควรอยู่ บรรทัดเดียวกับ luitrip"*)
+               * ⇒ **ระยะห่างเลิกเป็นตัวแยกแล้ว — เหลือขนาด/น้ำหนัก/สีอย่างเดียว**
+               * ***สองชื่อขนาดเท่ากัน = สองแบรนด์ · ชื่อใหญ่กับชื่อเล็ก = ชื่อกับคำอ่าน***
+               * · `truncate` อยู่ที่ตัวนอก ⇒ จอแคบตัดที่ *ท้ายสุด* (ชื่อไทย) **ไม่ใช่ตัดชื่อหลัก**
                */}
-              <span className="block text-2xs leading-tight text-cream/70">
+              <span className="block truncate text-base font-extrabold leading-tight">
+                {COPY.brand}
+                <span className="ml-1.5 text-xs font-semibold text-cream/75">{COPY.brandTh}</span>
+              </span>
+              {/**
+               * 🔴 **คำโปรยกลับไปซ่อนบนมือถือแล้ว** — เดิมเอาขึ้นมาเพราะ *"มือถือคือที่ที่คนไทยเจอชื่อ
+               * ครั้งแรกและไม่มีบริบทเลย"* · **เหตุผลนั้นหมดอายุแล้ว: ชื่อไทยขึ้นไปอยู่บรรทัดชื่อแล้ว**
+               * 🎯 ***คำโปรยเคยทำหน้าที่ "บอกว่านี่คืออะไร" แทนชื่อไทย — พอชื่อไทยมาเอง มันเหลือแค่คำอธิบาย***
+               * ⇒ ที่ 375px คืนความสูงให้แถบหัว โดยไม่มีใครเสียข้อมูลที่ตัวเองต้องใช้
+               */}
+              <span className="hidden text-2xs leading-tight text-cream/70 sm:block">
                 {COPY.brandTagline}
               </span>
             </span>
