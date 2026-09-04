@@ -8,6 +8,7 @@ import { resolveEventPlace } from "@/lib/eventPlace";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { LayoverBadges } from "./LayoverBadges";
 import { PlaceDetailModal } from "./PlaceDetailModal";
+import { RowIconBox, TripListRow } from "./TripListRow";
 import { PlaceThumb } from "./PlaceThumb";
 
 /** ตั๋วที่จองมาแล้วเท่านั้นที่ล็อกจริง — เหตุการณ์อื่น (เวลาเช็คอิน/เวลาออกจากโรงแรม) เป็นคำแนะนำที่ปรับได้
@@ -75,68 +76,46 @@ export function DayEventsPanel({
 
           const body = (
             <>
-              <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
-                {/* ช่องเดียวกับที่จับลากของแถวจุดแวะ — เหตุการณ์ลากไม่ได้ ใช้บอกว่าล็อก/ปรับได้แทน */}
-                <span
-                  aria-label={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
-                  title={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
-                  // sm:w-[19px] ไม่ใช่ sm:w-auto อย่างที่ SortableStopRow ใช้ — วัดจริงในเบราว์เซอร์แล้ว
-                  // ที่ sm ขึ้นไปช่องนั้นกว้างตามตัวอักษรข้างใน: ⠿ (16px) ได้ 18.94px แต่ 🔒/✏️ (12px)
-                  // ได้ 23px ทำให้ทั้งคอลัมน์เวลา+รูปของแผงนี้เยื้องขวาไป 4px จากแถวจุดแวะที่อยู่ใต้กัน
-                  // ตรึงไว้ที่ 18.94 ปัดขึ้น = ตรงกันพอดี (อิโมจิ 15px ยังอยู่กลางช่อง ไม่ถูกตัด)
-                  className={`flex h-10 w-7 shrink-0 items-center justify-center text-xs sm:h-auto sm:w-[19px] sm:px-0 sm:py-2 ${alert ? "opacity-80" : "text-content-soft/60"}`}
-                >
-                  {locked ? "🔒" : "✏️"}
-                </span>
-
-                <div className={`w-12 shrink-0 text-center text-2xs leading-tight sm:w-14 ${alert ? "opacity-80" : "text-content-soft"}`}>
-                  <div className={`font-semibold tabular-nums ${alert ? "" : "text-content"}`}>{event.time}</div>
-                  {event.endTime && <div className="tabular-nums">↓ {event.endTime}</div>}
-                </div>
-
-                <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
-                  {place ? (
-                    <PlaceThumb
-                      query={placeQueryKey(place)}
-                      category={place.category}
-                      size="lg"
-                    />
+              <TripListRow
+                muted={alert}
+                leading={
+                  place ? (
+                    <PlaceThumb query={placeQueryKey(place)} category={place.category} size="2xl" />
                   ) : (
-                    // ไอคอนในกรอบขนาดเท่ารูปย่อ — แบบเดียวกับแถว intercity/hotel/transfer ที่ไม่มีรูป
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
-                      {event.icon}
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    {/* ไม่ truncate ต่างจากแถวจุดแวะ — ชื่อเที่ยวบินยาวกว่าชื่อสถานที่มาก
-                        ตัดแล้วเหลือ "VN428 ฮานอย → …" ซึ่งกลืนกันทั้ง 3 เที่ยวบิน */}
-                    <span
-                      className={`block font-semibold ${alert ? "" : "text-content"} ${place ? "hover:underline" : ""}`}
-                    >
-                      {place ? `${event.icon} ` : ""}
-                      {event.title}
-                      {event.flight && (
-                        <span className="ml-1.5 rounded bg-surface-soft px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-content-soft">
-                          {event.flight.fromCode} → {event.flight.toCode}
-                        </span>
-                      )}
-                    </span>
-                    {place && (
-                      <span className={`block truncate text-xs ${alert ? "opacity-80" : "text-content-soft"}`}>
-                        📍 {place.nameTh} — แตะดูรูป/แผนที่/นำทาง
+                    <RowIconBox>{event.icon}</RowIconBox>
+                  )
+                }
+                time={event.time}
+                endTime={event.endTime}
+                corner={
+                  <span
+                    aria-label={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
+                    title={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
+                    className="text-xs text-content-soft/60"
+                  >
+                    {locked ? "🔒" : "✏️"}
+                  </span>
+                }
+                title={
+                  <>
+                    {place ? `${event.icon} ` : ""}
+                    {event.title}
+                    {event.flight && (
+                      <span className="ml-1.5 rounded bg-surface-soft px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-content-soft">
+                        {event.flight.fromCode} → {event.flight.toCode}
                       </span>
                     )}
-                  </span>
-                </div>
-              </div>
-
-              {(event.detail || event.layover) && (
-                // ย่อหน้าเท่าบรรทัดโน้ตของแถวจุดแวะเป๊ะๆ
-                <div className={`px-3 pb-2 pl-10 text-xs leading-relaxed sm:px-4 sm:pl-14 ${alert ? "opacity-80" : "text-content-soft"}`}>
-                  {event.detail}
-                  {event.layover && <LayoverBadges layover={event.layover} />}
-                </div>
-              )}
+                  </>
+                }
+                subtitle={place ? `📍 ${place.nameTh} — แตะดูรูป/แผนที่/นำทาง` : undefined}
+              >
+                {(event.detail || event.layover) && (
+                  <div className="px-3 pb-2.5 text-xs leading-relaxed text-content-soft sm:px-4">
+                    {event.detail}
+                    {event.layover && <LayoverBadges layover={event.layover} />}
+                  </div>
+                )}
+              </TripListRow>
             </>
           );
 

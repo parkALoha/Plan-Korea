@@ -13,6 +13,7 @@ import { InsertBetweenRow } from "./InsertBetweenRow";
 import NoteBody from "./NoteBody";
 import { NoteListEditor } from "./NoteListEditor";
 import { PhotoLightbox } from "./PhotoLightbox";
+import { RowIconBox, TripListRow } from "./TripListRow";
 import { PlaceThumb } from "./PlaceThumb";
 import { TravelModeRow } from "./TravelModeRow";
 import { TransferAdvicePanel } from "./TransferAdvicePanel";
@@ -214,137 +215,98 @@ export function SortableStopRow({
           ]}
         />
       )}
-      {/* มือถือ: แถวนี้เหลือแค่ ที่จับลาก + เวลา + ชื่อ เพื่อให้ชื่อสถานที่ได้ความกว้างเต็ม
-          (ของเดิมยัดปุ่มปรับเวลา/ลบไว้ด้วย ชื่อเลยเหลือ ~74px จาก 341px จนอ่านไม่ออก)
-          ปุ่มที่ยกออกไปอยู่แถวโน้ตด้านล่างแทน · จอ sm ขึ้นไปยังเป็นแถวเดียวเหมือนเดิม */}
-      <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
-        {locked ? (
-          <span
-            aria-label="วันนี้ล็อกอยู่ ลากจัดลำดับไม่ได้"
-            className="flex h-10 w-7 shrink-0 items-center justify-center text-xs text-content-soft/40 sm:h-auto sm:w-auto sm:px-1 sm:py-2"
-          >
-            🔒
-          </span>
-        ) : (
-          <button
-            {...attributes}
-            {...listeners}
-            aria-label="ลากเพื่อจัดลำดับใหม่"
-            style={{ touchAction: "none" }}
-            className="flex h-10 w-7 shrink-0 cursor-grab items-center justify-center rounded text-content-soft/60 hover:bg-surface-soft hover:text-content-soft active:cursor-grabbing sm:h-auto sm:w-auto sm:px-1 sm:py-2"
-          >
-            ⠿
-          </button>
-        )}
-
-        <div className="w-12 shrink-0 text-center text-2xs leading-tight text-content-soft sm:w-14">
-          <div className="font-semibold text-content">{sched.arrival}</div>
-          <div>{sched.departure}</div>
-        </div>
-
-        {stop.kind === "intercity" ? (
-          <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
-              {INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-content">
-                {INTERCITY_MODE_LABEL[(stop.intercity_mode as IntercityMode) ?? "other"]} ·{" "}
-                {stop.intercity_from} → {stop.intercity_to}
-              </span>
-              <span className="block truncate text-xs text-content-soft">
-                ใช้เวลาเดินทาง {sched.resolvedDwellMinutes} นาที
-              </span>
-            </span>
-          </div>
-        ) : stop.kind === "hotel" ? (
-          // กดได้เหมือนแถวจุดแวะปกติ — แถวนี้มี `place` เหมือนกัน (schedule.ts resolve ให้ทุก kind)
-          // และ DayMapPanel ก็วาดหมุดให้ ถ้าไม่ผูก onView จะกดหมุดบนแผนที่ได้แต่กดในลิสต์ไม่ได้
-          <button
-            onClick={() => sched.place && onView()}
-            disabled={!sched.place}
-            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
-              🏨
-            </span>
-            <span className="min-w-0 flex-1">
-              {/* ชื่อโรงแรมมาจาก trip_hotels สดๆ ไม่ใช่จาก place_id — เปลี่ยนโรงแรมแล้วแถวนี้เปลี่ยนตาม */}
-              <span className="block truncate font-semibold text-content hover:underline">
-                แวะที่พัก · {hotelName ?? "ยังไม่ได้ตั้งที่พักของช่วงนี้"}
-              </span>
-              <span className="block truncate text-xs text-content-soft">
-                อยู่ที่พัก {sched.resolvedDwellMinutes} นาที (เช็คอิน / ฝากกระเป๋า / พัก)
-              </span>
-            </span>
-          </button>
-        ) : stop.kind === "transfer" ? (
-          // เหตุผลเดียวกับ hotel ด้านบน — สถานี/สนามบินมีพิกัดจริงและมีหมุดบนแผนที่
-          <button
-            onClick={() => sched.place && onView()}
-            disabled={!sched.place}
-            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-lg">
+      {/* ทั้ง 4 กรณีใช้ TripListRow ตัวเดียวกับ DayEventsPanel — ผู้ใช้สั่งยุบรวม 4 ก.ย. 2026
+          ("มันคนละชนิดกันหรอ มันควรจะเหมือนกันนะ") · เลย์เอาต์อยู่ในไฟล์นั้นที่เดียว */}
+      <TripListRow
+        leading={
+          stop.kind === "intercity" ? (
+            <RowIconBox>{INTERCITY_MODE_ICON[(stop.intercity_mode as IntercityMode) ?? "other"]}</RowIconBox>
+          ) : stop.kind === "hotel" ? (
+            <RowIconBox>🏨</RowIconBox>
+          ) : stop.kind === "transfer" ? (
+            <RowIconBox>
               {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
                 ? "🚉"
                 : "✈️"}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-content hover:underline">
-                {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
-                  ? "ไปสถานี"
-                  : "ไปสนามบิน"}{" "}
-                · {sched.place?.nameTh ?? "ไม่พบข้อมูลปลายทาง"}
-              </span>
-              <span className="block truncate text-xs text-content-soft">
-                เผื่อเวลาที่นั่น {sched.resolvedDwellMinutes} นาที
-                {stop.transfer_target_label ? ` · ${stop.transfer_target_label}` : ""}
-              </span>
-            </span>
-          </button>
-        ) : (
-          <button
-            onClick={() => sched.place && onView()}
-            disabled={!sched.place}
-            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left disabled:cursor-default"
-          >
-            {sched.place ? (
-              <>
-                <PlaceThumb
-                  query={placeQueryKey(sched.place)}
-                  category={sched.place.category}
-                  size="lg"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold text-content hover:underline">
-                    {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
-                  </span>
-                  {stop.added_by && (
-                    <span className="block truncate text-xs text-content-soft">เลือกโดย {stop.added_by}</span>
-                  )}
-                </span>
-              </>
-            ) : (
-              <span className="text-sm text-maple-dark">ไม่พบข้อมูลสถานที่</span>
-            )}
-          </button>
-        )}
-
-        {/* ซ่อนช่วง lg ขึ้นไปด้วย เพราะแผนที่ข้างๆ แย่งพื้นที่แถวจนชื่อสถานที่เหลือไม่พอ (บั๊กเดียวกับที่แก้ไว้ฝั่งมือถือ) */}
-        {locked ? (
-          <span className="hidden shrink-0 items-center text-xs tabular-nums text-content-soft sm:flex lg:hidden">
-            {sched.resolvedDwellMinutes} น.
-          </span>
-        ) : (
+            </RowIconBox>
+          ) : sched.place ? (
+            <PlaceThumb query={placeQueryKey(sched.place)} category={sched.place.category} size="2xl" />
+          ) : (
+            <RowIconBox>❓</RowIconBox>
+          )
+        }
+        time={sched.arrival}
+        endTime={sched.departure}
+        onOpen={stop.kind !== "intercity" && sched.place ? onView : undefined}
+        openLabel={sched.place ? `ดูรายละเอียด ${sched.place.nameTh}` : undefined}
+        corner={
           <>
-            <div className="hidden shrink-0 items-center gap-1 text-xs text-content-soft sm:flex lg:hidden">
-              {dwellControls}
-            </div>
-            <div className="hidden sm:block lg:hidden">{removeButton}</div>
+            {/* ซ่อนช่วง lg ขึ้นไปด้วย เพราะแผนที่ข้างๆ แย่งพื้นที่แถวจนชื่อสถานที่เหลือไม่พอ */}
+            {locked ? (
+              <span className="hidden items-center text-xs tabular-nums text-content-soft sm:flex lg:hidden">
+                {sched.resolvedDwellMinutes} น.
+              </span>
+            ) : (
+              <>
+                <div className="hidden items-center gap-1 text-xs text-content-soft sm:flex lg:hidden">
+                  {dwellControls}
+                </div>
+                <div className="hidden sm:block lg:hidden">{removeButton}</div>
+              </>
+            )}
+            {locked ? (
+              <span aria-label="วันนี้ล็อกอยู่ ลากจัดลำดับไม่ได้" className="text-xs text-content-soft/40">
+                🔒
+              </span>
+            ) : (
+              <button
+                {...attributes}
+                {...listeners}
+                aria-label="ลากเพื่อจัดลำดับใหม่"
+                style={{ touchAction: "none" }}
+                className="relative flex h-7 w-7 cursor-grab items-center justify-center rounded text-content-soft/60 before:absolute before:-inset-[8px] before:content-[''] hover:bg-surface-soft hover:text-content-soft active:cursor-grabbing"
+              >
+                ⠿
+              </button>
+            )}
           </>
-        )}
-      </div>
+        }
+        title={
+          stop.kind === "intercity" ? (
+            <>
+              {INTERCITY_MODE_LABEL[(stop.intercity_mode as IntercityMode) ?? "other"]} ·{" "}
+              {stop.intercity_from} → {stop.intercity_to}
+            </>
+          ) : stop.kind === "hotel" ? (
+            /* ชื่อโรงแรมมาจาก trip_hotels สดๆ ไม่ใช่จาก place_id — เปลี่ยนโรงแรมแล้วแถวนี้เปลี่ยนตาม */
+            <>แวะที่พัก · {hotelName ?? "ยังไม่ได้ตั้งที่พักของช่วงนี้"}</>
+          ) : stop.kind === "transfer" ? (
+            <>
+              {sched.place && "transferKind" in sched.place && sched.place.transferKind === "station"
+                ? "ไปสถานี"
+                : "ไปสนามบิน"}{" "}
+              · {sched.place?.nameTh ?? "ไม่พบข้อมูลปลายทาง"}
+            </>
+          ) : sched.place ? (
+            <>
+              {CATEGORY_EMOJI[sched.place.category]} {sched.place.nameTh}
+            </>
+          ) : (
+            <span className="text-alert-ink">ไม่พบข้อมูลสถานที่</span>
+          )
+        }
+        subtitle={
+          stop.kind === "intercity"
+            ? `ใช้เวลาเดินทาง ${sched.resolvedDwellMinutes} นาที`
+            : stop.kind === "hotel"
+              ? `อยู่ที่พัก ${sched.resolvedDwellMinutes} นาที (เช็คอิน / ฝากกระเป๋า / พัก)`
+              : stop.kind === "transfer"
+                ? `เผื่อเวลาที่นั่น ${sched.resolvedDwellMinutes} นาที${stop.transfer_target_label ? ` · ${stop.transfer_target_label}` : ""}`
+                : stop.added_by
+                  ? `เลือกโดย ${stop.added_by}`
+                  : undefined
+        }
+      />
       <div className="flex items-center gap-2 px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
         <div className="min-w-0 flex-1">
         {/* มือถือ: ช่องพิมพ์โน้ตกินเต็มบรรทัด ปุ่มบันทึก/ยกเลิก/ลบ ตกไปบรรทัดล่าง
