@@ -4,6 +4,7 @@ import {
   deleteTripDaysByIds,
   renameTrip,
   insertTripDays,
+  softDeleteTrip,
   stopCountInDays,
   tripDayDatesOf,
   updateTripDates,
@@ -22,10 +23,12 @@ import { MAX_TRIP_DAYS } from "@/lib/engine/tripLimits";
  * และทริปเก่าก็ลบไม่ได้ **จึงค้างอยู่ในรายการตลอดไป**
  * · สิทธิ์ที่ route นี้ต้องใช้มาจาก `20260904120000_e5_trip_dates_editable.sql`
  *
- * ## 📌 ยังไม่มี `DELETE` ที่นี่ และนั่นเป็นการตัดสินใจ ไม่ใช่การลืม
- * `20260824043822:273-274` เขียนไว้ว่าลบทริปต้องเป็น **soft delete** ไม่ใช่ `DELETE` ตรงจากไคลเอนต์
- * ⇒ ต้องมี `deleted_at` + RPC + แก้ `trips_select` ซึ่งแตะ policy ที่ตารางลูกทุกใบพึ่งอยู่
- * **เป็นใบแยกที่ต้องตัดสินใจของตัวเอง** · migration ข้างต้นมี assert ที่จะแดงถ้ามีคนเผลอเปิด `delete`
+ * ## `DELETE` — ลบแบบกู้คืนได้ (เพิ่ม 4 ก.ย. 2026 · ผู้ใช้สั่ง)
+ * 🔴 **ไม่ได้เปิด policy DELETE บน `trips`** — ยังไม่มี และยังห้ามมี ตามที่ `20260824043822:273` เขียนไว้
+ * เมธอด HTTP ชื่อ `DELETE` แต่สิ่งที่เกิดคือ `update trips set deleted_at = now()` ผ่าน RPC
+ * ⇒ ผู้เรียกได้ `{ dayCount, stopCount, wasTemplate }` กลับไปบอกผู้ใช้ว่าเพิ่งเก็บอะไรเข้าถังขยะ
+ * · กู้คืนที่ `POST /api/engine/trips/[tripId]/restore` · ดูถังขยะที่ `GET /api/engine/trips?deleted=1`
+ * · สิทธิ์ที่ route นี้ใช้มาจาก `20260904210000_e5_trip_soft_delete.sql`
  */
 const RATE_LIMIT_PER_MINUTE = 120;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -317,6 +320,50 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
 
   return NextResponse.json(
     { ok: true, added: toAdd.length, removed: toRemove.length },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
+/**
+ * ลบทริป — **soft delete** · `DELETE /api/engine/trips/[tripId]`
+ *
+ * 🔴 **owner เท่านั้น** (ไม่ใช่ `editor`) — ด่านอยู่ใน RPC ไม่ได้อยู่ที่นี่
+ * ⇒ *อย่าเพิ่มการตรวจ role ซ้ำที่นี่* · สองที่ที่ต้องตรงกันคือรูปที่ทีมนี้โดนมาแล้วหลายรอบ
+ *
+ * 🔴 **ไม่มี `409 STOPS_WOULD_BE_LOST` แบบตอนลบวัน และนั่นถูกต้อง**
+ * ตอนลบวัน จุดแวะ **หายจริง** ⇒ ต้องให้ยืนยัน · ที่นี่ไม่มีอะไรหาย กู้คืนได้ทั้งหมด
+ * ⇒ ด่านยืนยันเป็นเรื่องของ UI (กล่อง "แน่ใจไหม") ไม่ใช่ของ HTTP
+ * 🎯 ***`409` ที่ใช้กับการกระทำที่ย้อนได้ จะสอนให้คนกดผ่านโดยไม่อ่าน แล้ววันที่มันย้อนไม่ได้จริงก็จะกดผ่านเหมือนกัน***
+ */
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ tripId: string }> }) {
+  const { tripId } = await params;
+  const bad = await guard(req, tripId);
+  if (bad) return bad;
+
+  const db = await createServerSupabase();
+  const { data, error } = await softDeleteTrip(db, tripId);
+  if (error) {
+    const msg = error.message ?? "";
+    // `P0002` = ไม่ใช่เจ้าของ **หรือ** ลบไปแล้ว — RPC ตั้งใจไม่แยกสองอย่างนี้ให้คนนอกรู้
+    if (error.code === "P0002") {
+      return NextResponse.json({ error: msg || "ไม่พบทริปนี้", code: "NOT_FOUND" }, { status: 404 });
+    }
+    if (error.code === "42501") {
+      return NextResponse.json({ error: msg, code: "42501" }, { status: 403 });
+    }
+    return NextResponse.json({ error: msg || "ลบทริปไม่สำเร็จ", code: error.code }, { status: 502 });
+  }
+
+  // RPC คืน jsonb — รูปมาจาก `jsonb_build_object` ในไฟล์ migration
+  const info = (data ?? {}) as { dayCount?: number; stopCount?: number; wasTemplate?: boolean };
+  return NextResponse.json(
+    {
+      ok: true,
+      dayCount: info.dayCount ?? 0,
+      stopCount: info.stopCount ?? 0,
+      // 🔴 ส่งต่อเสมอ — `true` แปลว่าธงทริปแนะนำถูกล้างและ **กู้คืนแล้วไม่กลับมาเอง**
+      wasTemplate: info.wasTemplate === true,
+    },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }

@@ -667,6 +667,28 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    ทั้งคู่ `language sql` · `stable` · `set search_path = ''` · **ไม่แตะตารางของผู้ใช้เลยสักใบ**
       //    อ่านเฉพาะ `catalog_countries`/`catalog_cities` และกรอง `supported = true` ทั้งคู่
       //    ⇒ เหตุผลที่ต้องเป็น definer: `anon` ไม่มี `select` บนคลัง **และเราไม่ต้องการให้มี**
+      // 🔴 **เพิ่ม 4 ก.ย. 2026 (P1) — ลบทริปแบบกู้คืนได้** (`20260904210000_e5_trip_soft_delete.sql`)
+      //    คำตอบของคำถามข้างบน (*รับคอลัมน์ที่ column grant ห้ามไหม · แตะข้อมูลผู้ใช้ไหม · ใครเรียกได้*):
+      //    · ทั้งสามใบรับ **`trip_id` อย่างเดียว** (`list_deleted_trips` ไม่รับอะไรเลย) — **ไม่รับ user id**
+      //      ⇒ ระบุเหยื่อไม่ได้ · ตัวตนมาจาก `auth.uid()` ผ่าน `app.trip_role()` เท่านั้น
+      //    · `grant execute` ให้ **`authenticated` เท่านั้น** — assert ในไฟล์ migration บังคับว่า `anon` ต้องเรียกไม่ได้ทั้งสามใบ
+      //    · เขียนคอลัมน์ที่ **ไคลเอนต์ไม่มี column grant**: `deleted_at` (ทั้งสองใบ) และ `published_template_at`
+      //      (`soft_delete_trip` ล้างธงทริปแนะนำ) ⇒ **นี่คือเหตุผลที่ต้องเป็น definer ไม่ใช่ update ตรง**
+      //
+      //    🔴 **definer ⇒ RLS ถูกข้าม ⇒ ด่านเหลือบรรทัดเดียว เหมือน `set_trip_pinned`/`copy_trip_template`:**
+      //    ```sql
+      //    if app.trip_role(p_trip_id) is distinct from 'owner' then raise ... end if;
+      //    ```
+      //    🎯 ***ถอดบรรทัดนั้น = ใครก็ลบทริปของใครก็ได้ และ RLS จะไม่ค้านเลย***
+      //    · 🔴 **`owner` ไม่ใช่ `can_write_trip`** — `editor` เขียนจุดแวะได้แต่ทิ้งทริปทั้งใบไม่ได้
+      //      (*"แก้เนื้อในทริป" กับ "ทำให้ทริปหายไป" เป็นคนละระดับสิทธิ์ ต่อให้อยู่ตารางเดียวกัน*)
+      //      วัดแล้วในสนามซ้อม: `editor` เรียก `soft_delete_trip` → `P0002` · เจ้าของ → สำเร็จ
+      //    · 🔴 `list_deleted_trips` เป็น definer **เพราะ `trips_select` ซ่อนแถวพวกนี้ไปแล้ว** —
+      //      ***ไม่มีใบนี้ คำว่า "กู้คืนได้" จะเป็นจริงเฉพาะกับคนที่รัน SQL เองได้***
+      //      มันกรอง `app.trip_role(t.id) = 'owner'` ในตัว + `limit 100`
+      //    · ⚠️ **ยังไม่มีเคสสดสักข้อ** — ทั้งใบยังไม่เคยรันบน engine-dev · รอ `db:push`
+      //      พฤติกรรมที่รายงานข้างบน **วัดในสนามซ้อมท้องถิ่น (`scripts/e7-local-rehearsal.sh`) ไม่ใช่ของจริง**
+      "public.list_deleted_trips",
       "public.list_public_cities",
       "public.list_public_destinations",
       "public.list_trip_templates",
@@ -680,6 +702,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //      ให้ `service_role` เท่านั้น = **ข้อยกเว้นที่ 6 ใน `TEAM.md`**
       "public.read_only_uncovered_tables",
       "public.release_fixture_lock",
+      "public.restore_trip",
       "public.role_probe_result",
       // 🔴 `P-53` — soft delete ต้องผ่าน RPC เพราะ PostgREST ห่อ `UPDATE` ด้วย `RETURNING` เสมอ
       //    → แถวที่เพิ่งทำให้ตัวเองหายไป ไม่ผ่าน policy `SELECT` ของตัวเอง · **`P-26` กลับด้าน**
@@ -728,6 +751,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.soft_delete_checklist_item",
       "public.soft_delete_custom_place",
       "public.soft_delete_place_note",
+      "public.soft_delete_trip",
       "public.soft_delete_trip_hotel",
       "public.soft_delete_trip_stop",
       // 🔴 เพิ่ม 26 ส.ค. (P1) — **ทางเปิด/ปิดโหมด · `service_role` เท่านั้น**
@@ -794,6 +818,16 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       .update([...policyMap().entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n"))
       .digest("hex")
       .slice(0, 16);
+    // 🔴 อัปเดตรอบ 12 (`f0761e4c…` → `7ce77df2…`) — **`trips_update` ตัวเดียว · ไม่มี policy ใหม่**
+    //    `20260904210000` เติม `and deleted_at is null` ทั้ง `using` และ `with check`
+    //    ⇒ ***แคบลง ไม่ใช่กว้างขึ้น*** — ทริปที่ถูกลบแก้ไม่ได้ · และ `with check` ทำให้
+    //      **ตั้ง `deleted_at` ผ่าน UPDATE ไม่ได้** (ชั้นที่สอง ต่อจากการไม่มี column grant)
+    //    · 🔴 **พิสูจน์ว่าไฟล์ผมเป็นสาเหตุเดียว ไม่ใช่เดา**: ซ่อนไฟล์ migration แล้วรันซ้ำ
+    //      → ด่านนี้ **เขียวด้วยค่าเดิม** ⇒ ไม่มี policy ตัวอื่นเปลี่ยนติดมาด้วย
+    //    · กิ่งที่ไล่ (วัดในสนามซ้อมท้องถิ่น ไม่ใช่ engine-dev): เจ้าของ rename ทริปปกติ = สำเร็จ ·
+    //      rename ทริปที่ลบแล้ว = **0 แถว** · `list_deleted_trips` เห็น 1 · กู้แล้ว rename ได้อีก
+    //    ⚠️ **`trips_select` ไม่ได้เปลี่ยนเลย** — มันเรียก `app.can_read_trip(id)` ซึ่งเป็นตัวที่เปลี่ยน
+    //       ⇒ ด่านนี้ **มองไม่เห็นการเปลี่ยนนั้น** · ตัวที่เห็นคือ `pin:app-fn-body` ข้างล่าง
     // 🔴 อัปเดตรอบ 11 (`329ba089…` → `871a35aa…`) — `trip_hotels` 3 policy (`D51` + `D76`)
     // 🔴 อัปเดตรอบ 10 (`35d64de3…` → `329ba089…`) — `checklist_items` · `place_notes` · `hidden_places`
     //    `hidden_places` มี DELETE โดยตั้งใจ · อีกสองตัวไม่มี (`D76`)
@@ -881,7 +915,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //     แต่ *"เคสที่ assert ว่ากิ่งไม่มีอยู่"* ยังนับเป็นครอบอยู่ดี — ตัวนับไม่ได้อ่าน assertion)
       // ✅ **หลักฐานของรอบนี้จึงเป็น *รายชื่อกิ่งข้างบน* ซึ่งอ่านทวนได้ ไม่ใช่ตัวเลขจากเครื่องมือ**
       //    — จดไว้ตรง ๆ ว่าอ่อนกว่ารอบก่อน แทนที่จะยืมความน่าเชื่อถือของตัวเลขที่ไม่ได้วัดสิ่งนี้
-      "f0761e4c4644280c",
+      "7ce77df229226f53",
     );
   });
 
@@ -1373,7 +1407,21 @@ describe("🔴 E6-AC9 — ตัวเขียนที่ updated_at ไม่
     // 🔴 ขึ้นค่ารอบ 6 · 3 ก.ย. 2026 (P4) — ไล่แล้วเช่นเคย · `20260903220000` แตะ **สองตัว เท่านั้น**
     //    `app.assert_cache_keys_in_catalog` (ตัวใหม่) · `app.assert_cache_lockdown` (เพิ่ม `perform` เรียกตัวใหม่)
     //    ชื่ออื่น 0 → **ไม่มีฟังก์ชันเดิมถูกแก้เงียบติดมาด้วย**
-    ).toBe("b30c22ec678aba838121c8346b019c54ba1ad3b583998c36692fd3e0afaa17aa");
+    // 🔴 อัปเดต 4 ก.ย. 2026 (`b30c22ec…` → `f88bd158…`) — **`app.can_read_trip` ใบเดียว**
+    //    `20260904210000` เติมเงื่อนไข: `and exists (select 1 from public.trips where id = t and deleted_at is null)`
+    //    🎯 ***ตัวนี้คือ funnel ของทั้งสคีมา*** — policy หลายสิบใบเขียน `using (app.can_read_trip(trip_id))`
+    //       ⇒ แก้ที่นี่ที่เดียว = ลูกทุกใบ (`trip_days`/`trip_stops`/`bookings`/`checklist_items`/
+    //       `trip_hotels`/`place_notes`…) หายพร้อมทริปที่ถูกลบ **โดยไม่ต้องมีใครไปตามเติมทีละใบ**
+    //    · 🔴 **ทิศคือ *แคบลง*** — เพิ่มเงื่อนไข ไม่ได้ถอด · `app.trip_role` **ไม่ถูกแตะ** โดยตั้งใจ
+    //      (มันตอบว่า *"บทบาทฉันคืออะไร"* ซึ่งยังจริงหลังลบ · และ RPC ลบ/กู้ ต้องเรียกมันตอนทริปถูกลบแล้ว)
+    //    · 🔴 **พิสูจน์ว่าเป็นสาเหตุเดียว**: ซ่อนไฟล์ migration แล้วรันซ้ำ → ด่านนี้เขียวด้วยค่าเดิม
+    //      ⇒ ไม่มีฟังก์ชัน `app.*` ตัวอื่นเปลี่ยนติดมาด้วย (โดยเฉพาะ `can_write_trip` ที่ข้อความด่านเตือนไว้)
+    //    · กิ่งที่ไล่ (สนามซ้อมท้องถิ่น · มีทั้งทิศบวกและลบ):
+    //      **ก่อนลบ** เจ้าของเห็น `trips=1 days=1 stops=1` ← ทิศบวก ขาดไม่ได้
+    //      **หลังลบ** `trips=0 days=0 stops=0 plans=0` ← ลูกหายจริง ไม่ใช่แค่ตัวทริป
+    //      **กู้คืน** กลับมาครบ `1/1/1/1` · **`editor` ลบไม่ได้** (`P0002`)
+    //    ⚠️ **ยังไม่เคยรันบน engine-dev** — รอ `db:push` · อย่าอ่านตัวเลขข้างบนว่าเป็นผลจากของจริง
+    ).toBe("f88bd158643986900cbdd1a7fc88466e7dcd0adbce3910cb600be287b8763748");
     // 🔴 ขึ้นค่ารอบ 3 · 27 ส.ค. (P1) — **เปลี่ยนเพราะ *เพิ่ม* ฟังก์ชัน ไม่ใช่ *แก้* body ตัวเดิม**
     //    (ต่างจากรอบ 2 ที่แก้ `read_only_uncovered_tables` · เหมือนรอบ 1 ที่เพิ่มตัวใหม่)
     //    ตัวใหม่คือ `app.trip_cover_trip()` — `20260827220000` มี `create or replace function app.*`

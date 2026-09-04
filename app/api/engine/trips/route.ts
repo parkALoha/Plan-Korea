@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { tripsForUser } from "@/lib/engine/trip";
-import { createTrip, insertTripDestinations } from "@/lib/engine/db";
+import { createTrip, insertTripDestinations, listDeletedTrips } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { MAX_TRIP_DAYS, MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
 
@@ -25,8 +25,28 @@ export async function GET(req: NextRequest) {
   const user = await getUser();
   if (!user) return unauthenticatedResponse();
 
+  // 🔴 ถังขยะอยู่ที่นี่ ไม่ใช่ route ใหม่ — มันคือคำถามเดียวกัน (*"มีทริปอะไรบ้าง"*) คนละสถานะ
+  //    · `/api/engine/trips/trash` จะเป็น static segment ที่ชนกับ `[tripId]` ในสายตาคนอ่าน
+  //      (Next.js เลือก static ถูกเสมอ **แต่คนอ่าน route ไม่รู้ว่ามี id ไหนที่จองคำนั้นไว้**)
+  //    · 🔴 รูปคืนค่า **ต่างกันคนละแบบ** โดยตั้งใจ — `deleted=1` คืน `{ trips: [...] }` จาก RPC
+  //      ⇒ ไม่ต้องแกล้งทำเป็นว่ามันเป็นทริปเต็มใบ ซึ่งมันไม่ใช่ (ไม่มีวัน/จุดแวะ/สมาชิก)
+  const wantDeleted = new URL(req.url).searchParams.get("deleted") === "1";
+
   try {
     const db = await createServerSupabase();
+    if (wantDeleted) {
+      const { data, error } = await listDeletedTrips(db);
+      if (error) {
+        return NextResponse.json(
+          { error: error.message || "อ่านถังขยะไม่ได้", code: error.code },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json(
+        { trips: data ?? [] },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     return NextResponse.json(await tripsForUser(db), {
       headers: { "Cache-Control": "private, no-store" },
     });

@@ -1716,6 +1716,43 @@ export function setTripPinned(db: Db, tripId: string, pinned: boolean) {
 }
 
 /**
+ * ลบทริป — **soft delete · กู้คืนได้** (P1-Lead · 4 ก.ย. 2026 · ผู้ใช้สั่ง "ทำเลย")
+ *
+ * 🔴 **RPC ไม่ใช่ `delete` ตรง เพราะ `trips` ไม่มี policy DELETE เลย และห้ามมี**
+ * `20260824043822:273` เขียนไว้ตั้งแต่วันแรก: *"ลบทริปคือลบจุดแวะทั้งทริปแบบย้อนไม่ได้
+ * ต้องผ่านทางที่ตั้งใจ (E2 soft delete)"* ⇒ ใบนี้ไปทำตาม ไม่ได้เปิดทางใหม่
+ *
+ * 🔴 **และไม่ใช่ `update` ตรงด้วย** — ไคลเอนต์ **ไม่มี column grant บน `deleted_at`** (ตั้งใจ)
+ * ⇒ ทางเดียวคือ definer ที่ตรวจ `owner` ก่อน · assert ในไฟล์ migration บังคับทั้งสองทิศ
+ *
+ * คืน `{ dayCount, stopCount, wasTemplate }` — ผู้เรียกเอาไปบอกผู้ใช้ว่ากำลังทิ้งอะไรอยู่
+ * · 🔴 `wasTemplate: true` แปลว่า **ธง `published_template_at` ถูกล้างไปแล้ว และ `restoreTrip` ไม่คืนให้**
+ *   ต้องมีคนตั้งใจประกาศใหม่ · ผู้เรียกควรบอกผู้ใช้ ไม่ใช่ปล่อยให้รู้ทีหลัง
+ */
+export function softDeleteTrip(db: Db, tripId: string) {
+  return db.rpc("soft_delete_trip", { p_trip_id: tripId });
+}
+
+/**
+ * กู้ทริปที่ลบไว้กลับมา — owner เท่านั้น
+ *
+ * ⚠️ **ไม่คืนธงทริปแนะนำ** (`published_template_at`) โดยตั้งใจ — ดู `softDeleteTrip`
+ */
+export function restoreTrip(db: Db, tripId: string) {
+  return db.rpc("restore_trip", { p_trip_id: tripId });
+}
+
+/**
+ * ถังขยะ — ทริปที่ *ผู้เรียกเป็น owner* และถูกลบไว้ (ใหม่สุดก่อน · เพดาน 100)
+ *
+ * 🔴 **ต้องเป็น RPC เพราะ `trips_select` ซ่อนแถวพวกนี้ไปแล้ว** — `select` ธรรมดาได้ 0 แถวเสมอ
+ * 🎯 ***ไม่มีเส้นนี้ คำว่า "ลบแบบกู้คืนได้" เป็นจริงเฉพาะกับคนที่รัน SQL เองได้***
+ */
+export function listDeletedTrips(db: Db) {
+  return db.rpc("list_deleted_trips");
+}
+
+/**
  * ทริปที่ *ผู้เรียก* ปักหมุดไว้ — คืน `trip_id` + `pinned_at` เรียงใหม่สุดก่อน
  *
  * 🔴 **`.eq("user_id", userId)` จำเป็น ไม่ใช่การกันไว้เฉย ๆ** — `trip_members_select` ใช้ `can_read_trip`

@@ -82,6 +82,8 @@ import { GET as membersGET } from "@/app/api/engine/trips/[tripId]/members/route
 import { PUT as destinationsPUT } from "@/app/api/engine/trips/[tripId]/destinations/route";
 import { PATCH as tripPATCH } from "@/app/api/engine/trips/[tripId]/route";
 import { PUT as pinPUT } from "@/app/api/engine/trips/[tripId]/pin/route";
+import { DELETE as tripDELETE } from "@/app/api/engine/trips/[tripId]/route";
+import { POST as restorePOST } from "@/app/api/engine/trips/[tripId]/restore/route";
 import { GET as templatesGET } from "@/app/api/engine/trip-templates/route";
 
 type Cookie = { name: string; value: string };
@@ -179,7 +181,7 @@ const DB_REJECT_STATUSES = [400, 401, 403, 404, 409] as const;
  * trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ
  * ชื่อ = พาธของโฟลเดอร์ใต้ `[tripId]/` · `"(root)"` = `route.ts` ที่อยู่ที่ราก (ดู `ROOT_ROUTE`)
  */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members", "destinations", "(root)", "pin"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members", "destinations", "(root)", "pin", "restore"]);
 
 /**
  * 🔴 **ชื่อแทน `route.ts` ที่อยู่ที่ราก `[tripId]/` — ไม่ใช่ในโฟลเดอร์ย่อย**
@@ -249,9 +251,10 @@ describe("E3-AC9 ② — ความครอบคลุม (ต้องเ�
 
   it("📊 coverage — เขียวไม่ได้แปลว่าครบทุกใบ · ตัวเลขต้องโผล่ตอนรัน", () => {
     const all = tripScopedRouteNames();
+    // 🔴 **14 ตั้งแต่ 4 ก.ย. 2026 (เย็น)** — `restore` (บล็อก `E5-trash` ข้างล่าง)
     // 🔴 **13 ตั้งแต่ 4 ก.ย. 2026 (บ่าย)** — `destinations` · `(root)` (`PATCH`) · `pin`
     //    ⚠️ รอบเช้าเลขขยับ 10 → 12 ไม่ใช่ 10 → 11: ฉบับก่อนของตัวแจงมองไม่เห็น `(root)` (ดูคอมเมนต์ข้างบน)
-    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(13);
+    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(14);
     const covered = [...COVERED].sort();
     const stale = covered.filter((c) => !all.includes(c));
     expect(stale, `COVERED ชี้ route ที่ไม่มีบนดิสก์: ${stale.join(", ")}`).toEqual([]);
@@ -1670,6 +1673,98 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     // ทั้งสองอยู่ใน `rejectStatuses` ปริยายอยู่แล้ว ⇒ `verdictFor` แยกไม่ออก
     // **จึงยืนยันรหัสตรง ๆ ด้วย** ไม่พึ่งตัวจำแนกอย่างเดียว
     // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🔴 `E5-trash` — `DELETE /trips/[tripId]` + `POST /trips/[tripId]/restore`
+    //    (route ที่ 14 · P1 · 4 ก.ย. 2026 · ผู้ใช้สั่ง "ทำเลย")
+    //
+    // ## 🔴 บล็อกนี้มีทริปของตัวเอง **ไม่ใช้ `tripE`** — และนั่นไม่ใช่ความสะอาด มันคือความถูกต้อง
+    // เคสในบล็อกนี้ *ลบทริปจริง* ⇒ ใช้ `tripE` ร่วมกับเคสวัน/จุดหมายข้างบน จะทำให้เคสพวกนั้น
+    // แดงแบบสุ่มตามลำดับการรัน **แล้วคนจะโทษเคสที่แดง ไม่ใช่เคสที่ทำให้แดง**
+    //
+    // ## 🔴 กิ่งที่ไม่มี probe ใบไหนแตะมาก่อน: **ลูกของทริปที่ถูกลบ**
+    // ```
+    // 13 ใบก่อนหน้า  ยิงข้าม *ผู้ใช้*   — "B แตะของ A ได้ไหม"
+    // ใบนี้           ยิงข้าม *สถานะ*   — "A แตะของ A **หลังลบแล้ว** ได้ไหม"
+    // ```
+    // 🎯 ***`app.can_read_trip` เป็น funnel ที่ policy หลายสิบใบเรียก — ถ้ามันไม่รู้จัก `deleted_at`
+    //    ทริปจะหายจากรายการ แต่ `GET /stops` ของทริปนั้นยังคืนเนื้อครบให้คนที่ถือ URL เก่า***
+    //    เคส ④ คือตัวเดียวที่วัดข้อนั้น · **เขียวเพราะ policy ของ `trip_stops` เองไม่ได้แปลว่าปิด**
+    //
+    // ## ⚠️ ลำดับสำคัญ — เคสใช้สถานะต่อกัน (vitest รัน `it` ตามลำดับในไฟล์)
+    // ① editor ลบไม่ได้ (ทริปยังอยู่) → ② owner ลบ → ③④ วัดหลังลบ → ⑤ คนนอกกู้ไม่ได้ → ⑥ owner กู้คืน
+    // ═══════════════════════════════════════════════════════════════════════
+    describe("🔴 E5-trash — ลบแบบกู้คืนได้ (ยิงข้าม *สถานะ* ไม่ใช่ข้าม *ผู้ใช้*)", () => {
+      let tripT = "";
+      beforeAll(async () => {
+        tripT = await mkTrip(aClient, "a");
+        const inv = await aClient.from("trip_members").insert([
+          { trip_id: tripT, user_id: ids.d, role: "editor" },
+        ]);
+        if (inv.error) throw new Error(`เชิญ editor เข้า tripT: ${inv.error.message}`);
+      });
+
+      /** ทริปที่ A เห็นใน `GET /trips` — ชั้นที่ผู้ใช้เห็นจริง ไม่ใช่ชั้นตาราง */
+      const listedByA = async (): Promise<string> => {
+        jar.cookies = aCookies;
+        const res = await tripsGET(new NextRequest("http://localhost:3300/api/engine/trips"));
+        expect(res.status, `GET /trips ควร 200: ${await res.clone().text()}`).toBe(200);
+        return JSON.stringify(await res.json());
+      };
+
+      it("① editor ลบทริปไม่ได้ — `owner` เท่านั้น (เคสควบคุมฝั่งลบ · ทริปต้องยังอยู่หลังจากนี้)", async () => {
+        const res = await callAs(dCookies, tripT, tripDELETE, "DELETE");
+        expect(
+          [403, 404].includes(res.status),
+          `editor ลบทริปได้ (${res.status}) = RPC ผูกกับ can_write_trip แทน owner: ${await res.clone().text()}`,
+        ).toBe(true);
+        expect(await listedByA(), "editor ถูกปฏิเสธแล้วแต่ทริปหายไป = ลบสำเร็จบางส่วน").toContain(tripT);
+      });
+
+      it("② owner ลบได้ และได้จำนวนที่เก็บเข้าถังกลับมา (ทิศบวก — 0/0 = ไม่ได้มองเห็นทริปจริง)", async () => {
+        const res = await callAs(aCookies, tripT, tripDELETE, "DELETE");
+        expect(res.status, `owner ลบควร 200: ${await res.clone().text()}`).toBe(200);
+        const body = (await res.json()) as { dayCount?: number; stopCount?: number; wasTemplate?: boolean };
+        // 🔴 `mkTrip` สร้างทริป 11 วัน ⇒ `dayCount` ต้องเป็น 11 **ไม่ใช่แค่ > 0**
+        //    *"> 0"* จะเขียวแม้ RPC นับผิดตาราง · ตัวเลขตรงเป๊ะพิสูจน์ว่ามันนับวันของทริปนี้จริง
+        expect(body.dayCount, "dayCount ต้องเท่ากับจำนวนวันจริงของทริป").toBe(11);
+        expect(body.wasTemplate, "ทริปทดสอบไม่ใช่ทริปแนะนำ").toBe(false);
+      });
+
+      it("③ ลบแล้วหายจาก `GET /trips` (ชั้นที่ผู้ใช้เห็น)", async () => {
+        expect(await listedByA(), "ลบแล้วทริปยังอยู่ในรายการ").not.toContain(tripT);
+      });
+
+      it("🔴 ④ ลูกของทริปที่ถูกลบต้องเข้าไม่ถึง — กิ่งที่ไม่มี probe ใบอื่นแตะ", async () => {
+        const res = await callAs(aCookies, tripT, stopsGET, "GET");
+        const text = await res.clone().text();
+        // 200 + รายการว่าง ก็ยังผิด: มันแปลว่า policy ยอมให้เดินเข้าไปแล้วบังเอิญไม่มีอะไร
+        expect(
+          [403, 404].includes(res.status),
+          `เจ้าของยังอ่าน stops ของทริปที่ลบแล้วได้ (${res.status}) — ` +
+            "`app.can_read_trip` ไม่รู้จัก `deleted_at` ⇒ ลูกทุกตารางยังเปิดอยู่กับคนที่ถือ URL เก่า: " +
+            text,
+        ).toBe(true);
+      });
+
+      it("⑤ คนนอกทริปกู้คืนไม่ได้", async () => {
+        const res = await callAs(bCookies, tripT, restorePOST, "POST");
+        expect(
+          [403, 404].includes(res.status),
+          `คนนอกกู้ทริปของ A ได้ (${res.status}): ${await res.clone().text()}`,
+        ).toBe(true);
+        expect(await listedByA(), "คนนอกถูกปฏิเสธแต่ทริปกลับมา = กู้สำเร็จบางส่วน").not.toContain(tripT);
+      });
+
+      it("⑥ owner กู้คืนได้ และทริปกลับมาในรายการ · กู้ซ้ำต้องไม่เงียบ", async () => {
+        const res = await callAs(aCookies, tripT, restorePOST, "POST");
+        expect(res.status, `owner กู้ควร 200: ${await res.clone().text()}`).toBe(200);
+        expect(await listedByA(), "กู้ 200 แล้วแต่ทริปไม่กลับมาในรายการ").toContain(tripT);
+        // 🔴 กู้ซ้ำ = `404` ไม่ใช่ `200` เงียบ ๆ — *"สำเร็จ" ครั้งที่สองที่ไม่มีอะไรเกิดขึ้น อ่านเหมือนครั้งแรก*
+        const again = await callAs(aCookies, tripT, restorePOST, "POST");
+        expect(again.status, "กู้ซ้ำได้ 200 = ผู้เรียกแยกไม่ออกว่าสถานะตรงกับที่คิดไหม").toBe(404);
+      });
+    });
+
     describe("🔴 E5-pin — ปักหมุดเป็นมุมมองส่วนตัว (viewer ต้อง *ผ่าน*)", () => {
       /** `pinned_at` ของสมาชิกทุกคนในทริป — อ่านด้วย owner (`trip_members_select` = can_read_trip) */
       const pinsOf = async (): Promise<Record<string, boolean>> => {

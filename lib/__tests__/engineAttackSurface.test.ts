@@ -142,6 +142,14 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   //       ทะเบียนนี้ไม่มีช่องสำหรับข้อหลัง และไม่ควรมี · **เจตนาของแต่ละใบอยู่ที่ probe**
   //       ⇒ probe ของใบนี้ต้อง assert ว่า **viewer สำเร็จ** ไม่ใช่ถูกปฏิเสธ (`engineCrossUser` บล็อก `E5-pin`)
   "app/api/engine/trips/[tripId]/pin/route.ts": { scope: "trip" },
+  // 🔴 ใบที่ 14 (P1 · 4 ก.ย. 2026) — `POST` กู้ทริปที่ลบไว้ · **รับ `tripId` จาก URL ⇒ `"trip"`**
+  //    ⚠️ **เป็นใบเดียวในทะเบียนที่ทำงานกับแถวที่ `trips_select` มองไม่เห็น**
+  //       (ทริปที่ `deleted_at is not null` ถูกกรองออกจาก policy ไปแล้ว)
+  //       ⇒ *probe แบบ "คนนอกยิงแล้วต้องได้ 404"* ยัง**ตรงตามที่ควร** แต่เหตุผลต่างจากใบอื่น:
+  //       ใบอื่นได้ 404 เพราะ **RLS ไม่ให้เห็น** · ใบนี้ได้ 404 เพราะ **RPC ตรวจ `owner` เอง**
+  //       (definer ⇒ RLS ถูกข้ามทั้งหมด — `where`/`if` ในตัวฟังก์ชันคือด่านเดียวที่เหลือ)
+  //    🎯 ***ผลเหมือนกัน กลไกคนละตัว — และถ้าใครถอดบรรทัดตรวจ `owner` ออก จะไม่มี RLS มารับช่วงต่อ***
+  "app/api/engine/trips/[tripId]/restore/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/place-notes/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/stops/route.ts": { scope: "trip" },
 };
@@ -184,7 +192,7 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     }
   });
 
-  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 13 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
+  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 14 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
     const trip = Object.entries(SURFACE)
       .filter(([, m]) => m.scope === "trip")
       .map(([r]) => r)
@@ -192,16 +200,21 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     // เทียบกับ path จริงบนดิสก์ ไม่ใช่แค่ทะเบียน — ถ้าย้าย route เข้า/ออก [tripId] ต้องมาแก้ทั้งคู่
     const tripOnDisk = routeFiles().filter(isTripScoped).sort();
     expect(trip, "ทะเบียน trip-scoped ไม่ตรงกับที่อยู่ใต้ trips/[tripId]/ บนดิสก์").toEqual(tripOnDisk);
+    // 🔴 **13 → 14 เมื่อ 4 ก.ย. 2026 (เย็น)** — `restore/route.ts` (กู้ทริปที่ลบไว้ · owner เท่านั้น)
     // 🔴 **12 → 13 เมื่อ 4 ก.ย. 2026 (บ่าย)** — `pin/route.ts` (ดูหมายเหตุในทะเบียน: viewer ต้อง *ผ่าน*)
     // 🔴 **10 → 12 เมื่อ 4 ก.ย. 2026** (P1 เขียน route · P4 เขียน probe แล้วจึงขยับเลขนี้ ตามลำดับที่ข้อความนี้สั่ง)
     //    · `destinations/route.ts`  `PUT`   — probe: owner/editor เขียนได้ · viewer/คนนอกไม่ได้ · กิ่ง delete-only
     //    · `[tripId]/route.ts`      `PATCH` — probe: **editor ถูกปฏิเสธ** (`trips_update` = owner) · คนนอกไม่ได้
     //      · ⚠️ ใบหลังต้องยิงด้วย **editor** ไม่ใช่แค่คนนอก — คนนอกถูกกันตั้งแต่ `can_read_trip`
     //        **ไม่เคยเดินไปถึงเส้น `owner` เลย** ⇒ probe คนนอกอย่างเดียวจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง
+    // 🔴 **13 → 14 เมื่อ 4 ก.ย. 2026 (เย็น)** — `restore/route.ts` `POST`
+    //    probe อยู่ที่ `engineCrossUser` บล็อก `E5-trash` · **เขียน probe ก่อนขยับเลขนี้ ตามที่ข้อความสั่ง**
+    //    กิ่งที่ probe แตะ: editor ลบไม่ได้ · คนนอกกู้ไม่ได้ · **หลังลบแล้ว `stops` ของทริปนั้นยิงไม่ผ่าน**
+    //    (ข้อสุดท้ายคือกิ่งที่ไม่มี probe ใบไหนแตะมาก่อน — มันวัด `app.can_read_trip` ซึ่งเป็น funnel ของทุก policy)
     expect(
       trip.length,
-      "จำนวน route ยิงข้ามเปลี่ยนจาก 13 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
-    ).toBe(13);
+      "จำนวน route ยิงข้ามเปลี่ยนจาก 14 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
+    ).toBe(14);
   });
 
   it("ทุก trip-scoped route ต้อง export อย่างน้อยหนึ่ง HTTP method (ไม่งั้น probe จะไม่มีอะไรยิง)", () => {

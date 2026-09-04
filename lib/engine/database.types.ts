@@ -1510,6 +1510,7 @@ export type Database = {
           base_timezone: string
           created_at: string
           created_by: string
+          deleted_at: string | null
           end_date: string
           id: string
           published_template_at: string | null
@@ -1523,6 +1524,7 @@ export type Database = {
           base_timezone?: string
           created_at?: string
           created_by: string
+          deleted_at?: string | null
           end_date: string
           id?: string
           published_template_at?: string | null
@@ -1536,6 +1538,7 @@ export type Database = {
           base_timezone?: string
           created_at?: string
           created_by?: string
+          deleted_at?: string | null
           end_date?: string
           id?: string
           published_template_at?: string | null
@@ -1609,6 +1612,7 @@ export type Database = {
           base_timezone: string
           created_at: string
           created_by: string
+          deleted_at: string | null
           end_date: string
           id: string
           published_template_at: string | null
@@ -1653,6 +1657,7 @@ export type Database = {
           base_timezone: string
           created_at: string
           created_by: string
+          deleted_at: string | null
           end_date: string
           id: string
           published_template_at: string | null
@@ -1678,6 +1683,16 @@ export type Database = {
         Returns: {
           expires_at: string
           held_by: string
+        }[]
+      }
+      list_deleted_trips: {
+        Args: never
+        Returns: {
+          deleted_at: string
+          end_date: string
+          id: string
+          start_date: string
+          title: string
         }[]
       }
       list_trip_templates: {
@@ -1711,6 +1726,7 @@ export type Database = {
         }[]
       }
       release_fixture_lock: { Args: { p_holder: string }; Returns: boolean }
+      restore_trip: { Args: { p_trip_id: string }; Returns: undefined }
       role_probe_result: {
         Args: never
         Returns: {
@@ -1763,6 +1779,7 @@ export type Database = {
       soft_delete_checklist_item: { Args: { p_id: string }; Returns: undefined }
       soft_delete_custom_place: { Args: { p_id: string }; Returns: undefined }
       soft_delete_place_note: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_trip: { Args: { p_trip_id: string }; Returns: Json }
       soft_delete_trip_hotel: { Args: { p_id: string }; Returns: undefined }
       soft_delete_trip_stop: { Args: { p_id: string }; Returns: undefined }
       system_mode: {
