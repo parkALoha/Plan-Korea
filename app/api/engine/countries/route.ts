@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
-import { listSupportedCountries } from "@/lib/engine/db";
+import { listCatalogCityNames, listSupportedCountries } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
 /**
@@ -38,10 +38,39 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
     }
+
+    /**
+     * 🔴 **จำนวนเมือง + ชื่อตัวอย่าง — เพิ่ม 4 ก.ย. 2026 (ขอโดย P2 สำหรับการ์ดประเทศบนหน้าแรก)**
+     *
+     * ⚠️ **คำขอที่สองล้มแล้ว *ต้องไม่* ทำให้ทั้งเส้นล้ม** — รายชื่อประเทศคือของจำเป็น
+     * ตัวเลขเมืองเป็นของประดับ · ล้มแล้วส่ง `null` ไป **ไม่ใช่ `0`**
+     * 🎯 ***`0` แปลว่า "ประเทศนี้ไม่มีเมือง" ซึ่งเป็นคำกล่าวอ้างที่เราไม่ได้วัด ·
+     *    `null` แปลว่า "ยังไม่รู้" ซึ่งเป็นความจริง*** — และ UI เลือกแสดงต่างกันได้
+     * · 🔴 P2 จองที่ว่างของช่องนี้ไว้แล้วโดยไม่เติมของปลอม ⇒ `null` เข้ากับที่เขาทำพอดี
+     */
+    let cityCount: Record<string, number> | null = null;
+    let sampleCities: Record<string, string[]> | null = null;
+    const cities = await listCatalogCityNames(db);
+    if (!cities.error && cities.data) {
+      cityCount = {};
+      sampleCities = {};
+      for (const c of cities.data) {
+        cityCount[c.country_id] = (cityCount[c.country_id] ?? 0) + 1;
+        const s = (sampleCities[c.country_id] ??= []);
+        if (s.length < 3) s.push(c.name_th);
+      }
+    }
+
+    const withCounts = (data ?? []).map((c) => ({
+      ...c,
+      // `?? null` ไม่ใช่ `?? 0` — ประเทศที่เปิดแต่ยังไม่มีเมือง กับ อ่านคลังไม่ได้ **คนละเรื่อง**
+      cityCount: cityCount ? (cityCount[c.id] ?? 0) : null,
+      sampleCities: sampleCities ? (sampleCities[c.id] ?? []) : null,
+    }));
     // เปลี่ยนน้อยที่สุดในระบบ แต่ผลผูกกับตัวตนผู้เรียก (ต้องล็อกอิน) → `private` ไม่ใช่ `public`
     // ⚠️ อายุสั้นกว่าที่ข้อมูลสมควรได้ **โดยตั้งใจ** — เปิดประเทศใหม่แล้วต้องเห็นภายในนาที
     //    ไม่ใช่รอผู้ใช้ล้างแคช · แคชที่ยาวเกินทำให้ "เพิ่มแล้วไม่ขึ้น" อ่านเหมือนของพัง
-    return NextResponse.json(data ?? [], {
+    return NextResponse.json(withCounts, {
       headers: { "Cache-Control": "private, max-age=60" },
     });
   } catch (e) {
