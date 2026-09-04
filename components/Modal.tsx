@@ -3,6 +3,7 @@
 import { useId, useRef, type ReactNode } from "react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { useDismissable } from "@/hooks/useDismissable";
+import { Button, IconButton } from "./ui/Button";
 
 /**
  * กล่องโมดัลกลางของทั้งเว็บ (เฟส 20.1)
@@ -72,13 +73,7 @@ export function Modal({
               </h2>
               {subtitle && <div className="text-xs text-content-soft">{subtitle}</div>}
             </div>
-            <button
-              onClick={onClose}
-              aria-label="ปิด"
-              className="-mr-2 shrink-0 rounded-full p-2 text-content-soft hover:bg-surface-soft"
-            >
-              ✕
-            </button>
+            <IconButton onClick={onClose} label="ปิด" icon="close" className="-mr-2 rounded-full" />
           </div>
           {headerExtra}
         </div>
@@ -118,18 +113,15 @@ export function ConfirmModal({
       bodyClassName="space-y-3"
       footer={
         <>
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-line px-4 py-3 text-sm font-medium text-content-soft hover:bg-surface-soft"
-          >
+          <Button variant="secondary" size="lg" onClick={onClose}>
             ยกเลิก
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 rounded-xl bg-maple-dark py-3 font-semibold text-white hover:bg-maple"
-          >
+          </Button>
+          {/* variant="danger" ไม่ใช่ "primary" — กล่องนี้ใช้เฉพาะงานที่ทำแล้วกู้ไม่ได้จริงๆ
+              (ดูคอมเมนต์ของ ConfirmModal) ก่อนหน้านี้มันใช้สีเดียวกับปุ่มบันทึกทั่วเว็บ
+              ⇒ "ยืนยันลบตั๋ว" หน้าตาเหมือน "บันทึก" ทั้งที่ผลลัพธ์ต่างกันสุดขั้ว */}
+          <Button variant="danger" size="lg" onClick={onConfirm} className="flex-1">
             {confirmLabel}
-          </button>
+          </Button>
         </>
       }
     >
