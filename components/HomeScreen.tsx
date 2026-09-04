@@ -252,6 +252,19 @@ const SEARCH_INPUT_QUIET = {
   autoCorrect: "off",
   autoCapitalize: "off",
   spellCheck: false,
+  /**
+   * 🔴 **กรอบโฟกัสถูกปิดที่ *ตัว element* ไม่ใช่ด้วยคลาส** — ตั้งใจ และไม่ใช่การเผลอเขียน inline style
+   *
+   * `app/globals.css` มีกฎ **ทั้งเว็บ**: `:focus-visible { outline: 2px solid var(--color-maple) }`
+   * ⇒ ช่องนี้ได้กรอบส้มมาโดยที่ **ไม่มีอะไรในไฟล์นี้บอกเลยว่ามันจะมี**
+   * · คลาส `focus-visible:outline-none` ชนะได้ก็จริง **แต่ชนะด้วย *ลำดับและความจำเพาะของ CSS***
+   *   ซึ่งเปลี่ยนได้จากการแก้ไฟล์อื่น · และ **สไตล์ชีตที่ค้างในเบราว์เซอร์ก็ทำให้มันยังไม่มีผล**
+   * 🎯 ***`style` ชนะสไตล์ชีตทุกใบเสมอ ไม่ขึ้นกับลำดับ ความจำเพาะ หรือของที่ค้างอยู่***
+   *   ⇒ ที่นี่จึงเป็นที่ที่ *ผลลัพธ์ไม่ขึ้นกับสิ่งที่มองไม่เห็นจากไฟล์นี้*
+   * ⚠️ **ไม่ใช่แบบอย่างให้ใช้ inline style ทั่วไป** — ใช้ตรงนี้เพราะกำลังลบล้างกฎ global ที่มองไม่เห็น
+   *   จากจุดใช้งาน · เหตุผลที่ยอมไม่มีกรอบเลย อยู่ในคอมเมนต์ที่ `<label>` ของโมดัล
+   */
+  style: { outline: "none" },
 } as const;
 
 function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -1097,7 +1110,7 @@ export function HomeScreen() {
                 onClick={() => setSearchOpen(false)}
                 className="ml-auto rounded-lg bg-maple-dark px-4 py-2 text-sm font-semibold text-white"
               >
-                {COPY.searchShowResults(visibleTrips.length)}
+                {COPY.searchShowResults(visibleTrips.length, query.trim() !== "")}
               </button>
             </>
           }
