@@ -3,11 +3,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseConfigured, type TripPlan } from "@/lib/supabase";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
+import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
+import { tripKey } from "@/lib/engine/offlineStore";
 
 type PlanRow = TripPlan & { is_active: boolean };
+
+/** รูปที่เก็บลงเครื่อง — **ไม่ใช่ `PlanRow[]` ดิบ** · `is_active` ถูกยุบเป็น `activePlanId` แล้วตั้งแต่ต้นทาง */
+type CachedPlans = { plans: TripPlan[]; activePlanId: string | null };
+
+/** 🔴 จุดเดียวที่แปลง `PlanRow[]` → รูปที่เก็บ — เดิมสูตรนี้ถูกเขียนซ้ำ **สามที่** (`reload` · `init` · แคช) */
+function toCachedPlans(rows: PlanRow[]): CachedPlans {
+  return {
+    plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })),
+    activePlanId: rows.find((r) => r.is_active)?.id ?? null,
+  };
+}
 
 /**
  * แผนของทริป — **`E3` ผ่าน route แล้ว** · `D52`
@@ -66,14 +79,24 @@ export function usePlans(tripId: string | null) {
     setActivePlanId(rows.find((r) => r.is_active)?.id ?? null);
   }, []);
 
+  /**
+   * ยิงของสด **และเก็บลงเครื่องเสมอ** — `E6-AC7`
+   * 🔴 การเขียนแคชอยู่ในตัวยิง ไม่ใช่ที่ผู้เรียก · ของสดมาได้ 3 ทาง (โหลดแรก · realtime · `reload()`)
+   */
+  const fetchRows = useCallback(async (id: string) => {
+    const rows = await fetchReadJson<PlanRow[]>(`/api/engine/plans?tripId=${encodeURIComponent(id)}`);
+    if (!rows) return null;
+    writeHandoffNoisily(tripKey(id, "plans"), toCachedPlans(rows), "plans");
+    return rows;
+  }, []);
+
   const reload = useCallback(async () => {
     const id = tripIdRef.current;
     if (!supabaseConfigured || !id) return;
-    const rows = await fetchReadJson<PlanRow[]>(`/api/engine/plans?tripId=${encodeURIComponent(id)}`);
+    const rows = await fetchRows(id);
     if (!rows) return;
     applyRows(rows);
-    writeTripCache(id, "plans", { plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })), activePlanId: rows.find((r) => r.is_active)?.id ?? null });
-  }, [applyRows]);
+  }, [applyRows, fetchRows]);
 
   useEffect(() => {
     refetchRef.current = reload;
@@ -87,24 +110,28 @@ export function usePlans(tripId: string | null) {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const cached = readTripCache<{ plans: TripPlan[]; activePlanId: string | null }>(activeTripId, "plans");
-      if (cached) {
-        setPlans(cached.plans);
-        setActivePlanId(cached.activePlanId);
-        setLoaded(true);
-      }
-
-      const rows = await fetchReadJson<PlanRow[]>(
-        `/api/engine/plans?tripId=${encodeURIComponent(activeTripId)}`
-      );
+      // 🔴 `E6-AC7` — IndexedDB อ่าน async → ลำดับ hydrate→fetch ไม่มาฟรีอีกแล้ว (ดู `hydrateThenFetch`)
+      await hydrateThenFetch<CachedPlans>({
+        readCache: () => readHandoff<CachedPlans>(tripKey(activeTripId, "plans")),
+        fetchFresh: async () => {
+          const rows = await fetchRows(activeTripId);
+          // ต้อง **โยน** เพื่อแยก "ยิงล้ม" ออกจาก "ยิงได้แต่ยังไม่มีแผน" (`[]` เป็นคำตอบที่ถูกต้อง)
+          if (!rows) throw new Error("plans unreachable");
+          return toCachedPlans(rows);
+        },
+        // ไม่ส่ง `writeCache` — `fetchRows` เขียนให้แล้วทุกทาง
+        applyCache: (c) => {
+          setPlans(c.plans);
+          setActivePlanId(c.activePlanId);
+        },
+        applyFresh: (c) => {
+          setPlans(c.plans);
+          setActivePlanId(c.activePlanId);
+        },
+        applyError: () => {}, // ไม่มีทั้งของสดและของในเครื่อง → คงค่าว่าง · `fetchReadJson` ยิง toast แล้ว
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      if (rows) {
-        applyRows(rows);
-        writeTripCache(activeTripId, "plans", {
-          plans: rows.map(({ id, name, created_at }) => ({ id, name, created_at })),
-          activePlanId: rows.find((r) => r.is_active)?.id ?? null,
-        });
-      }
       setLoaded(true);
 
       channel = supabase
@@ -123,7 +150,7 @@ export function usePlans(tripId: string | null) {
       if (timer.current) clearTimeout(timer.current);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [tripId, applyRows]);
+  }, [tripId, fetchRows]);
 
   /**
    * 🔴 **ทุกจุดรับค่าที่คืนมา** — `P-71` คือการทิ้งค่าที่คืนมา 6 จุดในไฟล์นี้

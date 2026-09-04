@@ -3,10 +3,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { hotelRangeKey } from "@/lib/hotelLegs";
 import { supabase, supabaseConfigured, type HotelLocalized, type TripHotel } from "@/lib/supabase";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
+import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
+import { tripKey } from "@/lib/engine/offlineStore";
 
 /** ทุกอย่างที่ต้องรู้ตอนบันทึกที่พักหนึ่งที่ — รวมเป็นอ็อบเจกต์เดียวตั้งแต่เฟส 16
  *  (เดิมเป็น 6 อาร์กิวเมนต์เรียงกัน พอเพิ่มชื่อหลายภาษาเข้าไปอีก 5 ช่องแล้วสลับตำแหน่งกันง่ายมาก) */
@@ -50,6 +52,20 @@ function toRow(input: HotelInput): TripHotel {
   };
 }
 
+/**
+ * 🔴 คีย์ด้วย **ช่วงวันที่** ไม่ใช่ `leg_id` — สคีมาใหม่ไม่มี `leg_id` (`D51`)
+ *    `HotelsProvider` อยู่บนสุดของทรี **legs ยังไม่มีตรงนั้น** จึงคีย์ด้วยของที่ฐานมีจริง
+ *    ผู้เรียกใช้ `hotelRangeKey(leg)` เพื่อหา — **ฟังก์ชันเดียวกันทั้งสองฝั่ง**
+ * ⚠️ ยกออกมานอก `init()` ตอนย้ายไป IndexedDB — เดิมมีสองใบ (ใน `init` กับใน `refetch`) ที่ต้องตรงกันเอง
+ */
+function toHotelMap(rows: TripHotel[]): Record<string, TripHotel> {
+  const map: Record<string, TripHotel> = {};
+  for (const row of rows) {
+    map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;
+  }
+  return map;
+}
+
 /** ตัวจริงที่ fetch + เปิด realtime channel — เรียกได้ครั้งเดียวทั้งแอปที่ HotelsProvider
  *  (เรียกซ้ำหลายที่ = ดึงทั้งตารางซ้ำ + เปิด channel ใหม่ทุกครั้ง) ที่เหลือใช้ useHotels() อ่านจาก context
  *  🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
@@ -79,6 +95,20 @@ function useHotelsStore(tripId: string | null) {
     tripIdRef.current = tripId;
   }, [tripId]);
 
+  /**
+   * ยิงของสด **และเก็บลงเครื่องเสมอ** — `E6-AC7`
+   *
+   * 🔴 **การเขียนแคชอยู่ที่นี่ ไม่ใช่ที่ผู้เรียก** · ของสดมาได้ 3 ทาง (โหลดแรก · realtime · `refetch()`
+   * ตอนเขียนไม่ผ่าน) — ให้ผู้เรียกเขียนเอง = **สามที่ที่ต้องจำ และที่ที่ลืมจะเงียบสนิท**
+   * (ท่าเดียวกับ `useChecklist` ซึ่งเคยลืมไปทั้งฮุคมาแล้ว)
+   */
+  const fetchRows = useCallback(async (id: string) => {
+    const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${id}/hotels`);
+    if (!rows) return null;
+    writeHandoffNoisily(tripKey(id, "hotels"), rows, "hotels");
+    return rows;
+  }, []);
+
   useEffect(() => {
     if (!supabaseConfigured || !tripId) return;
     const activeTripId = tripId; // narrowed ที่นี่ครั้งเดียว — closure ของ TS ไม่ narrow ข้าม async function
@@ -91,29 +121,27 @@ function useHotelsStore(tripId: string | null) {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function init() {
-      const toMap = (rows: TripHotel[]) => {
-        const map: Record<string, TripHotel> = {};
-        // 🔴 คีย์ด้วย **ช่วงวันที่** ไม่ใช่ `leg_id` — สคีมาใหม่ไม่มี `leg_id` (`D51`)
-        //    `HotelsProvider` อยู่บนสุดของทรี **legs ยังไม่มีตรงนั้น** จึงคีย์ด้วยของที่ฐานมีจริง
-        //    ผู้เรียกใช้ `hotelRangeKey(leg)` เพื่อหา — **ฟังก์ชันเดียวกันทั้งสองฝั่ง**
-        for (const row of rows) {
-          map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;
-        }
-        return map;
-      };
-
-      const cached = readTripCache<TripHotel[]>(activeTripId, "hotels");
-      if (cached) {
-        setHotels(toMap(cached));
-        setLoaded(true);
-      }
-
-      const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${activeTripId}/hotels`);
+      /**
+       * 🔴 **`E6-AC7`** — `localStorage` อ่าน sync จึง hydrate เสร็จก่อนยิงเน็ตเสมอ **ลำดับมาฟรี**
+       * IndexedDB อ่าน async → **ของสดมาถึงก่อนการอ่านแคชเสร็จได้** → แคชทับของใหม่ด้วยของเก่า
+       * ⇒ ลำดับต้องถูกบังคับด้วย `hydrateThenFetch` ไม่ใช่ด้วยการเรียงบรรทัด (เหตุผลเต็มอยู่หัวไฟล์นั้น)
+       */
+      await hydrateThenFetch<TripHotel[]>({
+        readCache: () => readHandoff<TripHotel[]>(tripKey(activeTripId, "hotels")),
+        fetchFresh: async () => {
+          const rows = await fetchRows(activeTripId);
+          // `fetchReadJson` กลืน error แล้วคืน `null` · `hydrateThenFetch` ต้องการ **การโยน** เพื่อแยก
+          // "ยิงล้ม" ออกจาก "ยิงได้แต่ว่าง" — `[]` เป็นคำตอบที่ถูกต้อง (ยังไม่มีที่พัก) ห้ามยุบเข้ากับ null
+          if (!rows) throw new Error("hotels unreachable");
+          return rows;
+        },
+        // ไม่ส่ง `writeCache` — `fetchRows` เขียนให้แล้วทุกทาง (ดูเหตุผลที่หัวมัน)
+        applyCache: (rows) => setHotels(toHotelMap(rows)),
+        applyFresh: (rows) => setHotels(toHotelMap(rows)),
+        applyError: () => {}, // ไม่มีทั้งของสดและของในเครื่อง → คง `{}` · `fetchReadJson` ยิง toast แล้ว
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      if (rows) {
-        setHotels(toMap(rows));
-        writeTripCache(activeTripId, "hotels", rows);
-      }
       setLoaded(true);
 
       channel = supabase
@@ -124,10 +152,9 @@ function useHotelsStore(tripId: string | null) {
           timer.current = setTimeout(async () => {
             const id = tripIdRef.current;
             if (!id || cancelled) return;
-            const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${id}/hotels`);
+            const rows = await fetchRows(id);
             if (!rows || cancelled) return;
-            setHotels(toMap(rows));
-            writeTripCache(id, "hotels", rows);
+            setHotels(toHotelMap(rows));
           }, 300);
         })
         .subscribe();
@@ -140,21 +167,16 @@ function useHotelsStore(tripId: string | null) {
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
-  }, [tripId]);
+  }, [tripId, fetchRows]);
 
   /** ดึงของจริงจาก DB มาทับ state ตอนเขียนไม่ผ่าน — คู่กับ writeGuard (เฟส 20.2) */
   const refetch = useCallback(async () => {
     const id = tripIdRef.current;
     if (!supabaseConfigured || !id) return;
-    const rows = await fetchReadJson<TripHotel[]>(`/api/engine/trips/${id}/hotels`);
+    const rows = await fetchRows(id);
     if (!rows) return;
-    const map: Record<string, TripHotel> = {};
-    for (const row of rows) {
-      map[hotelRangeKey({ startDate: row.check_in, endDate: row.check_out })] = row;
-    }
-    setHotels(map);
-    writeTripCache(id, "hotels", rows);
-  }, []);
+    setHotels(toHotelMap(rows));
+  }, [fetchRows]);
 
   /** เขียนแบบมีเสียง: พังแล้ว toast บอก แล้วดึงของจริงมาทับ state ที่เดาไว้ */
   const guard = useCallback(

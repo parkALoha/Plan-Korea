@@ -2,10 +2,12 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase, supabaseConfigured, CustomPlace } from "@/lib/supabase";
-import { readTripCache, writeTripCache } from "@/lib/localCache";
 import { writeGuard } from "@/lib/writeGuard";
 import { noteRealtimeSubscribed } from "@/lib/engine/realtimeStatus";
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
+import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
+import { readHandoff, writeHandoffNoisily } from "@/lib/engine/cacheHandoff";
+import { tripKey } from "@/lib/engine/offlineStore";
 
 function makeCustomPlaceId() {
   return `custom-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
@@ -51,24 +53,32 @@ function useCustomPlacesStore(tripId: string | null) {
     /**
      * 🔴 **อ่านผ่าน route ไม่ใช่ `.from()` ตรง ๆ อีกแล้ว** — `E3-AC1`
      *    RLS ยังเป็นคนกรองเหมือนเดิม แค่ย้ายที่รันไปฝั่งเซิร์ฟเวอร์ (`D38`)
+     * 🔴 **และเก็บลงเครื่องที่นี่ ไม่ใช่ที่ผู้เรียก** (`E6-AC7`) — ของสดมาสองทาง (โหลดแรก · realtime)
      */
     async function fetchPlaces(tripId: string): Promise<CustomPlace[] | null> {
-      return fetchReadJson<CustomPlace[]>(`/api/engine/trips/${tripId}/custom-places`);
+      const rows = await fetchReadJson<CustomPlace[]>(`/api/engine/trips/${tripId}/custom-places`);
+      if (!rows) return null;
+      writeHandoffNoisily(tripKey(tripId, "customPlaces"), rows, "customPlaces");
+      return rows;
     }
 
     async function init() {
-      const cached = readTripCache<CustomPlace[]>(activeTripId, "customPlaces");
-      if (cached) {
-        setCustomPlaces(cached);
-        setLoaded(true);
-      }
-
-      const rows = await fetchPlaces(activeTripId);
+      // 🔴 `E6-AC7` — IndexedDB อ่าน async → ลำดับ hydrate→fetch ไม่มาฟรีอีกแล้ว (ดู `hydrateThenFetch`)
+      await hydrateThenFetch<CustomPlace[]>({
+        readCache: () => readHandoff<CustomPlace[]>(tripKey(activeTripId, "customPlaces")),
+        fetchFresh: async () => {
+          const rows = await fetchPlaces(activeTripId);
+          // ต้อง **โยน** เพื่อแยก "ยิงล้ม" ออกจาก "ยิงได้แต่ยังไม่มีสถานที่" (`[]` เป็นคำตอบที่ถูกต้อง)
+          if (!rows) throw new Error("custom places unreachable");
+          return rows;
+        },
+        // ไม่ส่ง `writeCache` — `fetchPlaces` เขียนให้แล้วทุกทาง
+        applyCache: (rows) => setCustomPlaces(rows),
+        applyFresh: (rows) => setCustomPlaces(rows),
+        applyError: () => {}, // ไม่มีทั้งของสดและของในเครื่อง → คง `[]` · `fetchReadJson` ยิง toast แล้ว
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      if (rows) {
-        setCustomPlaces(rows);
-        writeTripCache(activeTripId, "customPlaces", rows);
-      }
       setLoaded(true);
 
       channel = supabase
@@ -92,10 +102,7 @@ function useCustomPlacesStore(tripId: string | null) {
               const id = tripIdRef.current;
               if (!id || cancelled) return;
               const fresh = await fetchPlaces(id);
-              if (fresh && !cancelled) {
-                setCustomPlaces(fresh);
-                writeTripCache(id, "customPlaces", fresh);
-              }
+              if (fresh && !cancelled) setCustomPlaces(fresh);
             }, REFETCH_DEBOUNCE_MS);
           }
         )

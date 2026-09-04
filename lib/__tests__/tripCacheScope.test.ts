@@ -26,10 +26,27 @@ import { join } from "node:path";
 /** ชื่อที่เป็น "ข้อมูลของทริปหนึ่ง" — ห้ามโผล่ใน `readCache`/`writeCache` แบบไม่มี scope */
 const TRIP_SCOPED_NAMES = ["hotels", "bookings", "customPlaces", "overnightOverrides", "plans", "days"];
 
-/** ดึงคีย์ที่เป็น *สตริงตรง ๆ* ที่ถูกส่งให้ `readCache(`/`writeCache(` — ข้าม template literal (backtick) */
+/**
+ * ดึงคีย์ที่เป็น *สตริงตรง ๆ* ที่ถูกส่งให้ที่เก็บ — ข้าม template literal (backtick)
+ *
+ * 🔴 **ขยายให้ครอบ IndexedDB ตอน `E6-AC7` ย้ายที่เก็บ** (P7 · 4 ก.ย. 2026 · **ไฟล์นี้เป็นของ P3**)
+ * เดิมจับเฉพาะ `readCache`/`writeCache` — **ซึ่งคือ API ทั้งหมดที่มีอยู่ตอนเขียนด่านนี้**
+ * · พอ hook ย้ายไป `storeSet`/`writeHandoff` **ด่านนี้มองไม่เห็นมันเลย** → `storeSet("hotels", rows)`
+ *   ที่ไม่มี `tripId` ผ่านฉลุย **ซึ่งคือบั๊กเดิมเป๊ะ ๆ ที่ไฟล์นี้มีอยู่เพื่อกัน**
+ * 🎯 **การย้ายที่เก็บไม่ได้ทำให้ด่าน *ผิด* — มันทำให้ด่าน *มองไม่เห็น* ซึ่งอ่านเหมือนกันจากผลรัน**
+ *    (`TEAM.md §3.4`: *"ถามว่าสภาพแวดล้อมเดิมรับประกันอะไรให้ฟรี"* — อันนี้คือของที่เคยได้ฟรี)
+ * · ⚠️ **สแกนสตริง ไม่ใช่สัญลักษณ์** — เปลี่ยนชื่อ alias ตอน import (`set as putThing`) แล้วหลุด
+ *   **กันคนที่เผลอ ไม่ได้กันคนที่ตั้งใจ** · ชื่อในรายการคือชื่อที่รีโปนี้ใช้จริงวันนี้
+ */
+const STORAGE_CALLS = [
+  "readCache", "writeCache", // localStorage — `lib/localCache.ts`
+  "storeGet", "storeSet", // IndexedDB — alias ที่ทุก hook ใช้ (`get as storeGet`)
+  "readHandoff", "writeHandoff", "writeHandoffNoisily", // สะพานสองที่เก็บ — `lib/engine/cacheHandoff.ts`
+];
+
 function bareCacheKeys(source: string): string[] {
   const found: string[] = [];
-  const re = /\b(?:read|write)Cache\s*(?:<[^>]*>)?\s*\(\s*(["'])([^"']*)\1/g;
+  const re = new RegExp(`\\b(?:${STORAGE_CALLS.join("|")})\\s*(?:<[^>]*>)?\\s*\\(\\s*(["'])([^"']*)\\1`, "g");
   let m: RegExpExecArray | null;
   while ((m = re.exec(source)) !== null) found.push(m[2]);
   return found;
@@ -96,21 +113,39 @@ describe("คีย์แคชที่ผูกกับทริป", () => {
     ).toEqual([]);
   });
 
+  /**
+   * 🔴 เคสบนบอกได้แค่ *"ไม่มีของผิด"* — เคสนี้บอกว่า *"มีของถูกอยู่จริง"*
+   * ถ้าใครลบการอ่านแคชทิ้งทั้งก้อน เคสบนจะยังเขียว แต่เคสนี้จะแดง
+   *
+   * ## 🔴 รับ *สองกลไก* ตั้งแต่ `E6-AC7` (P7 · 4 ก.ย. 2026)
+   * ```
+   * localStorage  readTripCache + writeTripCache   ← ของเดิม
+   * IndexedDB     tripKey(tripId, name)            ← ของใหม่ · `offlineStore.tripKey` สร้างคีย์รูปเดียวกัน
+   * ```
+   * · **ไม่ใช่การผ่อนเกณฑ์** — คำถามยังเป็นข้อเดิม (*"ไฟล์นี้มีตัวบังคับ `tripId` ลงคีย์อยู่จริงไหม"*)
+   *   เปลี่ยนแค่ *ชื่อของตัวที่บังคับ* เพราะที่เก็บเปลี่ยน
+   * · ⚠️ ยอมรับทั้งสองพร้อมกันระหว่างที่ยังย้ายไม่ครบ — **ตัด `readTripCache` ออกจากรายการนี้เมื่อไม่มี
+   *   hook ไหนเหลือใช้มันแล้ว** ไม่งั้นเกณฑ์จะกว้างค้างไว้หลังเหตุผลหมดไป
+   */
   it("hook ที่ถือข้อมูลของทริป ต้อง import ตัวที่บังคับ scope จริง ๆ", () => {
-    // 🔴 เคสบนบอกได้แค่ "ไม่มีของผิด" — เคสนี้บอกว่า "มีของถูกอยู่จริง"
-    //    ถ้าใครลบการอ่านแคชทิ้งทั้งก้อน เคสบนจะยังเขียว แต่เคสนี้จะแดง
-    const mustUseTripCache = [
+    const mustScopeByTrip = [
       "useHotels.tsx",
       "useBookings.tsx",
       "useCustomPlaces.tsx",
       "useOvernightOverrides.ts",
       "usePlans.ts",
     ];
-    const missing = mustUseTripCache.filter((f) => {
+    const missing = mustScopeByTrip.filter((f) => {
       const src = readFileSync(join(process.cwd(), "hooks", f), "utf8");
-      return !src.includes("readTripCache") || !src.includes("writeTripCache");
+      const viaLocalStorage = src.includes("readTripCache") && src.includes("writeTripCache");
+      const viaIndexedDb = src.includes("tripKey(");
+      return !viaLocalStorage && !viaIndexedDb;
     });
-    expect(missing, `ไฟล์พวกนี้ควรใช้ readTripCache/writeTripCache: ${missing.join(", ")}`).toEqual([]);
+    expect(
+      missing,
+      "ไฟล์พวกนี้ต้องผูกคีย์แคชกับ `tripId` — ผ่าน `readTripCache`/`writeTripCache` (localStorage)\n" +
+        `  หรือ \`tripKey(tripId, …)\` (IndexedDB): ${missing.join(", ")}`
+    ).toEqual([]);
   });
 
   it("คีย์ที่ผูกกับแผน (`xxx:{planId}`) ต้องไม่ถูกจับผิด — planId ผูกทริปอยู่แล้ว", () => {
@@ -125,5 +160,22 @@ describe("คีย์แคชที่ผูกกับทริป", () => {
     const keys = bareCacheKeys(violating);
     expect(keys).toEqual(["hotels", "bookings"]);
     expect(keys.filter((k) => TRIP_SCOPED_NAMES.includes(k))).toHaveLength(2);
+  });
+
+  /**
+   * 🔴 **ควบคุมฝั่งบวกของ *ที่เก็บใหม่* — เคสข้างบนพิสูจน์เฉพาะ `localStorage`** (P7 · `E6-AC7`)
+   * ถ้าไม่มีเคสนี้ การขยาย `STORAGE_CALLS` จะ *ดูเหมือน* ปิดช่องแล้วโดยไม่มีอะไรยืนยัน —
+   * และช่องที่ปิดไม่จริงอ่านเหมือนช่องที่ปิดแล้วเป๊ะ **เพราะทั้งคู่เขียว**
+   */
+  it("🔴 เคสควบคุมฝั่งบวก — ที่เก็บใหม่ (IndexedDB/สะพาน) ต้องถูกจับด้วย", () => {
+    expect(bareCacheKeys('const c = await storeGet<TripHotel[]>("hotels");')).toEqual(["hotels"]);
+    expect(bareCacheKeys('void storeSet("bookings", rows);')).toEqual(["bookings"]);
+    expect(bareCacheKeys('await readHandoff<T>("plans");')).toEqual(["plans"]);
+    expect(bareCacheKeys('writeHandoffNoisily("customPlaces", rows, "customPlaces");')).toEqual([
+      "customPlaces",
+    ]);
+    // เคสควบคุมฝั่งลบ — คีย์ที่ผูกทริปแล้วต้อง **ไม่** ถูกจับ (ไม่งั้นด่านแดงใส่คนที่ทำถูก แล้วจะถูกลบทั้งใบ)
+    expect(bareCacheKeys("void storeSet(tripKey(id, `hotels`), rows);")).toEqual([]);
+    expect(bareCacheKeys('await readHandoff<T>(tripKey(activeTripId, "plans"));')).toEqual([]);
   });
 });
