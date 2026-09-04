@@ -46,13 +46,18 @@ export function DayEventsPanel({
 }) {
   const [viewPlace, setViewPlace] = useState<Place | null>(null);
 
+  /* 🔴 คำอธิบายเดิมเขียนว่า "✏️ ปรับได้" ซึ่ง **ไม่จริง** — แถวในแผงนี้มาจาก `data/itinerary.ts`
+     ซึ่งเป็นไฟล์โค้ด ไม่มีทางแก้ผ่านหน้าเว็บเลยสักทาง (ไล่หาแล้ว: `DayEvent` ไม่มี onUpdate/
+     modal/API เขียนสักตัว) · "ปรับได้" หมายถึงยืดหยุ่นได้ตอนอยู่หน้างานจริง แต่คู่กับรูป ✏️
+     มันถูกอ่านว่า "กดแล้วแก้ได้" — ผู้ใช้ทักเองว่าดูแล้วไม่รู้ว่าอะไรมาจากไหน (4 ก.ย. 2026)
+     ⇒ บอกที่มาให้ชัดแทน และเก็บ 🔒 ไว้เฉพาะเรื่องที่เป็นจริงในโลกจริง (ตั๋วจองแล้ว = เลื่อนไม่ได้) */
   const lockedCount = events.filter(isLocked).length;
   const legend =
     lockedCount === events.length
-      ? "🔒 ตั๋วจองแล้ว แก้ไม่ได้"
+      ? "🔒 ตั๋วจองแล้ว · แก้ในเว็บไม่ได้"
       : lockedCount === 0
-        ? "✏️ เวลาแนะนำ ปรับได้"
-        : "🔒 ตั๋วจองแล้ว · ✏️ ปรับได้";
+        ? "แก้ในเว็บไม่ได้"
+        : "🔒 ตั๋วจองแล้ว · แก้ในเว็บไม่ได้";
 
   return (
     <div className="border-b border-line">
@@ -88,13 +93,18 @@ export function DayEventsPanel({
                 time={event.time}
                 endTime={event.endTime}
                 corner={
-                  <span
-                    aria-label={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
-                    title={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
-                    className="text-xs text-content-soft/60"
-                  >
-                    {locked ? "🔒" : "✏️"}
-                  </span>
+                  /* ไม่มีไอคอนเมื่อไม่ล็อก — "ไม่มีอะไร" คือคำตอบที่ถูก
+                     ของเดิมใส่ ✏️ ซึ่งอ่านว่ากดแล้วแก้ได้ ทั้งที่แก้ไม่ได้ · ที่มาของแถว
+                     บอกที่หัวแผงแล้ว ไม่ต้องบอกซ้ำทุกแถว */
+                  locked ? (
+                    <span
+                      aria-label="ตั๋วจองแล้ว เวลานี้เลื่อนไม่ได้"
+                      title="ตั๋วจองแล้ว เวลานี้เลื่อนไม่ได้"
+                      className="text-xs text-content-soft/60"
+                    >
+                      🔒
+                    </span>
+                  ) : undefined
                 }
                 title={
                   <>
