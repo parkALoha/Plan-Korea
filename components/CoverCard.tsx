@@ -23,12 +23,18 @@ import type { ReactNode } from "react";
  * ซึ่งเป็นสิ่งเดียวกับที่เราเพิ่งปฏิเสธไปตอนไม่ใส่ *"ยังไม่ระบุเมือง"* ลงการ์ดทริปที่ไม่มีจุดหมาย
  * ✅ ทุกช่องเป็น *ทางเลือก* · ***ช่องที่มีที่ว่างแต่ว่างได้*** คือคำตอบ ไม่ใช่ช่องที่ต้องกรอก
  *
- * ## `coverLayout` มีสองค่า และทั้งคู่ถูกใช้จริง — ไม่ใช่ปุ่มเผื่ออนาคต
- * · `"adaptive"` — แถบข้างบนมือถือ → แบนเนอร์บนตั้งแต่ `sm` · **ใช้กับการ์ดทริป**
- *   เพราะบนมือถือกริดทริปเป็นคอลัมน์เดียว · แบนเนอร์ทำให้เห็นจาก ~5 ใบเหลือ ~2.5 ใบต่อจอ (วัดแล้ว)
- * · `"banner"` — รูปอยู่บนเสมอ · **ใช้กับการ์ดเมือง** เพราะกริดเมืองเป็น 2 คอลัมน์ตั้งแต่มือถือ
- *   ⇒ แถบข้างในการ์ดกว้าง ~152px จะเหลือที่ให้รูปน้อยจนดูไม่ออกว่าเมืองอะไร
- * 🎯 **ความต่างนี้มาจากความหนาแน่นของกริดที่มันอยู่ ไม่ใช่จากรสนิยม** — จึงเป็นพารามิเตอร์ ไม่ใช่การก๊อป
+ * ## 🔴 **รูปการ์ดมีแบบเดียวทั้งเว็บ — และ *ไม่มีพารามิเตอร์ให้เลือก* โดยตั้งใจ**
+ * ***แถบรูปด้านซ้ายบนมือถือ → แบนเนอร์ด้านบนตั้งแต่ `sm` ขึ้นไป*** ทุกใบ ทุกที่
+ *
+ * ⚠️ **เคยมี `coverLayout` ให้เลือก `"banner"` / `"adaptive"`** ด้วยเหตุผลที่ *เคยจริง*:
+ * กริดเมืองเคยเป็น 2 คอลัมน์ตั้งแต่มือถือ (การ์ดกว้าง ~152px) ⇒ แถบข้างจะแคบเกินไป
+ * 🔴 **แต่ตอนผู้ใช้สั่งให้การ์ดประเทศ/เมืองใหญ่เท่าการ์ดทริป กริดทุกอันกลายเป็น `17rem` เหมือนกันหมด**
+ *    ⇒ เหตุผลนั้นตายตั้งแต่วันนั้น · **ไม่มีใครไปแก้ค่าที่มันค้ำอยู่ เพราะมันอยู่คนละไฟล์กับสิ่งที่เปลี่ยน**
+ *    ผลคือหน้าเดียวกันมีการ์ดสองทรง จนผู้ใช้ทักเอง (4 ก.ย. 2026): *"component ของทั้งเว็บ … เหมือนกัน เท่ากัน หรือยัง"*
+ *
+ * 🎯 ***ตัด "ทางที่จะต่างกัน" ทิ้ง ไม่ใช่ตั้งค่าให้ทุกที่ตรงกัน*** — อย่างหลังต้องมีคนคอยดูแลให้ตรงตลอดไป
+ *    และวันที่มันเพี้ยน **จะไม่มีอะไรส่งเสียง** (รูปเดียวกับที่เราตัดเอกสารสองฉบับทิ้งเหลือใบเดียว)
+ * · ต้องการทรงอื่นจริง ๆ วันหลัง: เพิ่มกลับได้ **แต่ต้องเขียนว่าอะไรทำให้มันจำเป็น และอะไรจะทำให้มันหมดอายุ**
  */
 export function CoverCard({
   href,
@@ -37,7 +43,6 @@ export function CoverCard({
   badge,
   title,
   titleClassName = "text-base font-bold leading-snug sm:text-lg",
-  coverLayout = "banner",
   children,
 }: {
   /** ลิงก์ — ใส่อย่างใดอย่างหนึ่งกับ `onClick` (การ์ดทริปเป็นลิงก์ · การ์ดเมืองเป็นปุ่มเปิดฟอร์ม) */
@@ -49,22 +54,19 @@ export function CoverCard({
   badge?: ReactNode;
   title: ReactNode;
   titleClassName?: string;
-  coverLayout?: "banner" | "adaptive";
   children?: ReactNode;
 }) {
-  const adaptive = coverLayout === "adaptive";
   const shell =
-    "group relative flex overflow-hidden rounded-2xl border border-line bg-surface-raised text-left transition hover:border-maple/40 hover:shadow-md hover:shadow-ink/5" +
-    (adaptive ? " sm:flex-col" : " flex-col");
+    "group relative flex overflow-hidden rounded-2xl border border-line bg-surface-raised text-left transition hover:border-maple/40 hover:shadow-md hover:shadow-ink/5 sm:flex-col";
 
   const body = (
     <>
-      <div className={adaptive ? "shrink-0 sm:shrink" : ""}>{cover}</div>
+      <div className="shrink-0 sm:shrink">{cover}</div>
       {badge}
       <div className="min-w-0 flex-1 p-3">
         {/* 🔴 เผื่อที่ขวาให้ป้ายเฉพาะตอนที่ป้ายทับบรรทัดนี้จริง — บน `adaptive` ที่ `sm` ขึ้นไป
             ป้ายอยู่เหนือแบนเนอร์ ไม่ทับชื่อ จึงไม่ต้องเผื่อ · เผื่อไว้เสมอ = ชื่อถูกตัดโดยไม่จำเป็น */}
-        <h3 className={`truncate text-content ${badge ? (adaptive ? "pr-20 sm:pr-0" : "pr-20") : ""} ${titleClassName}`}>
+        <h3 className={`truncate text-content ${badge ? "pr-20 sm:pr-0" : ""} ${titleClassName}`}>
           {title}
         </h3>
         {children}

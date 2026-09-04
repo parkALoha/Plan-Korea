@@ -306,7 +306,6 @@ function TripCard({
        * กริดทริปบนมือถือเป็นคอลัมน์เดียว · แบนเนอร์ทำให้เห็นจาก ~5 ใบเหลือ ~2.5 ใบต่อจอ (วัดแล้ว)
        * 🎯 มือถือเป็นฝั่งที่ผู้ใช้พอใจอยู่แล้ว — การรื้อ desktop ต้องไม่จ่ายด้วยความแน่นของมือถือ
        */
-      coverLayout="adaptive"
       cover={<TripCoverImage destinations={trip.destinations} />}
       badge={<TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />}
       title={trip.title}
@@ -435,8 +434,7 @@ function RecommendedTrips() {
              * ⇒ `CoverCard` เรนเดอร์เป็น `<div>` อ่านอย่างเดียว **ไม่ใช่ปุ่มที่กดแล้วเงียบ**
              *   (เหตุผลเต็มอยู่ที่ `CoverCard.tsx` — ปุ่มที่ไม่ทำอะไร ยัง Tab ไปโดนและถูกประกาศว่า "ปุ่ม")
              */
-            coverLayout="adaptive"
-            cover={<TripCoverImage destinations={templateDestinations(t)} />}
+                  cover={<TripCoverImage destinations={templateDestinations(t)} />}
             title={t.title}
           >
             <p className="mt-1 text-xs font-medium text-content sm:text-sm">

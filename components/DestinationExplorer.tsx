@@ -46,14 +46,14 @@ function CountryThumb({ countryId }: { countryId: string }) {
      * ส่วนสี่ประเทศที่มีไฟล์รูปได้ธงรอบเดียว ⇒ **การ์ดเก้าใบมีสองแบบโดยไม่ได้ตั้งใจ**
      * 🎯 ***ไอคอนต้องอยู่ที่เดียว "ที่มีเสมอ" ไม่ใช่สองที่ "ที่มีบ้างไม่มีบ้าง"***
      */
-    return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
+    return <div className="h-full w-24 bg-gradient-to-br from-pine to-maple sm:h-28 sm:w-full" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
       src={`/covers/country-${countryId}.svg`}
       alt=""
-      className="h-28 w-full object-cover"
+      className="h-full w-24 object-cover sm:h-28 sm:w-full"
       onError={() => setBroken(true)}
     />
   );
@@ -64,14 +64,14 @@ function CountryThumb({ countryId }: { countryId: string }) {
 function CityThumb({ slug }: { slug: string | null | undefined }) {
   const [broken, setBroken] = useState(false);
   if (!slug || broken) {
-    return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
+    return <div className="h-full w-24 bg-gradient-to-br from-pine to-maple sm:h-28 sm:w-full" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
       src={`/covers/city-${slug}.svg`}
       alt=""
-      className="h-28 w-full object-cover"
+      className="h-full w-24 object-cover sm:h-28 sm:w-full"
       onError={() => setBroken(true)}
     />
   );
@@ -160,7 +160,6 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
                 <CoverCard
                   key={c.id}
                   onClick={() => setCountryId(c.id)}
-                  coverLayout="banner"
                   cover={<CountryThumb countryId={c.id} />}
                   title={
                     <>
@@ -238,15 +237,17 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
                  * 🔴 **การ์ดเมืองใช้เปลือกเดียวกับการ์ดทริป** — ผู้ใช้สั่งเอง (รอบที่สองของข้อเดิม):
                  * > *"รูปแบบ มันควรใช้ component เดียวกับพวกนี้นะ"*
                  * 🎯 ***เขาไม่ได้ขอให้หน้าตาคล้าย เขาขอให้เป็นตัวเดียวกัน*** — ก๊อป class จะกลับมารอบสาม
-                 * · `coverLayout="banner"` เพราะกริดเมืองเป็น 2 คอลัมน์ตั้งแต่มือถือ (การ์ดกว้าง ~152px)
-                 *   แถบข้างจะเหลือที่ให้รูปน้อยจนดูไม่ออกว่าเมืองอะไร — ต่างจากการ์ดทริปที่มือถือเป็นคอลัมน์เดียว
+                 * ⚠️ **เคยส่ง `coverLayout="banner"` เพราะกริดเมืองเป็น 2 คอลัมน์ตั้งแต่มือถือ** —
+                 *   **เหตุผลนั้นตายไปในคอมมิตที่ทำให้การ์ดกว้าง `17rem` เท่าการ์ดทริป (ย่อหน้าข้างบนนี้เอง)**
+                 *   แต่ค่าที่มันค้ำอยู่ไม่ถูกแก้ตาม ⇒ **หน้าเดียวกันมีการ์ดสองทรงอยู่หลายวัน**
+                 *   🎯 ***เหตุผลกับค่าที่มันค้ำ อยู่คนละบรรทัด — แก้เหตุผลแล้วไม่มีอะไรบังคับให้แก้ค่า***
+                 *   ⇒ ตอนนี้ `CoverCard` ไม่มีพารามิเตอร์นี้แล้ว **ทางที่จะต่างกันถูกตัดทิ้ง ไม่ใช่ถูกตั้งให้ตรงกัน**
                  * · **ไม่มี `badge`** — การ์ดเมืองไม่มีอะไรที่มีความหมายให้ใส่ (ไม่มีวัน ไม่มีสมาชิก)
                  *   ⇒ ***ช่องที่มีที่ว่างแต่ว่างได้*** ไม่ใช่ช่องที่ต้องกรอกของปลอม
                  */
                 <CoverCard
                   key={city.id}
                   onClick={() => onPickCity(city)}
-                  coverLayout="banner"
                   cover={<CityThumb slug={city.legacy_slug} />}
                   title={city.name_th}
                   titleClassName="text-sm font-semibold"
