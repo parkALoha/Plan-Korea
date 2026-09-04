@@ -44,7 +44,7 @@ export function LocalNameCard({
 
   return (
     <div className="mt-3 rounded-xl border border-gold/40 bg-gold/10 p-3">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+      <div className="mb-2 text-2xs font-semibold uppercase tracking-wide text-content-soft">
         🚕 ยื่นให้คนขับดู (ภาษา{localeLabel})
       </div>
 
@@ -55,7 +55,7 @@ export function LocalNameCard({
         >
           {/* ตัวใหญ่ตั้งใจ — ต้องอ่านออกจากระยะที่ยื่นจอข้ามเบาะหน้า */}
           <div className="text-2xl font-bold leading-snug text-content">{nameLocal}</div>
-          <div className="mt-0.5 text-[11px] text-content-soft">
+          <div className="mt-0.5 text-2xs text-content-soft">
             {copied === "name" ? "✓ คัดลอกแล้ว" : "แตะเพื่อคัดลอก"}
           </div>
         </button>
@@ -67,7 +67,7 @@ export function LocalNameCard({
           className="mt-2 w-full rounded-lg bg-surface-raised/70 px-3 py-2 text-left hover:bg-surface-raised"
         >
           <div className="text-base font-medium leading-snug text-content">{addressLocal}</div>
-          <div className="mt-0.5 text-[11px] text-content-soft">
+          <div className="mt-0.5 text-2xs text-content-soft">
             {copied === "address" ? "✓ คัดลอกแล้ว" : "แตะเพื่อคัดลอกที่อยู่"}
           </div>
         </button>

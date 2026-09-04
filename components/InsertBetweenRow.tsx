@@ -32,7 +32,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
                 setOpen(false);
                 action.onClick();
               }}
-              className={`py-2 text-[11px] font-medium hover:underline sm:py-1 ${
+              className={`py-2 text-2xs font-medium hover:underline sm:py-1 ${
                 action.tone === "maple" ? "text-maple" : "text-pine-dark"
               }`}
             >
@@ -41,7 +41,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
           ))}
           <button
             onClick={() => setOpen(false)}
-            className="py-2 text-[11px] text-content-soft hover:underline sm:py-1"
+            className="py-2 text-2xs text-content-soft hover:underline sm:py-1"
           >
             ยกเลิก
           </button>
@@ -50,7 +50,7 @@ export function InsertBetweenRow({ actions }: { actions: InsertAction[] }) {
         <button
           onClick={() => setOpen(true)}
           aria-label="แทรกจุดแวะตรงนี้"
-          className="my-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-line text-[11px] leading-none text-content-soft/50 hover:border-maple hover:bg-surface-raised hover:text-maple"
+          className="my-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-line text-2xs leading-none text-content-soft/50 hover:border-maple hover:bg-surface-raised hover:text-maple"
         >
           +
         </button>

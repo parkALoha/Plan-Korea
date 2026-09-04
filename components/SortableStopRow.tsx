@@ -237,7 +237,7 @@ export function SortableStopRow({
           </button>
         )}
 
-        <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft sm:w-14">
+        <div className="w-12 shrink-0 text-center text-2xs leading-tight text-content-soft sm:w-14">
           <div className="font-semibold text-content">{sched.arrival}</div>
           <div>{sched.departure}</div>
         </div>
@@ -507,11 +507,11 @@ export function SortableStopRow({
               </label>
             )
           )}
-          {photoError && <p className="text-[11px] text-red-600">{photoError}</p>}
+          {photoError && <p className="text-2xs text-red-600">{photoError}</p>}
         </div>
       )}
       {closedWarning && (
-        <div className="bg-maple-soft/60 px-4 pb-2 text-[11px] text-maple-dark">
+        <div className="bg-maple-soft/60 px-4 pb-2 text-2xs text-maple-dark">
           ⚠️ ช่วงเวลานี้สถานที่อาจปิดแล้ว
           {closedHoursLabel ? ` — ${closedHoursLabel}` : " (ตามเวลาเปิด-ปิดจาก Google)"}
         </div>

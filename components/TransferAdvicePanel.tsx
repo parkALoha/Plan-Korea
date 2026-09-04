@@ -48,7 +48,7 @@ export function TransferAdvicePanel({
   const late = advice.lateByMinutes > 0;
 
   return (
-    <div className="px-3 pb-2 pl-10 text-[11px] sm:px-4 sm:pl-14">
+    <div className="px-3 pb-2 pl-10 text-2xs sm:px-4 sm:pl-14">
       <div
         className={`rounded-lg px-2.5 py-1.5 leading-relaxed ${
           // โทเคน panel-* เพื่อให้พลิกตามธีมมืดของ /today ได้ (เหมือน LayoverBadges)
@@ -106,11 +106,11 @@ function AccessOptions({
   const options = AIRPORT_ACCESS[airportId] ?? [];
   return (
     <div className="mt-1">
-      <button onClick={onToggle} className="py-1 text-[11px] text-content-soft hover:text-content">
+      <button onClick={onToggle} className="py-1 text-2xs text-content-soft hover:text-content">
         {open ? "▾" : "▸"} เทียบตัวเลือกการเดินทาง ({options.length})
       </button>
       {open && (
-        <ul className="space-y-1 pb-1 text-[11px] text-content-soft">
+        <ul className="space-y-1 pb-1 text-2xs text-content-soft">
           {options.map((o) => {
             const leaveBy = latestDepartureFor(o.minutes);
             return (
@@ -134,7 +134,7 @@ function AccessOptions({
         </ul>
       )}
       {open && (
-        <p className="pb-1 text-[10px] text-content-soft/70">
+        <p className="pb-1 text-2xs text-content-soft/70">
           ตัวเลขข้างบนเป็นเวลาตามตารางเดินรถของผู้ให้บริการ (คงที่) ส่วนเวลาในแถวเดินทางด้านบนเป็นของ Google
           ตามพิกัดจริงของจุดก่อนหน้า
         </p>

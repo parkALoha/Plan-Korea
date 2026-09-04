@@ -71,7 +71,7 @@ export function EmergencyCard({
       {open && (
         <div className="space-y-4 border-t border-line px-4 py-3">
           <div>
-            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+            <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-soft">
               โทรฉุกเฉิน
             </h3>
             <ul className="space-y-1.5">
@@ -115,7 +115,7 @@ export function EmergencyCard({
           </div>
 
           <div>
-            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+            <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-soft">
               โรงพยาบาลใหญ่ใกล้ที่พักคืนนี้
             </h3>
             {!hotel ? (
@@ -148,7 +148,7 @@ export function EmergencyCard({
 
           {withConfirmation.length > 0 && (
             <div>
-              <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+              <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-soft">
                 เลขที่จองทั้งหมด
               </h3>
               <ul className="space-y-0.5 text-xs text-content">
@@ -161,7 +161,7 @@ export function EmergencyCard({
             </div>
           )}
 
-          <p className="text-[10px] text-content-soft">
+          <p className="text-2xs text-content-soft">
             เบอร์สถานทูตเปลี่ยนได้ — ตรวจซ้ำจากเว็บทางการก่อนเดินทาง · 119/112 (เกาหลี) และ 113/115
             (เวียดนาม) เป็นเลขมาตรฐานที่ไม่เปลี่ยน
           </p>

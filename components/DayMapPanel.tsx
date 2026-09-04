@@ -187,7 +187,7 @@ function SegmentChips({
         return (
           <span key={i} className="flex items-center gap-1">
             {i > 0 && (
-              <span aria-hidden className="text-[11px] text-content-soft">
+              <span aria-hidden className="text-2xs text-content-soft">
                 {hopIcon ? INTERCITY_MODE_ICON[hopIcon] : "→"}
               </span>
             )}
@@ -196,7 +196,7 @@ function SegmentChips({
               onClick={() => onSelect(i)}
               aria-pressed={active}
               // ห้าม leading-none — "คังนึง"/"ซกโช" มีสระบน (ั ึ โ) ที่จะโดนตัดหัว
-              className={`rounded-full border px-2.5 py-1.5 text-[11px] leading-snug sm:py-1 ${
+              className={`rounded-full border px-2.5 py-1.5 text-2xs leading-snug sm:py-1 ${
                 active
                   ? "border-pine bg-pine-soft font-semibold text-pine-dark"
                   : "border-line text-content-soft hover:border-pine/40"
@@ -212,7 +212,7 @@ function SegmentChips({
         type="button"
         onClick={() => onSelect("all")}
         aria-pressed={selectedIndex === "all"}
-        className={`rounded-full border px-2.5 py-1.5 text-[11px] leading-snug sm:py-1 ${
+        className={`rounded-full border px-2.5 py-1.5 text-2xs leading-snug sm:py-1 ${
           selectedIndex === "all"
             ? "border-pine bg-pine-soft font-semibold text-pine-dark"
             : "border-line text-content-soft hover:border-pine/40"
@@ -528,7 +528,7 @@ function HotelInfoWindow({
       onCloseClick={onClose}
     >
       <div className="w-44 text-content">
-        <div className="text-[10px] text-content-soft">🏨 {label}</div>
+        <div className="text-2xs text-content-soft">🏨 {label}</div>
         <div className="line-clamp-3 text-xs font-semibold leading-snug">{hotel.hotel_name}</div>
       </div>
     </InfoWindow>
@@ -554,31 +554,31 @@ function StopCard({
   return (
     <div className="w-44 text-content">
       <PlaceThumb query={placeQueryKey(place)} category={place.category} className="mb-1.5 h-14 w-full" />
-      <div className="text-[10px] text-content-soft">
+      <div className="text-2xs text-content-soft">
         จุดที่ {index + 1} · {CATEGORY_LABEL[place.category]}
       </div>
       <div className="text-xs font-semibold leading-snug">
         {CATEGORY_EMOJI[place.category]} {place.nameTh}
       </div>
-      <div className="mt-0.5 text-[10px] text-content-soft">
+      <div className="mt-0.5 text-2xs text-content-soft">
         ⏰ {stop.arrival}–{stop.departure} · อยู่ {stop.resolvedDwellMinutes} น.
       </div>
       {stop.travelMinutesFromPrev != null && (
-        <div className="text-[10px] text-content-soft">
+        <div className="text-2xs text-content-soft">
           {TRAVEL_MODE_EMOJI[(stop.travelMode ?? "transit") as TravelMode]} จากจุดก่อนหน้า ~
           {stop.travelMinutesFromPrev} น.
         </div>
       )}
-      {note && <div className="mt-0.5 line-clamp-2 text-[10px] italic text-content-soft">📝 {noteFirstLine(note)}</div>}
+      {note && <div className="mt-0.5 line-clamp-2 text-2xs italic text-content-soft">📝 {noteFirstLine(note)}</div>}
       {isClosed && (
-        <div className="mt-1 rounded bg-maple-soft/70 px-1.5 py-0.5 text-[10px] text-maple-dark">
+        <div className="mt-1 rounded bg-maple-soft/70 px-1.5 py-0.5 text-2xs text-maple-dark">
           ⚠️ ช่วงนี้อาจปิดแล้ว
         </div>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <button
           onClick={onOpenDetail}
-          className="rounded-lg bg-pine px-2 py-1 text-[10px] font-medium text-cream hover:bg-pine-dark"
+          className="rounded-lg bg-pine px-2 py-1 text-2xs font-medium text-cream hover:bg-pine-dark"
         >
           ดูรายละเอียด
         </button>
@@ -586,7 +586,7 @@ function StopCard({
           href={mapsUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-[10px] font-medium text-pine-dark underline"
+          className="text-2xs font-medium text-pine-dark underline"
         >
           เปิดใน Google Maps
         </a>

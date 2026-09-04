@@ -58,12 +58,12 @@ export function PlaceCard({
             <span className="text-3xl">{CATEGORY_EMOJI[place.category]}</span>
           )}
           {isCustom && (
-            <span className="absolute left-1.5 top-1.5 rounded-full bg-pine px-2 py-0.5 text-[10px] font-medium text-cream">
+            <span className="absolute left-1.5 top-1.5 rounded-full bg-pine px-2 py-0.5 text-2xs font-medium text-cream">
               เพิ่มเอง
             </span>
           )}
           {stashedNote?.photo_url && (
-            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-ink/60 px-2 py-0.5 text-[10px] font-medium text-cream">
+            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-ink/60 px-2 py-0.5 text-2xs font-medium text-cream">
               📷 รูปของเรา
             </span>
           )}
@@ -72,21 +72,21 @@ export function PlaceCard({
           <div className="truncate text-sm font-semibold text-content">{place.nameTh}</div>
           <div className="truncate text-xs text-content-soft">{place.nameEn}</div>
           {distanceLabel && (
-            <div className="mt-0.5 truncate text-[11px] text-pine-dark">📍 {distanceLabel}</div>
+            <div className="mt-0.5 truncate text-2xs text-pine-dark">📍 {distanceLabel}</div>
           )}
           {details?.rating != null && (
-            <div className="mt-0.5 truncate text-[11px] text-maple-dark">
+            <div className="mt-0.5 truncate text-2xs text-maple-dark">
               ⭐ {details.rating.toFixed(1)}
               {details.userRatingCount != null && ` (${details.userRatingCount})`}
               {details.primaryType && ` · ${details.primaryType}`}
             </div>
           )}
           {hoursLabel && (
-            <div className="mt-0.5 truncate text-[11px] text-content-soft">🕐 {hoursLabel}</div>
+            <div className="mt-0.5 truncate text-2xs text-content-soft">🕐 {hoursLabel}</div>
           )}
           {/* โน้ตที่ติดมาตอนลากกลับคลัง — ขึ้นให้เห็นตรงนี้ ไม่งั้นไม่มีทางรู้เลยว่าเคยจดอะไรไว้ */}
           {stashedNote?.note && (
-            <div className="mt-0.5 truncate text-[11px] italic text-pine-dark">
+            <div className="mt-0.5 truncate text-2xs italic text-pine-dark">
               📝 {noteFirstLine(stashedNote.note)}
             </div>
           )}

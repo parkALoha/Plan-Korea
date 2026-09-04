@@ -827,7 +827,7 @@ export default function TodayPage() {
                       >
                         <span className="shrink-0 text-pine">✓</span>
                         <span className="min-w-0 flex-1 truncate text-content-soft line-through">{label}</span>
-                        <span className="shrink-0 text-[11px] text-content-soft/60">แตะเพื่อยกเลิก</span>
+                        <span className="shrink-0 text-2xs text-content-soft/60">แตะเพื่อยกเลิก</span>
                       </button>
                       {sched?.place && (
                         <button

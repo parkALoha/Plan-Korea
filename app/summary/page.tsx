@@ -181,7 +181,7 @@ function SummaryDayCard({
           — เดิมเป็นลิสต์ตัวหนังสือย่อส่วนคนละทรง ทำให้วันบิน 11/21 ต.ค. ดูเป็นคนละหน้ากับวันอื่น */}
       {allEvents.length > 0 && (
         <div className="border-b border-line">
-          <div className="bg-surface-soft/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+          <div className="bg-surface-soft/60 px-4 py-2 text-2xs font-semibold uppercase tracking-wide text-content-soft">
             {t("fixedTimes")}
           </div>
           <div className="divide-y divide-line">
@@ -193,7 +193,7 @@ function SummaryDayCard({
               const body = (
                 <div className="flex w-full items-start gap-2 text-left">
                   <div
-                    className={`w-12 shrink-0 text-center text-[11px] leading-tight ${
+                    className={`w-12 shrink-0 text-center text-2xs leading-tight ${
                       alert ? "opacity-80" : "text-content-soft"
                     }`}
                   >
@@ -304,7 +304,7 @@ function SummaryDayCard({
 
           const body = (
             <div className="flex w-full items-start gap-2 text-left">
-              <div className="w-12 shrink-0 text-center text-[11px] leading-tight text-content-soft">
+              <div className="w-12 shrink-0 text-center text-2xs leading-tight text-content-soft">
                 <div className="font-semibold text-content">{sched.arrival}</div>
                 <div>{sched.departure}</div>
               </div>
@@ -350,7 +350,7 @@ function SummaryDayCard({
           return (
             <div key={stop.id} className="px-3 py-2.5 sm:px-4">
               {i > 0 && mode && sched.travelMinutesFromPrev != null && (
-                <div className="mb-1.5 pl-14 text-[11px] text-content-soft">
+                <div className="mb-1.5 pl-14 text-2xs text-content-soft">
                   {TRAVEL_MODE_EMOJI[mode]}{" "}
                   {en ? TRAVEL_MODE_LABEL_EN[mode] : TRAVEL_MODE_LABEL[mode]} ~
                   {sched.travelMinutesFromPrev} {t("minutes")}
@@ -381,7 +381,7 @@ function SummaryDayCard({
 
       {bookings.length > 0 && (
         <div className="border-t border-line px-4 py-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+          <div className="text-2xs font-semibold uppercase tracking-wide text-content-soft">
             {t("todaysBookings")}
           </div>
           <ul className="mt-1 space-y-0.5 text-xs text-content">
@@ -397,7 +397,7 @@ function SummaryDayCard({
       )}
 
       {schedule.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line bg-surface-soft/60 px-4 py-2.5 text-[11px] text-content-soft">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line bg-surface-soft/60 px-4 py-2.5 text-2xs text-content-soft">
           <span>
             📍 {schedule.filter((s) => s.place).length} {t("stops")}
           </span>
@@ -447,14 +447,14 @@ function SummaryPlaceMeta({ place, dayDate }: { place: Place; dayDate: string })
   return (
     <>
       {details?.rating != null && (
-        <div className="mt-0.5 truncate text-[11px] text-content-soft">
+        <div className="mt-0.5 truncate text-2xs text-content-soft">
           ⭐ {details.rating.toFixed(1)}
           {details.userRatingCount != null && ` (${details.userRatingCount})`}
           {details.primaryType && ` · ${details.primaryType}`}
         </div>
       )}
       {hoursLabel && (
-        <div className="mt-0.5 truncate text-[11px] text-content-soft">🕐 {hoursLabel}</div>
+        <div className="mt-0.5 truncate text-2xs text-content-soft">🕐 {hoursLabel}</div>
       )}
     </>
   );

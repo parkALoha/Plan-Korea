@@ -225,7 +225,7 @@ function PlaceSidebarContent({
             <button
               key={day.id}
               onClick={() => onFocusedDayIdChange(day.id)}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              className={`rounded-full px-2.5 py-1 text-2xs font-medium ${
                 day.id === focusedDayId
                   ? "bg-pine text-cream"
                   : "bg-surface-soft text-content-soft hover:bg-pine-soft"

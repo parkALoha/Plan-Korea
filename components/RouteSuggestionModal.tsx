@@ -174,7 +174,7 @@ export function RouteSuggestionModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+              <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-soft">
                 ลำดับปัจจุบัน
               </div>
               <ol className="space-y-1.5">
@@ -183,7 +183,7 @@ export function RouteSuggestionModal({
                     <div className="font-medium text-content">
                       {i + 1}. {s.place ? `${CATEGORY_EMOJI[s.place.category]} ${s.place.nameTh}` : "—"}
                     </div>
-                    <div className="text-[11px] text-content-soft">
+                    <div className="text-2xs text-content-soft">
                       {s.arrival}–{s.departure}
                     </div>
                   </li>
@@ -191,7 +191,7 @@ export function RouteSuggestionModal({
               </ol>
             </div>
             <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-maple-dark">
+              <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-maple-dark">
                 ลำดับที่เสนอ
               </div>
               <ol className="space-y-1.5">
@@ -208,7 +208,7 @@ export function RouteSuggestionModal({
                       <div className="font-medium text-content">
                         {i + 1}. {s.place ? `${CATEGORY_EMOJI[s.place.category]} ${s.place.nameTh}` : "—"}
                       </div>
-                      <div className={`text-[11px] ${closed ? "text-maple-dark" : "text-content-soft"}`}>
+                      <div className={`text-2xs ${closed ? "text-maple-dark" : "text-content-soft"}`}>
                         {s.arrival}–{s.departure}
                         {closed && " ⚠️ ปิด"}
                       </div>
@@ -226,7 +226,7 @@ export function RouteSuggestionModal({
               {newlyClosed.length > 0 && " — บางจุดเดิมยังเปิดอยู่ ลองเช็กก่อนกดใช้"}
             </div>
           )}
-          <p className="mt-3 text-[11px] leading-relaxed text-content-soft">
+          <p className="mt-3 text-2xs leading-relaxed text-content-soft">
             * คำนวณจากระยะเส้นตรงระหว่างจุด ไม่ใช่เส้นทางจริง — เอาไว้เป็นไอเดีย ตัดสินใจเองอีกที
           </p>
         </>

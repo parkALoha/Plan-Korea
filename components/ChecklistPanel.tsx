@@ -66,7 +66,7 @@ export function ChecklistPanel({
           <button
             key={c}
             onClick={() => setCategory(c)}
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            className={`rounded-full px-2.5 py-1 text-2xs font-medium ${
               category === c
                 ? "bg-maple text-white"
                 : "bg-surface-soft text-content-soft hover:bg-surface-soft/70"
@@ -88,7 +88,7 @@ export function ChecklistPanel({
             if (groupItems.length === 0) return null;
             return (
               <div key={c}>
-                <div className="mb-1.5 text-[11px] font-semibold text-content-soft">{CATEGORY_LABEL[c]}</div>
+                <div className="mb-1.5 text-2xs font-semibold text-content-soft">{CATEGORY_LABEL[c]}</div>
                 <ul className="space-y-1">
                   {groupItems.map((item) => (
                     <li
@@ -122,7 +122,7 @@ export function ChecklistPanel({
                           {item.text}
                         </div>
                         {item.is_checked && item.checked_by && (
-                          <div className="text-[11px] text-content-soft">ติ๊กโดย {item.checked_by}</div>
+                          <div className="text-2xs text-content-soft">ติ๊กโดย {item.checked_by}</div>
                         )}
                       </div>
                       <button

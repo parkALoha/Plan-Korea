@@ -283,7 +283,7 @@ export function NearbyPlacesModal({
           <button
             onClick={() => handleAddToPlan(r)}
             disabled={addingKey != null}
-            className="rounded-lg bg-maple px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
+            className="rounded-lg bg-maple px-2.5 py-1 text-2xs font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
           >
             + ลงแผน
           </button>
@@ -291,7 +291,7 @@ export function NearbyPlacesModal({
             <button
               onClick={() => handleAddToLibrary(r)}
               disabled={addingKey != null || inLibrary}
-              className="rounded-lg border border-maple/40 px-2.5 py-1 text-[11px] font-semibold text-maple-dark hover:bg-maple-soft disabled:opacity-40"
+              className="rounded-lg border border-maple/40 px-2.5 py-1 text-2xs font-semibold text-maple-dark hover:bg-maple-soft disabled:opacity-40"
             >
               {inLibrary ? "✓ เพิ่มแล้ว" : busy ? "..." : "+ ลงคลัง"}
             </button>

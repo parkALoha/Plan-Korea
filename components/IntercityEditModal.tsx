@@ -50,7 +50,7 @@ function StationPicks({
           key={s.id}
           onClick={() => onPick(s.nameTh)}
           title={s.descriptionTh}
-          className={`rounded-full border px-2 py-1 text-[11px] ${
+          className={`rounded-full border px-2 py-1 text-2xs ${
             value === s.nameTh
               ? "border-maple bg-maple-soft text-maple-dark"
               : "border-line text-content-soft hover:border-maple/40"
