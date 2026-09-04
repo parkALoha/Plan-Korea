@@ -18,7 +18,18 @@ const thaiSans = Noto_Sans_Thai({
 export const metadata: Metadata = {
   // 🔴 ชื่อ/คำอธิบายต้องเป็นกลาง — แอปนี้ถือทริปหลายประเทศแล้ว (P1 เปิดทริปญี่ปุ่นแล้วแท็บเบราว์เซอร์
   //    ยังเขียนว่า "แพลนเที่ยวเกาหลี" · 4 ก.ย. 2026) — เนื้อหาเฉพาะทริปอยู่ในหน้า ไม่ใช่ใน metadata ของ root
-  title: "luitrip",
+  /**
+   * 🔴 **`template` ทำให้ชื่อแบรนด์อยู่ที่เดียวทั้งเว็บ** — หน้าย่อยตั้งแค่ชื่อของตัวเอง
+   * ก่อนหน้านี้เป็นสตริงเปล่า ⇒ หน้าที่อยากมีชื่อของตัวเองต้อง **วางสำเนาของ `luitrip` ไว้อีกที่**
+   * 🎯 ***สำเนาที่ต้องมีคนซิงก์ จะล้าเสมอ*** — และชื่อนี้เพิ่งเปลี่ยนวันนี้เอง (P7 เจอ · P1 ขอ · P3 แก้)
+   *
+   * ⚠️ **`template` มีผลกับ *segment ลูก* เท่านั้น ไม่ใช่ segment ที่ประกาศมัน** —
+   * `default` จึงไม่ถูกวิ่งผ่าน template · root ได้ `luitrip` เปล่า ไม่ใช่ `luitrip · luitrip`
+   * (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/generate-metadata.md:285-289`)
+   * · หน้าที่ไม่อยากได้ suffix ใช้ `title: { absolute: "…" }`
+   * · 📌 `appleWebApp.title` เป็นคนละฟิลด์ **ไม่ตาม template** — ยังเป็น `luitrip` ตามเดิมโดยตั้งใจ
+   */
+  title: { template: "%s · luitrip", default: "luitrip" },
   description: "เว็บวางแผนทริป เลือกสถานที่และจัดตารางร่วมกัน",
   // ติดตั้งลงหน้าจอโฮมได้ (เฟส 18) — manifest มาจาก app/manifest.ts
   // iOS ไม่อ่านไอคอนจาก manifest ต้องใช้ apple-touch-icon แยกต่างหาก
