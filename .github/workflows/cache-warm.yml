@@ -1,0 +1,74 @@
+name: cache-warm
+
+# 🔴 เปลือกบาง — วางบน `main` เพราะ `workflow_dispatch`/`schedule` ของ GitHub Actions อ่านนิยาม
+# workflow จาก **default branch เท่านั้น** ไม่ว่าไฟล์จริงจะอยู่ branch ไหน (ยืนยันแล้ว: `gh workflow
+# run --ref platform` ตอบ 404 · `origin/main` เดิมไม่มี `.github/` เลยสักไฟล์)
+#
+# ตรรกะจริงทั้งหมด (สูตรความถี่ · เพดาน · ตัวเลือกคีย์ · ตัวเรียก Google) อยู่ที่
+# `.github/workflows/cache-warm.yml` บน branch `platform` เท่านั้น — ไฟล์นี้แค่ checkout ไปที่นั่น
+# แล้วรันคำสั่งเดิม **ไม่ก๊อปตรรกะมาไว้ที่นี่** อ่านเหตุผลเต็ม/ประวัติการตัดสินใจที่ไฟล์ต้นทาง
+#
+# ขอบเขตตาม `TEAM.md §3.5` (ผู้ใช้ตัดสิน 4 ก.ย. 2026 — ทาง ④ ทับทาง ①): ครอบแค่
+# `.github/workflows/` บน `main` เท่านั้น ห้ามขยายเป็นสำเนาเต็มของโค้ดแอป/lib//app/components
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "เพดานจำนวนคีย์ที่จะอุ่นรอบนี้ (ส่งต่อให้ cacheWarmRun.test.ts บน platform)"
+        required: false
+        default: "5"
+  schedule:
+    - cron: "0 * * * *"   # รายชั่วโมง — ตามที่ผู้ใช้อนุมัติ ต้องตรงกับ platform เสมอ (ดูไฟล์ต้นทาง)
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: engine-dev-live
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: platform   # 🔴 ต้องระบุชัด — ค่าเริ่มต้นของ checkout คือ ref ที่ทริกเกอร์ (main ตรงนี้)
+                           #    ซึ่งไม่มี lib/ ของแพลตฟอร์มเลย ลืมบรรทัดนี้ = ล้มด้วยข้อความอ่านเหมือนโค้ดพัง
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.12.2'
+          cache: npm
+      - run: npm ci
+
+      - name: ยืนยันว่า secret ชี้ engine-dev ก่อนแตะ DB
+        run: .github/check-ci-target.py
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+
+      - name: อุ่นแคช (CACHE_WARM_RUN=1)
+        id: warm
+        run: npx vitest run lib/__tests__/cacheWarmRun.test.ts
+        env:
+          CACHE_WARM_RUN: "1"
+          CACHE_WARM_LIMIT: ${{ github.event.inputs.limit || '5' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+
+      - name: post-check — service_role ไม่ได้เปิดสิทธิ์อะไรเกิน (assert_cache_lockdown)
+        if: always()
+        run: |
+          code="$(curl -s -o /tmp/rpc.json -w '%{http_code}' -X POST \
+            "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/rpc/assert_cache_lockdown" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json")"
+          if [ "$code" != "204" ]; then
+            echo "🔴 assert_cache_lockdown: HTTP $code (คาด 204 — ไม่คืนอะไรตอนผ่าน)"
+            cat /tmp/rpc.json
+            exit 1
+          fi
+          echo "✅ assert_cache_lockdown ผ่าน — service_role ไม่ได้เปิดสิทธิ์อะไรเกินที่ประกาศ"
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
