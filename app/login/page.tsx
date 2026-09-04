@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { signInWithGoogle, sendMagicLink } from "@/lib/auth/signIn";
+import { E5_COPY } from "@/lib/i18n";
+import { Card } from "@/components/ui/Card";
 
 /**
  * ตรวจรูปแบบอีเมลแบบหยาบฝั่ง client เท่านั้น — ไม่ใช่แหล่งความจริง แค่กันพิมพ์ผิดชัดๆ ก่อนยิง request
@@ -116,15 +118,47 @@ function LoginContent() {
 
   const accountNote = accountUnificationNote(ACCOUNT_UNIFICATION_STATUS);
 
+  const next = searchParams.get("next");
+
   return (
-    <main className="flex min-h-full flex-1 items-center justify-center px-4 py-16">
-      <div className="w-full max-w-xs">
-        <div className="mb-6 text-center">
-          <div className="text-4xl">🧭</div>
-          <h1 className="mt-2 text-xl font-extrabold text-content">เข้าสู่ระบบ</h1>
-          <p className="mt-1 text-sm text-content-soft">เข้าด้วย Google หรือลิงก์ทางอีเมล</p>
+    <main className="flex min-h-full flex-1 items-center justify-center px-4 py-10 sm:py-16">
+      <div className="w-full max-w-sm">
+        {/* 🔴 **หน้านี้เคยไม่มีคำว่า `luitrip` สักที่เดียว** (P1 ชี้ · ผู้ใช้สั่งรื้อ 4 ก.ย. 2026)
+            มันคือหน้าแรกที่คนแปลกหน้าเห็น — บอกว่า *"ล็อกอินยังไง"* แต่ไม่บอกว่า *"ล็อกอินเข้าอะไร"*
+            🎯 รูปเดียวกับ `/account`: เขียนขึ้นเพื่อพิสูจน์ว่า auth ทำงาน (`ac18c8a` · 24 ส.ค.)
+               แล้วกลายเป็นหน้าที่ผู้ใช้จริงเดินเข้ามา โดยไม่มีใครกลับมาดูอีกเลย */}
+        <div className="mb-6 flex flex-col items-center text-center">
+          {/* 🔴 **คงไทล์ครีมไว้ ถึงแม้พื้นหน้านี้จะสว่างอยู่แล้ว** — P1 เสนอให้ถอดเพราะ "ไม่มีเขียวบนเขียว"
+              ซึ่งจริงเฉพาะ**ธีมสว่าง** · ธีมมืดพื้นเป็น `#16130f` และมาร์กเป็นเขียวเข้ม ⇒ จมหายไปกับพื้น
+              ⚠️ `useDarkTheme()` ถูกเรียกในหน้านี้อยู่แล้ว (บรรทัด 49) **หน้านี้สลับธีมได้จริง** ไม่ใช่สว่างเสมอ */}
+          <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-cream">
+            {/* eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/ ที่ทีมวางเอง */}
+            <img src="/logo-mark.png" alt="" className="h-12 w-12 object-contain" />
+          </span>
+
+          {/* 🔴 **`brand` กับ `brandTh` อยู่ในสแปนเดียวกัน ไม่มี class ของตัวเอง** — ผู้ใช้สั่งเองสองรอบ
+              (*"ลุยทริป ควรอยู่บรรทัดเดียวกับ luitrip"* → *"ตัวอักษรเหมือนกันทุกประการ"*)
+              ⚠️ **ห้ามแยกเป็นสแปนซ้อนแล้วตั้งค่าให้ตรงกัน** — วันที่มีคนแก้ข้างนอก ข้างในจะไม่ตาม แล้วเพี้ยนเงียบ
+              📌 เหตุผลเต็มอยู่ที่ `lib/i18n.ts` (`E5_COPY.home.brandTh`) — ที่นี่ยืมรูปมาจาก `HomeScreen` */}
+          <h1 className="mt-3 text-2xl font-extrabold leading-tight text-content">
+            {E5_COPY.home.brand} {E5_COPY.home.brandTh}
+          </h1>
+          {/* 🔴 คำโปรยมาจาก `E5_COPY.home.brandTagline` **ไม่ได้เขียนใหม่ที่นี่**
+              P1 บอกให้เสนอคำโปรย อย่าตั้งเอง — และของที่ผู้ใช้เห็นชอบแล้วมีอยู่ในไฟล์เดียวกับแบรนด์
+              🎯 ***คำโปรยที่พิมพ์ซ้ำที่นี่ = สำเนาที่ต้องมีคนซิงก์ ซึ่งจะล้าเสมอ*** (รูปเดียวกับชื่อแบรนด์บนแท็บ) */}
+          <p className="mt-1 text-sm text-content-soft">{E5_COPY.home.brandTagline}</p>
         </div>
 
+        <Card className="p-5">
+          <h2 className="text-base font-bold text-content">เข้าสู่ระบบ</h2>
+          {/* 🔴 บอก *เชิงกลไก* ว่าจะพากลับไปไหน — ไม่ใช่คำโฆษณา · คนที่ถูกเด้งมาที่นี่ไม่ได้ตั้งใจมาเอง
+              และตอนนี้ไม่มีอะไรบนจอบอกเขาเลยว่าทำไมถึงมาอยู่ตรงนี้
+              ⚠️ ไม่โชว์ค่า `next` ดิบ ๆ — มันเป็นพาธที่อ่านแล้วไม่ได้ความหมายกับผู้ใช้ */}
+          <p className="mt-0.5 text-2xs text-content-soft">
+            {next ? "เข้าสู่ระบบแล้วจะพากลับไปหน้าที่ค้างไว้" : "เข้าด้วย Google หรือลิงก์ทางอีเมล"}
+          </p>
+
+          <div className="mt-4">
         {linkExpiredNote && (
           <div
             role="alert"
@@ -220,6 +254,9 @@ function LoginContent() {
             </button>
           </form>
         )}
+
+          </div>
+        </Card>
 
         {accountNote && <p className="mt-5 text-center text-xs leading-relaxed text-content-soft">{accountNote}</p>}
       </div>
