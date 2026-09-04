@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
@@ -88,6 +88,49 @@ const COPY = E5_COPY.home;
  * 🔴 `memberCount === 0` เป็นไปไม่ได้จริง (ทุกทริปมีเจ้าของ ≥1) — ถ้าเจอ แปลว่าอ่าน `trip_members`
  * ไม่ได้ ไม่ใช่ทริปไม่มีคน ปฏิบัติแบบเดียวกับ `displayName: null` ใน `TripHeader.tsx` (ห้ามเงียบ)
  */
+type TabKey = "all" | "upcoming" | "solo" | "group";
+type SortKey = "date" | "name";
+
+/**
+ * ตัวกรองของหน้าแรก — **ฟังก์ชันล้วน แยกจากคอมโพเนนต์เพื่อให้ยิงเทสต์ได้ตรง ๆ**
+ * (บทเรียนเดียวกับ `placeGrouping.ts`: ตรรกะที่อยู่ใน closure ของคอมโพเนนต์ ไม่มีเคสไหนไปถึงได้
+ *  ถ้าไม่ render — และรีโปนี้ไม่มี `@testing-library/react`)
+ *
+ * 🔴 **ค้นจากชื่อทริป *และ* ชื่อจุดหมาย** — ผู้ใช้เขียนเรฟว่า *"ค้นชื่อทริป/ประเทศที่เคยสร้าง"*
+ *    คนไม่ได้จำชื่อที่ตัวเองตั้ง แต่จำว่า "ทริปไปปูซาน" ⇒ ค้นเฉพาะชื่อทริปจะพลาดเคสที่พบบ่อยที่สุด
+ * ⚠️ เทียบแบบไม่สนตัวพิมพ์ และ **ตัดช่องว่างหัวท้าย** — คนพิมพ์เว้นวรรคติดมาเสมอตอนวางจากที่อื่น
+ */
+export function matchesTripQuery(
+  trip: { title: string; destinations: { nameTh: string; nameEn: string }[] },
+  query: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  if (trip.title.toLowerCase().includes(q)) return true;
+  return trip.destinations.some(
+    (d) => d.nameTh.toLowerCase().includes(q) || d.nameEn.toLowerCase().includes(q)
+  );
+}
+
+/**
+ * แท็บหมวด — **ตัดสินจากข้อมูลที่รายการทริปมีจริงเท่านั้น**
+ * · `upcoming` = ยังไม่จบ (`todayIso <= end_date`) — **ไม่ใช่ "ยังไม่เริ่ม"** ทริปที่กำลังเที่ยวอยู่
+ *   ก็ยัง "จะมาถึง" ในความหมายที่ผู้ใช้ต้องเปิดดู
+ * · `solo`/`group` = `memberCount`
+ * 🔴 **`memberCount === 0` แปลว่า *อ่านไม่ได้* ไม่ใช่ *ไม่มีคน*** (เขียนไว้แล้วที่ `TripCard`)
+ *    ⇒ นับเป็น `solo` ไม่ได้ · ให้มันตกอยู่ใน `all` อย่างเดียว **ดีกว่าจัดเข้าหมวดที่อาจผิด**
+ */
+export function matchesTripTab(
+  trip: { end_date: string; memberCount: number },
+  tab: TabKey,
+  todayIso: string
+): boolean {
+  if (tab === "all") return true;
+  if (tab === "upcoming") return todayIso <= trip.end_date;
+  if (tab === "solo") return trip.memberCount === 1;
+  return trip.memberCount > 1;
+}
+
 /**
  * ป้ายนับถอยหลังมุมบนของการ์ด — **สี่สถานะ ไม่ใช่ตัวเลขเดียว** (P2 · 4 ก.ย. 2026)
  *
@@ -162,14 +205,19 @@ function TripCard({ trip }: { trip: TripListItem }) {
       <TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />
       <div className="min-w-0 flex-1 p-3">
         {/* กันชื่อยาววิ่งไปใต้ป้าย — บน `sm` ป้ายอยู่เหนือแบนเนอร์ ไม่ทับบรรทัดนี้ จึงไม่ต้องเผื่อ */}
-        <h3 className="truncate pr-20 font-semibold text-content sm:pr-0">{trip.title}</h3>
-        <p className="mt-0.5 text-xs text-content-soft">
+        {/* 🔴 ผู้ใช้ขอเอง: *"ชื่อทริปใหญ่และเด่นขึ้น · วันที่/สถานที่สว่างขึ้นให้อ่านง่าย"*
+            `text-content-soft` (#6b6058) → `text-content` สำหรับวันที่/สถานที่ **ซึ่งเป็นข้อมูลที่คนใช้เลือกทริป**
+            เหลือ `soft` ไว้เฉพาะจำนวนสมาชิก ซึ่งเป็นข้อมูลรอง — ***ถ้าทุกบรรทัดเด่นเท่ากัน ก็ไม่มีบรรทัดไหนเด่น*** */}
+        <h3 className="truncate pr-20 text-base font-bold leading-snug text-content sm:pr-0 sm:text-lg">
+          {trip.title}
+        </h3>
+        <p className="mt-1 text-xs font-medium text-content sm:text-sm">
           {tripDateRangeLabel(trip.start_date, trip.end_date)}
         </p>
         {destinationLabel && (
-          <p className="mt-0.5 truncate text-xs text-content-soft">📍 {destinationLabel}</p>
+          <p className="mt-0.5 truncate text-xs text-content sm:text-sm">📍 {destinationLabel}</p>
         )}
-        <p className="mt-1 text-xs text-content-soft">
+        <p className="mt-1.5 text-xs text-content-soft">
           {trip.memberCount > 0 ? (
             <>👥 {trip.memberCount}</>
           ) : (
@@ -297,6 +345,30 @@ export function HomeScreen() {
   }, [user]);
 
   const trips = state.status === "ready" ? state.trips : null;
+  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<TabKey>("all");
+  const [sort, setSort] = useState<SortKey>("date");
+  const mounted = useMounted();
+  /** 🔴 วันนี้ต้องมาจากฝั่ง client เท่านั้น — เหตุผลเดียวกับ `TripCountdownBadge` (หน้านี้ถูก prerender) */
+  const todayIso = mounted ? new Date().toISOString().slice(0, 10) : "";
+
+  /**
+   * รายการที่แสดงจริง — กรอง **แล้วค่อย** เรียง · คำนวณที่เดียว เพราะทั้งหัวข้อ (จำนวน)
+   * และกริดต้องเห็นชุดเดียวกัน · ตัวเลขบนหัวข้อที่ไม่ตรงกับของที่เห็นข้างล่าง อ่านเหมือนเว็บนับผิด
+   *
+   * 🔴 `localeCompare("th")` ไม่ใช่ `<` — เรียงชื่อไทยด้วยการเทียบ code point ให้ผลที่คนไทยอ่านว่ามั่ว
+   *    (สระนำอย่าง เ/แ อยู่หลังพยัญชนะใน Unicode แต่คนอ่านว่าอยู่หน้า)
+   */
+  const visibleTrips = useMemo(() => {
+    const list = (trips ?? []).filter(
+      (t) => matchesTripQuery(t, query) && matchesTripTab(t, tab, todayIso)
+    );
+    return list.sort((a, b) =>
+      sort === "name"
+        ? a.title.localeCompare(b.title, "th")
+        : a.start_date.localeCompare(b.start_date)
+    );
+  }, [trips, query, tab, sort, todayIso]);
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content">
@@ -354,6 +426,30 @@ export function HomeScreen() {
             </Link>
           </div>
         </div>
+
+        {/**
+         * 🔴 **ช่องค้นหาอยู่ในแถบหัวตามที่ผู้ใช้ขอ — แต่เป็น *แถวที่สอง* ไม่ใช่แทรกในแถวแรก**
+         * แถวแรกมีชื่อเว็บ + ปุ่มบัญชี · ยัดช่องค้นหาเข้าไปด้วยบนจอ 375px จะเหลือที่ให้ทั้งสามอย่าง
+         * ไม่พอ แล้วชื่อเว็บจะถูกบีบจนหาย ซึ่งเป็นสิ่งที่ใบก่อนหน้าเพิ่งเอากลับมา
+         * · ขึ้นเฉพาะตอน**มีทริปให้ค้น** — ช่องค้นหาบนหน้าที่ไม่มีอะไรให้ค้น คือปุ่มที่กดแล้วไม่มีอะไรเกิดขึ้น
+         */}
+        {trips !== null && trips.length > 0 && (
+          <div className="mx-auto max-w-6xl px-4 pb-3">
+            <div className="relative">
+              <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm">
+                🔍
+              </span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={COPY.searchPlaceholder}
+                aria-label={COPY.searchPlaceholder}
+                className="w-full rounded-xl bg-cream/15 py-2 pl-9 pr-3 text-sm text-cream placeholder:text-cream/60"
+              />
+            </div>
+          </div>
+        )}
       </header>
 
       <div className="mx-auto max-w-6xl px-4 pt-5">
@@ -397,8 +493,8 @@ export function HomeScreen() {
               </h1>
               <p className="mt-1 text-sm text-content-soft">
                 {user.status === "ready" && user.displayName
-                  ? `${COPY.greeting(user.displayName)} · ${COPY.tripCount(state.trips.length)}`
-                  : COPY.tripCount(state.trips.length)}
+                  ? `${COPY.greeting(user.displayName)} · ${COPY.tripCount(visibleTrips.length)}`
+                  : COPY.tripCount(visibleTrips.length)}
               </p>
             </div>
             {/**
@@ -406,11 +502,73 @@ export function HomeScreen() {
              * ได้แถบแคบ ๆ กลางจอ และครีมเปล่าเกินครึ่ง · **หน้านี้ถูกออกแบบสำหรับมือถือแล้วยืดใส่ desktop**
              * 🎯 มือถือดูดีกว่า desktop ในภาพชุดเดียวกันที่ผู้ใช้ส่งมา — นั่นคืออาการของข้อนี้ ไม่ใช่ของ Header
              */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {state.trips.map((trip) => (
-                <TripCard key={trip.id} trip={trip} />
-              ))}
+            {/**
+             * แท็บ + การเรียง — **คำนวณจากข้อมูลที่รายการทริปมีจริงเท่านั้น**
+             * 🔴 **ไม่มีแท็บ "ยอดนิยม"** ที่เรฟเขียนไว้: ทริปเป็นของส่วนตัว **ไม่มีมิติความนิยมในระบบเลย**
+             *    ⇒ ใส่ไปจะเป็นแท็บที่ว่างตลอดกาล และผู้ใช้จะอ่านว่าเว็บพัง ไม่ใช่ว่ายังไม่มีของ
+             * 🔴 **ไม่มีเรียง "แก้ไขล่าสุด"** ด้วยเหตุผลเดียวกัน — `GET /api/engine/trips` ไม่คืน `updated_at`
+             *    ⇒ ต้องขอ P1 เพิ่มก่อน · ทำตัวเลือกที่เรียงไม่ได้จริงคือการโกหกที่ดูเหมือนฟีเจอร์
+             */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div role="tablist" aria-label={COPY.upcomingTrips} className="flex flex-wrap gap-1">
+                {(
+                  [
+                    ["all", COPY.tabAll],
+                    ["upcoming", COPY.tabUpcoming],
+                    ["solo", COPY.tabSolo],
+                    ["group", COPY.tabGroup],
+                  ] as [TabKey, string][]
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={tab === key}
+                    onClick={() => setTab(key)}
+                    className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                      tab === key
+                        ? "bg-pine text-cream"
+                        : "bg-surface-soft text-content-soft hover:text-content"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="ml-auto flex items-center gap-1.5 text-xs text-content-soft">
+                {COPY.sortLabel}
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortKey)}
+                  className="rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-content"
+                >
+                  <option value="date">{COPY.sortByDate}</option>
+                  <option value="name">{COPY.sortByName}</option>
+                </select>
+              </label>
             </div>
+
+            {visibleTrips.length === 0 ? (
+              /* 🔴 ว่างเพราะ *ตัวกรอง* — ห้ามใช้ข้อความเดียวกับ "ยังไม่มีทริป" ซึ่งแปลคนละอย่างสิ้นเชิง
+                 (รูปเดียวกับที่ไฟล์นี้แยก "อ่านไม่ได้" ออกจาก "ไม่มีข้อมูล" ไว้แล้วข้างบน) */
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <p className="text-content-soft">{COPY.noMatch}</p>
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    setTab("all");
+                  }}
+                  className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-content hover:bg-surface-soft"
+                >
+                  {COPY.noMatchClear}
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {visibleTrips.map((trip) => (
+                  <TripCard key={trip.id} trip={trip} />
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
