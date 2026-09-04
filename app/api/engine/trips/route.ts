@@ -3,7 +3,7 @@ import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/au
 import { tripsForUser } from "@/lib/engine/trip";
 import { createTrip, insertTripDestinations } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
-import { MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
+import { MAX_TRIP_DAYS, MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
 
 /**
  * ทริปที่ผู้ใช้เห็นได้ — **route แบบ account-scoped** (P3 · `§14` ข้อ ①)
@@ -95,15 +95,21 @@ export async function POST(req: NextRequest) {
    * 🔴 **เพดานช่วงวันที่ — `create_trip` สร้าง `trip_days` หนึ่งแถวต่อวัน**
    * พิมพ์ปีผิด (`2036` แทน `2026`) = **3,653 แถวในทรานแซกชันเดียว โดยผู้ใช้ไม่ได้ตั้งใจ**
    * · `trips_dates_ordered` บังคับแค่ `end >= start` **ไม่มีเพดาน**
-   * · ตัวเลข 366 = ปีหนึ่งรวมปีอธิกสุรทิน · **ฟังก์ชันในฐานบังคับซ้ำอีกชั้น** (`22023`)
-   * 🎯 ที่นี่มีไว้ให้ **ข้อความอ่านรู้เรื่อง** ไม่ใช่ให้เป็นด่าน — ด่านจริงอยู่ในฐาน
-   *   (เขียนไว้เพราะถ้าไม่เขียน คนถัดไปจะอ่านว่าลบอันไหนก็ได้)
+   * 🔴 **แก้ 4 ก.ย. 2026 — เพดานที่นี่เป็น `MAX_TRIP_DAYS` (30) ไม่ใช่ 366 อีกแล้ว**
+   *    ผู้ใช้ตัดสินเอง (*"สูงสุด 30 วันพอ"*) · **และมันเป็นเพดานคนละชนิดกับ 366 ในฐาน**
+   *    ```
+   *    30   ที่นี่   "ทริปยาวสุดที่เราออกแบบให้รองรับ"       ← เพดานของสินค้า
+   *    366  ในฐาน   "กันคนพิมพ์ปีผิดแล้วสร้าง 3,653 แถวรวด"  ← เพดานกันอุบัติเหตุ
+   *    ```
+   * 🎯 ***สองเลขนี้ตอบคนละคำถาม ⇒ ตั้งใจให้ต่างกัน*** — ต่างจากเคส `MAX_TRIP_DESTINATIONS`
+   *    ที่สองเลขตอบคำถามเดียวกันแล้วไม่ตรงกัน (ซึ่งเป็นบั๊ก) · เหตุผลเต็มอยู่ที่ `tripLimits.ts`
+   *   (เขียนไว้เพราะถ้าไม่เขียน คนถัดไปจะอ่านว่าลบอันไหนก็ได้ หรือ "แก้ให้ตรงกัน" ซึ่งผิดทั้งคู่)
    */
   const DAY_MS = 86_400_000;
   const days = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / DAY_MS) + 1;
-  if (days > 366) {
+  if (days > MAX_TRIP_DAYS) {
     return NextResponse.json(
-      { error: `ช่วงวันที่ยาวเกินไป (${days} วัน) — สูงสุด 366 วัน` },
+      { error: `ทริปยาวได้สูงสุด ${MAX_TRIP_DAYS} วัน (ส่งมา ${days} วัน)` },
       { status: 400 },
     );
   }

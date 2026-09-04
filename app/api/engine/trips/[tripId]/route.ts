@@ -8,6 +8,7 @@ import {
   updateTripDates,
 } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { MAX_TRIP_DAYS } from "@/lib/engine/tripLimits";
 
 /**
  * แก้ทริประดับตัวมันเอง — `PATCH /api/engine/trips/[tripId]`
@@ -29,7 +30,11 @@ const RATE_LIMIT_PER_MINUTE = 120;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** เพดานเดียวกับ `create_trip` (`20260827080000:65`) — ตัวเลขต่างกันจะสร้างทริปที่แก้ตัวเองไม่ได้ */
-const MAX_DAYS = 366;
+// 🔴 เพดานของ *สินค้า* (ผู้ใช้ตัดสิน 4 ก.ย. 2026) — **ไม่ใช่ 366 ของฐาน ซึ่งกันคนละเรื่อง**
+//    เหตุผลเต็ม + ความต่างของสองเพดาน อยู่ที่ `lib/engine/tripLimits.ts`
+//    🔴 ต้องเท่ากับ `POST /api/engine/trips` เสมอ — ไม่งั้น *ทริปที่สร้างไม่ได้ จะแก้ให้เป็นได้*
+//       (รูปเดียวกับที่ `MAX_TRIP_DESTINATIONS` เกิดมาแก้พอดี)
+const MAX_DAYS = MAX_TRIP_DAYS;
 
 async function guard(req: NextRequest, tripId: string) {
   const limited = rateLimitGuard(req, "engine-trip", RATE_LIMIT_PER_MINUTE);
