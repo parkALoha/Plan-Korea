@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CATEGORY_ORDER,
   groupPlaceCards,
+  matchesPlaceQuery,
   UNGROUPED_KEY,
   type PlaceCardItem,
 } from "@/components/placeGrouping";
@@ -137,5 +138,39 @@ describe("CATEGORY_ORDER ตัวจริงที่ `PlaceSidebar` ใช้
 
   it("`transport` ยังไม่อยู่ในลิสต์โดยตั้งใจ — จุดที่ระบบ resolve ให้ ไม่ใช่ของที่เลือกจากคลัง", () => {
     expect(CATEGORY_ORDER).not.toContain("transport");
+  });
+});
+
+/**
+ * \u{1F534} **ตัวกรองคำค้นในคลัง** — P2 · 4 ก.ย. 2026 · คลังโต ~200 → **2,396 แห่ง**
+ * และมันเพิ่งจำเป็นวันนี้: ก่อนหน้านี้การ์ดครึ่งหนึ่งเป็น `place-N` ที่อ่านไม่ออกอยู่แล้ว
+ * **พอชื่อจริงกลับมา ผู้ใช้จึงเริ่มอยากหาของเจอ** ⇒ ความยาวเพิ่งกลายเป็นปัญหาที่รู้สึกได้
+ */
+describe("matchesPlaceQuery — ค้นจากสิ่งที่ผู้ใช้เห็นบนการ์ด", () => {
+  const p = (o: Partial<Parameters<typeof matchesPlaceQuery>[0]>) => ({ nameTh: "ชื่อไทย", ...o });
+
+  it("คำค้นว่าง = ผ่านทุกใบ", () => {
+    expect(matchesPlaceQuery(p({}), "")).toBe(true);
+    expect(matchesPlaceQuery(p({}), "  ")).toBe(true);
+  });
+
+  it("ค้นได้ทั้งไทย · อังกฤษ · ภาษาท้องถิ่น · คำอธิบาย", () => {
+    expect(matchesPlaceQuery(p({ nameTh: "วัดเซ็นโซจิ" }), "เซ็นโซ")).toBe(true);
+    expect(matchesPlaceQuery(p({ nameEn: "Senso-ji Temple" }), "temple")).toBe(true);
+    expect(matchesPlaceQuery(p({ nameLocal: "浅草寺" }), "浅草")).toBe(true);
+    expect(matchesPlaceQuery(p({ descriptionTh: "วัดเก่าแก่ที่สุดในโตเกียว" }), "เก่าแก่")).toBe(true);
+  });
+
+  it("ไม่สนตัวพิมพ์ · ตัดช่องว่างหัวท้าย", () => {
+    expect(matchesPlaceQuery(p({ nameEn: "Shibuya Crossing" }), "  SHIBUYA ")).toBe(true);
+  });
+
+  it("ฟิลด์ที่เป็น `null`/ไม่มี ต้องไม่ทำให้ระเบิด — คลังจริงมีทั้งสองแบบ", () => {
+    expect(matchesPlaceQuery({ nameTh: "ก", nameEn: null, nameLocal: null, descriptionTh: null }, "ข")).toBe(false);
+    expect(matchesPlaceQuery({ nameTh: "ก" }, "ก")).toBe(true);
+  });
+
+  it("\u{1F534} เคสควบคุม: คำที่ไม่ตรงอะไรเลย ต้อง **ไม่** ผ่าน", () => {
+    expect(matchesPlaceQuery(p({ nameEn: "Tokyo Tower" }), "zzzz")).toBe(false);
   });
 });

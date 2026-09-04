@@ -5,7 +5,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Place, cityCenter, placesByCity } from "@/data/places";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
-import { CATEGORY_ORDER, groupPlaceCards } from "@/components/placeGrouping";
+import { CATEGORY_ORDER, groupPlaceCards, matchesPlaceQuery } from "@/components/placeGrouping";
 import { cityCenterOf } from "@/lib/engine/cityCenter";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
@@ -188,6 +188,23 @@ function PlaceSidebarContent({
     catalogMode && currentCatalogCityId && selectedPlaceIdsForCatalogCity
       ? selectedPlaceIdsForCatalogCity(currentCatalogCityId)
       : selectedPlaceIdsForCity(activeCity);
+  /**
+   * คำค้นในคลัง — **ล้างเองเมื่อสลับเมือง**
+   *
+   * 🔴 คำค้นค้างข้ามเมืองคือทางตันที่ผู้ใช้ไม่รู้ว่าตัวเองสร้าง: กดเปลี่ยนไปปูซานแล้วเห็น
+   * *"ไม่เจอสถานที่ที่ตรงกับ ..."* ทั้งที่ปูซานมีของเต็ม ⇒ อ่านเหมือน **คลังเมืองนั้นว่าง**
+   *
+   * 🎯 **ตั้ง state ระหว่าง render ไม่ใช่ใน `useEffect`** — `react-hooks/set-state-in-effect`
+   * ห้ามอย่างหลังไว้ (ทำให้ render ซ้อน) · รูปนี้คือท่าที่ React แนะนำสำหรับ *"รีเซ็ตเมื่อ prop เปลี่ยน"*
+   * และมันวิ่งก่อนลูกถูก render ⇒ ไม่มีเฟรมที่ผู้ใช้เห็นผลกรองของเมืองเก่า
+   */
+  const cityKey = catalogMode ? (currentCatalogCityId ?? "") : activeCity;
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [queryCityKey, setQueryCityKey] = useState(cityKey);
+  if (cityKey !== queryCityKey) {
+    setQueryCityKey(cityKey);
+    setPlaceQuery("");
+  }
   const visibleCards = allCardsForCity.filter(
     ({ place }) => !selectedIds.has(place.id) && !hiddenPlaceIds.has(place.id)
   );
@@ -199,9 +216,17 @@ function PlaceSidebarContent({
    * `components/placeGrouping.ts` ซึ่งแยกเป็นฟังก์ชันล้วนเพื่อให้เกณฑ์ผูกกับ *พฤติกรรม*
    * แทนที่จะ `grep` หาชื่อตัวแปรในไฟล์นี้ (เกณฑ์แบบหลังแดงใส่การปรับปรุงโค้ดมาแล้วสองรอบ)
    */
+  /**
+   * 🔴 **กรองก่อนจัดกลุ่ม ไม่ใช่กรองทีหลัง** — `groupPlaceCards` เป็นคนตัดกลุ่มที่ว่างทิ้ง
+   * ⇒ กรองก่อน = หมวดที่ไม่เหลือการ์ดหายไปเอง · กรองทีหลัง = ได้หัวข้อหมวดลอย ๆ ไม่มีอะไรอยู่ข้างใต้
+   */
+  const matchedCards = useMemo(
+    () => visibleCards.filter(({ place }) => matchesPlaceQuery(place, placeQuery)),
+    [visibleCards, placeQuery]
+  );
   const groupedVisibleCards = useMemo(
-    () => groupPlaceCards(visibleCards, CATEGORY_ORDER),
-    [visibleCards]
+    () => groupPlaceCards(matchedCards, CATEGORY_ORDER),
+    [matchedCards]
   );
 
   // droppable ของคลังทั้งก้อน — ลากจุดแวะจากแพลนทริปมาปล่อยตรงนี้ = คืนสถานที่นั้นกลับคลัง (เอาออกจากวัน)
@@ -317,6 +342,27 @@ function PlaceSidebarContent({
           isLibraryOver ? "bg-pine-soft/50 ring-2 ring-inset ring-pine" : ""
         }`}
       >
+        {/**
+         * 🔴 **ช่องค้นหาในคลัง** — คลังโต 2,396 แห่ง · โตเกียวเมืองเดียว 42 การ์ด (P1 ชี้ · ผู้ใช้เขียนในเรฟ)
+         * ขึ้นเฉพาะตอน**มีของให้ค้นมากพอ** — ช่องค้นหาเหนือการ์ด 3 ใบคือของที่กินที่โดยไม่ช่วยอะไร
+         * ⚠️ เกณฑ์ `> 8` เป็นค่าที่เลือกเอง **ไม่ได้วัดจากผู้ใช้** — จดไว้ว่าเป็นการเดาที่ปรับได้
+         */}
+        {visibleCards.length > 8 && (
+          <div className="relative mb-3">
+            <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm">
+              🔍
+            </span>
+            <input
+              type="search"
+              value={placeQuery}
+              onChange={(e) => setPlaceQuery(e.target.value)}
+              placeholder={`ค้นหาใน${displayCityNameTh} (${visibleCards.length} แห่ง)`}
+              aria-label="ค้นหาสถานที่ในคลัง"
+              className="w-full rounded-xl border border-line bg-surface py-2 pl-9 pr-3 text-sm text-content placeholder:text-content-soft"
+            />
+          </div>
+        )}
+
         <div className="mb-3 space-y-2">
           {/* 🔴 ไม่มีพิกัด = **ไม่เสนอปุ่ม** ไม่ใช่เสนอแล้วค้นแบบไม่เอียง (ดูเหตุผลที่ `activeCityCenter`)
               · บอกสาเหตุด้วย `title` — ปุ่มที่กดไม่ได้โดยไม่บอกว่าทำไม แย่กว่าปุ่มที่หายไป */}
@@ -348,9 +394,22 @@ function PlaceSidebarContent({
           </div>
         </div>
 
+        {/* 🔴 **สองสถานะว่าง คนละความหมาย ห้ามใช้ข้อความเดียวกัน** — *เลือกครบแล้ว* คือความสำเร็จ
+            *ค้นไม่เจอ* คือทางตัน ที่ต้องมีทางออกให้กด (รูปเดียวกับที่ไฟล์นี้แยก "อ่านไม่ได้" ออกจาก "ไม่มีข้อมูล") */}
         {visibleCards.length === 0 && (
           <div className="py-6 text-center text-xs text-content-soft">
             เลือกครบทุกที่ในโซนนี้แล้ว 🎉
+          </div>
+        )}
+        {visibleCards.length > 0 && matchedCards.length === 0 && (
+          <div className="flex flex-col items-center gap-2 py-6 text-center text-xs text-content-soft">
+            <p>ไม่เจอสถานที่ที่ตรงกับ &quot;{placeQuery.trim()}&quot;</p>
+            <button
+              onClick={() => setPlaceQuery("")}
+              className="rounded-lg border border-line px-3 py-1.5 font-medium text-content hover:bg-surface-soft"
+            >
+              ล้างคำค้น
+            </button>
           </div>
         )}
         {groupedVisibleCards.map(({ key, emoji, label, cards }) => (

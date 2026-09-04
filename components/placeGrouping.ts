@@ -39,6 +39,37 @@ export const CATEGORY_ORDER: readonly string[] = [
   "hotel",
 ];
 
+/**
+ * กรองการ์ดในคลังด้วยคำค้น — **ฟังก์ชันล้วน อยู่ที่นี่เพื่อให้เกณฑ์เข้าถึงได้**
+ * (`PlaceSidebar` เป็นคอมโพเนนต์ไคลเอนต์ที่ลาก dnd-kit เข้ามา ⇒ ไฟล์เทสต์ import ไม่ได้บน Node 20
+ *  — เหตุผลเดียวกับที่ `CATEGORY_ORDER` ย้ายมาไฟล์นี้)
+ *
+ * ## 🔴 ทำไมคลังถึงต้องมีช่องค้นหา และทำไมมันเพิ่งจำเป็น
+ * คลังโตจาก ~200 เป็น **2,396 แห่ง** · โตเกียวเมืองเดียว 42 การ์ดเรียงลงมาเป็นแถบยาว
+ * 🎯 ***และมันเพิ่งแย่ลงวันนี้เอง*** — ก่อนหน้านี้การ์ดครึ่งหนึ่งเป็น `place-N` ที่อ่านไม่ออกอยู่แล้ว
+ * **พอชื่อจริงกลับมา ผู้ใช้จึงเริ่มอยากหาของเจอ** ⇒ ความยาวเพิ่งกลายเป็นปัญหาที่รู้สึกได้ (P1 ชี้)
+ *
+ * ## ค้นจากอะไรบ้าง — และทำไมไม่ค้นจาก `id`
+ * `nameTh` · `nameEn` · `nameLocal` · `descriptionTh` — **สิ่งที่ผู้ใช้เห็นบนการ์ด**
+ * 🔴 **ไม่ค้นจาก `id`/slug** — `sakura-hotel-hatagaya` จะทำให้พิมพ์ `hotel` แล้วเจอของที่ชื่อไม่มีคำนั้น
+ *    ⇒ ผลลัพธ์ที่อธิบายให้ตัวเองไม่ได้ **แย่กว่าไม่เจอ** เพราะผู้ใช้จะเลิกเชื่อช่องค้นหาทั้งช่อง
+ */
+export function matchesPlaceQuery(place: PlaceLike, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  return [place.nameTh, place.nameEn, place.nameLocal, place.descriptionTh].some(
+    (v) => typeof v === "string" && v.toLowerCase().includes(q)
+  );
+}
+
+/** เท่าที่ตัวกรองต้องรู้ — ไม่ผูกกับ `Place` เต็มใบ เพื่อให้เคสเขียนของปลอมได้โดยไม่ต้องครบ 14 ฟิลด์ */
+export type PlaceLike = {
+  nameTh: string;
+  nameEn?: string | null;
+  nameLocal?: string | null;
+  descriptionTh?: string | null;
+};
+
 /** คีย์ของถังท้าย — ไม่ใช่หมวดจริง จึงตั้งชื่อให้ชนกับหมวดในฐานไม่ได้ */
 export const UNGROUPED_KEY = "__ungrouped";
 
