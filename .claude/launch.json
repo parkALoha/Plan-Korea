@@ -44,6 +44,36 @@
       "autoPort": false
     },
     {
+      "comment": "งานรื้อ UX/UI (โซน P2 · ผู้ใช้ยกข้อ freeze ให้ 4 ก.ย. 2026 ดู TEAM.md §3.5) อยู่ใน git worktree ใบที่สามที่ /Users/park/plan-korea-ui บน branch ui-redesign — ต้องมี --prefix เหมือน platform-dev ไม่งั้น preview จะไปสตาร์ทเว็บทริปในทรีหลักแทน แล้ว *ดูเหมือนทำงานถูกทุกอย่าง* ทั้งที่ไม่มีการเปลี่ยนแปลงของเราอยู่ในนั้นเลย · พอร์ตแยกเพื่อให้เปิดเทียบกับทรีหลักพร้อมกันได้ และรู้ทันทีว่ากำลังดูทรีไหน · ไม่ผูกกับ OAuth (เว็บทริปใช้ด่าน PIN ไม่ใช่ Google) จึง autoPort ได้",
+      "name": "ui-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/park/plan-korea-ui",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3400"
+      ],
+      "port": 3400
+    },
+    {
+      "comment": "production build ของทรี ui-redesign — ต้องใช้ตอนทดสอบออฟไลน์/SW เพราะ ServiceWorkerRegistrar ปิด SW ตอน dev โดยตั้งใจ ⇒ วัดออฟไลน์บน dev ได้ผลลบที่ไม่มีความหมาย (เหตุผลเดียวกับ platform-prod) · ต้อง npm run build ในทรีนั้นก่อน",
+      "name": "ui-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/park/plan-korea-ui",
+        "run",
+        "start",
+        "--",
+        "-p",
+        "3401"
+      ],
+      "port": 3401
+    },
+    {
       "name": "korea-trip-plan-prod",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
