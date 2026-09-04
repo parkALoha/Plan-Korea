@@ -126,7 +126,90 @@ const WRITABLE: Record<string, keyof InsertRow<"trip_stops">> = {
   photoUrl: "photo_path", visitedAt: "visited_at", kind: "kind",
   intercityFrom: "intercity_from", intercityTo: "intercity_to", intercityMode: "intercity_mode",
   transferTargetTime: "transfer_target_time", transferTargetLabel: "transfer_target_label",
+
+  /**
+   * \u{1F534} **คอลัมน์ของแถว `kind='event'` — เพิ่ม 4 ก.ย. 2026 (P1 สั่ง · P2 ทำ)**
+   *
+   * ก่อนหน้านี้ `WRITABLE` **ไม่มีฟิลด์ event สักตัว** ⇒ `POST`/`PATCH` สร้าง/แก้แถวเวลาตายตัว
+   * (เที่ยวบิน · เช็คอิน · เดดไลน์) **ไม่ได้เลยทุกทาง** · `DayEventsPanel` เขียนไว้เองว่า
+   * *"แก้ในเว็บไม่ได้"* และ `DayEvent` 35 รายการของทริปเกาหลีถูกพิมพ์มือลง `data/itinerary.ts`
+   *
+   * \u{1F3AF} **ไม่ต้องผ่อน constraint ใด ๆ — และผมยิงยืนยันก่อนสรุป ไม่ได้อ่านเอา**
+   * `trip_stops_event_needs_core` บังคับว่า `kind='event'` ต้องมี
+   * `fixed_start_time` + `title` + `icon` ครบ · `POST` ที่นี่ **ประกอบแถวใบเดียวแล้ว `insertStop`
+   * ครั้งเดียว** ⇒ ทั้งสามลงไปพร้อมกันในทรานแซกชันเดียว CHECK จึงผ่านตั้งแต่แรก
+   * · ⚠️ **ห้ามอ่านว่า "constraint ไม่กวน"** — มันยังกัน *ครึ่งชุด* อยู่เต็มที่ และนั่นคือสิ่งที่เราต้องการ
+   *   (`PATCH` ที่ล้าง `title` ทิ้งจะโดนปฏิเสธ — ถูกแล้ว) · สิ่งที่ตรวจแล้วคือ **ทางสร้างไม่ติด**
+   *   ไม่ใช่ **constraint ไม่มีผล**
+   */
+  eventKind: "event_kind", scheduleBound: "schedule_bound",
+  fixedStartTime: "fixed_start_time", fixedEndTime: "fixed_end_time",
+  dayOffset: "day_offset", title: "title", titleEn: "title_en", icon: "icon",
+  isAlert: "is_alert", timeIsFlexible: "time_is_flexible",
+  flightNo: "flight_no", flightFromCode: "flight_from_code", flightToCode: "flight_to_code",
+  flightFromEn: "flight_from_en", flightToEn: "flight_to_en",
+  layoverBaggage: "layover_baggage", layoverImmigration: "layover_immigration",
+  layoverLeavesAirport: "layover_leaves_airport", layoverTerminalChange: "layover_terminal_change",
+  placeRef: "place_ref",
 };
+
+/**
+ * คัดค่าจาก body ลงแถว/แพตช์ — **ชื่อคอลัมน์** ถูกตรวจด้วยชนิดของ `WRITABLE` แล้ว
+ * ส่วน **ค่า** มาจาก body จึงเป็น `unknown` \u2192 ตรวจชนิดที่นี่ **ไม่ใช่ปล่อยไปให้ฐานตัดสิน**
+ *
+ * \u{1F534} **ยกออกมาเป็นฟังก์ชันร่วมเพราะ `PATCH` ไม่เคยตรวจเลย** (`for … patch[col] = b[k]` เปล่า ๆ)
+ * เดิมความต่างนี้แทบไม่มีผล เพราะ `WRITABLE` มี 11 คีย์ที่เป็นสเกลาร์ล้วน · พอเพิ่มคอลัมน์ event
+ * อีก 20 ตัว **`PATCH` จะกลายเป็นทางส่งอ็อบเจกต์/อาเรย์เข้าฐานแล้วได้ 502 ที่ผู้ใช้อ่านไม่รู้เรื่อง**
+ * \u{1F3AF} นี่ไม่ใช่การเก็บกวาดพ่วง — **ช่องนี้เพิ่งกว้างขึ้นเพราะการแก้ใบนี้เอง**
+ */
+function copyWritable(
+  b: Record<string, unknown>,
+  into: Record<string, unknown>
+): NextResponse | null {
+  for (const [k, col] of Object.entries(WRITABLE)) {
+    if (!(k in b)) continue;
+    const v = b[k];
+    if (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+      return NextResponse.json(
+        { error: `ฟิลด์ ${k} ต้องเป็นข้อความ ตัวเลข หรือ true/false` },
+        { status: 400 },
+      );
+    }
+    into[col] = v;
+  }
+  return null;
+}
+
+/**
+ * `23514` = CHECK ของฐานปฏิเสธ — **ความผิดของคำขอ ไม่ใช่ของเซิร์ฟเวอร์เรา \u21d2 `400` ไม่ใช่ `502`**
+ *
+ * \u{1F534} เพิ่ม 4 ก.ย. 2026 พร้อมกับการเปิดให้เขียนคอลัมน์ event — **ก่อนหน้านี้กิ่งนี้แทบไม่มีทางถึง**
+ * (คอลัมน์ที่เขียนได้ 11 ตัวไม่มีตัวไหนอยู่ใน CHECK ไหนเลย) · พอ event เขียนได้
+ * `trip_stops_event_needs_core` / `…_event_columns_only_on_events` / `…_flight_fields_complete`
+ * กลายเป็นสิ่งที่ **UI ชนได้จากการกรอกฟอร์มไม่ครบ** ซึ่งเป็นเรื่องปกติ ไม่ใช่เหตุขัดข้อง
+ *
+ * \u{1F3AF} เหตุผลเดียวกับที่ route นี้เคยแปลง `PLACE_NOT_IN_CATALOG` จาก 502 เป็น 400 มาแล้ว:
+ *    **`502` พาคนไปหาบั๊กผิดที่** \u2014 ที่นั่นเขียนไว้เองว่ามันทำให้ P2 สรุปผิดไปทั้งวัน
+ * \u26a0\ufe0f ส่งชื่อ constraint กลับไปด้วย \u2014 ไม่งั้นไคลเอนต์รู้แค่ "ไม่ผ่าน" แต่ไม่รู้ *ข้อไหน*
+ *    และจะไม่มีทางบอกผู้ใช้ได้ว่าต้องกรอกช่องไหนเพิ่ม
+ */
+function checkViolationResponse(error: { code?: string; message: string }): NextResponse | null {
+  if (error.code !== "23514") return null;
+  const name = /violates check constraint "([^"]+)"/.exec(error.message)?.[1] ?? null;
+  return NextResponse.json(
+    {
+      error:
+        name === "trip_stops_event_needs_core"
+          ? "แถวเวลาตายตัวต้องมีครบสามอย่าง: เวลาเริ่ม · ชื่อ · ไอคอน"
+          : name === "trip_stops_flight_fields_complete"
+            ? "ข้อมูลเที่ยวบินต้องครบชุด (เลขไฟลต์ · สนามบินต้นทาง · สนามบินปลายทาง) หรือไม่ใส่เลย"
+            : `ข้อมูลไม่ผ่านเงื่อนไขของฐาน${name ? ` (${name})` : ""}`,
+      code: "check_violation",
+      constraint: name,
+    },
+    { status: 400 },
+  );
+}
 
 async function guard(req: NextRequest, tripId: string) {
   const limited = rateLimitGuard(req, "engine-stops", RATE_LIMIT_PER_MINUTE);
@@ -243,19 +326,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
     trip_id: tripId, plan_id: planId, trip_day_id: tripDayId, kind, rank,
     legacy_added_by: typeof b.addedBy === "string" ? b.addedBy : null,
   };
-  // ⚠️ คัดลอกแบบไดนามิก: **ชื่อคอลัมน์**ถูกตรวจด้วยชนิดของ `WRITABLE` แล้ว
-  //    ส่วน **ค่า** มาจาก body จึงเป็น `unknown` → ตรวจชนิดตรงนี้ **ไม่ใช่ปล่อยไปให้ฐานตัดสิน**
-  for (const [k, col] of Object.entries(WRITABLE)) {
-    if (!(k in b)) continue;
-    const v = b[k];
-    if (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
-      return NextResponse.json(
-        { error: `ฟิลด์ ${k} ต้องเป็นข้อความ ตัวเลข หรือ true/false` },
-        { status: 400 },
-      );
-    }
-    (row as Record<string, unknown>)[col] = v;
-  }
+  const bad = copyWritable(b, row as Record<string, unknown>);
+  if (bad) return bad;
 
   // สถานที่: คลังกลาง (slug) หรือของทริป (id) — **ถามฐาน ไม่เดาจากรูปแบบสตริง**
   const placeId = typeof b.placeId === "string" ? b.placeId : null;
@@ -294,6 +366,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tri
   const { data, error } = await insertStop(db, row);
   if (error) {
     if (error.code === "23503") return NextResponse.json({ error: `ไม่รู้จักสถานที่ ${placeId}` }, { status: 400 });
+    const check = checkViolationResponse(error);
+    if (check) return check;
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "42501" ? 403 : 502 });
   }
   return NextResponse.json(toDto(data as unknown as Row, at), { status: 201, headers: { "Cache-Control": "private, no-store" } });
@@ -316,7 +390,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
 
   const db = await createServerSupabase();
   const patch: Record<string, unknown> = {};
-  for (const [k, col] of Object.entries(WRITABLE)) if (k in b) patch[col] = b[k];
+  const badPatch = copyWritable(b, patch);
+  if (badPatch) return badPatch;
 
   // ย้ายวัน/ย้ายตำแหน่ง → คำนวณ `rank` ใหม่ในวันปลายทาง
   if (typeof b.tripDayId === "string" && UUID.test(b.tripDayId)) {
@@ -342,6 +417,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tr
 
   const { data, error } = await updateStop(db, id, patch);
   if (error) {
+    const check = checkViolationResponse(error);
+    if (check) return check;
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "42501" ? 403 : 502 });
   }
   if (!data || data.length === 0) {
