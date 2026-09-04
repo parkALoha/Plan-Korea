@@ -103,9 +103,24 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   "app/api/engine/trips/[tripId]/custom-places/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/day-settings/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/days/route.ts": { scope: "trip" },
+  // 🔴 สองใบนี้เพิ่ม 4 ก.ย. 2026 (P1) — **ทั้งคู่รับ `tripId` จาก URL** จึงเป็น `"trip"` ไม่ใช่ `"account"`
+  //    · `destinations` — `PUT` เขียนทับรายการจุดหมายทั้งชุด
+  //    · `[tripId]/route.ts` — `PATCH` แก้ช่วงวันของทริป แล้วซิงก์ `trip_days` ตามช่วงใหม่
+  //    ⚠️ **ใบที่สองแตะ *ตัวทริปเอง* ไม่ใช่ตารางลูก** — เป็นใบแรกในทะเบียนนี้ที่ทำแบบนั้น
+  //       `trips_update` จำกัด `owner` (ไม่ใช่ `can_write_trip` แบบตารางลูก) ⇒ **โพรบข้ามผู้ใช้
+  //       ต้องยิงด้วย editor ไม่ใช่แค่ผู้ใช้นอกทริป** ไม่งั้นจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง
+  "app/api/engine/trips/[tripId]/destinations/route.ts": { scope: "trip" },
+  "app/api/engine/trips/[tripId]/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/hidden-places/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/hotels/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/members/route.ts": { scope: "trip" },
+  // 🔴 ใบที่ 13 (P1 · 4 ก.ย. 2026) — `PUT` ปัก/ถอนหมุดทริป · **รับ `tripId` จาก URL ⇒ `"trip"`**
+  //    ⚠️ **ระดับสิทธิ์กลับด้านกับทุกใบในทะเบียนนี้**: เก็บที่ `trip_members.pinned_at` *ของผู้เรียกเอง*
+  //       ⇒ **สมาชิกคนไหนก็ปักได้ รวม `viewer`** — ไม่ต้อง `owner` ไม่ต้อง `editor`
+  //    🎯 ***`scope: "trip"` ตอบว่า "ยิงข้ามด้วย tripId ได้ไหม" — ไม่ได้ตอบว่า "ใครควรผ่าน"***
+  //       ทะเบียนนี้ไม่มีช่องสำหรับข้อหลัง และไม่ควรมี · **เจตนาของแต่ละใบอยู่ที่ probe**
+  //       ⇒ probe ของใบนี้ต้อง assert ว่า **viewer สำเร็จ** ไม่ใช่ถูกปฏิเสธ (`engineCrossUser` บล็อก `E5-pin`)
+  "app/api/engine/trips/[tripId]/pin/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/place-notes/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/stops/route.ts": { scope: "trip" },
 };
@@ -148,7 +163,7 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     }
   });
 
-  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 10 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
+  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 13 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
     const trip = Object.entries(SURFACE)
       .filter(([, m]) => m.scope === "trip")
       .map(([r]) => r)
@@ -156,10 +171,16 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     // เทียบกับ path จริงบนดิสก์ ไม่ใช่แค่ทะเบียน — ถ้าย้าย route เข้า/ออก [tripId] ต้องมาแก้ทั้งคู่
     const tripOnDisk = routeFiles().filter(isTripScoped).sort();
     expect(trip, "ทะเบียน trip-scoped ไม่ตรงกับที่อยู่ใต้ trips/[tripId]/ บนดิสก์").toEqual(tripOnDisk);
+    // 🔴 **12 → 13 เมื่อ 4 ก.ย. 2026 (บ่าย)** — `pin/route.ts` (ดูหมายเหตุในทะเบียน: viewer ต้อง *ผ่าน*)
+    // 🔴 **10 → 12 เมื่อ 4 ก.ย. 2026** (P1 เขียน route · P4 เขียน probe แล้วจึงขยับเลขนี้ ตามลำดับที่ข้อความนี้สั่ง)
+    //    · `destinations/route.ts`  `PUT`   — probe: owner/editor เขียนได้ · viewer/คนนอกไม่ได้ · กิ่ง delete-only
+    //    · `[tripId]/route.ts`      `PATCH` — probe: **editor ถูกปฏิเสธ** (`trips_update` = owner) · คนนอกไม่ได้
+    //      · ⚠️ ใบหลังต้องยิงด้วย **editor** ไม่ใช่แค่คนนอก — คนนอกถูกกันตั้งแต่ `can_read_trip`
+    //        **ไม่เคยเดินไปถึงเส้น `owner` เลย** ⇒ probe คนนอกอย่างเดียวจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง
     expect(
       trip.length,
-      "จำนวน route ยิงข้ามเปลี่ยนจาก 10 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
-    ).toBe(10);
+      "จำนวน route ยิงข้ามเปลี่ยนจาก 13 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
+    ).toBe(13);
   });
 
   it("ทุก trip-scoped route ต้อง export อย่างน้อยหนึ่ง HTTP method (ไม่งั้น probe จะไม่มีอะไรยิง)", () => {

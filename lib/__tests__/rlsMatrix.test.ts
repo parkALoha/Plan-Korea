@@ -1312,17 +1312,160 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       );
     });
 
-    it("🔴 ไม่มีใครลบวันได้ แม้แต่ owner — `D18`: ไม่มี policy DELETE คือเข้าไม่ถึง ไม่ใช่ซ่อนปุ่ม", async () => {
-      // ⚠️ DELETE ที่ถูก RLS กรองคืน 200 ไม่มี error → เช็ค error อย่างเดียวคือเช็คผิดทาง
-      //    ต้องอ่านซ้ำถึงจะรู้ว่าแถวยังอยู่จริงไหม (รูปเดียวกับเคส UPDATE ข้างบน)
-      // 🎯 เคสนี้ตรึง **การไม่มีอยู่โดยตั้งใจ** — ถ้าวันหนึ่งมีคนเติม policy DELETE เข้ามา
-      //    เคสนี้จะแดง และนั่นคือสิ่งที่ควรเกิด ไม่ใช่สิ่งที่ต้องแก้ให้ผ่าน
-      const { data: before } = await A.from("trip_days").select("id").eq("trip_id", tripD);
-      expect(before, "ต้องมีวันอยู่ก่อน ไม่งั้นเคสนี้เขียวเพราะไม่มีอะไรให้ลบ").not.toHaveLength(0);
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🔴 DELETE — `trip_days_delete` ลงเมื่อ 4 ก.ย. 2026 (`20260904120000_e5_trip_dates_editable.sql`)
+    // เจ้าของ migration: P1-Lead · เจ้าของเคสสด: P4-QA/Sec
+    //
+    // ## 🔴 เคสในบล็อกนี้เคยยืนยัน **สิ่งที่ตรงข้ามกันเป๊ะ** จนถึงเช้าวันนั้น
+    // ฉบับเดิม: *"ไม่มีใครลบวันได้ แม้แต่ owner — `D18`: ไม่มี policy DELETE คือเข้าไม่ถึง ไม่ใช่ซ่อนปุ่ม"*
+    // พร้อมบรรทัดที่เขียนไว้เองว่า *"ถ้าวันหนึ่งมีคนเติม policy DELETE เข้ามา เคสนี้จะแดง
+    // และนั่นคือสิ่งที่ควรเกิด ไม่ใช่สิ่งที่ต้องแก้ให้ผ่าน"* — **มันแดงจริง และนี่คือการมาไล่กิ่ง ไม่ใช่การแก้ให้เขียว**
+    //
+    // ## 🔴 `D73` ปิดที่นี่ — และเหตุผลต้องอยู่ในไฟล์นี้ ไม่ใช่แค่ใน commit message
+    // `D73` (เคยเป็น describe แยกท้ายไฟล์) กันไม่ให้ policy `DELETE` โผล่มา **โดยไม่มีใครอ่านเรื่อง cascade**
+    // มันไม่เคยกันการลบ — มันกันการตัดสินใจแบบเงียบ ๆ · **วันนี้การตัดสินใจเกิดขึ้นแล้วอย่างเปิดเผย**
+    // (migration เขียนเรื่อง cascade ไว้เต็ม ๆ · `MAY_DELETE` ใน `schemaPins` มีเหตุผลกำกับ)
+    // ⇒ ด่านสแตติกใบนั้นทำงานจบแล้ว · **แทนที่ด้วยเคสสดที่วัด *ราคา* ของการตัดสินใจ** (เคสสุดท้ายของบล็อกนี้)
+    // 🎯 ***ด่านที่ถามว่า "มีใครตัดสินใจหรือยัง" ตอบได้ครั้งเดียว · เคสที่วัดว่า "การตัดสินใจนั้นแพงแค่ไหน"
+    //    ตอบได้ทุกครั้งที่มีคนแก้ FK หรือ policy*** — อันหลังคือสิ่งที่ควรอยู่ต่อ
+    //
+    // ## `D73` ยอมได้สองทาง — เราเลือกทางที่สอง **แบบผ่อน** และต้องเขียนไว้ให้ชัด
+    // ถ้อยคำเดิม: *"soft delete ที่ `trip_days` **หรือ** ให้ตัวปรับช่วงวัน **ปฏิเสธ** วันที่ยังมีจุดแวะ"*
+    // ของจริงที่ลง: route ตอบ `409` พร้อมจำนวน **แล้วเดินต่อได้เมื่อส่ง `force: true`** — *เตือน* ไม่ใช่ *ปฏิเสธ*
+    // · 🔴 **และด่านนั้นอยู่ที่ route ไม่ใช่ที่ฐาน** ⇒ `grant delete on trip_days` ที่เปิดพร้อมกัน
+    //   ทำให้ **ไคลเอนต์ยิง PostgREST ตรง ๆ ก็ cascade ลบจุดแวะได้ โดยไม่ผ่าน `409` เลย**
+    //   เคสสุดท้ายของบล็อกนี้ยิงเส้นทางนั้นตรง ๆ เพื่อให้ราคาถูกวัด ไม่ใช่ถูกอนุมาน
+    // ═══════════════════════════════════════════════════════════════════════
 
-      await A.from("trip_days").delete().eq("trip_id", tripD);
-      const { data: after } = await A.from("trip_days").select("id").eq("trip_id", tripD);
-      expect(after?.length, "owner ลบวันได้ = มี policy DELETE ที่ไม่ควรมี").toBe(before?.length);
+    /** วันแยกสำหรับเคส DELETE — **ห้ามใช้ `day1`/`day2`** ที่เคสอื่นในบล็อกนี้ยังพึ่งอยู่ */
+    const mkDay = async (client: SupabaseClient, date: string): Promise<string> => {
+      const { data, error } = await client
+        .from("trip_days").insert({ trip_id: tripD, date }).select("id").single();
+      if (error) throw new Error(`สร้างวัน ${date}: ${error.message}`);
+      return data.id as string;
+    };
+    /** วันนี้ยังอยู่ไหม — อ่านด้วย **owner** เสมอ · DELETE ที่ถูก RLS กรองคืน 200 ไม่มี error */
+    const dayAlive = async (id: string): Promise<boolean> => {
+      const { data, error } = await A.from("trip_days").select("id").eq("id", id).maybeSingle();
+      if (error) throw new Error(`อ่านวัน ${id}: ${error.message}`);
+      return data != null;
+    };
+
+    describe("ด้านบวกของ DELETE — ถ้าตรงนี้แดง เคสด้านลบข้างล่างไม่ได้พิสูจน์อะไรเลย (P-44)", () => {
+      it("🔴 owner ลบวันได้", async () => {
+        const id = await mkDay(A, "2026-11-01");
+        expect(await dayAlive(id), "setup: วันที่เพิ่งสร้างไม่อยู่").toBe(true);
+        const { error } = await A.from("trip_days").delete().eq("id", id);
+        expect(error, `owner ลบวันไม่ได้: ${error?.message}`).toBeNull();
+        expect(await dayAlive(id), "owner ลบแล้วแถวยังอยู่ = policy/grant ไม่ครบ").toBe(false);
+      });
+
+      /**
+       * 🔴 **`trip_days_delete` ผูก `can_write_trip` ไม่ใช่ `owner` — และนั่นคือการตัดสินใจ**
+       * migration เขียนไว้ว่า *"editor ที่เพิ่มวันได้ ก็ถอนวันได้ ซึ่งสมมาตรและอธิบายง่าย"*
+       * ⇒ เคสนี้ตรึงความสมมาตรนั้น · **ต่างจาก `trips.start_date` ที่จำกัด `owner`**
+       *    (เส้นนั้นถูกยิงที่ `engineCrossUser` บล็อก `E5` — คนละชั้น เสริมกัน)
+       */
+      it("🔴 editor ลบวันได้ — `can_write_trip` เหมือน insert/update ไม่ใช่ `owner`", async () => {
+        const id = await mkDay(A, "2026-11-02");
+        const { error } = await B.from("trip_days").delete().eq("id", id);
+        expect(error, `editor ลบวันไม่ได้: ${error?.message}`).toBeNull();
+        expect(
+          await dayAlive(id),
+          "editor ลบแล้วแถวยังอยู่ — ถ้า policy เผลอเขียนเป็น `owner` ข้อนี้จะแดง\n" +
+            "  และเคส viewer ข้างล่างจะเขียวเพราะ **ไม่มีใครลบได้เลย** ไม่ใช่เพราะกัน viewer ถูกจุด",
+        ).toBe(false);
+      });
+    });
+
+    it("🔴 viewer ลบวันไม่ได้", async () => {
+      const id = await mkDay(A, "2026-11-03");
+      // ⚠️ DELETE ที่ถูก RLS กรองคืน 200 ไม่มี error → เช็ค error อย่างเดียวคือเช็คผิดทาง
+      await C.from("trip_days").delete().eq("id", id);
+      expect(
+        await dayAlive(id),
+        "viewer ลบวันสำเร็จ = policy ฝั่งลบกรองด้วยสิทธิ์อ่าน · บทบาท 'ดูอย่างเดียว' ไม่มีอยู่จริง",
+      ).toBe(true);
+      await A.from("trip_days").delete().eq("id", id); // เก็บกวาด
+    });
+
+    it("🔴 คนนอกลบวันของทริปที่ตัวเองไม่ได้อยู่ ไม่ได้ (cross-tenant delete)", async () => {
+      // tripB เป็นของ B · A ไม่ได้เป็นสมาชิก — precondition: ต้องมีวันให้ลบจริง ไม่งั้นเคสเขียวเพราะเซตว่าง
+      const { data: before } = await B.from("trip_days").select("id").eq("trip_id", tripB);
+      expect((before ?? []).length, "tripB ต้องมีวัน — ไม่มี = เคสนี้ยิงไปที่ว่าง").toBeGreaterThan(0);
+      await A.from("trip_days").delete().eq("trip_id", tripB);
+      const { data: after } = await B.from("trip_days").select("id").eq("trip_id", tripB);
+      expect(
+        (after ?? []).length,
+        "A ลบวันของทริป B ได้ = คนนอกทำลายแผนของคนอื่นได้ทั้งทริป",
+      ).toBe((before ?? []).length);
+    });
+
+    it("🔴 anon ลบวันไม่ได้ — กันที่ชั้นสิทธิ์ ก่อนถึง policy", async () => {
+      const id = await mkDay(A, "2026-11-05");
+      await D.from("trip_days").delete().eq("id", id);
+      expect(await dayAlive(id), "anon ลบวันสำเร็จ").toBe(true);
+      await A.from("trip_days").delete().eq("id", id); // เก็บกวาด
+    });
+
+    /**
+     * 🔴 **ราคาของ `D73` — วัดเป็นตัวเลข ไม่ใช่อนุมานจากคำว่า `on delete cascade`**
+     * เจ้าของ: P4 · 4 ก.ย. 2026 · **แทนที่ด่านสแตติก `D73` ที่ทำงานจบแล้ว**
+     *
+     * ```
+     * trip_stops_day_fk … references trip_days(trip_id, id) **on delete cascade**   (20260825140656:109-110)
+     * trip_stops                      = **soft delete** (`D76` · ลบผ่าน RPC เท่านั้น)
+     * ```
+     * 🎯 ***`trip_stops` ถูกออกแบบไม่ให้หายจริง · แต่ cascade เป็น hard delete —
+     *    ลบวันหนึ่งวัน = จุดแวะของวันนั้น **หายจากฐานถาวร รวมถึง tombstone ที่ `E2-AC12` ตั้งใจเก็บไว้***
+     * · RLS ไม่มีผลกับ cascade · ไม่มี trigger · **ไม่มีอะไรส่งเสียง** — นี่คือสิ่งที่ `D73` เตือนไว้ทุกตัวอักษร
+     * · ด่านเดียวที่เหลือคือ `409` ที่ **route** ⇒ ไคลเอนต์ที่ยิง PostgREST ตรงข้ามมันได้ทั้งใบ
+     *   (เคสนี้ *คือ* ไคลเอนต์แบบนั้น — ยิงด้วย `editor` ซึ่งเป็นสิทธิ์ที่ให้กันตามปกติ)
+     *
+     * ⚠️ **เคสนี้ไม่ได้บอกว่าการตัดสินใจผิด** — มันบอกว่า *ราคาคือเท่านี้* และตรึงไว้ให้เห็น
+     *    วันที่มีคนเปลี่ยน FK เป็น `restrict` หรือใส่ soft delete ให้ `trip_days` เคสนี้จะแดง
+     *    **แล้วคนนั้นจะได้อ่านย่อหน้านี้ก่อนตัดสินใจ** ซึ่งคือหน้าที่เดิมของ `D73` เป๊ะ ๆ
+     */
+    it("🔴 ลบวัน = hard delete จุดแวะทั้งวัน **รวม tombstone** — ราคาของ D73 ที่รับไว้แล้ว", async () => {
+      const plan = await A.from("trip_plans").select("id").eq("trip_id", tripD).limit(1).single();
+      if (plan.error) throw new Error(`อ่านแผนของ tripD: ${plan.error.message}`);
+      const planId = plan.data.id as string;
+      const dayId = await mkDay(A, "2026-11-04");
+
+      const mkStop = async () => {
+        const { data, error } = await A.from("trip_stops")
+          .insert({ trip_id: tripD, plan_id: planId, trip_day_id: dayId, kind: "hotel", rank: 0 })
+          .select("id").single();
+        if (error) throw new Error(`สร้างจุดแวะ: ${error.message}`);
+        return data.id as string;
+      };
+      const live = await mkStop();
+      const doomed = await mkStop();
+      // ทำให้ใบที่สองเป็น tombstone — `D76` ตั้งใจให้แถวนี้ **ยังอยู่ในฐาน** หลังผู้ใช้ลบ
+      const soft = await A.rpc("soft_delete_trip_stop", { p_id: doomed });
+      expect(soft.error, `soft delete ล้ม: ${soft.error?.message}`).toBeNull();
+
+      const rows = async (id: string) => {
+        const { data, error } = await admin.from("trip_stops").select("id").eq("id", id);
+        if (error) throw new Error(`admin อ่าน trip_stops: ${error.message}`);
+        return (data ?? []).length;
+      };
+      // 🔴 precondition ทั้งสองใบ — ไม่มีข้อนี้ เคสข้างล่างเขียวได้เพราะแถวไม่เคยมีอยู่
+      expect(await rows(live), "setup: จุดแวะที่ยังใช้งานอยู่ไม่มีในฐาน").toBe(1);
+      expect(
+        await rows(doomed),
+        "setup: tombstone หายไปแล้ว = soft delete กลายเป็น hard delete ⇒ เคสนี้วัดอะไรไม่ได้",
+      ).toBe(1);
+
+      const { error } = await A.from("trip_days").delete().eq("id", dayId);
+      expect(error, `ลบวันไม่ได้: ${error?.message}`).toBeNull();
+
+      expect(
+        [await rows(live), await rows(doomed)],
+        "🔴 ถ้าเลขนี้ไม่ใช่ [0, 0] แปลว่า cascade เปลี่ยนไปแล้ว — ไปอ่านย่อหน้าเหนือเคสนี้ก่อนแก้ตัวเลข\n" +
+          "  [1, x] = FK กลายเป็น restrict/no action (ดีขึ้น — แต่ route จะเริ่มได้ error ที่ไม่เคยเจอ)\n" +
+          "  [0, 1] = มีคนทำให้ tombstone รอด cascade (ดีขึ้น — `E2-AC12` ได้สิ่งที่ต้องการ)",
+      ).toEqual([0, 0]);
     });
 
     it("🔴 anon ไม่ได้อะไรเลยจาก trip_days", async () => {
@@ -1956,34 +2099,32 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  describe("🔴 D73 — การเลื่อนตัดสินใจที่เริ่มแบกน้ำหนักตอนที่ไม่มีใครกลับไปอ่าน", () => {
-    /**
-     * `trip_days` **ไม่มี `deleted_at` และไม่มี policy `DELETE`** โดยตั้งใจ — ยกไปตัดสินพร้อม `E3`
-     * เหตุผลที่เขียนไว้ตอนนั้น (*"วันถูกสร้าง/ลบตามช่วงวันของทริป ไม่ใช่ของที่ผู้ใช้ลบทีละใบ"*)
-     * **ถูกต้องสมบูรณ์ ณ ตอนนั้น เพราะ `trip_stops` ยังไม่มี — ลบวันทิ้งไม่ได้ทำลายอะไร**
-     *
-     * 🔴 **P7 ชี้ว่าวินาทีที่ `trip_stops` ลงพร้อม `on delete cascade` การเลื่อนอันเดิมเริ่มลบข้อมูลผู้ใช้:**
-     * > ผู้ใช้แก้ `end_date` จาก 21 เป็น 19 ต.ค. → ตัวปรับช่วงวันของ `E3` ลบ 2 วันนั้น
-     * > → **cascade ลบจุดแวะของ 2 วันนั้นทิ้งทั้งหมด · RLS ไม่มีผลกับ cascade · ไม่มีอะไรส่งเสียง**
-     * · ต่างชั้นจาก "ลบทริป/ลบแผน" ที่รับความเสี่ยงไว้แล้ว เพราะ **ย่นช่วงวันคือการแก้แผนธรรมดา
-     *   ที่ผู้ใช้ทำระหว่างวางแผนตามปกติ โดยไม่รู้เลยว่ามันลบข้อมูล**
-     *
-     * 🎯 **เคสนี้ไม่ได้กันการลบ — มันกันไม่ให้การตัดสินใจนั้นเกิดขึ้นโดยไม่มีใครเห็นเรื่อง cascade**
-     * ตราบใดที่ `trip_days` ไม่มี policy `DELETE` เส้นทางนั้นไม่มีอยู่ · วันที่มีคนเพิ่ม เคสนี้จะแดง
-     * พร้อมข้อความที่พาไปอ่านเรื่อง cascade **ก่อน**ที่มันจะกินข้อมูลจริง
-     */
-    it("🔴 `trip_days` ต้องยังไม่มี policy DELETE — เพิ่มเมื่อไหร่ต้องอ่านเรื่อง cascade ก่อน", () => {
-      const src = migrationFiles.map((f) => readFileSync(f, "utf8")).join("\n");
-      const hasDelete = /create policy\s+\S+\s+on\s+public\.trip_days\s*\n\s*for delete/i.test(src);
-      expect(
-        hasDelete,
-        "มี policy DELETE บน trip_days แล้ว\n" +
-          "  🔴 ก่อนปล่อยผ่าน: `trip_stops` ห้อยกับ `trip_days` ด้วย cascade หรือยัง\n" +
-          "     ถ้าใช่ → ลบวันหนึ่งวัน = ลบจุดแวะของวันนั้นทั้งหมด **โดย RLS ไม่มีผลและไม่มีอะไรส่งเสียง**\n" +
-          "     ทางเลือกที่คุยไว้: soft delete ที่ `trip_days` · หรือให้ตัวปรับช่วงวันปฏิเสธวันที่ยังมีจุดแวะ",
-      ).toBe(false);
-    });
-  });
+  /**
+   * 🔴 **`D73` ปิดแล้ว 4 ก.ย. 2026 — ด่านสแตติกที่เคยอยู่ตรงนี้ถูก *แทนที่* ไม่ใช่ถูกลบ**
+   *
+   * ของเดิม: `it("trip_days ต้องยังไม่มี policy DELETE — เพิ่มเมื่อไหร่ต้องอ่านเรื่อง cascade ก่อน")`
+   * มันสแกนไฟล์ migration แล้วแดงถ้าเจอ `create policy … on public.trip_days for delete`
+   *
+   * **มันแดงจริงเมื่อ `20260904120000_e5_trip_dates_editable.sql` ลง — และนั่นคือมันทำงานสำเร็จ**
+   * `D73` ไม่เคยกันการลบ · มันกัน **การตัดสินใจที่เกิดขึ้นโดยไม่มีใครอ่านเรื่อง cascade**
+   * ⇒ วันนี้มีคนอ่านและตัดสินใจอย่างเปิดเผย (migration เขียนเรื่อง cascade ไว้เต็ม ·
+   *   `MAY_DELETE` ใน `schemaPins` มีเหตุผลกำกับ · `409` ที่ route เป็นด่านที่รับช่วง)
+   *
+   * 🎯 ***ด่านที่ถามว่า "มีใครตัดสินใจหรือยัง" ตอบได้ครั้งเดียวในชีวิต — เก็บไว้ต่อคือเก็บ `false` ไว้เฉย ๆ***
+   *    สิ่งที่ต้องอยู่ต่อคือ ***ราคา*** ของการตัดสินใจ ซึ่งวัดซ้ำได้ทุกครั้งที่มีคนแก้ FK หรือ policy
+   *
+   * ✅ **ที่อยู่ใหม่ของมัน — เคสสด ไม่ใช่การสแกนข้อความ:**
+   * · บล็อก `E2 — trip_days` ในไฟล์นี้: *"ลบวัน = hard delete จุดแวะทั้งวัน **รวม tombstone**"*
+   *   ยิงจริงแล้ววัดว่าเหลือกี่แถว · แดงทันทีถ้า cascade เปลี่ยนรูป **พร้อมพาไปอ่านเรื่อง `D73`**
+   * · `engineCrossUser.test.ts` บล็อก `E5`: ด่าน `409 STOPS_WOULD_BE_LOST` ที่ route — ยิงเป็นจริงไหม
+   *   และ `force: true` เดินต่อได้จริงไหม
+   * 🔴 **ทั้งสองที่เป็นเคสสด** — ด่านเดิมสแกนข้อความในไฟล์ ซึ่งตอบได้แค่ *"มีคนพิมพ์คำนี้ไหม"*
+   *    ไม่ได้ตอบ *"ฐานทำแบบนั้นจริงไหม"* (`§3.4`: หลักฐานที่ถูกต้อง แต่ตอบคนละคำถาม)
+   *
+   * ⚠️ **ห้ามสร้างด่านสแตติกใบใหม่ที่ถามคำถามเดิม** — คำถาม *"มี policy DELETE หรือยัง"*
+   *    ตอบว่า "มี" ไปแล้วถาวร · ด่านที่ปักคำตอบนั้นไว้จะแดงตลอดกาลหรือเขียวตลอดกาล **ไม่มีทางที่สาม**
+   */
+
 
   // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 E2 — คลังภูมิศาสตร์: อ่านได้ทุกคน เขียนไม่ได้เลย (D54 · D74 · B6)", () => {

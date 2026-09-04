@@ -59,11 +59,43 @@ function stripComments(s: string): string {
  * · `engineTable(db, STOPS_TABLE)` ผ่านตัวแปร → ตัวกรองสตริงตรงตัวมองไม่เห็น
  * **ทั้งสองทางหายไปเงียบ · ไล่ที่ตัว `.order()` เองแทน ไม่มีทางหลบด้วยรูปการประกาศ**
  */
-const OPTS = String.raw`\{[^{}]*ascending:\s*true[^{}]*\}`;
 const SITE = /\.order\(\s*['"]rank['"]/g;
-const PAIR = new RegExp(
-  String.raw`^\.order\(\s*['"]rank['"]\s*,\s*${OPTS}\s*\)\s*\.order\(\s*['"]id['"]\s*,\s*${OPTS}\s*\)`
-);
+
+/**
+ * ออปชันที่ยอมรับได้ — **มีก็ได้ ไม่มีก็ได้ · แต่ถ้ามี ต้องมี `ascending: true`**
+ *
+ * 🔴 **ผ่อนจากฉบับเดิมที่ *บังคับ* ให้เขียนออปชัน — และมันเคยแดงใส่โค้ดที่ถูก** (P4 · 4 ก.ย. 2026)
+ * `.order("rank")` เปล่า ๆ **เรียงขึ้นอยู่แล้วตามค่าปริยายของ PostgREST** ⇒ ถูกต้องสมบูรณ์
+ * · สิ่งที่ต้องกันจริงคือ `{ ascending: false }` ซึ่งยังถูกกันอยู่: กลุ่ม optional จะจับ empty แล้ว
+ *   `\s*\)` จะไปชนกับ `, { ascending: false })` **ไม่ match** ⇒ ยังแดง (มีเคสควบคุมบังคับข้อนี้)
+ * 🎯 ***"เขียนให้ครบ" กับ "ถูกต้อง" ไม่ใช่คำถามเดียวกัน — ด่านนี้ตอบข้อหลังเท่านั้น***
+ */
+const OPTS_OK = String.raw`(?:\s*,\s*\{[^{}]*ascending:\s*true[^{}]*\})?`;
+const pairFor = (tie: string) =>
+  new RegExp(
+    String.raw`^\.order\(\s*['"]rank['"]${OPTS_OK}\s*\)\s*\.order\(\s*['"]${tie}['"]${OPTS_OK}\s*\)`
+  );
+
+/**
+ * 🔴 **คอลัมน์ tie-break ที่ถูกต้อง *ขึ้นกับตาราง* ไม่ใช่ค่าคงที่ `id`** (P4 · 4 ก.ย. 2026)
+ *
+ * ฉบับเดิมบังคับ `.order("id")` เป๊ะ · ฉบับเดิมของคอมเมนต์ข้างบนก็เขียนเผื่อไว้แล้วว่า
+ * *"ถ้าวันหนึ่งตารางอื่นมี `rank` แล้วด่านนี้แดง ให้เติม tie-break ไม่ใช่ถอดเงื่อนไข"*
+ * **แต่มันเผื่อไม่ครบ: มันสมมติว่าทุกตารางมีคอลัมน์ชื่อ `id`** — และ `trip_destinations` ไม่มี
+ * (`primary key (trip_id, city_id)`) ⇒ **ทำตามด่านตรง ๆ เป็นไปไม่ได้**
+ * 🎯 ***ด่านที่สั่งสิ่งที่ทำไม่ได้ = ด่านที่แดงใส่คนที่ทำถูก ซึ่ง `§3.4` บอกว่าจะถูกลบทั้งใบ
+ *    แล้วของที่มันเคยกันไว้ (`trip_stops` ที่ต้องมี tie-break จริง ๆ) จะหายไปด้วย***
+ *
+ * ⚠️ **ทะเบียนนี้ผ่อนด่าน — จึงต้องผิดได้ และมีเคสบังคับความผิดได้ทั้งสองทาง:**
+ * · ชื่อตารางที่ไม่มี `.order("rank")` ในไฟล์แล้ว **ต้องหลุดออก** (ไม่งั้นทะเบียนเริ่มโกหก)
+ * · ป้อน tie-break ของตารางอื่นให้ `trip_stops` **ต้องยังแดง** (ไม่ใช่ผ่านเพราะทะเบียนกว้างขึ้น)
+ */
+const TIE_BREAK: Record<string, string> = {
+  trip_stops: "id",
+  // `trip_destinations` ไม่มีคอลัมน์ `id` · `city_id` คือคอลัมน์ที่ unique ต่อทริป (P1 แก้ · P4 ตรวจ)
+  trip_destinations: "city_id",
+};
+const DEFAULT_TIE_BREAK = "id";
 
 /**
  * 🔴 **ไม่ถามว่า statement จบตรงไหน — ถามว่าข้อความที่ *ติดกัน* ถูกไหม**
@@ -86,17 +118,27 @@ const PAIR = new RegExp(
  * `.order("id")` ต้อง **ติดกับ** `.order("rank")` · แทรก `.limit()` ระหว่างกลางแล้วจะแดงทั้งที่ไม่ผิด
  * รับได้เพราะสัญญาคือ `order by rank, id` — **แต่เป็นการเพิ่มข้อบังคับ ไม่ใช่แค่เปลี่ยนวิธีตรวจ**
  */
-function rankOrderSites(): { idx: number; snippet: string; ok: boolean }[] {
+function rankOrderSites(): { idx: number; snippet: string; ok: boolean; table: string; tie: string }[] {
   const code = stripComments(SRC);
-  const out: { idx: number; snippet: string; ok: boolean }[] = [];
+  const out: { idx: number; snippet: string; ok: boolean; table: string; tie: string }[] = [];
   SITE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = SITE.exec(code)) !== null) {
     const i = m.index;
+    // 🔴 หาว่า `.order("rank")` นี้อยู่บนตารางไหน — **ย้อนหาตัวที่ใกล้ที่สุดก่อนหน้า** ไม่ใช่เดาจากชื่อฟังก์ชัน
+    //    (ชื่อฟังก์ชันบอกว่า *ตั้งใจทำอะไร* ไม่ได้บอกว่า *แตะอะไร* — `TEAM.md §3.4`)
+    //    ⚠️ หาไม่เจอ (เช่นชื่อตารางผ่านตัวแปร) → ตกกลับไปที่ `id` ซึ่งเป็นทางที่ **เข้มกว่า**
+    //       ⇒ พลาดแล้วแดงเกิน ไม่ใช่แดงขาด · "แดงเกินมีคนไปดู แดงขาดไม่มี" (ถ้อยคำของไฟล์นี้เอง)
+    const before = code.slice(0, i);
+    const t = [...before.matchAll(/engineTable\(\s*db\s*,\s*["'`]([a-z_0-9]+)["'`]\s*\)/g)].pop();
+    const table = t ? t[1] : "";
+    const tie = TIE_BREAK[table] ?? DEFAULT_TIE_BREAK;
     out.push({
       idx: i,
+      table,
+      tie,
       snippet: code.slice(Math.max(0, i - 60), i + 90),
-      ok: PAIR.test(code.slice(i)),
+      ok: pairFor(tie).test(code.slice(i)),
     });
   }
   return out;
@@ -146,8 +188,48 @@ describe("E2-AC8 — DAL ต้องคืน trip_stops เรียง (rank,
     const sites = rankOrderSites();
     expect(sites.length).toBeGreaterThanOrEqual(5); // ③④ จักรวาลจากดิสก์ + sentinel ข้างบน
     // 🔴 พ่น *ที่อยู่* ไม่ใช่แค่จำนวน — "แดงที่ไม่มีที่อยู่" ทำให้คนไปไล่ทั้งไฟล์ (P4 ชี้)
-    const bad = sites.filter((x) => !x.ok).map((x) => x.snippet.replace(/\s+/g, " ").trim());
+    const bad = sites
+      .filter((x) => !x.ok)
+      .map((x) => `[${x.table || "?"} → ต้อง tie-break ด้วย "${x.tie}"] ${x.snippet.replace(/\s+/g, " ").trim()}`);
     expect(bad).toEqual([]);
+  });
+
+  /**
+   * 🔴 **เคสควบคุมของ *ตัวผ่อน* — ไม่ใช่ของตัวจับ** (P4 · 4 ก.ย. 2026)
+   * รอบนี้ด่านถูกทำให้ *ยอมรับมากขึ้น* สองทาง (ออปชันไม่บังคับ · tie-break ต่อตาราง)
+   * ⇒ **ต้องพิสูจน์ว่ามันยังจับสิ่งที่เคยจับได้** ไม่งั้น "ผ่อนด่าน" กับ "ถอดด่าน" แยกไม่ออกจากผลรัน
+   */
+  it("🔴 ตัวผ่อนไม่ได้ถอดด่าน — รูปที่ต้องแดง ยังแดงครบทุกทาง", () => {
+    const ok = (src: string, tie: string) => pairFor(tie).test(src);
+    // ✅ ยังต้องผ่าน — รูปที่ถูกต้องทั้งแบบมีออปชันและไม่มี
+    expect(ok('.order("rank").order("id")', "id"), "ไม่มีออปชัน = ค่าปริยาย ascending → ต้องผ่าน").toBe(true);
+    expect(ok('.order("rank", { ascending: true }).order("id", { ascending: true })', "id")).toBe(true);
+    expect(ok('.order("rank").order("city_id", { ascending: true })', "city_id"), "tie-break ของ trip_destinations").toBe(true);
+    // 🔴 ต้องแดง — ทั้งสามทางนี้คือสิ่งที่ด่านมีไว้กัน
+    expect(ok('.order("rank")', "id"), "ไม่มี tie-break เลย ต้องถูกจับ").toBe(false);
+    expect(ok('.order("rank", { ascending: false }).order("id")', "id"), "เรียงลง ต้องถูกจับ").toBe(false);
+    expect(ok('.order("rank").order("id", { ascending: false })', "id"), "tie-break เรียงลง ต้องถูกจับ").toBe(false);
+    expect(ok('.order("rank").limit(50).order("id")', "id"), "แทรก .limit() คั่น ต้องถูกจับ (ข้อบังคับ 'ติดกัน')").toBe(false);
+    // 🔴 **ทะเบียนไม่ได้ทำให้ด่านกว้างขึ้นข้ามตาราง** — `city_id` ไม่ใช่ tie-break ที่ถูกของ `trip_stops`
+    expect(
+      ok('.order("rank").order("city_id")', "id"),
+      "ป้อน tie-break ของตารางอื่นให้ trip_stops แล้วผ่าน = ทะเบียนกลายเป็นช่องหลบ",
+    ).toBe(false);
+  });
+
+  /**
+   * 🔴 **ทะเบียน `TIE_BREAK` ต้องผิดได้** — ชื่อที่ไม่มี `.order("rank")` ในไฟล์แล้ว ต้องหลุดออก
+   * ไม่งั้นมันจะค้างเป็นข้อยกเว้นถาวรของตารางที่เลิกใช้ `rank` ไปแล้ว **แล้วเริ่มเป็นแหล่งความจริงใบที่สอง**
+   */
+  it("ทะเบียน TIE_BREAK ยังตรงกับไฟล์จริง — ชื่อที่ตายแล้วต้องหลุดออก", () => {
+    const tables = new Set(rankOrderSites().map((x) => x.table));
+    const stale = Object.keys(TIE_BREAK).filter((t) => !tables.has(t));
+    expect(
+      stale.sort(),
+      `ตารางพวกนี้ไม่มี .order("rank") ใน db.ts แล้ว — ลบออกจาก TIE_BREAK: ${stale.join(", ")}`,
+    ).toEqual([]);
+    // ควบคุมฝั่งบวก: ตัวหาตารางต้องหาเจอจริง ไม่ใช่คืน "" ทั้งหมดแล้วทะเบียนดูสะอาด
+    expect(tables, 'ตัวหาตารางย้อนหลังไม่เจอ trip_stops — มันคืน "" อยู่หรือเปล่า').toContain("trip_stops");
   });
 
   it.each(stopQueryBlocks())("① $name — deleted_at is null เว้นตัวที่ตั้งชื่อว่าคืน tombstone", ({ name, body }) => {

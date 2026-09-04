@@ -4,6 +4,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
 import { readEnvKey, requireLiveCreds, TEST_COUNTRY_CODES } from "./_helpers";
 import { NO_REALTIME_TRANSPORT } from "@/lib/auth/noRealtime";
+// 🔴 เรียก **DAL ตัวจริง** ไม่ใช่เขียนคิวรีเลียนแบบ — คิวรีที่เทสต์เขียนเองพิสูจน์ได้แค่ว่า
+//    *เทสต์เขียนถูก* ไม่ได้พิสูจน์ว่า *ของที่ route เรียกใช้ถูก* (บทเรียน `trips.name` `fae94fe`)
+import { tripDestinationsOf, type Db } from "@/lib/engine/db";
+// 🔴 อ่านเพดานจาก **แหล่งเดียวกับที่ route บังคับใช้** — ห้าม hardcode เลขซ้ำในเทสต์
+//    เทสต์ที่ปักเลขของตัวเอง จะยัง "ผ่าน" อยู่หลังมีคนเปลี่ยนเพดาน **แล้วเลิกวัดเพดานจริง**
+//    (ไฟล์ `tripLimits.ts` เกิดมาจากการที่สองเส้นถือเลขคนละตัว — เทสต์เป็นเลขใบที่สามได้ง่ายที่สุด)
+import { MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -70,6 +77,11 @@ import { POST as customPlacesPOST, GET as customPlacesGET } from "@/app/api/engi
 import { POST as hiddenPlacesPOST } from "@/app/api/engine/trips/[tripId]/hidden-places/route";
 import { PUT as placeNotesPUT, DELETE as placeNotesDELETE } from "@/app/api/engine/trips/[tripId]/place-notes/route";
 import { GET as membersGET } from "@/app/api/engine/trips/[tripId]/members/route";
+// 🔴 สองใบใหม่ 4 ก.ย. 2026 (P1) — `destinations` อยู่ในโฟลเดอร์ · `tripPATCH` อยู่ที่ **ราก** `[tripId]/`
+//    ใบหลังคือใบแรกในประวัติที่อยู่ที่ราก และเป็นเหตุผลที่ตัวแจงจักรวาลข้างบนต้องเดินหา *ไฟล์*
+import { PUT as destinationsPUT } from "@/app/api/engine/trips/[tripId]/destinations/route";
+import { PATCH as tripPATCH } from "@/app/api/engine/trips/[tripId]/route";
+import { PUT as pinPUT } from "@/app/api/engine/trips/[tripId]/pin/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -162,28 +174,83 @@ async function verdictFor(
  */
 const DB_REJECT_STATUSES = [400, 401, 403, 404, 409] as const;
 
-/** trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ (ชื่อ = ชื่อโฟลเดอร์ route) */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members"]);
+/**
+ * trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ
+ * ชื่อ = พาธของโฟลเดอร์ใต้ `[tripId]/` · `"(root)"` = `route.ts` ที่อยู่ที่ราก (ดู `ROOT_ROUTE`)
+ */
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members", "destinations", "(root)", "pin"]);
 
-/** 10 trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode */
+/**
+ * 🔴 **ชื่อแทน `route.ts` ที่อยู่ที่ราก `[tripId]/` — ไม่ใช่ในโฟลเดอร์ย่อย**
+ * ต้องเป็นชื่อที่ **เป็นชื่อโฟลเดอร์ไม่ได้** ไม่งั้นวันหนึ่งจะชนกับ route จริงแล้วสองอันนับเป็นอันเดียว
+ */
+const ROOT_ROUTE = "(root)";
+
+/**
+ * trip-scoped route จากดิสก์ — denominator ที่เชื่อได้ ไม่ใช่เลข hardcode
+ *
+ * 🔴 **ฉบับก่อนหน้าเดินหา *ไดเรกทอรี* และมันมองไม่เห็น `[tripId]/route.ts`** (P4 · 4 ก.ย. 2026)
+ * ```
+ * engineAttackSurface.routeFiles()   เดินหา **ไฟล์** `route.ts`      → เห็น `[tripId]/route.ts`
+ * ฉบับเก่าของฟังก์ชันนี้              เดินหา **ไดเรกทอรี** ย่อย        → มองไม่เห็นเลย
+ * ```
+ * ⇒ `PATCH /trips/[tripId]` (route ใบแรกในประวัติที่อยู่ที่ *ราก*) **ไม่มีวันโผล่ใน `remaining`**
+ * 🎯 ***ด่าน "ต้องมี probe ครบทุกใบ" ข้างล่างจะเขียวได้ทั้งที่ route ใบนั้นไม่มี probe เลยสักตัว***
+ * · ⚠️ **ไม่ใช่ความเลินเล่อของใคร — เป็นรูปที่จักรวาลของด่านมองไม่เห็นตามโครงสร้าง**
+ *   ตอนเขียนฉบับแรก (26 ส.ค.) *ทุก* route อยู่ในโฟลเดอร์ย่อย ⇒ ไดเรกทอรีกับไฟล์ให้คำตอบเดียวกันเป๊ะ
+ *   **ข้อสมมตินั้นเป็นเท็จวันที่มีคนวาง `route.ts` ที่ราก และไม่มีอะไรส่งเสียงตอนมันเป็นเท็จ**
+ * · ✅ ฉบับนี้เดินหา **ไฟล์** เหมือน `engineAttackSurface` — จักรวาลใบเดียวกัน ไม่ใช่สองใบที่ต้องซิงก์กันเอง
+ *   (`§3.5`: *สำเนาที่ต้องมีคนซิงก์ จะล้าเสมอ*) · มีเคสควบคุมบังคับข้อนี้อยู่ใน describe ข้างล่าง
+ */
 function tripScopedRouteNames(): string[] {
   const base = resolve(process.cwd(), "app/api/engine/trips/[tripId]");
-  try {
-    return readdirSync(base, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && existsSync(join(base, e.name, "route.ts")))
-      .map((e) => e.name)
-      .sort();
-  } catch {
-    return [];
-  }
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) walk(join(dir, e.name), prefix ? `${prefix}/${e.name}` : e.name);
+      else if (e.name === "route.ts") out.push(prefix || ROOT_ROUTE);
+    }
+  };
+  walk(base, "");
+  return out.sort();
 }
 
 // 🔴 แบนเนอร์ความครอบคลุม — **รันเสมอ ไม่ต้องมี creds** เพื่อให้ตัวเลขโผล่ทุกครั้งที่รัน
 //    ไม่ใช่แค่คอมเมนต์ (P1): กันคนเห็นไฟล์เขียวแล้วสรุปว่า cross-user ถูกทดสอบครบ
 describe("E3-AC9 ② — ความครอบคลุม (ต้องเห็นตอนรัน)", () => {
-  it("📊 coverage — เขียวไม่ได้แปลว่าครบ 10 · ตัวเลขต้องโผล่ตอนรัน", () => {
+  /**
+   * 🔴 **เคสควบคุมของ *จักรวาล* ไม่ใช่ของผลลัพธ์** — บังคับสิ่งที่ฉบับไดเรกทอรีทำไม่ได้
+   *
+   * ถ้าใครย้อนตัวแจงกลับไปเดินหา *ไดเรกทอรี* (ซึ่งอ่านสั้นกว่าและดูสะอาดกว่า) เคสนี้แดงทันที
+   * · **เคสตัวเลขข้างล่างจับไม่ได้** — คนที่ย้อนจะแก้ `.toBe(12)` เป็น `.toBe(11)` ให้เขียว
+   *   แล้วทุกอย่างก็ดูปกติ **ในขณะที่ route ที่ราก `[tripId]/` หลุดออกจากด่านทั้งใบ**
+   * 🎯 ***ตัวเลขบอกว่า "นับได้เท่าไหร่" · เคสนี้บอกว่า "นับจากจักรวาลที่ถูกไหม" — คนละคำถาม***
+   */
+  it("🔴 ควบคุมจักรวาล: ตัวแจงต้องเห็น `route.ts` ที่ *ราก* `[tripId]/` ไม่ใช่แค่ในโฟลเดอร์ย่อย", () => {
     const all = tripScopedRouteNames();
-    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(10);
+    expect(
+      existsSync(resolve(process.cwd(), "app/api/engine/trips/[tripId]/route.ts")),
+      "ไม่มี `[tripId]/route.ts` บนดิสก์แล้ว — ถ้าถูกลบจริง ให้ลบเคสนี้ทิ้งพร้อมกัน ไม่ใช่แก้ให้ผ่าน",
+    ).toBe(true);
+    expect(
+      all,
+      "ตัวแจงมองไม่เห็น route ที่ราก — มันกำลังเดินหา *ไดเรกทอรี* อยู่หรือเปล่า (ดูคอมเมนต์ของ tripScopedRouteNames)",
+    ).toContain(ROOT_ROUTE);
+    // ...และต้องยังเห็นของในโฟลเดอร์ย่อยด้วย — ไม่งั้น "แก้ฝั่งหนึ่งพังอีกฝั่ง" จะผ่านเงียบ
+    expect(all, "ตัวแจงมองไม่เห็น route ในโฟลเดอร์ย่อย").toContain("bookings");
+  });
+
+  it("📊 coverage — เขียวไม่ได้แปลว่าครบทุกใบ · ตัวเลขต้องโผล่ตอนรัน", () => {
+    const all = tripScopedRouteNames();
+    // 🔴 **13 ตั้งแต่ 4 ก.ย. 2026 (บ่าย)** — `destinations` · `(root)` (`PATCH`) · `pin`
+    //    ⚠️ รอบเช้าเลขขยับ 10 → 12 ไม่ใช่ 10 → 11: ฉบับก่อนของตัวแจงมองไม่เห็น `(root)` (ดูคอมเมนต์ข้างบน)
+    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(13);
     const covered = [...COVERED].sort();
     const stale = covered.filter((c) => !all.includes(c));
     expect(stale, `COVERED ชี้ route ที่ไม่มีบนดิสก์: ${stale.join(", ")}`).toEqual([]);
@@ -194,7 +261,7 @@ describe("E3-AC9 ② — ความครอบคลุม (ต้องเ�
         : `\n⚠️  AC9② cross-user: ครอบ ${covered.length}/${all.length} trip-route — เขียวไม่ได้แปลว่า cross-user ถูกทดสอบครบ\n` +
           `    เหลือ: ${remaining.join(" · ")}\n`;
     console.warn(banner);
-    // 🔴 ด่านบังคับ "ครบ 10" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ตัวที่ 11 ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
+    // 🔴 ด่านบังคับ "ครบทุกใบ" เปิดแล้ว (probe ครบ 27 ส.ค.) — route ใหม่ใต้ [tripId] ที่ไม่มี probe = แดงที่นี่
     expect(remaining, "มี trip-scoped route ที่ยังไม่มี probe ข้ามผู้ใช้ — เพิ่ม probe ใน describe นี้ก่อน").toEqual([]);
   });
 });
@@ -220,6 +287,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aCookies: Cookie[] = [];
   let bCookies: Cookie[] = [];
   let cCookies: Cookie[] = []; // C = viewer *สมาชิก* ของทริป A (ต่างจาก B คนนอก) — สำหรับ probe members
+  let dCookies: Cookie[] = []; // D = **editor** — เส้นที่แยก `can_write_trip` ออกจาก `owner` (บล็อก E5)
   let aDay = "";
   let aPlan = "";
   let aClient: SupabaseClient;
@@ -368,9 +436,11 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     cCookies = await captureCookies(cUser.session);
     // D = editor ของ tripA — เดิมเพิ่มมาเพื่อเคส cover (ถูกถอนแล้ว) · **เก็บไว้** เพราะ members probe
     // ใช้ยืนยันว่า viewer เห็นสมาชิกครบทั้ง 3 role ไม่ใช่แค่ owner+ตัวเอง
-    // ⚠️ ไม่เก็บคุกกี้ของ D — เคสที่เคยใช้มัน (cover PUT ในนาม editor) ถูกถอนไปแล้ว
-    //    ที่ยังต้องการคือ **ตัวตน** ของ D (`ids.d`) เพื่อให้ members probe เห็นครบ 3 role
-    await makeUser("d");
+    // 🔴 **เก็บคุกกี้ของ D ตั้งแต่ 4 ก.ย. 2026** (เดิมทิ้ง เพราะเคสที่ใช้มันถูกถอนไป)
+    //    บล็อก `E5` ท้ายไฟล์ต้องยิงในนาม *editor* — `trips_update` จำกัด `owner` ต่างจากตารางลูกทุกใบ
+    //    ⇒ **โพรบด้วยคนนอกทริปอย่างเดียวจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง** (P1 กำชับข้อนี้)
+    const dUser = await makeUser("d");
+    dCookies = await captureCookies(dUser.session);
     const dInv = await aClient.from("trip_members").insert({ trip_id: tripA, user_id: ids.d, role: "editor" });
     if (dInv.error) throw new Error(`invite D editor: ${dInv.error.message}`);
     // จุดหมาย 1 ใบบน tripA — ให้เคส GET /trips มี destinations ให้ owner เห็น (A = owner → can_write_trip)
@@ -645,12 +715,40 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     expect(mine!.destinations, "จุดหมายล้ม → destinations ควรว่าง (ไม่ใช่บางส่วน)").toEqual([]);
   });
 
-  it("POST /trips รูป cityIds ผิด → 400 (ไม่ใช่ array · uuid ผิดรูป · เกินเพดาน 20)", async () => {
+  /** uuid ถูกรูป n ใบ *ต่างกันทุกใบ* — route ตัดซ้ำก่อนนับ ส่งตัวเดียวกัน n ครั้งจะเหลือ 1 ไม่ทริกเกอร์เพดาน */
+  const ghostUuids = (n: number) =>
+    Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-0000000000${String(i).padStart(2, "0")}`);
+
+  it("POST /trips รูป cityIds ผิด → 400 (ไม่ใช่ array · uuid ผิดรูป · เกินเพดาน)", async () => {
     expect((await postTrip(aCookies, { title: `bad1-${stamp}`, ...tripDates, cityIds: "notarray" })).status, "cityIds ไม่ใช่ array").toBe(400);
     expect((await postTrip(aCookies, { title: `bad2-${stamp}`, ...tripDates, cityIds: ["not-a-uuid"] })).status, "uuid ผิดรูป").toBe(400);
-    // 21 uuid *ต่างกัน* — route ตัดซ้ำก่อนนับ ส่งตัวเดียวกัน 21 ครั้งจะเหลือ 1 ไม่ทริกเกอร์เพดาน
-    const many = Array.from({ length: 21 }, (_, i) => `00000000-0000-4000-8000-0000000000${String(i).padStart(2, "0")}`);
-    expect((await postTrip(aCookies, { title: `bad3-${stamp}`, ...tripDates, cityIds: many })).status, "เกิน 20 เมือง").toBe(400);
+    const over = await postTrip(aCookies, {
+      title: `bad3-${stamp}`, ...tripDates, cityIds: ghostUuids(MAX_TRIP_DESTINATIONS + 1),
+    });
+    expect(over.status, `เกินเพดาน ${MAX_TRIP_DESTINATIONS} เมือง ควร 400`).toBe(400);
+  });
+
+  /**
+   * 🔴 **เคสควบคุมของเพดาน — *ขอบพอดี* ต้องผ่าน** (P4 · 4 ก.ย. 2026)
+   *
+   * เคสข้างบนยิงแค่ฝั่ง `เกิน → 400` · **ฝั่งเดียวนั้นเขียวได้กับเพดานทุกค่าที่เล็กกว่า `MAX+1`**
+   * รวมถึงเพดานที่พังเป็น `1` ⇒ **เทสต์จะยังเขียว ขณะที่ผู้ใช้เลือกเมืองที่สองไม่ได้**
+   * 🎯 ***"ปฏิเสธของที่ควรปฏิเสธ" พิสูจน์ไม่ได้ว่า "ไม่ปฏิเสธของที่ควรผ่าน" — ต้องมีคู่***
+   * (`§3.4`: เคสควบคุมที่ป้อน *ตัวที่ถูกต้อง* แล้ว assert ว่า **ไม่** ถูกจับ)
+   *
+   * ⚠️ ใช้ uuid ที่ไม่มีในคลัง ⇒ จุดหมายจะล้มที่ FK **ซึ่งไม่เป็นไร**: `POST` คืน `201` + `destinationsError`
+   *    (พฤติกรรมที่เคส `dest-fail` ข้างบนตรึงไว้แล้ว) · สิ่งที่เคสนี้วัดคือ **ด่านเพดานไม่ยิง** เท่านั้น
+   */
+  it("🔴 POST /trips — จำนวนเมือง *เท่ากับ* เพดานพอดี ต้องไม่ถูกปฏิเสธ (คู่ควบคุมของเคสบน)", async () => {
+    const res = await postTrip(aCookies, {
+      title: `edge-${stamp}`, ...tripDates, cityIds: ghostUuids(MAX_TRIP_DESTINATIONS),
+    });
+    const body = await res.clone().text();
+    expect(
+      res.status,
+      `ส่ง ${MAX_TRIP_DESTINATIONS} เมือง (= เพดานพอดี) ควรผ่านด่านเพดาน · ได้ ${res.status}: ${body}\n` +
+        "  🔴 400 ที่นี่ = เพดานแคบไปหนึ่ง (off-by-one) — เคส 'เกินเพดาน' ข้างบนจะเขียวอยู่ดี",
+    ).toBe(201);
   });
 
 
@@ -1012,6 +1110,625 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     if (error) throw new Error(`read tombstone: ${error.message}`);
     const tomb = (data ?? []).filter((r) => (r as { deleted_at: string | null }).deleted_at != null).map((r) => (r as { note: string | null }).note);
     expect(tomb, "🔴 tombstone ถูกเขียนเป็น 't2' = fix 0027896 ถอย (403 ซ่อนการเขียนไว้ข้างหลัง)").toEqual(["t1"]);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🔴 `E5` (4 ก.ย. 2026) — route ใหม่สองใบ · `PUT /destinations` · `PATCH /trips/[tripId]`
+  // เจ้าของ probe: P4-QA/Sec · เจ้าของ route: P1-Lead — **คนเขียน route ≠ คนเขียน probe โดยตั้งใจ**
+  //
+  // ## 🔴 ทำไมบล็อกนี้สร้างทริปของตัวเอง (`tripE`) ไม่ใช้ `tripA`
+  // `PATCH` **แก้ช่วงวันแล้วลบ `trip_days` ที่หลุดช่วง** · `trip_stops_day_fk … on delete cascade`
+  // ⇒ ยิงใส่ `tripA` = ลบจุดแวะที่เคสข้างบนสร้างไว้ **แล้วลำดับการรันจะกลายเป็นส่วนหนึ่งของผล**
+  //    ซึ่งเป็นวิธีที่เมทริกซ์เขียวหลอกได้เงียบที่สุด (ถ้อยคำจากบล็อก `trip_days` ของ `rlsMatrix`)
+  //
+  // ## 🔴 สิ่งที่ทำให้สองใบนี้ต่างจากอีก 10 ใบในไฟล์นี้ — และเป็นหัวใจของบล็อกทั้งบล็อก
+  // ```
+  // ตารางลูกทุกใบ (bookings · stops · days · …)   policy = app.can_write_trip(trip_id)   → editor เขียนได้
+  // `PATCH /trips/[tripId]` แตะ **ตาราง `trips` เอง**  policy = trip_role(id) = 'owner'    → editor เขียน **ไม่ได้**
+  // ```
+  // ⇒ **โพรบด้วย "ผู้ใช้นอกทริป" อย่างเดียวจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง** — คนนอกถูกปฏิเสธ
+  //    ด้วย `can_read_trip` ตั้งแต่ชั้นแรก **ไม่เคยเดินไปถึงเส้น `owner` เลย**
+  // 🎯 ***เส้นที่ `owner` กันไว้ ยิงได้จากคนที่ *มีสิทธิ์เขียนทริปนั้นจริง* เท่านั้น — นั่นคือ `D`***
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe("🔴 E5 — destinations PUT · trip PATCH (editor ≠ owner)", () => {
+    let tripE = "";
+    let ePlan = "";
+
+    beforeAll(async () => {
+      tripE = await mkTrip(aClient, "a"); // 2026-10-11 .. 2026-10-21 (create_trip เติมวันให้ 11 วัน)
+      const inv = await aClient.from("trip_members").insert([
+        { trip_id: tripE, user_id: ids.d, role: "editor" },
+        { trip_id: tripE, user_id: ids.c, role: "viewer" },
+      ]);
+      if (inv.error) throw new Error(`เชิญสมาชิก tripE: ${inv.error.message}`);
+      const plan = await aClient.from("trip_plans").select("id").eq("trip_id", tripE).single();
+      if (plan.error) throw new Error(`อ่านแผนของ tripE: ${plan.error.message}`);
+      ePlan = plan.data.id as string;
+    });
+
+    /** วันของ `tripE` เรียงแล้ว — admin มี `select on trip_days` (ทะเบียนข้อยกเว้นที่ 4) */
+    const daysOf = async (): Promise<string[]> => {
+      const { data, error } = await admin.from("trip_days").select("date").eq("trip_id", tripE);
+      if (error) throw new Error(`admin อ่านวันของ tripE: ${error.message}`);
+      return (data ?? []).map((r) => (r as { date: string }).date).sort();
+    };
+    const dayIdOf = async (date: string): Promise<string> => {
+      const { data, error } = await admin.from("trip_days").select("id").eq("trip_id", tripE).eq("date", date).single();
+      if (error) throw new Error(`admin หาวัน ${date} ของ tripE: ${error.message}`);
+      return data.id as string;
+    };
+    /**
+     * จุดหมายของ `tripE` เรียงตาม `rank` — คืน `city_id` ตามลำดับที่ผู้ใช้จะเห็น
+     * ⚠️ อ่านด้วย client ของ **A** ไม่ใช่ admin: `service_role` ไม่มี grant บน `trip_destinations`
+     *    (ทะเบียน `§3.5` ไม่มีข้อไหนให้) · A เป็นคนละตัวตนกับผู้เรียกในทุกเคสโจมตี จึงยังพอต่อ `P-72`
+     * 🔴 tie-break ด้วย `city_id` ที่นี่ **โดยตั้งใจ** — `rank` ไม่ unique (`D6`) และถ้าไม่ตรึง
+     *    เคสลำดับข้างล่างจะกะพริบเป็นครั้งคราวแทนที่จะแดงคงที่ (ซึ่งจะถูกโทษว่า "เน็ต")
+     */
+    const destsOf = async (): Promise<string[]> => {
+      const { data, error } = await aClient
+        .from("trip_destinations")
+        .select("city_id, rank")
+        .eq("trip_id", tripE)
+        .order("rank")
+        .order("city_id");
+      if (error) throw new Error(`อ่านจุดหมายของ tripE: ${error.message}`);
+      return (data ?? []).map((r) => (r as { city_id: string }).city_id);
+    };
+
+    // ── destinations PUT ────────────────────────────────────────────────────
+    it("① owner เขียนทับรายการจุดหมายได้ · rank เรียงตามลำดับที่ส่ง (ไม่เรียงใหม่)", async () => {
+      // ส่งลำดับที่ *ไม่* ตรงกับการเรียง uuid → ถ้าอ่านกลับได้ลำดับนี้ = rank มาจากตำแหน่งใน array จริง
+      const send = [cityId2, cityId, cityId3];
+      const res = await callAs(aCookies, tripE, destinationsPUT, "PUT", { cityIds: send });
+      expect(res.status, `owner ควร 200: ${await res.clone().text()}`).toBe(200);
+      expect(
+        await destsOf(),
+        "ลำดับจุดหมายไม่ตรงกับที่ส่ง = rank ถูกเรียงใหม่ (ผู้ใช้จัดลำดับเมืองเอง — เรียงใหม่คือบั๊ก)",
+      ).toEqual(send);
+    });
+
+    /**
+     * 🔴 **เคสฝั่งบวกของ `editor` — และมันคือ *ตัวแยก* ของทั้งบล็อก ไม่ใช่ของแถม**
+     *
+     * ถ้าไม่มีข้อนี้ เคส "editor ยิง `PATCH` ไม่ได้" ข้างล่างจะเขียวได้จากสาเหตุที่ผิดสนิท:
+     * คุกกี้ของ D พัง · D ไม่ได้ถูกเชิญจริง · `captureCookies` คืนของว่าง — **ทุกทางให้ผลเหมือนกันเป๊ะ**
+     * 🎯 ***"editor ถูกปฏิเสธเพราะ `owner`" กับ "editor ถูกปฏิเสธเพราะไม่มีตัวตน" อ่านเหมือนกันจากผลรัน***
+     * · ข้อนี้พิสูจน์ว่า D **เขียนทริปนี้ได้จริงในเส้นทางที่ `can_write_trip` คุม** ⇒ การปฏิเสธข้างล่าง
+     *   ชี้ไปที่ `owner` ได้อย่างเดียว
+     */
+    it("🔴 ② editor เขียนจุดหมายได้ (can_write_trip) — ตัวแยกของเคส editor ข้างล่างทั้งหมด", async () => {
+      const send = [cityId3, cityId];
+      const res = await callAs(dCookies, tripE, destinationsPUT, "PUT", { cityIds: send });
+      expect(
+        res.status,
+        `editor ควรเขียนจุดหมายได้ (trip_destinations = can_write_trip): ${await res.clone().text()}\n` +
+          "  🔴 ถ้าข้อนี้แดง **อย่าเชื่อเคส editor ข้างล่าง** — มันจะเขียวเพราะ D ไม่มีตัวตน ไม่ใช่เพราะ owner กัน",
+      ).toBe(200);
+      expect(await destsOf(), "editor เขียนสำเร็จแต่ฐานไม่ขยับ").toEqual(send);
+    });
+
+    it("③ viewer เขียนจุดหมายไม่ได้", async () => {
+      const before = await destsOf();
+      const res = await callAs(cCookies, tripE, destinationsPUT, "PUT", { cityIds: [cityId2] });
+      const { verdict, detail } = await verdictFor(res);
+      expect(verdict, `[destinations] viewer → **${verdict}** (${detail})`).toBe("rejected");
+      expect(await destsOf(), "[destinations] viewer เขียนสำเร็จ (leak)").toEqual(before);
+    });
+
+    it("④ คนนอกทริปเขียนจุดหมายไม่ได้", async () => {
+      const before = await destsOf();
+      const res = await callAs(bCookies, tripE, destinationsPUT, "PUT", { cityIds: [cityId2] });
+      const { verdict, detail } = await verdictFor(res);
+      expect(verdict, `[destinations] คนนอก → **${verdict}** (${detail})`).toBe("rejected");
+      expect(await destsOf(), "[destinations] คนนอกเขียนเข้าทริป A สำเร็จ (leak)").toEqual(before);
+    });
+
+    /**
+     * 🔴 **กิ่งที่ไม่มีเคสไหนเดิน: คำขอที่ *มีแต่การลบ*** — `insert`/`update` ถูกข้ามทั้งคู่
+     *
+     * route ตรวจ `0 แถว = RLS กรอง` ไว้ **สองจุด** (`insertTripDestinations2` · `updateTripDates`)
+     * **แต่ไม่ได้ตรวจที่ `deleteTripDestinationsExcept`** — และมีเส้นทางที่ *ทั้งคำขอ* เดินผ่านแค่จุดนั้น:
+     * ```
+     * สถานะ = [X, Y] · viewer ส่ง [X]   → toInsert = []  · toRerank = []  (X ยังอยู่อันดับ 0)
+     *                                   → เหลือแต่ก้าว ③ delete → RLS กรอง → 0 แถว · **ไม่มี error**
+     * ```
+     * ⇒ ฐานไม่ขยับ (ปลอดภัย ✅) **แต่ผู้เรียกได้ `200 { ok: true }`**
+     * 🎯 ***คำตอบบอกว่าบันทึกแล้ว ขณะที่ไม่มีอะไรถูกบันทึก — อาการ "บันทึกแล้วไม่เปลี่ยน" ที่ทีมไล่กันทั้งสัปดาห์***
+     * · **สองข้อนี้แยกกันจริง ๆ และผมยืนยันแยกกัน**: ข้อความปลอดภัย (ฐาน) กับข้อความซื่อสัตย์ (คำตอบ)
+     */
+    it("🔴 ⑤ คำขอที่มีแต่การลบ — ฐานต้องไม่ขยับ **และ** ต้องไม่ตอบว่าบันทึกสำเร็จ", async () => {
+      // ตั้งสถานะให้แน่นอนก่อน (ไม่พึ่งลำดับการรันของเคสข้างบน)
+      const setup = await callAs(aCookies, tripE, destinationsPUT, "PUT", { cityIds: [cityId3, cityId] });
+      expect(setup.status, `setup ควร 200: ${await setup.clone().text()}`).toBe(200);
+      const before = await destsOf();
+      expect(before, "setup ไม่ได้ผล — เคสนี้จะไม่ได้เดินกิ่ง delete-only").toEqual([cityId3, cityId]);
+
+      // viewer ขอให้เหลือแค่ใบแรก = ก้าว ① ② ไม่มีอะไรทำ · เหลือแต่ ③
+      const res = await callAs(cCookies, tripE, destinationsPUT, "PUT", { cityIds: [cityId3] });
+      const body = await res.clone().json().catch(() => null);
+
+      // ครึ่งที่หนึ่ง — **ความปลอดภัย**: RLS ต้องกันจริง
+      expect(
+        await destsOf(),
+        "🔴 viewer ลบจุดหมายของทริปสำเร็จ (leak) — RLS ฝั่ง delete ไม่ได้กัน",
+      ).toEqual(before);
+
+      // ครึ่งที่สอง — **ความซื่อสัตย์ของคำตอบ**: 2xx แปลว่า "บันทึกแล้ว" ซึ่งเป็นเท็จ
+      const { verdict, detail } = await verdictFor(res);
+      expect(
+        verdict,
+        `[destinations/delete-only] viewer → **${verdict}** (${detail})\n` +
+          `  🔴 leak ที่นี่ = **ตอบ ok:true ทั้งที่ฐานไม่ขยับ** (ยืนยันแล้วข้างบนว่าไม่ขยับ)\n` +
+          "     route ตรวจ 0-แถว ที่ insert และ update แล้ว **แต่ไม่ได้ตรวจที่ delete** —\n" +
+          `     body: ${JSON.stringify(body)}`,
+      ).toBe("rejected");
+    });
+
+    /**
+     * 🔴 **tie-break ของ `rank` — เคส ① ข้างบน *ไม่ได้* วัดมัน และผมเกือบปล่อยผ่าน** (P1 ทัก · P4 รับ)
+     *
+     * เคส ① ส่ง 3 เมือง ได้ `rank` `0·1·2` — **ไม่ซ้ำสักคู่**
+     * ⇒ `.order("city_id")` ที่ P1 เพิ่งเติมเข้า `tripDestinationsOf` **ไม่เคยถูกเรียกใช้ตัดสินอะไรเลย**
+     * 🎯 ***เคส ① จะเขียวเท่ากันเป๊ะไม่ว่าจะมี tie-break หรือไม่มี — คือนิยามของเคสที่ไม่ได้วัดสิ่งที่มันอ้าง***
+     *
+     * ## สภาพที่ต้องมี: สองเมืองถือ `rank` เดียวกัน
+     * เกิดจริงเมื่อ **ก้าว ② ของ `PUT` ล้มกลางทาง** (จัดลำดับสำเร็จบางใบ) — สภาพนั้นสร้างผ่าน route ไม่ได้
+     * ⇒ สร้างที่ฐานตรง ๆ ในนาม **owner** (A เขียน `trip_destinations` ผ่าน RLS ได้อยู่แล้ว)
+     *   **ไม่ใช่การโกงเทสต์** — เรากำลังจำลอง *สภาพของข้อมูล* ที่เส้นทางจริงผลิตได้ แล้ววัด *ตัวอ่าน*
+     *
+     * ## ⚠️ ขอบเขตของหลักฐาน — เขียนไว้เพราะคนอ่านไม่มีทางรู้ถ้าไม่เขียน (`§3.4`)
+     * เคสนี้พิสูจน์ว่า ***ลำดับที่ประกาศไว้เป็นลำดับที่ได้กลับมาจริง***
+     * · 🔴 **มันไม่ได้พิสูจน์ว่า *ถอด `.order("city_id")` ออกแล้วพัง*** — Postgres คืนลำดับเดิม
+     *   โดยบังเอิญได้ (ตารางเล็ก · ไม่มี parallel scan) ⇒ ทิศแดงของข้อนี้ **ยิงให้เชื่อถือได้ไม่ได้**
+     *   และผมจะไม่แกล้งว่ายิงแล้ว · **นี่คือข้อจำกัดของสิ่งที่วัดได้ ไม่ใช่ของเคส**
+     */
+    it("🔴 ⑤ᐟ tie-break — `rank` ซ้ำแล้วลำดับต้องคงที่ (เคส ① ไม่ได้แตะเงื่อนไขนี้เลย)", async () => {
+      const setup = await callAs(aCookies, tripE, destinationsPUT, "PUT", {
+        cityIds: [cityId2, cityId, cityId3],
+      });
+      expect(setup.status, `setup ควร 200: ${await setup.clone().text()}`).toBe(200);
+
+      // บังคับให้สองใบแรกถือ rank เดียวกัน — สภาพที่ก้าว ② ล้มกลางทางจะผลิตได้
+      const dup = await aClient
+        .from("trip_destinations").update({ rank: 0 }).eq("trip_id", tripE).eq("city_id", cityId);
+      expect(dup.error, `setup: ตั้ง rank ซ้ำไม่ได้: ${dup.error?.message}`).toBeNull();
+      // 🔴 ยืนยันว่า **สภาพที่เคสนี้ต้องการเกิดขึ้นจริง** — ไม่งั้นเคสเขียวโดยไม่เคยมี rank ซ้ำ
+      const { data: raw, error: rawErr } = await aClient
+        .from("trip_destinations").select("city_id, rank").eq("trip_id", tripE);
+      if (rawErr) throw new Error(`อ่าน rank ดิบ: ${rawErr.message}`);
+      const ranks = (raw ?? []).map((r) => (r as { rank: number }).rank);
+      expect(
+        ranks.length - new Set(ranks).size,
+        `setup: ไม่มี rank ซ้ำเลย (${JSON.stringify(ranks)}) — เคสนี้จะไม่ได้แตะ tie-break`,
+      ).toBeGreaterThan(0);
+
+      // อ่านผ่าน **DAL ตัวจริงที่ route เรียก** ไม่ใช่คิวรีที่เทสต์เขียนเอง
+      const { data, error } = await tripDestinationsOf(aClient as unknown as Db, tripE);
+      if (error) throw new Error(`tripDestinationsOf: ${error.message}`);
+      const got = (data ?? []).map((r) => (r as unknown as { city_id: string }).city_id);
+      // rank 0 มีสองใบ → tie-break ต้องเรียงด้วย city_id ขึ้น · แล้วตามด้วย rank 1 (cityId3)
+      const tied = [cityId2, cityId].sort();
+      expect(
+        got,
+        "ลำดับที่ได้ไม่ตรงกับสัญญา `order by rank, city_id`\n" +
+          "  🔴 ถ้าเห็นสองใบแรกสลับกัน = tie-break ไม่ได้ทำงาน ⇒ ผู้ใช้สองเครื่องเห็นลำดับเมืองต่างกัน",
+      ).toEqual([...tied, cityId3]);
+    });
+
+    /**
+     * 🔴 **เพดานของ `PUT` ต้องเป็นค่าเดียวกับ `POST` — และเคสนี้วัด *พฤติกรรม* ไม่ใช่ *การ import***
+     * เจ้าของ: P4 (พบว่าสองเส้นถือคนละค่า) · P1 (รวมเป็น `MAX_TRIP_DESTINATIONS`) · 4 ก.ย. 2026
+     *
+     * `import` ค่าเดียวกันทำให้ค่า *ตรงกัน* แต่ไม่ได้พิสูจน์ว่า **route เอาไปใช้จริง** —
+     * ใครลบบรรทัด `if (raw.length > MAX_TRIP_DESTINATIONS)` ทิ้ง `import` ยังอยู่ `tsc` ยังเขียว
+     * 🎯 ***ค่าที่ถูก import แล้วไม่ถูกใช้ อ่านเหมือนค่าที่ถูกบังคับใช้ — จากทุกเครื่องมือที่ไม่ใช่การยิงจริง***
+     *
+     * ## คู่ควบคุมโดยไม่ต้อง seed เมืองจริง 20 ใบ — แยกด้วย *รูปของคำตอบ*
+     * ```
+     * MAX+1 ใบ → 400 + **ไม่มี** `unknownCityIds`  ← ตกที่ด่านเพดาน (ก่อนแตะคลัง)
+     * MAX   ใบ → 400 + **มี**   `unknownCityIds`  ← ผ่านด่านเพดานแล้ว ไปตกที่ "ไม่รู้จักเมือง"
+     * ```
+     * ⇒ ทั้งคู่เป็น `400` เหมือนกัน **แต่คนละด่าน** · ถ้าเพดานพังเป็น `1` เคสล่างจะไม่มี `unknownCityIds`
+     *   ⇒ **จับ off-by-one และเพดานที่แคบเกินได้ โดยไม่ต้องมีเมืองจริงในคลัง**
+     */
+    it("🔴 ⑤ᐢ PUT /destinations — เพดานเดียวกับ POST · ขอบพอดีต้องผ่านด่านเพดาน", async () => {
+      const ghosts = (n: number) =>
+        Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`);
+      const before = await destsOf();
+
+      const over = await callAs(aCookies, tripE, destinationsPUT, "PUT", { cityIds: ghosts(MAX_TRIP_DESTINATIONS + 1) });
+      const overBody = (await over.json()) as { error?: string; unknownCityIds?: string[] };
+      expect(over.status, `เกินเพดาน ${MAX_TRIP_DESTINATIONS} ควร 400`).toBe(400);
+      expect(
+        overBody.unknownCityIds,
+        `เกินเพดานแล้วยังไปตรวจคลังต่อ — ด่านเพดานไม่ได้ยิง (ได้: ${JSON.stringify(overBody)})`,
+      ).toBeUndefined();
+
+      const edge = await callAs(aCookies, tripE, destinationsPUT, "PUT", { cityIds: ghosts(MAX_TRIP_DESTINATIONS) });
+      const edgeBody = (await edge.json()) as { error?: string; unknownCityIds?: string[] };
+      expect(
+        edgeBody.unknownCityIds?.length,
+        `ส่ง ${MAX_TRIP_DESTINATIONS} ใบ (= เพดานพอดี) แล้วไม่ถึงด่านคลัง ⇒ เพดานแคบไปหนึ่ง\n` +
+          `  ได้: ${JSON.stringify(edgeBody)}`,
+      ).toBe(MAX_TRIP_DESTINATIONS);
+
+      // 🔴 ฐานต้องไม่ขยับจากคำขอที่ล้มทั้งสองใบ — ด่านทั้งคู่ต้องยิง *ก่อน* แตะฐาน
+      //    เทียบกับ `before` ที่จับไว้ตอนต้นเคส · **ห้ามเทียบ `destsOf()` กับ `destsOf()`**
+      //    ซึ่งเป็นจริงเสมอตามนิยาม (ผมเขียนแบบนั้นในฉบับแรกของเคสนี้ แล้วจับได้ตอนอ่านซ้ำ)
+      expect(
+        await destsOf(),
+        "คำขอที่ถูกปฏิเสธด้วยเพดาน/คลัง ไปเขียนฐานแล้ว = ด่านยิงหลังเขียน",
+      ).toEqual(before);
+    });
+
+    // ── PATCH /trips/[tripId] ───────────────────────────────────────────────
+    it("⑥ owner แก้ช่วงวันได้ · ส่งค่าเดิมซ้ำ = 200 added:0 removed:0 (ไม่ใช่ 400)", async () => {
+      const before = await daysOf();
+      expect(before.length, "tripE ควรมี 11 วันจาก create_trip").toBe(11);
+      const res = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-21",
+      });
+      expect(res.status, `ส่งค่าเดิมควร 200: ${await res.clone().text()}`).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, added: 0, removed: 0 });
+      expect(await daysOf(), "ส่งค่าเดิมแล้ววันเปลี่ยน").toEqual(before);
+    });
+
+    it("⑦ owner ขยายช่วงวัน → วันใหม่ถูกเติมจริง", async () => {
+      const res = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-23",
+      });
+      expect(res.status, `ขยายช่วงควร 200: ${await res.clone().text()}`).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, added: 2, removed: 0 });
+      const days = await daysOf();
+      expect(days.length, "ขยาย 2 วันแล้วจำนวนวันไม่ขยับ").toBe(13);
+      expect(days.at(-1), "วันสุดท้ายต้องเป็นวันใหม่").toBe("2026-10-23");
+    });
+
+    /**
+     * 🔴 **เส้นที่ `owner` กันไว้ และมีแค่ `editor` เท่านั้นที่ยิงถึง**
+     * ส่ง **ช่วงวันเดิม** โดยตั้งใจ ⇒ `toAdd = 0` · `toRemove = 0` ⇒ route เดินกิ่งลัดที่เรียก
+     * `updateTripDates` **ตัวเดียว ไม่แตะอะไรอื่นเลย** ⇒ ผลที่ได้พูดถึง `trips_update` ล้วน ๆ
+     *
+     * ⚠️ **กับดักที่ P1 เตือนไว้เอง: `409` อยู่ใน `DB_REJECT_STATUSES`**
+     * `PATCH` มีกิ่ง `409 STOPS_WOULD_BE_LOST` ที่ยิง **ก่อนแตะฐาน** ⇒ ถ้าเคสนี้บังเอิญได้ `409`
+     * `verdictFor` จะอ่านว่า *"ถูกปฏิเสธ"* ทั้งที่ **ยังไม่เคยเดินไปถึง RLS เลย**
+     * 🎯 ***`rejected` ที่ถูกต้อง กับ `rejected` ที่มาจากด่านคนละใบ อ่านเหมือนกันเป๊ะจากผลรัน***
+     * ⇒ ยืนยัน `code` ตรง ๆ ด้วย ไม่พึ่งตัวจำแนกอย่างเดียว
+     */
+    it("🔴 ⑧ editor แก้ช่วงวันไม่ได้ — `trips_update` จำกัด owner (และต้องไม่ใช่ 409 คนละด่าน)", async () => {
+      // 🔴 precondition เดียวกับ ⑨ — "editor ถูกปฏิเสธ" เป็นจริงฟรีถ้า `PATCH` ปฏิเสธทุกคน
+      const warm = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-23", force: true,
+      });
+      expect(
+        warm.status,
+        `precondition: owner ต้องแก้ช่วงวันได้ในรอบนี้ · ได้ ${warm.status}: ${await warm.clone().text()}\n` +
+          "  🔴 ถ้าข้อนี้แดง เคส editor ข้างล่างไม่ได้พิสูจน์ว่า `owner` กัน — มันจะเขียวเพราะไม่มีใครผ่านเลย",
+      ).toBe(200);
+
+      const before = await daysOf();
+      const res = await callAs(dCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-23", // เท่าเดิม → กิ่งลัด → แตะแค่ trips
+      });
+      const body = (await res.clone().json().catch(() => null)) as { code?: string } | null;
+      expect(
+        body?.code,
+        `[trip PATCH] editor ได้ 409 STOPS_WOULD_BE_LOST — นั่นคือด่านข้อมูลหาย **ไม่ใช่ RLS**\n` +
+          "  เคสนี้จะเขียวโดยไม่ได้พิสูจน์ว่า owner กันจริง (ส่งช่วงวันเดิมแล้วยังเข้ากิ่งนั้น = route เปลี่ยนรูป)",
+      ).not.toBe("STOPS_WOULD_BE_LOST");
+      const { verdict, detail } = await verdictFor(res);
+      expect(
+        verdict,
+        `[trip PATCH] editor → **${verdict}** (${detail})\n` +
+          "  🔴 leak = editor แก้ช่วงวันของทริปได้ ทั้งที่ `trips_update` เขียนว่า owner เท่านั้น\n" +
+          "  ⚠️ เคส ② ข้างบนพิสูจน์แล้วว่า D เขียนทริปนี้ได้จริง ⇒ ปฏิเสธที่นี่ชี้ไปที่ `owner` ได้อย่างเดียว",
+      ).toBe("rejected");
+      expect(await daysOf(), "[trip PATCH] editor ถูกปฏิเสธแต่วันเปลี่ยน").toEqual(before);
+    });
+
+    /**
+     * 🔴 **ผลข้างเคียงจากคำขอที่ถูกปฏิเสธ — `PATCH` คร่อมสองระดับสิทธิ์ในคำขอเดียว**
+     * เจ้าของข้อ: P4 (อ่านโค้ดเจอ · ยิงยืนยันในเคสนี้) · 4 ก.ย. 2026
+     *
+     * ```
+     * ① insertTripDays    trip_days_insert = can_write_trip   → **editor ผ่าน**
+     * ② updateTripDates   trips_update     = owner            → **editor ไม่ผ่าน** → 403
+     * ③ delete            ไม่ถูกเรียก (② return ไปแล้ว)
+     * ```
+     * ⇒ ผู้เรียกได้ `403 "ไม่มีสิทธิ์"` **ขณะที่วันใหม่ถูกเขียนลงฐานไปแล้วจริง**
+     *   และมันค้างอยู่ **นอกช่วง `start_date`–`end_date` ของทริปตลอดไป** —
+     *   ซึ่งเป็นสภาพที่ route ใบนี้เกิดมาเพื่อกำจัด
+     *
+     * 🎯 ***บล็อก "ล้มกลางทางแล้วเหลืออะไร" ของ route วิเคราะห์ครบทุกก้าวว่า *ก้าวนี้ล้ม* แล้วเหลืออะไร
+     *    แต่ไม่มีบรรทัดไหนถาม *"ก้าวนี้สำเร็จ แล้วก้าวถัดไปปฏิเสธด้วยสิทธิ์คนละชุด"*** —
+     *    เพราะไม่มี route ใบไหนก่อนหน้านี้คร่อมสองระดับสิทธิ์ จึงไม่มีบทเรียนเดิมให้ยืม
+     *
+     * ⚠️ **ไม่ใช่การยกระดับสิทธิ์** — editor เพิ่มวันเองผ่าน PostgREST ได้อยู่แล้ววันนี้
+     *    สิ่งที่ผิดคือ *คำตอบที่เป็นเท็จบางส่วน* + *สภาพข้อมูลที่ขัดกับตัวมันเอง*
+     * ✅ ทางแก้ที่เสนอ (P1 ตัดสิน): ย้าย `updateTripDates` ขึ้นเป็นก้าวแรก — มันเป็นก้าวเดียวที่
+     *    ตอบได้ว่า *ผู้เรียกเป็น owner ไหม* และมันย้อนได้ ⇒ กฎ *"สิ่งที่ย้อนไม่ได้ไปทีหลัง"* ยังจริง
+     */
+    it("🔴 ⑨ editor ขยายช่วงวันแล้วถูกปฏิเสธ — ต้องไม่มีวันใหม่ค้างในฐาน", async () => {
+      // 🔴 **precondition ในเคสเดียวกัน — ไม่พึ่งลำดับการรัน และมีเหตุผลที่หนักกว่าความสะอาด**
+      //
+      // เคสนี้ assert ว่า *ไม่มีอะไรเปลี่ยน* หลัง editor ถูกปฏิเสธ · **แต่ "ไม่มีอะไรเปลี่ยน"
+      // เป็นจริงโดยอัตโนมัติถ้า `PATCH` ปฏิเสธ *ทุกคน*** — เช่นวันที่ migration
+      // `20260904120000` ยังไม่ได้ลงฐาน (ไม่มี `grant update (start_date, end_date)`)
+      // ⇒ **owner ก็แก้ไม่ได้ · editor ถูกปฏิเสธ · ฐานไม่ขยับ · เคสนี้เขียว**
+      //
+      // 🎯 ***และมันจะเขียวโดยตอบคำถามที่ผิด*** — คำถามคือ *"ก้าวที่ตรวจสิทธิ์เข้มสุดมาก่อนแล้วจริงไหม"*
+      //    ไม่ใช่ *"มีอะไรเปลี่ยนไหม"* · เขียวแบบนั้นจะถูกอ่านว่า **การย้ายลำดับได้ผล** ทั้งที่ยังไม่เคยถูกทดสอบ
+      // ⇒ พิสูจน์ก่อนว่า **owner เดินเส้นนี้ได้จริงในรอบนี้** แล้วผลของ editor ถึงมีความหมาย
+      const warm = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-24", force: true,
+      });
+      expect(
+        warm.status,
+        `precondition: owner ต้องขยายช่วงวันได้ในรอบนี้ · ได้ ${warm.status}: ${await warm.clone().text()}\n` +
+          "  🔴 403/502 ที่นี่ = เส้นทางแก้ช่วงวันใช้ไม่ได้กับ **ทุกคน** (migration ยังไม่ลงฐาน?)\n" +
+          "     ⇒ ผลของ editor ข้างล่างจะเขียวโดยไม่ได้พิสูจน์เรื่องลำดับก้าวเลย — **หยุดที่นี่ดีกว่าเขียวหลอก**",
+      ).toBe(200);
+
+      const before = await daysOf();
+      const res = await callAs(dCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-25", // ขยาย 2 วัน → เดินก้าว ① ก่อนโดน ② ปฏิเสธ
+      });
+      const { verdict, detail } = await verdictFor(res);
+      expect(verdict, `[trip PATCH/ขยาย] editor → **${verdict}** (${detail})`).toBe("rejected");
+      const after = await daysOf();
+      expect(
+        after,
+        `🔴 คำขอถูกปฏิเสธ (${detail}) **แต่วันใหม่ถูกเขียนลงฐานแล้ว**\n` +
+          `  ก่อน: ${before.length} วัน (ถึง ${before.at(-1)}) · หลัง: ${after.length} วัน (ถึง ${after.at(-1)})\n` +
+          "  ⇒ ก้าว ① insertTripDays (can_write_trip) สำเร็จ ก่อนก้าว ② updateTripDates (owner) ปฏิเสธ\n" +
+          "  ⇒ ทริปมีวันอยู่นอกช่วง start_date–end_date ค้างถาวร โดยผู้ใช้ได้คำตอบว่า 'ไม่มีสิทธิ์'",
+      ).toEqual(before);
+    });
+
+    it("⑩ คนนอกทริปแก้ช่วงวันไม่ได้", async () => {
+      const before = await daysOf();
+      const res = await callAs(bCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-15",
+      });
+      const { verdict, detail } = await verdictFor(res);
+      expect(verdict, `[trip PATCH] คนนอก → **${verdict}** (${detail})`).toBe("rejected");
+      expect(await daysOf(), "[trip PATCH] คนนอกแก้ช่วงวันสำเร็จ (leak)").toEqual(before);
+    });
+
+    /**
+     * 🔴 **`409 STOPS_WOULD_BE_LOST` — ด่านเดียวที่ยืนอยู่ระหว่าง "ย่อวัน" กับ "จุดแวะหายจริง"**
+     *
+     * `D73` (`rlsMatrix`) เลื่อนการตัดสินเรื่องนี้ไว้ พร้อมเขียนว่ายอมได้สองทาง: soft delete
+     * **หรือ** *"ให้ตัวปรับช่วงวันปฏิเสธวันที่ยังมีจุดแวะ"* · migration `20260904120000` เลือกทางที่สอง
+     * **แต่ทำเป็น "เตือนแล้วผ่านได้ด้วย `force`" ไม่ใช่ "ปฏิเสธ"** ⇒ เป็นการผ่อนจากถ้อยคำเดิม
+     * ⇒ เคสนี้จึงต้องพิสูจน์ **ทั้งสองครึ่ง**: ด่านยิงจริงเมื่อมีของจะหาย · และ `force` เดินต่อได้จริง
+     *
+     * ⚠️ **ขอบเขตที่ต้องอ่านคู่กันเสมอ:** ด่านนี้อยู่ที่ *route* ไม่ใช่ที่ฐาน · `grant delete on trip_days`
+     *    เปิดให้ **editor ยิง PostgREST ตรงแล้ว cascade ลบ `trip_stops` ได้โดยไม่ผ่านด่านนี้เลย**
+     *    (`trip_stops_day_fk … on delete cascade` · `20260825140656:109-110`)
+     *    🎯 ***`trip_stops` เป็น soft delete แต่ cascade เป็น hard delete*** — เคสสดของช่องนั้นอยู่ที่
+     *    `rlsMatrix` บล็อก `trip_days` · **ที่นี่วัดเฉพาะด่านของ route**
+     */
+    it("🔴 ⑪ ย่อช่วงวันที่มีจุดแวะ → 409 พร้อมจำนวนจริง · `force: true` ผ่าน", async () => {
+      // 🔴 **ตั้งสถานะให้แน่นอนก่อน — ห้ามพึ่งผลของเคส ⑨** ซึ่งกำลังวัดว่ามีวันรั่วค้างหรือเปล่า
+      //    ถ้าเคสนี้พึ่งสภาพที่ ⑨ ทิ้งไว้ **ผลของ ⑨ จะกลายเป็นตัวแปรของ ⑪** — และเวลา ⑨ เจอบั๊กจริง
+      //    ⑪ จะแดงตามไปด้วยพร้อมข้อความที่ชี้ผิดที่ (`losingDates` ไม่ตรง) แล้วคนจะไปไล่หาบั๊กที่ไม่มี
+      // 🎯 ***เคสที่ผลของมันขึ้นกับ "เคสก่อนหน้าเจอบั๊กหรือเปล่า" ไม่ได้วัดสิ่งที่มันอ้างว่าวัด***
+      const norm = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-23", force: true,
+      });
+      expect(norm.status, `setup: ตั้งช่วงวันให้แน่นอนควร 200: ${await norm.clone().text()}`).toBe(200);
+      expect((await daysOf()).length, "setup: ควรได้ 13 วันพอดีก่อนเริ่มเคสนี้").toBe(13);
+
+      const lastDay = await dayIdOf("2026-10-23");
+      const mk = await postAs(aCookies, tripE, stopsPOST, { planId: ePlan, tripDayId: lastDay, kind: "hotel" });
+      expect(mk.status, `setup: สร้างจุดแวะในวันสุดท้ายควร 201: ${await mk.clone().text()}`).toBe(201);
+
+      const shrink = () => callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-21",
+      });
+
+      const blocked = await shrink();
+      expect(blocked.status, `ย่อวันที่มีจุดแวะควร 409: ${await blocked.clone().text()}`).toBe(409);
+      const body = (await blocked.json()) as { code?: string; losingStops?: number; losingDates?: string[] };
+      expect(body.code).toBe("STOPS_WOULD_BE_LOST");
+      // 🔴 ยืนยัน *จำนวนจริง* ไม่ใช่แค่ "มากกว่า 0" — ตัวเลขนี้คือสิ่งที่ผู้ใช้ใช้ตัดสินใจ
+      expect(body.losingStops, "จำนวนจุดแวะที่จะหายไม่ตรงกับที่สร้างไว้ 1 จุด").toBe(1);
+      expect(body.losingDates?.sort(), "วันที่จะถูกถอนไม่ตรง").toEqual(["2026-10-22", "2026-10-23"]);
+      expect((await daysOf()).length, "409 แล้วยังแตะฐาน = ด่านยิงหลังเขียน").toBe(13);
+
+      const forced = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-21", force: true,
+      });
+      expect(forced.status, `force ควร 200: ${await forced.clone().text()}`).toBe(200);
+      expect(await forced.json()).toMatchObject({ ok: true, added: 0, removed: 2 });
+      expect((await daysOf()).length, "force แล้ววันส่วนเกินยังอยู่").toBe(11);
+    });
+
+    /**
+     * 🔴 **`409` ต้องนับเฉพาะจุดแวะที่ *ยังอยู่จริง* — `trip_stops` เป็น soft delete (`D76`)**
+     * เจ้าของข้อ: P4 · 4 ก.ย. 2026 (ด่าน `stopOrderingContract` จับ `stopCountInDays` ได้ก่อน)
+     *
+     * ```
+     * ผู้ใช้ลบจุดแวะของวันท้ายออกหมด  →  ย่อทริป
+     * → 409 "จะเสียจุดแวะ N จุด"  ทั้งที่ **ไม่มีจุดแวะเหลืออยู่เลยสักจุด**
+     * ```
+     * 🎯 ***ด่านที่เกิดมาเพื่อกันข้อมูลหาย กลายเป็นด่านที่บล็อกการกระทำที่ไม่ทำให้อะไรหายเลย***
+     * ⇒ ผู้ใช้เรียนรู้ว่าต้องกด `force` ทุกครั้ง **ซึ่งฆ่าค่าของด่านทั้งใบ** — แพงกว่าตัวเลขที่ผิด
+     *
+     * ⚠️ **เคส ⑪ ข้างบนคือ positive control ของเคสนี้** — มันพิสูจน์ว่า `409` ยิงเป็นเมื่อมีของจริง
+     *    ไม่มีข้อนั้น "ไม่ได้ 409" ที่นี่จะแยกไม่ออกจาก *"ด่านไม่เคยทำงานเลย"*
+     */
+    it("🔴 ⑫ จุดแวะที่ถูก soft delete แล้ว ต้องไม่ถูกนับใน 409", async () => {
+      const grow = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-22",
+      });
+      expect(grow.status, `setup: ขยายวันควร 200: ${await grow.clone().text()}`).toBe(200);
+      const extra = await dayIdOf("2026-10-22");
+      const mk = await postAs(aCookies, tripE, stopsPOST, { planId: ePlan, tripDayId: extra, kind: "hotel" });
+      expect(mk.status, `setup: สร้างจุดแวะควร 201: ${await mk.clone().text()}`).toBe(201);
+      const stopId = ((await mk.json()) as { id: string }).id;
+
+      const del = await aClient.rpc("soft_delete_trip_stop", { p_id: stopId });
+      expect(del.error, `setup: soft delete ล้ม: ${del.error?.message}`).toBeNull();
+      // 🔴 ยืนยันว่ามัน soft ไม่ใช่ hard — ถ้าแถวหายจริง เคสนี้จะเขียวโดยไม่ได้ทดสอบอะไร
+      const { data: row, error: rowErr } = await admin
+        .from("trip_stops").select("deleted_at").eq("id", stopId).maybeSingle();
+      if (rowErr) throw new Error(`admin อ่าน trip_stops: ${rowErr.message}`);
+      expect(row, "setup: แถวหายจริง = ไม่ใช่ soft delete → เคสนี้ทดสอบอะไรไม่ได้").toBeTruthy();
+      expect(row?.deleted_at, "setup: soft delete แล้วแต่ deleted_at ยังว่าง").not.toBeNull();
+
+      const res = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-21",
+      });
+      const body = (await res.clone().json().catch(() => null)) as { code?: string; losingStops?: number } | null;
+      expect(
+        res.status,
+        `🔴 ย่อวันที่มีแต่จุดแวะที่ถูกลบไปแล้ว ควร 200 · ได้ ${res.status}: ${JSON.stringify(body)}\n` +
+          "  ⇒ `stopCountInDays` ไม่ได้กรอง `.is(\"deleted_at\", null)` → นับ tombstone เป็นของที่จะหาย\n" +
+          "  ⇒ ด่าน 409 บล็อกการกระทำที่ไม่ทำให้อะไรหายเลย (เคส ⑪ พิสูจน์แล้วว่าด่านยิงเป็นเมื่อมีของจริง)",
+      ).toBe(200);
+      expect((await daysOf()).length, "ย่อสำเร็จแล้ววันส่วนเกินยังอยู่").toBe(11);
+    });
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🔴 `E5-pin` — `PUT /trips/[tripId]/pin` (route ที่ 13 · P1 · 4 ก.ย. 2026)
+    //
+    // ## 🔴 ใบนี้ **กลับด้าน** กับอีก 12 ใบ และ probe ต้องกลับด้านตาม
+    // ```
+    // 12 ใบก่อนหน้า   viewer ถูกปฏิเสธ = ด่านทำงาน   ·  viewer สำเร็จ = leak
+    // pin             viewer **สำเร็จ** = ด่านทำงาน  ·  viewer ถูกปฏิเสธ = **ฟีเจอร์ตาย**
+    // ```
+    // หมุดเก็บที่ `trip_members.pinned_at` **ของผู้เรียกเอง** ⇒ เป็นมุมมองส่วนตัว ไม่ใช่การแก้ทริป
+    // 🎯 ***ถ้าลอกรูป probe ของใบอื่นมาใช้ เคสจะเขียวตอนฟีเจอร์พัง*** — `viewer ถูกปฏิเสธ` คือ
+    //    ผลที่ probe ใบอื่นเรียกว่า "ผ่าน" และที่นี่มันคืออาการที่ผู้ใช้เจอว่า "ปุ่มปักหมุดใช้ไม่ได้"
+    //
+    // ## ⚠️ คนนอกได้ `404` ไม่ใช่ `403` — โดยตั้งใจ (ไม่ยืนยันว่าทริปมีอยู่)
+    // ทั้งสองอยู่ใน `rejectStatuses` ปริยายอยู่แล้ว ⇒ `verdictFor` แยกไม่ออก
+    // **จึงยืนยันรหัสตรง ๆ ด้วย** ไม่พึ่งตัวจำแนกอย่างเดียว
+    // ═══════════════════════════════════════════════════════════════════════
+    describe("🔴 E5-pin — ปักหมุดเป็นมุมมองส่วนตัว (viewer ต้อง *ผ่าน*)", () => {
+      /** `pinned_at` ของสมาชิกทุกคนในทริป — อ่านด้วย owner (`trip_members_select` = can_read_trip) */
+      const pinsOf = async (): Promise<Record<string, boolean>> => {
+        const { data, error } = await aClient
+          .from("trip_members").select("user_id, pinned_at").eq("trip_id", tripE);
+        if (error) throw new Error(`อ่าน trip_members: ${error.message}`);
+        return Object.fromEntries(
+          (data ?? []).map((r) => {
+            const row = r as { user_id: string; pinned_at: string | null };
+            return [row.user_id, row.pinned_at != null];
+          }),
+        );
+      };
+
+      it("① owner ปักหมุดได้ (เคสควบคุมฝั่งบวกของทั้งบล็อก)", async () => {
+        const res = await callAs(aCookies, tripE, pinPUT, "PUT", { pinned: true });
+        expect(res.status, `owner ปักหมุดควร 200: ${await res.clone().text()}`).toBe(200);
+        expect((await pinsOf())[ids.a], "ตอบ 200 แต่ `pinned_at` ยังว่าง = RPC ไม่ได้เขียนอะไร").toBe(true);
+      });
+
+      /**
+       * 🔴 **หัวใจของใบนี้ — และเป็นเคสเดียวในไฟล์ที่ `viewer สำเร็จ` คือผลที่ถูกต้อง**
+       * ถ้าใครเผลอผูก RPC กับ `can_write_trip` (ซึ่งเป็นรูปที่ตารางลูกทุกใบใช้ และเป็นสิ่งที่มือจะพิมพ์เอง)
+       * เคสนี้จะแดง · **ไม่มีเคสอื่นในสแตกนี้จับได้เลย** เพราะทุกใบอื่นคาดหวังตรงกันข้าม
+       */
+      it("🔴 ② viewer ปักหมุดได้ — ผูก `can_write_trip` เมื่อไหร่ ข้อนี้แดง (ไม่มีเคสอื่นจับ)", async () => {
+        const res = await callAs(cCookies, tripE, pinPUT, "PUT", { pinned: true });
+        expect(
+          res.status,
+          `viewer ปักหมุดควร 200 · ได้ ${res.status}: ${await res.clone().text()}\n` +
+            "  🔴 403 = RPC ผูกกับสิทธิ์ *เขียนทริป* ทั้งที่หมุดเป็นมุมมองส่วนตัว ⇒ ปุ่มปักหมุดใช้ไม่ได้สำหรับ viewer\n" +
+            "  ⚠️ ผลนี้คือสิ่งที่ probe ใบอื่นในไฟล์นี้เรียกว่า 'ด่านทำงาน' — ที่นี่มันคือฟีเจอร์ตาย",
+        ).toBe(200);
+        expect((await pinsOf())[ids.c], "viewer ได้ 200 แต่หมุดไม่ถูกเขียน").toBe(true);
+      });
+
+      /**
+       * 🔴 **มุมมองส่วนตัวจริงไหม — วัด *สองชั้น* เพราะมันพังได้คนละแบบ**
+       *
+       * ```
+       * ชั้นข้อมูล    `trip_members.pinned_at` ของแต่ละคนแยกกันไหม
+       * ชั้นที่ผู้ใช้เห็น  `GET /trips` ของ *คนละคน* คืน `pinnedAt` ต่างกันไหม
+       * ```
+       * 🎯 ***ชั้นล่างถูกแล้ว ชั้นบนยังพังได้*** — ตัวรวมรายการอ่านหมุด **ของใครก็ได้** ของทริปนั้น
+       *    แล้วแปะให้ทุกคนเหมือนกัน จะผ่านชั้นล่างสบาย ๆ · เคสที่ P1 ขอคือชั้นบนโดยเฉพาะ
+       * · 🔴 **ไม่พึ่ง `pinsOf()` ในครึ่งหลัง** — มันอ่านด้วย client ของ A · ถ้าอ่านฝั่งผู้ใช้ผ่าน A
+       *   คนเดียว เราจะไม่มีวันเห็นว่าคำตอบของ C ต่างไหม **ต้องยิงในนามคนที่สอง**
+       */
+      it("🔴 ③ หมุดเป็นมุมมองส่วนตัว — แยกกันทั้งชั้นข้อมูลและชั้นที่ผู้ใช้เห็น", async () => {
+        // ── ชั้นข้อมูล
+        const pins = await pinsOf();
+        expect(pins[ids.a], "setup: A ควรปักไว้แล้วจากเคส ①").toBe(true);
+        expect(
+          pins[ids.d],
+          "🔴 D (editor · ไม่เคยกดปัก) มี `pinned_at` = หมุดถูกเก็บเป็นคุณสมบัติของ *ทริป* ไม่ใช่ของ *คน*",
+        ).toBe(false);
+
+        // ── ชั้นที่ผู้ใช้เห็น — ยิง `GET /trips` **ในนามสองคน** แล้วเทียบทริปใบเดียวกัน
+        const listAs = async (cookies: Cookie[]) => {
+          jar.cookies = cookies;
+          const res = await tripsGET(new NextRequest("http://localhost:3300/api/engine/trips"));
+          expect(res.status, `GET /trips ควร 200: ${await res.clone().text()}`).toBe(200);
+          const rows = (await res.json()) as Array<{ id: string; pinnedAt?: string | null }>;
+          return rows.find((t) => t.id === tripE);
+        };
+
+        const mineA = await listAs(aCookies);
+        expect(mineA, "A ไม่เห็น tripE ใน GET /trips").toBeDefined();
+        expect(
+          mineA?.pinnedAt,
+          "🔴 A ปักไว้แล้วแต่ `GET /trips` คืน pinnedAt = null\n" +
+            "  ⇒ เส้นทาง *เขียน* กับเส้นทาง *อ่าน* ไม่ได้ต่อกัน · ผู้ใช้กดปักแล้วหน้าจอไม่ขยับ",
+        ).toBeTruthy();
+
+        const mineD = await listAs(dCookies);
+        expect(mineD, "D (สมาชิก) ไม่เห็น tripE ใน GET /trips").toBeDefined();
+        expect(
+          mineD?.pinnedAt,
+          "🔴 D ไม่เคยกดปัก แต่ `GET /trips` ของ D คืนหมุดของ A มาให้\n" +
+            "  ⇒ ตัวรวมรายการอ่านหมุด *ของทริป* ไม่ใช่ *ของผู้เรียก* — ชั้นข้อมูลถูก แต่ชั้นที่ผู้ใช้เห็นพัง",
+        ).toBeNull();
+      });
+
+      it("🔴 ④ คนนอกทริปได้ `404` ไม่ใช่ `403` — ไม่ยืนยันว่าทริปนี้มีอยู่", async () => {
+        const before = await pinsOf();
+        const res = await callAs(bCookies, tripE, pinPUT, "PUT", { pinned: true });
+        const body = (await res.clone().json().catch(() => null)) as { code?: string } | null;
+        const { verdict, detail } = await verdictFor(res);
+        expect(verdict, `[pin] คนนอก → **${verdict}** (${detail})`).toBe("rejected");
+        // 🔴 `403` กับ `404` เป็น `rejected` ทั้งคู่ ⇒ ตัวจำแนกแยกไม่ออก · ยืนยันรหัสเอง
+        expect(
+          res.status,
+          `[pin] คนนอกได้ ${res.status} · **403 = ยืนยันให้คนนอกรู้ว่าทริปนี้มีอยู่จริง**\n` +
+            "  ⇒ กลายเป็นเครื่องมือถามว่า uuid ไหนเป็นทริปจริง (รูปเดียวกับที่ members route เลี่ยงไว้)",
+        ).toBe(404);
+        expect(body?.code).toBe("NOT_FOUND");
+        expect(await pinsOf(), "[pin] คนนอกถูกปฏิเสธแต่แถวเปลี่ยน").toEqual(before);
+      });
+
+      it("⑤ ถอนหมุดได้ · และถอนของตัวเองเท่านั้น", async () => {
+        const res = await callAs(cCookies, tripE, pinPUT, "PUT", { pinned: false });
+        expect(res.status, `ถอนหมุดควร 200: ${await res.clone().text()}`).toBe(200);
+        const pins = await pinsOf();
+        expect(pins[ids.c], "C ถอนหมุดแล้วยังปักอยู่").toBe(false);
+        // 🔴 คู่ควบคุม — ถอนของตัวเองต้องไม่ไปล้างของคนอื่น
+        //    ไม่มีข้อนี้ RPC ที่เขียนว่า `where trip_id = …` (ลืม `user_id`) จะผ่านฉลุย
+        expect(
+          pins[ids.a],
+          "🔴 C ถอนหมุดแล้วหมุดของ A หายไปด้วย = RPC ไม่ได้กรองด้วย `user_id` ของผู้เรียก",
+        ).toBe(true);
+      });
+
+      it("⑥ `pinned` ต้องเป็น boolean แท้ — ไม่รับ `\"true\"` / `1` / ขาดฟิลด์", async () => {
+        for (const bad of [{ pinned: "true" }, { pinned: 1 }, {}]) {
+          const res = await callAs(aCookies, tripE, pinPUT, "PUT", bad);
+          expect(res.status, `body ${JSON.stringify(bad)} ควร 400: ${await res.clone().text()}`).toBe(400);
+        }
+        // ค่าที่ถูกต้องต้องยังผ่าน — ไม่งั้นตัวตรวจแคบเกินแล้วเคสข้างบนเขียวฟรี
+        const ok = await callAs(aCookies, tripE, pinPUT, "PUT", { pinned: true });
+        expect(ok.status, "boolean แท้ต้องผ่าน (คู่ควบคุมของเคสข้างบน)").toBe(200);
+      });
+    });
+
   });
 
 });
