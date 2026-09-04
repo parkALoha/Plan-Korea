@@ -240,6 +240,138 @@ function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+type TripMember = { userId: string; role: string; displayName: string | null };
+
+/**
+ * **แถวสมาชิกบนการ์ด** — วงกลมซ้อนกันสูงสุด 5 ใบ · เกินนั้นเป็น `+n` · แตะเพื่อดูรายชื่อทั้งหมด
+ * ผู้ใช้ออกแบบเอง 4 ก.ย. 2026 · เจ้าของ: P2-UI/UX
+ *
+ * ## 🔴 ทำไมต้องยิงขอรายชื่อเพิ่ม ทั้งที่การ์ดมี `memberCount` อยู่แล้ว
+ * `GET /api/engine/trips` คืน **จำนวน** ไม่คืน **ตัวตน** ⇒ วาดวงกลมให้ครบโดยเดาตัวอักษร = สร้างคนที่ไม่มีอยู่
+ * ⇒ ต้องขอของจริงจาก `GET /api/engine/trips/[tripId]/members` (มีอยู่แล้ว ไม่ต้องสร้าง route ใหม่)
+ *
+ * ## ✅ ยิงเฉพาะทริปที่ *มีอะไรให้ยิง* — ไม่ใช่ทุกใบ
+ * ```
+ * memberCount <= 1   ไม่ยิงเลย   สมาชิกคนเดียวคือผู้ใช้เอง ซึ่งเรารู้ชื่ออยู่แล้ว
+ * memberCount  > 1   ยิงหนึ่งครั้ง
+ * ```
+ * 🎯 ***ทริปส่วนตัวเป็นส่วนใหญ่ ⇒ ค่าใช้จ่ายจริงต่ำกว่า "หนึ่งคำขอต่อการ์ด" มาก***
+ * · ⚠️ **แต่ก็ยังเป็น N คำขอสำหรับคนที่มีทริปกลุ่มเยอะ** — ทางที่ถูกกว่านี้คือให้ route รายการ
+ *   ส่งชื่อย่อมาด้วยตั้งแต่แรก **ขอ P1 ไว้แล้ว** · วันที่ฟิลด์นั้นมา ให้ลบการยิงตรงนี้ทิ้ง
+ *
+ * ## 🔴 ล้มแล้วไม่หาย — ถอยไปเป็นรูปเดิม (วงกลมของผู้ใช้ + `+n`)
+ * เพราะ `memberCount` ยัง **ถูกต้อง** อยู่แม้อ่านรายชื่อไม่ได้ ⇒ ยังบอกจำนวนได้ตามจริง
+ * ⚠️ **แต่ปุ่มยังกดได้** และในโมดัลจะบอกตรง ๆ ว่าอ่านรายชื่อไม่ได้ — **ไม่ใช่โมดัลว่าง**
+ */
+function TripMembers({
+  tripId,
+  memberCount,
+  viewerName,
+}: {
+  tripId: string;
+  memberCount: number;
+  viewerName: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [members, setMembers] = useState<TripMember[] | "error" | null>(null);
+
+  useEffect(() => {
+    if (memberCount <= 1) return;
+    let cancelled = false;
+    async function load() {
+      try {
+        const r = await fetch(`/api/engine/trips/${tripId}/members`);
+        if (!r.ok) throw new Error(String(r.status));
+        const rows = (await r.json()) as TripMember[];
+        if (!cancelled) setMembers(Array.isArray(rows) ? rows : "error");
+      } catch {
+        if (!cancelled) setMembers("error");
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [tripId, memberCount]);
+
+  // 🔴 `0` = อ่านไม่ได้ ไม่ใช่ไม่มีคน — ทริปทุกใบมีเจ้าของอย่างน้อยหนึ่งคนเสมอ
+  if (memberCount <= 0) {
+    return (
+      <span className="text-xs text-maple-dark" title={COPY.memberCountUnknown}>
+        👥 ?
+      </span>
+    );
+  }
+
+  const known = Array.isArray(members) ? members : null;
+  /**
+   * 🔴 **5 ใบ คือเพดานที่ผู้ใช้ระบุ — ไม่ใช่ตัวเลขที่ผมเลือก** · ที่เหลือเป็น `+n`
+   * ⚠️ **`+n` นับจาก `memberCount` เสมอ ไม่ใช่จากความยาวของรายชื่อที่โหลดมาได้**
+   *    ⇒ โหลดรายชื่อไม่ครบ/ไม่ได้ **ตัวเลขยังตรงกับความจริง** (สองอย่างนี้มาจากคนละคำขอ)
+   */
+  const shown = known ? known.slice(0, 5) : [];
+  const rest = memberCount - (shown.length || 1);
+  const clickable = memberCount > 1;
+
+  const stack = (
+    <span className="flex items-center gap-1">
+      <span className="flex items-center">
+        {shown.length > 0 ? (
+          shown.map((m, i) => (
+            <InitialAvatar
+              key={m.userId}
+              name={m.displayName ?? "?"}
+              /* ซ้อนกันด้วย margin ติดลบ + วงขอบสีพื้นการ์ด ⇒ อ่านออกว่าเป็นคนละใบ ไม่ใช่ก้อนเดียว */
+              className={`h-6 w-6 text-2xs ring-2 ring-surface-raised ${i > 0 ? "-ml-2" : ""}`}
+            />
+          ))
+        ) : (
+          <InitialAvatar name={viewerName ?? "?"} className="h-6 w-6 text-2xs" />
+        )}
+      </span>
+      {rest > 0 && <span className="text-xs text-content-soft">+{rest}</span>}
+    </span>
+  );
+
+  if (!clickable) return stack;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={COPY.membersOpen(memberCount)}
+        className="rounded-full px-0.5 py-0.5 transition hover:bg-surface-soft"
+      >
+        {stack}
+      </button>
+      {open && (
+        <Modal onClose={() => setOpen(false)} title={COPY.membersTitle} size="md">
+          {members === null ? (
+            <p className="text-sm text-content-soft">{COPY.membersLoading}</p>
+          ) : members === "error" ? (
+            <p className="text-sm text-maple-dark">{COPY.membersUnreadable}</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {members.map((m) => (
+                <li key={m.userId} className="flex items-center gap-3">
+                  <InitialAvatar name={m.displayName ?? "?"} className="h-9 w-9 text-sm" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-content">
+                      {m.displayName ?? COPY.memberNoName}
+                    </span>
+                    <span className="block text-xs text-content-soft">{COPY.memberRole(m.role)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function TripCard({
   trip,
   viewerName,
@@ -260,31 +392,8 @@ function TripCard({
       cover={<TripCoverImage destinations={trip.destinations} />}
       badge={<TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />}
       title={trip.title}
-      /**
-       * 🔴 **สมาชิกอยู่ขวาสุดของบรรทัดชื่อ** (ผู้ใช้เสนอเอง 4 ก.ย. 2026)
-       * เดิมเป็นแถวของตัวเองใต้สุด ซึ่งมีแค่ avatar ตัวเดียวกับที่ว่างทั้งแถว
-       * ⇒ **การ์ดสูงขึ้นหนึ่งแถวเพื่อของชิ้นเดียว** · ย้ายขึ้นมาแล้วได้ความสูงคืน (วัดไว้ในข้อความ commit)
-       * 🎯 ***และมันอ่านถูกกว่าเดิมด้วย: "ทริปนี้ ของใคร" เป็นคำถามเกี่ยวกับ *ชื่อทริป* ไม่ใช่ข้อมูลลอย ๆ ใต้สุด***
-       *
-       * ## 🔴 รูปที่ขึ้นคือของผู้ใช้เอง — ข้อเท็จจริง ไม่ใช่ตัวยืน
-       * `GET /api/engine/trips` คืนแต่ `memberCount` **ไม่มีชื่อสมาชิกคนอื่น** ⇒ วาดวงกลมให้ครบจำนวน
-       * โดยเดาตัวอักษร = **สร้างคนที่ไม่มีอยู่** · ผู้ใช้เป็นสมาชิกของทุกใบในรายการนี้เสมอ ⇒ รูปนี้ถูกเสมอ
-       * · ที่เหลือบอกเป็น `+n` = **จำนวน ไม่ใช่ตัวตน** · ขอ P1 เพิ่มชื่อย่อสมาชิกใน route แล้ว
-       * ⚠️ **`memberCount === 0` = อ่านไม่ได้ ไม่ใช่ไม่มีคน** — ทริปทุกใบมีเจ้าของอย่างน้อยหนึ่งคนเสมอ
-       */
       titleTrailing={
-        <span className="flex shrink-0 items-center gap-1 text-xs text-content-soft">
-          {trip.memberCount > 0 ? (
-            <>
-              <InitialAvatar name={viewerName ?? "?"} className="h-6 w-6 text-2xs" />
-              {trip.memberCount > 1 && <span>+{trip.memberCount - 1}</span>}
-            </>
-          ) : (
-            <span className="text-maple-dark" title={COPY.memberCountUnknown}>
-              👥 ?
-            </span>
-          )}
-        </span>
+        <TripMembers tripId={trip.id} memberCount={trip.memberCount} viewerName={viewerName} />
       }
     >
       {/* 🔴 ผู้ใช้ขอเอง: *"ชื่อทริปใหญ่และเด่นขึ้น · วันที่/สถานที่สว่างขึ้นให้อ่านง่าย"*
