@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { type Day, type DayEvent } from "@/data/itinerary";
 import { cityNameEnOf } from "@/components/cityMeta";
 import type { Place } from "@/data/places";
-import type { HotelLeg } from "@/lib/hotelLegs";
+import { hotelOfLeg, type HotelLeg } from "@/lib/hotelLegs";
 import type { TripHotel, TripStop } from "@/lib/supabase";
 import { resolvePlace, type PlaceSources } from "@/lib/resolvePlace";
 import { looksLatin } from "@/lib/latinScript";
@@ -224,7 +224,9 @@ export function ImmigrationSheet({
       <Section title={`Accommodation in ${country.nameEn}`}>
         <Table head={["Dates", "Nights", "Hotel", "Address", "Phone"]}>
           {hotelLegs.map((leg) => {
-            const hotel = hotels[leg.id];
+            // 🔴 คีย์ของแมป `hotels` คือ **ช่วงวันที่** (`D51`) ไม่ใช่ `leg.id` — ดู `hotelOfLeg()`
+            // ที่นี่กัดแรงเป็นพิเศษ: ใบ ตม. ที่ไม่มีที่อยู่ที่พัก คือใบที่กรอกไม่ได้ตรงหน้าเคาน์เตอร์
+            const hotel = hotelOfLeg(hotels, leg);
             return (
               <tr key={leg.id} className="border-b border-content-soft/50 last:border-0">
                 <Td className="whitespace-nowrap">

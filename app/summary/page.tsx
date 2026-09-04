@@ -10,7 +10,7 @@ import type { Day } from "@/data/itinerary";
 import { immigrationCountryOf } from "@/lib/immigrationCountry";
 import { splitDayEvents } from "@/lib/engine/dayEvents";
 import type { TripBooking, TripHotel, TripStop } from "@/lib/supabase";
-import { applyOvernightOverrides, hotelForStop, hotelToPlace } from "@/lib/hotelLegs";
+import { applyOvernightOverrides, hotelForStop, hotelOfLeg, hotelToPlace } from "@/lib/hotelLegs";
 import { resolveEventPlace } from "@/lib/eventPlace";
 import {
   TRAVEL_MODE_EMOJI,
@@ -873,7 +873,8 @@ export function SummaryContent({ tripId }: { tripId: string }) {
             </h2>
             <div className="divide-y divide-line rounded-2xl border border-line bg-surface-raised">
               {hotelLegs.map((leg) => {
-                const hotel = hotels[leg.id];
+                // 🔴 คีย์ของแมป `hotels` คือ **ช่วงวันที่** (`D51`) ไม่ใช่ `leg.id` — ดู `hotelOfLeg()`
+                const hotel = hotelOfLeg(hotels, leg);
                 return (
                   <div key={leg.id} className="px-3 py-2.5 text-sm">
                     <div className="text-xs text-content-soft">

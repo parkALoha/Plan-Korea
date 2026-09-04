@@ -121,6 +121,24 @@ export function hotelForStop(
   return endHotel;
 }
 
+/**
+ * วัน → **leg ทั้งใบ** (ไม่ใช่แค่ `leg.id`)
+ *
+ * 🔴 `dayIdToLegId` ข้างล่างคืน **`leg.id` ซึ่งเป็น `day.id` ของวันแรกใน leg** (`deriveHotelLegs`
+ * ตั้งไว้อย่างนั้น) — มันเป็นคีย์ที่ใช้อ้าง *leg* ได้ แต่ **ไม่ใช่คีย์ของแมป `hotels`** ซึ่งคีย์ด้วย
+ * `hotelRangeKey(leg)` ตั้งแต่ `D51` · ผู้เรียก **5 แห่ง** เขียน `hotels[leg.id]` แล้วได้ `undefined` เสมอ
+ * โดยไม่มีอะไรฟ้อง เพราะ `hotels` เป็น `Record<string, …>` → ดัชนีด้วยสตริงอะไรก็คอมไพล์ผ่าน
+ * 🎯 **ตัวที่ควรอยู่ในมือผู้เรียกคือ `HotelLeg` ไม่ใช่ `string`** — `hotelOfLeg()` รับ leg
+ *   จึงไม่มีรูปให้เขียนผิดอีก (ดูเหตุผลเดียวกันที่หัว `hotelRangeKey`)
+ */
+export function dayIdToLeg(legs: HotelLeg[]): Record<string, HotelLeg> {
+  const map: Record<string, HotelLeg> = {};
+  for (const leg of legs) {
+    for (const dayId of leg.dayIds) map[dayId] = leg;
+  }
+  return map;
+}
+
 export function dayIdToLegId(legs: HotelLeg[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const leg of legs) {
@@ -139,4 +157,18 @@ export function dayIdToLegId(legs: HotelLeg[]): Record<string, string> {
  */
 export function hotelRangeKey(range: { startDate: string; endDate: string }): string {
   return `${range.startDate}..${range.endDate}`;
+}
+
+/**
+ * ที่พักของ leg นี้ — **จุดเดียวในระบบที่แปลง `HotelLeg` → คีย์ของแมป `hotels`**
+ *
+ * 🔴 มีเพื่อให้ *เขียนผิดไม่ได้* ไม่ใช่เพื่อความสั้น · `hotels[leg.id]` คอมไพล์ผ่านและคืน
+ * `undefined` เงียบ ๆ (เกิดจริง **5 แห่ง** · P1 ชี้ 4 แห่ง · P2 ยืนยันแล้วเจอใบที่ 5 ที่ `ImmigrationSheet` · 4 ก.ย. 2026) — รับ `HotelLeg` เข้ามา
+ * แล้วคำนวณคีย์ข้างในเอง ทำให้ไม่มีที่ให้ผู้เรียกเลือกคีย์ผิดตั้งแต่แรก
+ */
+export function hotelOfLeg(
+  hotels: Record<string, TripHotel>,
+  leg: { startDate: string; endDate: string }
+): TripHotel | null {
+  return hotels[hotelRangeKey(leg)] ?? null;
 }
