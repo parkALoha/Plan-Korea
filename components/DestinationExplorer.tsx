@@ -46,14 +46,14 @@ function CountryThumb({ countryId }: { countryId: string }) {
      * ส่วนสี่ประเทศที่มีไฟล์รูปได้ธงรอบเดียว ⇒ **การ์ดเก้าใบมีสองแบบโดยไม่ได้ตั้งใจ**
      * 🎯 ***ไอคอนต้องอยู่ที่เดียว "ที่มีเสมอ" ไม่ใช่สองที่ "ที่มีบ้างไม่มีบ้าง"***
      */
-    return <div className="h-20 w-full bg-gradient-to-br from-pine to-maple" />;
+    return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
       src={`/covers/country-${countryId}.svg`}
       alt=""
-      className="h-20 w-full object-cover"
+      className="h-28 w-full object-cover"
       onError={() => setBroken(true)}
     />
   );
@@ -64,14 +64,14 @@ function CountryThumb({ countryId }: { countryId: string }) {
 function CityThumb({ slug }: { slug: string | null | undefined }) {
   const [broken, setBroken] = useState(false);
   if (!slug || broken) {
-    return <div className="h-20 w-full bg-gradient-to-br from-pine to-maple" />;
+    return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
       src={`/covers/city-${slug}.svg`}
       alt=""
-      className="h-20 w-full object-cover"
+      className="h-28 w-full object-cover"
       onError={() => setBroken(true)}
     />
   );
@@ -151,7 +151,7 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
        * 🎯 ***ช่องถูกจองไว้ให้แถวสูงเท่ากัน แต่ไม่เติมของปลอมลงไป*** — รูปเดียวกับบรรทัด 📍 ของการ์ดทริป
        */}
       {countryId === "" && (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
           {countries.status === "loading"
             ? Array.from({ length: 9 }, (_, i) => (
                 <div key={i} className="h-36 animate-pulse rounded-2xl bg-surface-soft" />
@@ -198,7 +198,7 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
             </h3>
           </div>
           {cityState.status === "loading" ? (
-            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]">
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
               {Array.from({ length: 6 }, (_, i) => (
                 <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface-soft" />
               ))}
@@ -210,10 +210,16 @@ export function DestinationExplorer({ onPickCity }: { onPickCity: (city: CityOpt
                (มาเก๊า · สิงคโปร์ · ฮ่องกง มีเมืองละ 1 วันนี้ · วันหน้าอาจมีประเทศที่ยังไม่มีเลย) */
             <p className="py-4 text-sm text-content-soft">{COPY.noCities}</p>
           ) : (
-            /* 🔴 การ์ดเมืองเล็กกว่าการ์ดทริปได้ — มันมีแค่รูป+ชื่อ ไม่มีวันที่/สมาชิก/ป้ายให้อ่าน
-               `9.5rem` ทำให้**มือถือ 375px ได้ 2 คอลัมน์** (11rem ได้คอลัมน์เดียว ซึ่งดูโหรงเหรง
-               และต้องเลื่อนยาวมากเมื่อประเทศมี 23 เมือง) */
-            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]">
+            /**
+             * 🔴 **ขนาดเท่าการ์ดทริปเป๊ะ (`17rem` · ปก `h-28`)** — ผู้ใช้สั่งเอง 4 ก.ย. 2026:
+             * > *"ขนาดของทริปใหม่ เล็กไปหน่อย ทำให้มันเท่ากับทริปของฉันดีไหม"*
+             *
+             * ⚠️ **ราคาที่จ่าย และผมจดไว้เพราะมันจะกลับมา**: มือถือ 375px เหลือ **1 คอลัมน์**
+             * (เดิม `9.5rem` ได้ 2) ⇒ ประเทศที่มี 23 เมือง = เลื่อนยาวมากบนมือถือ
+             * 🎯 ***แต่ "การ์ดสองชนิดขนาดไม่เท่ากันในหน้าเดียว" คือสิ่งที่ผู้ใช้เห็นและทัก — ส่วนการเลื่อนยาว
+             *    เขายังไม่เจอ*** · ถ้าเจอเมื่อไหร่ ทางแก้คือช่องค้นหาในลิสต์เมือง ไม่ใช่ย่อการ์ดกลับ
+             */
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
               {cityState.items.map((city) => (
                 /**
                  * 🔴 **การ์ดเมืองใช้เปลือกเดียวกับการ์ดทริป** — ผู้ใช้สั่งเอง (รอบที่สองของข้อเดิม):
