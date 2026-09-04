@@ -8,6 +8,13 @@ export type Category =
   | "viewpoint"
   | "shopping"
   | "restaurant"
+  /** ที่พัก — โรงแรม/เกสต์เฮาส์/โฮสเทล/เรียวกัง
+   *  🔴 เพิ่ม 4 ก.ย. 2026 (เฟส 3 ข้อ 3.6 · P1 ชี้ · P5 ทำ) — ก่อนหน้านี้ `lib/placeCategory.ts`
+   *  **ไม่มี mapping ของ `lodging`/`hotel` เลย** → ที่พักจาก Google ตกไป fallback `"viewpoint"`
+   *  เห็นของจริงบนหน้าจอแล้ว: `sakura-hotel-hatagaya` โผล่ในหมวด "ย่านเที่ยวกลางคืน/ช้อปปิ้ง"
+   *  ⚠️ ต่างจาก `transport`: `hotel` **อยู่ใน `CATEGORY_ORDER` ของ `PlaceSidebar`**
+   *     เพราะที่พักเป็นของที่ผู้ใช้ *เลือก* ไม่ใช่แค่จุดที่ resolve ให้ผ่าน */
+  | "hotel"
   /** สนามบิน/สถานี — ไม่ใช่ที่เที่ยว จึงไม่มีใน PLACES และไม่โผล่ในคลังสถานที่ (ดู CATEGORY_ORDER
    *  ใน PlaceSidebar) มีไว้ให้แถว kind="transfer" resolve เป็น Place ได้ ดู data/transferPoints.ts */
   | "transport";
@@ -115,6 +122,7 @@ export const CATEGORY_EMOJI: Record<Category, string> = {
   viewpoint: "📸",
   shopping: "🛍️",
   restaurant: "🍽️",
+  hotel: "🏨",
   transport: "✈️",
 };
 
@@ -130,6 +138,7 @@ export const CATEGORY_COLOR: Record<Category, string> = {
   viewpoint: "#c39338",
   shopping: "#b34f7d",
   restaurant: "#d9683a",
+  hotel: "#5b6ea8",
   transport: "#4a6572",
 };
 
@@ -144,6 +153,7 @@ export const CATEGORY_COLOR_DARK: Record<Category, string> = {
   viewpoint: "#8d6720",
   shopping: "#82355a",
   restaurant: "#b8502a",
+  hotel: "#3c4b78",
   transport: "#33474f",
 };
 
@@ -157,6 +167,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   viewpoint: "จุดชมวิว/ถ่ายรูป",
   shopping: "ช้อปปิ้ง",
   restaurant: "ร้านอาหาร",
+  hotel: "ที่พัก/โรงแรม",
   transport: "สนามบิน/สถานี",
 };
 

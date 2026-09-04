@@ -34,12 +34,35 @@ const TYPE_TO_CATEGORY: Record<string, Category> = {
   bar: "nightlife",
   night_club: "nightlife",
   restaurant: "restaurant",
+  // ที่พัก — 🔴 ไม่มีสักตัวจนถึง 4 ก.ย. 2026 → ทุกโรงแรมจาก Google ตกไป fallback `"viewpoint"`
+  //    แล้วโผล่ในหมวด "ย่านเที่ยวกลางคืน/ช้อปปิ้ง" บนหน้าจอจริง (`sakura-hotel-hatagaya`)
+  lodging: "hotel",
+  hotel: "hotel",
+  motel: "hotel",
+  inn: "hotel",
+  resort_hotel: "hotel",
+  extended_stay_hotel: "hotel",
+  budget_japanese_inn: "hotel",
+  japanese_inn: "hotel",
+  guest_house: "hotel",
+  hostel: "hotel",
+  bed_and_breakfast: "hotel",
+  cottage: "hotel",
+  farmstay: "hotel",
+  private_guest_room: "hotel",
+  campground: "hotel",
+  camping_cabin: "hotel",
+  rv_park: "hotel",
 };
 
 // Google ส่ง primaryType ที่ไม่อยู่ในตารางข้างบนมาบ่อยมาก โดยเฉพาะร้านอาหารที่แยกตามสัญชาติ
 // (korean_restaurant, vietnamese_restaurant, ...) ถ้าไม่ดักไว้จะตกไปเป็น fallback หมด
 // = ร้านอาหารไปโผล่หมวดจุดชมวิว เช็คหลัง exact match เสมอ (food_court ต้องเป็น market ไม่ใช่ shopping)
 const PATTERN_RULES: [RegExp, Category][] = [
+  // 🔴 **ต้องอยู่บนสุด** — `rv_park` ชน `/park$/` (→ nature) และ `resort_hotel` ไม่ชนอะไรเลย
+  //    ทั้งคู่ถูกดักด้วย exact match ข้างบนแล้ว **แต่ชนิดที่ Google เพิ่มทีหลังจะไม่มี**
+  //    ⇒ วางกฎรูปแบบไว้ก่อน `/park$/` เพื่อให้ชนิดใหม่ที่ลงท้าย `_hotel`/`_inn` ตกที่ถูกโดยไม่ต้องแก้ไฟล์
+  [/_hotel$|^hotel_|_inn$|hostel|lodging|guest_house|_resort$/, "hotel"],
   [/_restaurant$|^restaurant_|_food$/, "restaurant"],
   [/cafe|coffee|_bakery$/, "cafe"],
   [/_market$|_grocery_store$|food_court/, "market"],
