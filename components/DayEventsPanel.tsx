@@ -118,14 +118,15 @@ export function DayEventsPanel({
                   </>
                 }
                 subtitle={place ? `📍 ${place.nameTh} — แตะดูรูป/แผนที่/นำทาง` : undefined}
-              >
-                {(event.detail || event.layover) && (
-                  <div className="px-3 pb-2.5 text-xs leading-relaxed text-content-soft sm:px-4">
-                    {event.detail}
-                    {event.layover && <LayoverBadges layover={event.layover} />}
-                  </div>
-                )}
-              </TripListRow>
+                detail={
+                  event.detail || event.layover ? (
+                    <>
+                      {event.detail}
+                      {event.layover && <LayoverBadges layover={event.layover} />}
+                    </>
+                  ) : undefined
+                }
+              />
             </>
           );
 

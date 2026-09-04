@@ -50,6 +50,8 @@ export function TripListRow({
   openLabel,
   muted,
   className,
+  detail,
+  actions,
   children,
 }: {
   /** รูปย่อหรือกรอบไอคอน — ควรกว้าง 96px (`PlaceThumb size="2xl"`) ให้ทุกแถวตรงคอลัมน์กัน */
@@ -67,7 +69,20 @@ export function TripListRow({
   openLabel?: string;
   muted?: boolean;
   className?: string;
-  /** เนื้อหาใต้แถว เต็มความกว้าง: คำอธิบายยาว · โน้ต · ปุ่ม */
+  /**
+   * ย่อหน้าคำอธิบาย/โน้ต — **สไตล์มาจากที่นี่ ไม่ใช่จากที่เรียก**
+   *
+   * 🔴 เพิ่ม 4 ก.ย. 2026 เพราะผู้ใช้ทักว่า *"รูปแบบการแสดงข้อความมันยังไม่เหมือนกันเลย
+   *    เหมือนกับไม่ได้ใช้ component เดียวกัน"* — ซึ่งถูก · รอบแรกผมยุบแค่ *หัวแถว*
+   *    ส่วนเนื้อใต้แถวปล่อยเป็น `children` ให้แต่ละที่จัดเอง ⇒ มันเลยไม่เหมือนกันอยู่ดี
+   *      เวลาตายตัว  ย่อหน้าธรรมดา เต็มความกว้าง
+   *      จุดแวะ      กล่องมีขอบซ้าย + เยื้อง pl-10 (ระยะที่จัดให้ตรงกับคอลัมน์แบบเก่าที่ไม่มีแล้ว)
+   * 🎯 **ยุบโครงแล้วไม่ยุบสไตล์ ได้ความเหมือนกันแค่ครึ่งเดียว — และครึ่งที่เหลือคือครึ่งที่ตาเห็น**
+   */
+  detail?: ReactNode;
+  /** แถวปุ่มใต้คำอธิบาย (ปรับเวลา · เพิ่มรูป · ลบ) — แยกจาก `detail` เพราะปุ่มไม่ใช่ข้อความ */
+  actions?: ReactNode;
+  /** เนื้อหาอื่นที่ไม่เข้าสองช่องบน — ตัวแก้ที่กางเต็ม · แผงคำแนะนำ */
   children?: ReactNode;
 }) {
   return (
@@ -114,6 +129,12 @@ export function TripListRow({
         </div>
       </div>
 
+      {detail && (
+        <div className="px-3 pb-2.5 text-xs leading-relaxed text-content-soft sm:px-4">{detail}</div>
+      )}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-2.5 sm:px-4">{actions}</div>
+      )}
       {children}
     </div>
   );

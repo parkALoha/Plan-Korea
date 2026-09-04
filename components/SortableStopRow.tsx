@@ -307,7 +307,13 @@ export function SortableStopRow({
                   : undefined
         }
       />
-      <div className="flex items-center gap-2 px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
+      {/* 🔴 คลาสของแถวนี้ต้องตรงกับช่อง `detail` ใน TripListRow เป๊ะ (px-3 pb-2.5 sm:px-4)
+          ของเดิมเยื้อง `pl-10 sm:pl-14` — ระยะนั้นเคยจัดให้ตรงกับคอลัมน์ [ที่จับ][เวลา][รูป]
+          แบบเก่า **ซึ่งไม่มีอยู่แล้วหลังยุบเข้า TripListRow** ⇒ มันเลยดูไม่เหมือนแถวเวลาตายตัว
+          ทั้งที่ใช้คอมโพเนนต์เดียวกัน (ผู้ใช้ทัก 4 ก.ย. 2026)
+          ⚠️ **ยังไม่ได้ใช้ prop `detail` เหมือนอีกสองลิสต์** เพราะโน้ตของจุดแวะมีโหมดแก้ไข
+             และปุ่มปรับเวลาที่ต้องอยู่แถวเดียวกัน — เป็นงานถัดไป ไม่ใช่ของที่ลืม */}
+      <div className="flex items-start gap-2 px-3 pb-2.5 sm:px-4">
         <div className="min-w-0 flex-1">
         {/* มือถือ: ช่องพิมพ์โน้ตกินเต็มบรรทัด ปุ่มบันทึก/ยกเลิก/ลบ ตกไปบรรทัดล่าง
             (ของเดิมทุกอย่างอยู่แถวเดียว ช่องพิมพ์เลยแคบจนพิมพ์ไม่ได้จริง) */}
@@ -345,7 +351,7 @@ export function SortableStopRow({
                 setEditingNote(true);
               }
             }}
-            className="cursor-pointer rounded-lg border-l-2 border-pine-soft py-0.5 pl-2 text-left text-xs text-content-soft hover:text-content"
+            className="cursor-pointer text-left text-xs leading-relaxed text-content-soft hover:text-content"
             title="แตะเพื่อแก้โน้ต"
           >
             <NoteBody note={stop.note} previewLines={2} />
@@ -385,7 +391,7 @@ export function SortableStopRow({
         />
       )}
       {(stop.photo_url || (!locked && !isSpecialRow)) && (
-        <div className="px-3 pb-2 pl-10 sm:px-4 sm:pl-14">
+        <div className="px-3 pb-2.5 sm:px-4">
           {stop.photo_url ? (
             <div className="flex items-center gap-2">
               <button

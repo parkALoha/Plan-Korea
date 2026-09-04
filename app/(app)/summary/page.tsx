@@ -213,24 +213,20 @@ function SummaryDayCard({
                     </>
                   }
                   subtitle={place ? `📍 ${en ? placeNameEn(place, namesEn) : place.nameTh}` : undefined}
-                >
-                  {/* 🔴 ใช้ size="md" (48px) ไม่ใช่ 2xl (96px) เหมือนหน้าแผน โดยตั้งใจ —
-                      หน้านี้เป็นหน้า *อ่าน* และ *สั่งพิมพ์* ไม่ใช่หน้าแก้ · รูปใหญ่ขึ้นเท่าตัว
-                      จะดันเอกสารที่พิมพ์ให้ยาวขึ้นโดยไม่เพิ่มข้อมูลอะไร
-                      ⇒ เลย์เอาต์มาจาก TripListRow ชุดเดียวกัน แต่ความหนาแน่นคุมโดยที่เรียก */}
-                  {(place || (event.detail && !en) || event.layover) && (
-                    <div className="px-3 pb-2.5 sm:px-4">
-                      {/* เรทติ้ง/เวลาเปิด-ปิดจาก Google ชุดเดียวกับแถวจุดแวะ — ไม่ยิง API เพิ่ม (แคชร่วมกัน) */}
-                      {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
-                      {event.detail && !en && (
-                        <div className={`text-xs leading-relaxed ${alert ? "opacity-80" : "text-content-soft"}`}>
-                          {event.detail}
-                        </div>
-                      )}
-                      {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
-                    </div>
-                  )}
-                </TripListRow>
+                  /* 🔴 ใช้ size="md" (48px) ไม่ใช่ 2xl เหมือนหน้าแผน โดยตั้งใจ — หน้านี้เป็นหน้า
+                     *อ่าน* และ *สั่งพิมพ์* ไม่ใช่หน้าแก้ · รูปใหญ่ขึ้นเท่าตัวจะดันเอกสารที่พิมพ์
+                     ให้ยาวขึ้นโดยไม่เพิ่มข้อมูล ⇒ เลย์เอาต์ชุดเดียวกัน ความหนาแน่นคุมโดยที่เรียก */
+                  detail={
+                    place || (event.detail && !en) || event.layover ? (
+                      <>
+                        {/* เรทติ้ง/เวลาเปิด-ปิดจาก Google ชุดเดียวกับแถวจุดแวะ — ไม่ยิง API เพิ่ม */}
+                        {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
+                        {event.detail && !en && <div>{event.detail}</div>}
+                        {event.layover && <LayoverBadges layover={event.layover} lang={lang} />}
+                      </>
+                    ) : undefined
+                  }
+                />
               );
             })}
           </div>
@@ -313,20 +309,16 @@ function SummaryDayCard({
                 subtitle={`${t("stayFor")} ${sched.resolvedDwellMinutes} ${t("minutes")}${
                   stop.added_by ? ` · ${t("chosenBy")} ${stop.added_by}` : ""
                 }`}
-              >
-                {(place || (stop.note && !en)) && (
-                  <div className="px-3 pb-2.5 sm:px-4">
-                    {/* เรทติ้ง/ประเภทร้านจาก Google — ชุดเดียวกับที่การ์ดในคลังโชว์ ไม่ยิง API เพิ่ม */}
-                    {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
-                    {stop.note && !en && (
-                      <NoteBody
-                        note={stop.note}
-                        className="mt-1 border-l-2 border-pine-soft pl-2 text-xs text-content-soft"
-                      />
-                    )}
-                  </div>
-                )}
-              </TripListRow>
+                detail={
+                  place || (stop.note && !en) ? (
+                    <>
+                      {/* เรทติ้ง/ประเภทร้านจาก Google — ชุดเดียวกับที่การ์ดในคลังโชว์ ไม่ยิง API เพิ่ม */}
+                      {place && <SummaryPlaceMeta place={place} dayDate={day.date} />}
+                      {stop.note && !en && <NoteBody note={stop.note} className="mt-1" />}
+                    </>
+                  ) : undefined
+                }
+              />
             </div>
           );
         })}
