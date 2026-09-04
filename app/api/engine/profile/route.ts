@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DISPLAY_NAME_MAX, countDisplayNameChars } from "@/lib/displayName";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { profileOf, updateDisplayName } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
@@ -19,7 +20,8 @@ import { rateLimitGuard } from "@/lib/rateLimit";
  *    ชุดที่โตขึ้นทำให้ช่องที่เคยปลอดภัยเพราะชุดมันเล็ก กว้างพอจะเดินผ่าน
  */
 const RATE_LIMIT_PER_MINUTE = 60;
-const NAME_MAX = 60;
+/** 🔴 มาจาก `lib/displayName.ts` ที่เดียวกับหน้าเว็บ — ห้ามพิมพ์เลขซ้ำที่นี่ (ดูเหตุผลในไฟล์นั้น) */
+const NAME_MAX = DISPLAY_NAME_MAX;
 
 export async function GET(req: NextRequest) {
   const limited = rateLimitGuard(req, "engine-profile", RATE_LIMIT_PER_MINUTE);
@@ -68,10 +70,12 @@ export async function PATCH(req: NextRequest) {
   if (displayName === "") {
     return NextResponse.json({ error: "ชื่อที่แสดงห้ามว่าง" }, { status: 400 });
   }
-  // ⚠️ นับด้วย `Array.from` ไม่ใช่ `.length` — `.length` นับ UTF-16 code unit
-  //    ⇒ อีโมจิหนึ่งตัวถูกนับเป็น 2 และชื่อไทยที่มีสระ/วรรณยุกต์ก็นับต่างจากที่คนเห็น
-  //    🎯 **เพดานที่ผู้ใช้มองไม่เห็นวิธีนับ ต้องนับแบบที่เขาเห็น**
-  if (Array.from(displayName).length > NAME_MAX) {
+  // 🎯 **เพดานที่ผู้ใช้มองไม่เห็นวิธีนับ ต้องนับแบบที่เขาเห็น** — หลักการเดิมของบรรทัดนี้ ไม่เปลี่ยน
+  //    ⚠️ แต่ `Array.from` (code point) ยังไปไม่สุด: มันแก้เรื่องอีโมจิ **แต่สระ/วรรณยุกต์ไทย
+  //       ยังเป็นตัวแยก** ⇒ `ประวิทย์ วงศ์สุวรรณชัย` = 22 ทั้งที่ตาเห็น 17
+  //       🔴 เพดานเดียวกันจึงเข้มกับคนไทยกว่าคนใช้อักษรละติน โดยไม่มีใครตั้งใจ
+  //    ⇒ นับ grapheme ผ่านตัวนับกลาง (ผู้ใช้ตัดสิน 4 ก.ย. 2026: *"ไม่มีใครเสียเปรียบ"*)
+  if (countDisplayNameChars(displayName) > NAME_MAX) {
     return NextResponse.json(
       { error: `ชื่อที่แสดงยาวเกิน ${NAME_MAX} ตัวอักษร` },
       { status: 400 },

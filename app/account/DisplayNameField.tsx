@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { DISPLAY_NAME_MAX, countDisplayNameChars } from "@/lib/displayName";
+
 /**
  * ช่องแก้ "ชื่อที่แสดง" — เจ้าของ: P7 (4 ก.ย. 2026) · API เป็นของ P1 (`7c9d935`)
  *
@@ -35,10 +37,14 @@ import { useEffect, useState } from "react";
  * ⇒ **ต้องบอกผู้ใช้ว่าเกิดอะไร ไม่ใช่โชว์ช่องว่างเปล่าที่กดเซฟแล้วเงียบ**
  */
 
-const NAME_MAX = 60;
-
-/** นับแบบเดียวกับ `route.ts` — ห้ามเปลี่ยนเป็น `.length` */
-const countChars = (s: string) => Array.from(s).length;
+/**
+ * 🔴 **เพดานและวิธีนับมาจาก `lib/displayName.ts` ที่เดียว — ห้ามประกาศซ้ำที่นี่**
+ * ฉบับก่อนหน้ามี `NAME_MAX = 60` กับตัวนับของตัวเอง **คู่กับอีกชุดในด่านฝั่งเซิร์ฟเวอร์**
+ * แล้วใช้คอมเมนต์เตือนให้คนจำว่าต้องแก้ให้ตรงกัน 🎯 ***ค่าที่ต้องเท่ากันแต่พิมพ์ไว้สองที่
+ * จะต่างกันวันใดวันหนึ่งเสมอ*** — ตอนนี้ตัดความเป็นไปได้นั้นทิ้ง ไม่ใช่เตือนไม่ให้เกิด
+ */
+const NAME_MAX = DISPLAY_NAME_MAX;
+const countChars = countDisplayNameChars;
 
 type Load =
   | { status: "loading" }
@@ -218,7 +224,9 @@ export function DisplayNameField() {
         )}
       </div>
       {/* ตัวนับโผล่เฉพาะตอนใกล้เต็ม — โชว์ตลอดเวลาคือเสียงรบกวนสำหรับชื่อ 5 ตัวอักษร */}
-      {(tooLong || used > NAME_MAX - 15) && (
+      {/* เดิม `-15` ตั้งไว้ตอนเพดาน 60 · พอเพดานเป็น 20 มันจะโผล่ตั้งแต่ตัวที่ 6 = เสียงรบกวน
+          เหตุผลเดิม ("โผล่เฉพาะตอนใกล้เต็ม") ยังถูก — ที่ต้องขยับคือ *ระยะ* ให้พอดีกับเพดานใหม่ */}
+      {(tooLong || used > NAME_MAX - 6) && (
         <p className={`mt-1 text-2xs ${tooLong ? "text-maple-dark" : "text-content-soft"}`}>
           {used}/{NAME_MAX} ตัวอักษร
         </p>
