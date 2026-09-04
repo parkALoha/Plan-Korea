@@ -82,6 +82,7 @@ import { GET as membersGET } from "@/app/api/engine/trips/[tripId]/members/route
 import { PUT as destinationsPUT } from "@/app/api/engine/trips/[tripId]/destinations/route";
 import { PATCH as tripPATCH } from "@/app/api/engine/trips/[tripId]/route";
 import { PUT as pinPUT } from "@/app/api/engine/trips/[tripId]/pin/route";
+import { GET as templatesGET } from "@/app/api/engine/trip-templates/route";
 
 type Cookie = { name: string; value: string };
 type Handler = (req: NextRequest, ctx: { params: Promise<{ tripId: string }> }) => Promise<Response>;
@@ -291,6 +292,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
   let aDay = "";
   let aPlan = "";
   let aClient: SupabaseClient;
+  let bClient: SupabaseClient; // B — ใช้ยิง RPC ในนามผู้ใช้ที่ **ไม่ได้เป็นสมาชิก** template (`E5-tpl` ข้อ ⑧)
   const CC = TEST_COUNTRY_CODES.engineCrossUser; // "xz" — country code จองในทะเบียน กันชนข้ามเซสชัน
   const citySlug = `ex-${stamp}`;
   const placeSlug = `exp-${stamp}`;
@@ -403,6 +405,7 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     const a = await makeUser("a");
     aClient = a.client;
     const b = await makeUser("b"); // B ไม่เป็นสมาชิกทริป A — มีทริปตัวเองไว้ให้ soleTrip ไม่พัง
+    bClient = b.client;
     tripA = await mkTrip(a.client, "a");
     tripB = await mkTrip(b.client, "b");
     // 🔴 forward-compat กับ migration `create_trip_makes_days` ที่จอด pending-review (P1/P3):
@@ -1790,6 +1793,227 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
       });
     });
 
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🔴 `E5-tpl` — ทริปแนะนำ (`20260904180000` · P1 · ลงฐาน 4 ก.ย. 2026)
+  // เจ้าของ probe: P4 · **คนเขียน SQL ≠ คนเขียน probe** โดยตั้งใจ
+  //
+  // ## ⚠️ ขอบเขตที่ต้องอ่านคู่กับผลเสมอ — เขียนไว้ก่อนเคสแรก
+  // 🔴 **`copy_trip_template` ยังไม่มี route** ⇒ เคสข้างล่างยิง **RPC ตรงในนามผู้ใช้**
+  //    ⇒ ***วัด "ตัวฟังก์ชันถูกไหม" ไม่ได้วัด "เส้นทางที่ผู้ใช้จะเดินจริง"***
+  //    วันที่ route มา **ต้องเพิ่มเคสผ่าน route** ไม่ใช่คิดว่าครอบแล้ว (รูปเดียวกับที่ `rlsMatrix`
+  //    วัดชั้นตาราง แล้ว `GET /trips` ยังคืน 502 ให้ทุกคนอยู่สองวัน — `fae94fe`)
+  //
+  // ## 🔴 P1 รันใบนี้บนฐานทิ้งในเครื่องแล้ว **แต่ที่นั่นเป็น superuser ⇒ RLS ไม่ทำงาน**
+  // ⇒ ***เคสสิทธิ์ทุกข้อผ่านฟรีที่นั่นตามนิยาม*** · โดยเฉพาะข้อ ⑧ (ผู้ใช้นอกทริปก๊อปได้)
+  //    ซึ่งเขามีผลลัพธ์ที่ *อ่านเหมือนยืนยัน* อยู่แล้ว และมันไม่ได้ยืนยันอะไรเลย
+  // ⇒ **บล็อกนี้คือที่เดียวที่ชั้นสิทธิ์ของฟีเจอร์นี้ถูกวัด**
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe("🔴 E5-tpl — ทริปแนะนำ: ก๊อปได้ครบ · ติดธงเองไม่ได้ · ของที่ลบแล้วไม่ฟื้น", () => {
+    let tplId = "";
+    let tplPlan = "";
+    let tplCustom = "";   // custom place ที่ยังใช้งานอยู่
+    let tplDeleted = "";  // custom place ที่ถูก soft delete — ต้องไม่ตามไป
+
+    beforeAll(async () => {
+      // ── สร้าง "ทริปแนะนำ" ด้วยมือ: 3 วัน · 2 จุดแวะ · custom place 2 ใบ (ใบหนึ่งถูกลบ)
+      tplId = await mkTrip(aClient, "a");
+      const patch = await callAs(aCookies, tplId, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-13",
+      });
+      expect(patch.status, `setup: ตั้งช่วงวัน template: ${await patch.clone().text()}`).toBe(200);
+
+      const plan = await aClient.from("trip_plans").select("id").eq("trip_id", tplId).single();
+      if (plan.error) throw new Error(`setup: อ่านแผน template: ${plan.error.message}`);
+      tplPlan = plan.data.id as string;
+
+      const mkCustom = async (name: string) => {
+        const r = await postAs(aCookies, tplId, customPlacesPOST, {
+          city: citySlug, category: "food", maps_query: `q-${name}`, name_th: name, lat: 37.5, lng: 127.0,
+        });
+        expect(r.status, `setup: สร้าง custom place ${name}: ${await r.clone().text()}`).toBe(201);
+        return ((await r.json()) as { id: string }).id;
+      };
+      tplCustom = await mkCustom(`tpl-live-${stamp}`);
+      tplDeleted = await mkCustom(`tpl-dead-${stamp}`);
+
+      const day1 = await aClient.from("trip_days").select("id").eq("trip_id", tplId).order("date").limit(1).single();
+      if (day1.error) throw new Error(`setup: อ่านวันแรกของ template: ${day1.error.message}`);
+
+      // จุดแวะ ① ชี้ custom place ที่ยังอยู่ · ② ชี้คลังกลาง (slug)
+      for (const placeId of [tplCustom, placeSlug]) {
+        const r = await postAs(aCookies, tplId, stopsPOST, {
+          planId: tplPlan, tripDayId: day1.data.id, placeId,
+        });
+        expect(r.status, `setup: เพิ่มจุดแวะ (${placeId}): ${await r.clone().text()}`).toBe(201);
+      }
+
+      // 🔴 ลบ custom place ใบที่สอง — มันไม่ได้ถูกใช้เป็นจุดแวะ จึงลบได้ (trigger `custom_places_not_in_use`)
+      const del = await aClient.rpc("soft_delete_custom_place", { p_id: tplDeleted });
+      expect(del.error, `setup: soft delete custom place: ${del.error?.message}`).toBeNull();
+
+      // ── ติดธง: `published_template_at` **ไม่มี column grant ให้ `authenticated`** ⇒ ต้องใช้ service_role
+      //    🎯 นั่นคือคุณสมบัติที่เคส ⑤ ยืนยัน — ที่นี่เราใช้ทางที่ทีมใช้จริง (SQL ฝั่งเซิร์ฟเวอร์)
+      const flag = await admin.from("trips").update({ published_template_at: new Date().toISOString() }).eq("id", tplId);
+      if (flag.error) throw new Error(`setup: ติดธง template: ${flag.error.message}`);
+    });
+
+    /** สรุปทริปหนึ่งใบจากฐาน — ใช้เทียบต้นฉบับกับสำเนา */
+    const shapeOf = async (tripId: string) => {
+      const days = await admin.from("trip_days").select("id, date").eq("trip_id", tripId);
+      if (days.error) throw new Error(`admin อ่านวัน: ${days.error.message}`);
+      const stops = await admin.from("trip_stops").select("id, rank, catalog_place_id, custom_place_id, trip_day_id")
+        .eq("trip_id", tripId).is("deleted_at", null);
+      if (stops.error) throw new Error(`admin อ่านจุดแวะ: ${stops.error.message}`);
+      return {
+        dates: (days.data ?? []).map((d) => (d as { date: string }).date).sort(),
+        stops: (stops.data ?? []) as unknown as {
+          id: string; rank: string; catalog_place_id: string | null; custom_place_id: string | null;
+        }[],
+      };
+    };
+    /** custom_places ที่ **ยังไม่ถูกลบ** ของทริปหนึ่ง — อ่านด้วยเจ้าของ (service_role ไม่มี grant) */
+    const customsOf = async (client: SupabaseClient, tripId: string) => {
+      const { data, error } = await client.from("custom_places").select("id").eq("trip_id", tripId);
+      if (error) throw new Error(`อ่าน custom_places: ${error.message}`);
+      return (data ?? []).map((r) => (r as { id: string }).id);
+    };
+
+    it("① `GET /api/engine/trip-templates` — เห็น template ที่ติดธง พร้อม day/night count จากฐาน", async () => {
+      jar.cookies = aCookies;
+      const res = await templatesGET(new NextRequest("http://localhost:3300/api/engine/trip-templates"));
+      expect(res.status, `ควร 200: ${await res.clone().text()}`).toBe(200);
+      const body = (await res.json()) as { templates: { id: string; dayCount: number; nightCount: number }[] };
+      const mine = body.templates.find((t) => t.id === tplId);
+      expect(mine, "ติดธงแล้วแต่ไม่โผล่ในรายการ").toBeDefined();
+      // 3 วัน (11–13 ต.ค.) ⇒ 3 วัน 2 คืน · **มาจากฐาน ไม่ใช่ UI คำนวณ**
+      expect(mine!.dayCount, "dayCount ผิด").toBe(3);
+      expect(mine!.nightCount, "nightCount ผิด — `5 วัน 4 คืน` ต้องมาจากที่เดียว").toBe(2);
+    });
+
+    it("🔴 ② ทริปที่ **ไม่ได้ติดธง** ต้องไม่โผล่ในรายการ (คู่ควบคุมของ ①)", async () => {
+      jar.cookies = aCookies;
+      const res = await templatesGET(new NextRequest("http://localhost:3300/api/engine/trip-templates"));
+      const body = (await res.json()) as { templates: { id: string }[] };
+      const ids = body.templates.map((t) => t.id);
+      expect(
+        ids.includes(tripA),
+        "ทริปธรรมดาของ A โผล่ในรายการทริปแนะนำ = `published_template_at is not null` ไม่ได้กรอง\\n" +
+          "  🔴 ถ้าข้อนี้แดง แปลว่า **ทริปส่วนตัวของทุกคนถูกประกาศเป็นสาธารณะ**",
+      ).toBe(false);
+    });
+
+    it("🔴 ③ ก๊อป → วัน · จุดแวะ · ลำดับ ต้องเท่าต้นฉบับ · และวันเลื่อนทั้งชุดเท่ากัน", async () => {
+      const src = await shapeOf(tplId);
+      const { data, error } = await aClient.rpc("copy_trip_template", {
+        p_template_id: tplId, p_start_date: "2026-12-01", p_title: null,
+      });
+      expect(error, `ก๊อปล้ม: ${error?.message}`).toBeNull();
+      const copyId = (data as { id: string }).id;
+      const dst = await shapeOf(copyId);
+
+      expect(dst.dates.length, "จำนวนวันไม่เท่าต้นฉบับ").toBe(src.dates.length);
+      expect(dst.dates, "วันไม่ได้เลื่อนทั้งชุดเป็นช่วงใหม่").toEqual(["2026-12-01", "2026-12-02", "2026-12-03"]);
+      expect(dst.stops.length, "จำนวนจุดแวะไม่เท่าต้นฉบับ").toBe(src.stops.length);
+      expect(
+        dst.stops.map((s) => s.rank).sort(),
+        "ลำดับ (`rank`) ไม่ตรงกับต้นฉบับ",
+      ).toEqual(src.stops.map((s) => s.rank).sort());
+    });
+
+    it("🔴 ④ ก๊อปทริปที่ **ไม่ได้ติดธง** → `P0002` ไม่ใช่ทริปเปล่า (ด่านเดียวของฟังก์ชัน)", async () => {
+      const before = await shapeOf(tripA);
+      const { error } = await aClient.rpc("copy_trip_template", {
+        p_template_id: tripA, p_start_date: "2026-12-01", p_title: null,
+      });
+      expect(
+        error?.code ?? error?.message ?? "",
+        "ก๊อปทริปที่ไม่ได้ติดธงสำเร็จ = `published_template_at is not null` หายจาก `where`\\n" +
+          "  🔴 definer ข้าม RLS ⇒ **บรรทัดนั้นคือด่านเดียวที่เหลือ** — หายเมื่อไหร่ = ก๊อปทริปของใครก็ได้",
+      ).toMatch(/P0002|ไม่พบทริปแนะนำ/);
+      expect((await shapeOf(tripA)).stops.length, "ถูกปฏิเสธแต่ต้นฉบับถูกแตะ").toBe(before.stops.length);
+    });
+
+    it("🔴 ⑤ ไคลเอนต์ติดธงเองไม่ได้ — `published_template_at` ไม่มี column grant", async () => {
+      const { error } = await aClient.from("trips")
+        .update({ published_template_at: new Date().toISOString() }).eq("id", tripA);
+      expect(
+        error?.code,
+        "เจ้าของทริปตั้ง `published_template_at` เองได้ = ใครก็ประกาศทริปตัวเองเป็นทริปแนะนำได้",
+      ).toBe("42501");
+    });
+
+    it("🔴 ⑥ custom place ต้องถูกก๊อป **และจุดแวะต้องชี้ใบใหม่** ไม่ใช่ของ template", async () => {
+      const { data, error } = await aClient.rpc("copy_trip_template", {
+        p_template_id: tplId, p_start_date: "2027-03-01", p_title: null,
+      });
+      expect(error, `ก๊อปล้ม: ${error?.message}`).toBeNull();
+      const copyId = (data as { id: string }).id;
+
+      const copies = await customsOf(aClient, copyId);
+      expect(copies.length, "custom place ไม่ถูกก๊อปมาเลย").toBeGreaterThan(0);
+      expect(
+        copies.includes(tplCustom),
+        "ทริปใหม่ถือ **id เดิม** ของ template ⇒ FK ประกอบ `(trip_id, custom_place_id)` ต้องระเบิดตั้งแต่แรก",
+      ).toBe(false);
+
+      const dst = await shapeOf(copyId);
+      const pointing = dst.stops.filter((s) => s.custom_place_id != null);
+      expect(pointing.length, "ไม่มีจุดแวะไหนชี้ custom place เลย — กิ่ง remap ไม่ถูกเดิน").toBe(1);
+      expect(
+        pointing[0].custom_place_id,
+        "🔴 จุดแวะของทริปใหม่ยังชี้ custom place **ของ template** — remap ไม่ทำงาน",
+      ).not.toBe(tplCustom);
+      expect(copies, "จุดแวะชี้ไปที่ id ที่ไม่ได้อยู่ในทริปตัวเอง").toContain(pointing[0].custom_place_id);
+    });
+
+    it("🔴 ⑦ custom place ที่ถูก soft delete **ต้องไม่ฟื้น** ในทริปที่ก๊อป", async () => {
+      const { data, error } = await aClient.rpc("copy_trip_template", {
+        p_template_id: tplId, p_start_date: "2027-04-01", p_title: null,
+      });
+      expect(error, `ก๊อปล้ม: ${error?.message}`).toBeNull();
+      const copyId = (data as { id: string }).id;
+
+      // 🔴 ต้นฉบับมี custom place 2 ใบ · ใบหนึ่งถูกลบ ⇒ สำเนาต้องได้ **ใบเดียว**
+      //    ⚠️ **ตรวจที่ตาราง `custom_places` ตรง ๆ ไม่ใช่ที่จุดแวะ** (P1 ชี้) —
+      //       บั๊กเดิมทำให้แถวฟื้นเป็นของ *ที่ยังไม่ถูกลบ* **โดยไม่ผูกกับจุดแวะไหนเลย**
+      //       ⇒ เคสที่ดูแค่ `trip_stops` จะเขียวทั้งที่ผู้ใช้เห็นสถานที่ขยะในคลังทริปตัวเอง
+      expect(
+        (await customsOf(aClient, copyId)).length,
+        "🔴 ทริปที่ก๊อปมามี custom place เกินหนึ่งใบ = ใบที่ทีมลบทิ้งแล้ว **ฟื้นในทริปของผู้ใช้**",
+      ).toBe(1);
+    });
+
+    /**
+     * 🔴 **ข้อที่สนามซ้อมในเครื่องตอบไม่ได้ตามนิยาม** — ที่นั่นรันเป็น superuser ⇒ RLS ไม่ทำงาน
+     * ⇒ *"ผู้ใช้นอกทริปก๊อปได้"* **ผ่านฟรีที่นั่นเสมอ** ไม่ว่าฟังก์ชันจะถูกหรือผิด
+     * 🎯 ***ที่นี่คือที่เดียวที่คำถามนี้ถูกถามจริง***
+     */
+    it("🔴 ⑧ ผู้ใช้ที่ **ไม่ได้เป็นสมาชิก** template ต้องก๊อปได้ · และได้เป็น owner ของสำเนา", async () => {
+      const { data, error } = await bClient.rpc("copy_trip_template", {
+        p_template_id: tplId, p_start_date: "2027-05-01", p_title: `ของ B ${stamp}`,
+      });
+      expect(
+        error,
+        `B (ไม่ได้เป็นสมาชิก template) ก๊อปไม่ได้: ${error?.message}\\n` +
+          "  🔴 ถ้าแดง = ฟีเจอร์ตาย — ทริปแนะนำมีไว้ให้คนที่ไม่ได้อยู่ในทริปเราก๊อป",
+      ).toBeNull();
+      const copyId = (data as { id: string }).id;
+
+      const { data: row, error: rErr } = await admin.from("trips").select("created_by").eq("id", copyId).single();
+      if (rErr) throw new Error(`admin อ่านทริปสำเนา: ${rErr.message}`);
+      expect(
+        row.created_by,
+        "🔴 `created_by` เป็นเจ้าของ template ⇒ ผู้ใช้จะแก้ทริปตัวเองไม่ได้ (`trips_update` = owner)",
+      ).toBe(ids.b);
+
+      // และต้องแก้ได้จริง ไม่ใช่แค่ชื่อบนคอลัมน์
+      const { data: upd, error: uErr } = await bClient.from("trips")
+        .update({ title: `แก้แล้ว ${stamp}` }).eq("id", copyId).select("id");
+      expect(uErr, `B แก้ทริปที่ตัวเองก๊อปมาไม่ได้: ${uErr?.message}`).toBeNull();
+      expect((upd ?? []).length, "แก้แล้ว 0 แถว = RLS กรอง ⇒ B ไม่ใช่ owner จริง").toBe(1);
+    });
   });
 
 });
