@@ -59,7 +59,13 @@ describe("kind allowlist", () => {
   });
 
   it("kind ที่ไม่รู้จักทั่วไปก็ 400 เหมือนเดิม", async () => {
-    for (const bad of ["", "hotel", "RESTAURANT", "restaurant ", "../etc"]) {
+    // 🔴 **`"hotel"` ย้ายไปฝั่งบวกแล้ว 4 ก.ย. 2026 (P1)** — มันกลายเป็น kind จริงเมื่อผู้ใช้สั่งทำ
+    //    ฟีเจอร์แนะนำโรงแรม · แทนด้วย `"lodging"` ซึ่งเป็นคำที่ Google ใช้และ **เราจงใจไม่รับ**
+    //    (`lodging` ตัวกว้างของ Google รวม campground/rv_park/farmstay ⇒ ขึ้นในรายการโรงแรมแล้วดูเหมือนระบบเสีย)
+    // 🎯 ***เคสนี้แดงตอนผมเพิ่ม `hotel` ซึ่งคือสิ่งที่มันควรทำ — คนเขียนเลือก `"hotel"` เป็นตัวอย่าง
+    //    "คำที่ฟังดูน่าจะรองรับแต่ไม่รองรับ" และวันที่มันถูกรองรับ ด่านก็บอกทันที***
+    //    ⚠️ ตัวแทนที่เลือกต้องเป็นคำที่ **ไม่มีวันถูกรับ** ไม่ใช่คำถัดไปที่เราจะเพิ่ม — ไม่งั้นย้ายกันไม่จบ
+    for (const bad of ["", "lodging", "RESTAURANT", "restaurant ", "../etc"]) {
       searchNearbySpy.mockClear();
       const res = await call(bad);
       expect(res.status, JSON.stringify(bad)).toBe(400);
@@ -68,7 +74,7 @@ describe("kind allowlist", () => {
   });
 
   it("ด้านบวก: kind ที่ถูกต้องยังเดินต่อได้ — ถ้าข้อนี้แดง เคสด้านลบไม่ได้พิสูจน์อะไร", async () => {
-    for (const ok of ["restaurant", "attraction", "place", "hospital"]) {
+    for (const ok of ["restaurant", "attraction", "place", "hospital", "hotel"]) {
       searchNearbySpy.mockClear();
       searchNearbySpy.mockResolvedValue({ places: [], error: null });
       const res = await call(ok);

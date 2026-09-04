@@ -38,7 +38,7 @@ const ATTRACTION_TYPES = [
  * ① `KINDS` เป็นแหล่งความจริงเดียวที่อ่านแล้วรู้ทันทีว่ารับอะไรได้บ้าง
  * ② `Record<Kind, …>` ทำให้ **ลืมเพิ่มใน `KIND_OPTIONS` = `tsc` แดง** ไม่ใช่ `undefined` ตอนรัน
  */
-const KINDS = ["restaurant", "attraction", "place", "hospital"] as const;
+const KINDS = ["restaurant", "attraction", "place", "hospital", "hotel"] as const;
 type Kind = (typeof KINDS)[number];
 function isKind(v: string): v is Kind {
   return (KINDS as readonly string[]).includes(v);
@@ -53,6 +53,20 @@ const KIND_TYPES: Record<Kind, string[]> = {
   place: [...ATTRACTION_TYPES, "restaurant", "cafe", "bar", "bakery", "zoo", "garden", "monument", "department_store"],
   // การ์ดฉุกเฉิน (เฟส 17) — โรงพยาบาลใกล้ที่พักคืนนั้น · ไม่รวมคลินิก/ร้านยาเพราะกลางดึกปิด
   hospital: ["hospital"],
+  /**
+   * แนะนำที่พักในเมืองที่ผู้ใช้กำลังวางแผน (4 ก.ย. 2026 · ผู้ใช้สั่งเอง: *"สามารถแนะนำโรงแรม
+   * ให้ผู้ใช้งานได้ และเขาทราบราคา"*)
+   *
+   * 🔴 **ไม่รวม `lodging` ตัวกว้าง โดยตั้งใจ** — Google นับ campground · rv_park · farmstay
+   * เข้ามาด้วย ซึ่งขึ้นในรายการ *"โรงแรมแนะนำ"* แล้วอ่านเหมือนระบบเสีย ไม่ใช่เหมือนตัวเลือก
+   * · `guest_house`/`bed_and_breakfast` เก็บไว้เพราะเป็นที่พักจริงที่คนเลือกจริงในญี่ปุ่น/เกาหลี
+   *
+   * ⚠️ **route นี้บอกได้แค่ *ที่พักมีอะไรบ้าง* ไม่ได้บอก *ราคา*** — Google Places ไม่ให้ราคาห้อง
+   * (FieldMask ทุกตัวในรีโปไม่มี `priceLevel`/`priceRange` และต่อให้ขอ ก็เป็นระดับ $ ไม่ใช่ราคาคืน)
+   * 🎯 ***ราคาต้องมาจาก affiliate ซึ่งยังไม่ได้ต่อ — ช่องราคาจึงต้องบอกตรง ๆ ว่ายังไม่มี
+   *    ห้ามเดาหรือประมาณให้*** (ดู `lib/offers/`)
+   */
+  hotel: ["hotel", "guest_house", "bed_and_breakfast", "resort_hotel", "hostel", "motel"],
 };
 
 // รัศมี/การเรียงลำดับต่อ kind — ที่เที่ยวมองทั้งเมืองเลยกว้างสุด ร้านอาหารต้องเดินต่อจากจุดก่อนหน้าได้เลยแคบสุด
@@ -64,6 +78,9 @@ const KIND_OPTIONS: Record<Kind, { radius: number; rank: "POPULARITY" | "DISTANC
   // เรียงตามระยะแล้วได้คลินิกเสริมความงามขึ้นก่อนโรงพยาบาลจริง (ยืนยันจากผลจริงรอบซอมยอน ปูซาน)
   // โรงพยาบาลใหญ่มีรีวิวมากกว่าคลินิกเล็กหลายเท่า POPULARITY จึงดันตัวที่ไปแล้วรักษาได้จริงขึ้นมาแทน
   hospital: { radius: 8000, rank: "POPULARITY" },
+  // ที่พัก: กว้างระดับเมืองเหมือน `attraction` — คนเลือกโรงแรม "ในเมืองนี้" ไม่ใช่ "ใกล้จุดที่กดอยู่"
+  // POPULARITY เพราะเหตุผลเดียวกับ `hospital` เป๊ะ: เรียงตามระยะแล้วได้ที่พักเล็กที่ไม่มีใครรีวิวขึ้นก่อน
+  hotel: { radius: 12000, rank: "POPULARITY" },
 };
 
 // หาสถานที่รอบพิกัดที่ให้มา
@@ -71,6 +88,10 @@ const KIND_OPTIONS: Record<Kind, { radius: number; rank: "POPULARITY" | "DISTANC
 // kind=attraction → ที่เที่ยวของเมืองนั้น เรียงตามความนิยม รัศมีกว้างกว่าเพราะที่เที่ยวกระจายทั้งเมือง
 // kind=place → คละทุกประเภทแถวนั้น เรียงตามความนิยม ใช้เป็นลิสต์แนะนำของ "เพิ่มสถานที่เอง"
 // kind=hospital → โรงพยาบาลใกล้ที่พัก เรียงตามระยะใกล้ ใช้ในการ์ดฉุกเฉิน (เฟส 17)
+// kind=hotel → ที่พักในเมืองนั้น เรียงตามความนิยม ใช้ในแท็บ "แนะนำ" ของโมดัลที่พัก (4 ก.ย. 2026)
+//   🔴 **ชื่อ `hotel` ไม่ใช่ `lodging` โดยตั้งใจ** — P5 เพิ่ม `Category "hotel"` ฝั่งคลังในวันเดียวกัน
+//      และ P1 ตัดสินให้ใช้คำเดียวทั้งระบบ · ฉบับแรกของบรรทัดนี้เขียน `lodging` แล้วเปลี่ยน
+//   🎯 ***คำสองคำสำหรับของสิ่งเดียว ไม่มีวันผิดตอนคอมไพล์ — มันผิดตอนคนอ่านโค้ดแล้วเชื่อว่าเป็นคนละเรื่อง***
 export async function GET(req: NextRequest) {
   const limited = rateLimitGuard(req, "place-nearby", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;
