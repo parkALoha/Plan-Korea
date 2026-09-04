@@ -1426,46 +1426,59 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      *    วันที่มีคนเปลี่ยน FK เป็น `restrict` หรือใส่ soft delete ให้ `trip_days` เคสนี้จะแดง
      *    **แล้วคนนั้นจะได้อ่านย่อหน้านี้ก่อนตัดสินใจ** ซึ่งคือหน้าที่เดิมของ `D73` เป๊ะ ๆ
      */
-    it("🔴 ลบวัน = hard delete จุดแวะทั้งวัน **รวม tombstone** — ราคาของ D73 ที่รับไว้แล้ว", async () => {
+    it("🔴 ราคาของ `D73` วัดจริง — วันที่มีจุดแวะ *ใช้งานอยู่* ลบไม่ได้ · วันที่มีแต่ tombstone ลบได้ และ tombstone หาย", async () => {
       const plan = await A.from("trip_plans").select("id").eq("trip_id", tripD).limit(1).single();
       if (plan.error) throw new Error(`อ่านแผนของ tripD: ${plan.error.message}`);
       const planId = plan.data.id as string;
-      const dayId = await mkDay(A, "2026-11-04");
 
-      const mkStop = async () => {
+      // 🔴 `rank` เป็น **สตริง fractional-index** ไม่ใช่ตัวเลข — `trip_stops_rank_shape` บังคับ
+      //    `^[0-9A-Za-z]+$` **และห้ามลงท้ายด้วย `0`** (`20260826171500:58`)
+      //    ⚠️ ฉบับแรกผมส่ง `rank: 0` → `"0"` → ชน constraint **ตั้งแต่ setup** ⇒ เคสไม่เคยเดินไปถึงของจริง
+      const mkStop = async (dayId: string, rank: string) => {
         const { data, error } = await A.from("trip_stops")
-          .insert({ trip_id: tripD, plan_id: planId, trip_day_id: dayId, kind: "hotel", rank: 0 })
+          .insert({ trip_id: tripD, plan_id: planId, trip_day_id: dayId, kind: "hotel", rank })
           .select("id").single();
-        if (error) throw new Error(`สร้างจุดแวะ: ${error.message}`);
+        if (error) throw new Error(`สร้างจุดแวะ (rank=${rank}): ${error.message}`);
         return data.id as string;
       };
-      const live = await mkStop();
-      const doomed = await mkStop();
-      // ทำให้ใบที่สองเป็น tombstone — `D76` ตั้งใจให้แถวนี้ **ยังอยู่ในฐาน** หลังผู้ใช้ลบ
-      const soft = await A.rpc("soft_delete_trip_stop", { p_id: doomed });
-      expect(soft.error, `soft delete ล้ม: ${soft.error?.message}`).toBeNull();
-
       const rows = async (id: string) => {
         const { data, error } = await admin.from("trip_stops").select("id").eq("id", id);
         if (error) throw new Error(`admin อ่าน trip_stops: ${error.message}`);
         return (data ?? []).length;
       };
-      // 🔴 precondition ทั้งสองใบ — ไม่มีข้อนี้ เคสข้างล่างเขียวได้เพราะแถวไม่เคยมีอยู่
-      expect(await rows(live), "setup: จุดแวะที่ยังใช้งานอยู่ไม่มีในฐาน").toBe(1);
+
+      // ── ① วันที่ยังมีจุดแวะ **ใช้งานอยู่** — trigger กันไว้ ลบไม่ได้เลย
+      //    `app.assert_day_has_no_stops()` · `before delete on trip_days` · `20260825142639:94-105`
+      //    🎯 ***และนี่คือเหตุผลที่ `force: true` ของ `PATCH /trips/[tripId]` ใช้ไม่ได้***
+      //       route ถาม "ยืนยันจะทิ้งจุดแวะไหม" แล้วเดินต่อ **แต่ฐานไม่เคยอนุญาตให้ทิ้ง**
+      const dayLive = await mkDay(A, "2026-11-06");
+      const liveStop = await mkStop(dayLive, "a");
+      const blocked = await A.from("trip_days").delete().eq("id", dayLive);
       expect(
-        await rows(doomed),
-        "setup: tombstone หายไปแล้ว = soft delete กลายเป็น hard delete ⇒ เคสนี้วัดอะไรไม่ได้",
+        blocked.error?.message ?? "",
+        "ลบวันที่ยังมีจุดแวะได้ = trigger `trip_days_no_orphan_stops` หายไป\n" +
+          "  ⇒ cascade จะลบจุดแวะทิ้งเงียบ ๆ ซึ่งเป็นสิ่งที่ `D73` เตือนไว้ทั้งย่อหน้า",
+      ).toContain("จุดแวะ");
+      expect(await dayAlive(dayLive), "trigger แดงแล้วแต่วันหายไป").toBe(true);
+      expect(await rows(liveStop), "จุดแวะที่ยังใช้งานอยู่ต้องไม่ถูกแตะ").toBe(1);
+
+      // ── ② วันที่เหลือแต่ **tombstone** — trigger ปล่อยผ่าน (มันกรอง `deleted_at is null`)
+      //    ⇒ ลบวันได้ · และ cascade **ลบ tombstone ทิ้งถาวร**
+      const soft = await A.rpc("soft_delete_trip_stop", { p_id: liveStop });
+      expect(soft.error, `soft delete ล้ม: ${soft.error?.message}`).toBeNull();
+      expect(
+        await rows(liveStop),
+        "setup: soft delete แล้วแถวหายเลย = ไม่ใช่ soft delete ⇒ เคสนี้วัดอะไรไม่ได้",
       ).toBe(1);
 
-      const { error } = await A.from("trip_days").delete().eq("id", dayId);
-      expect(error, `ลบวันไม่ได้: ${error?.message}`).toBeNull();
-
+      const ok = await A.from("trip_days").delete().eq("id", dayLive);
+      expect(ok.error, `เหลือแต่ tombstone แล้วยังลบวันไม่ได้: ${ok.error?.message}`).toBeNull();
+      expect(await dayAlive(dayLive), "ลบวันแล้วยังอยู่").toBe(false);
       expect(
-        [await rows(live), await rows(doomed)],
-        "🔴 ถ้าเลขนี้ไม่ใช่ [0, 0] แปลว่า cascade เปลี่ยนไปแล้ว — ไปอ่านย่อหน้าเหนือเคสนี้ก่อนแก้ตัวเลข\n" +
-          "  [1, x] = FK กลายเป็น restrict/no action (ดีขึ้น — แต่ route จะเริ่มได้ error ที่ไม่เคยเจอ)\n" +
-          "  [0, 1] = มีคนทำให้ tombstone รอด cascade (ดีขึ้น — `E2-AC12` ได้สิ่งที่ต้องการ)",
-      ).toEqual([0, 0]);
+        await rows(liveStop),
+        "🔴 tombstone รอด cascade — ดีขึ้นกว่าที่วัดไว้ · ไปอ่านย่อหน้าเหนือเคสนี้ก่อนแก้ตัวเลข\n" +
+          "  ⇒ `E2-AC12` อาจได้สิ่งที่ต้องการแล้ว และกติกา `MAY_DELETE` ของ `trip_days` ต้องถูกทบทวน",
+      ).toBe(0);
     });
 
     it("🔴 anon ไม่ได้อะไรเลยจาก trip_days", async () => {

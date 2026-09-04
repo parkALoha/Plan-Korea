@@ -1560,6 +1560,25 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
      *    ไม่มีข้อนั้น "ไม่ได้ 409" ที่นี่จะแยกไม่ออกจาก *"ด่านไม่เคยทำงานเลย"*
      */
     it("🔴 ⑫ จุดแวะที่ถูก soft delete แล้ว ต้องไม่ถูกนับใน 409", async () => {
+      // 🔴 **ตั้งสถานะเองให้ครบ ไม่พึ่งผลของ ⑪ เลย** — ⑪ กำลังจับบั๊กจริงอยู่ (`force` ใช้ไม่ได้)
+      //    ⇒ มันจะทิ้งทริปไว้ในสภาพที่ไม่แน่นอน · ฉบับแรกของเคสนี้พึ่งสภาพนั้น แล้วล้มที่ `setup`
+      //    ด้วยข้อความที่ชี้ไปที่ `409` **ทั้งที่ปัญหาคือเคสก่อนหน้าไม่ได้จบอย่างที่คิด**
+      // 🎯 ***เคสที่ล้มเพราะเคสอื่นล้ม รายงานอาการของตัวเอง ไม่ใช่ของต้นเหตุ — และมันชี้คนไปผิดที่***
+      // ① ล้างจุดแวะที่ยัง active ทั้งหมดของ tripE ก่อน (soft delete ผ่าน RPC ตาม `D76`)
+      const { data: liveStops, error: lsErr } = await admin
+        .from("trip_stops").select("id").eq("trip_id", tripE).is("deleted_at", null);
+      if (lsErr) throw new Error(`admin อ่าน trip_stops ของ tripE: ${lsErr.message}`);
+      for (const r of liveStops ?? []) {
+        const del = await aClient.rpc("soft_delete_trip_stop", { p_id: (r as { id: string }).id });
+        expect(del.error, `setup: ล้างจุดแวะเดิมล้ม: ${del.error?.message}`).toBeNull();
+      }
+      // ② ตั้งช่วงวันให้แน่นอน — ตอนนี้ไม่มีจุดแวะ active แล้ว จึงไม่ควรติด 409 และลบวันส่วนเกินได้
+      const norm = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
+        startDate: "2026-10-11", endDate: "2026-10-21",
+      });
+      expect(norm.status, `setup: ตั้งช่วงวันควร 200: ${await norm.clone().text()}`).toBe(200);
+      expect((await daysOf()).length, "setup: ควรเหลือ 11 วัน").toBe(11);
+
       const grow = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
         startDate: "2026-10-11", endDate: "2026-10-22",
       });
