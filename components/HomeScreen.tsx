@@ -384,7 +384,7 @@ export function HomeScreen() {
        * · `sticky` เพราะตอนนี้มันมีของที่ต้องใช้ (กลับหน้าแรก · บัญชี) — แถบที่เลื่อนหายไปคือแถบที่ไม่มีใครใช้
        */}
       <header className="focus-ring-on-dark sticky top-0 z-20 bg-pine text-cream shadow-sm shadow-ink/10">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-[110rem] items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg">
             <span
               aria-hidden
@@ -434,8 +434,11 @@ export function HomeScreen() {
          * · ขึ้นเฉพาะตอน**มีทริปให้ค้น** — ช่องค้นหาบนหน้าที่ไม่มีอะไรให้ค้น คือปุ่มที่กดแล้วไม่มีอะไรเกิดขึ้น
          */}
         {trips !== null && trips.length > 0 && (
-          <div className="mx-auto max-w-6xl px-4 pb-3">
-            <div className="relative">
+          <div className="mx-auto max-w-[110rem] px-4 pb-3">
+            {/* 🔴 ช่องค้นหา **ไม่ยืดตาม container** — บนจอ 27" มันจะกลายเป็นแถบยาว 1700px
+                ซึ่งไม่ได้ช่วยอะไร (คำค้นยาวไม่กี่ตัวอักษร) และดูเหมือนแถบตกแต่ง ไม่ใช่ช่องกรอก
+                🎯 *container กว้างเพื่อให้ **การ์ด** มีที่ ไม่ใช่เพื่อให้ทุกอย่างยืดตาม* */}
+            <div className="relative max-w-xl">
               <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm">
                 🔍
               </span>
@@ -452,7 +455,7 @@ export function HomeScreen() {
         )}
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 pt-5">
+      <div className="mx-auto max-w-[110rem] px-4 pt-5">
         {state.status === "loading" ? (
           <div className="space-y-3">
             <div className="h-24 animate-pulse rounded-2xl bg-surface-soft" />
@@ -563,7 +566,19 @@ export function HomeScreen() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              /**
+               * 🔴 **`auto-fill` + `minmax` แทน breakpoint ตายตัว** — รื้อ 4 ก.ย. 2026 (ผู้ใช้ส่งภาพจอ 27" มา:
+               * *"ดูแคบ ๆ ไม่เต็มตา"*) · ผมวัดเองที่ 1780px: grid กว้าง **1120px = 63% ของจอ** ขอบว่างข้างละ 330px
+               *
+               * 🎯 ***ทางแก้ที่ผิดคือถอด `max-w` ทิ้งเฉย ๆ*** — การ์ดจะยืดเป็นแถบยาวบนจอ 27"
+               *    แล้วสายตาต้องกวาดไกลจากรูปไปถึงข้อความ **ซึ่งเป็นปัญหาคนละใบที่แก้ยากกว่า** (P1 เตือน · ถูก)
+               * ✅ ให้ ***จำนวนคอลัมน์*** โตตามจอ · การ์ดคงความกว้างที่อ่านสบาย (17rem–1fr)
+               *
+               * ⚠️ **ไม่ใช้ `sm:`/`xl:` เพราะจอผู้ใช้ไม่ได้อยู่ที่ค่ามาตรฐานของ Tailwind** —
+               *    breakpoint ตายตัวจะพอดีเฉพาะจอที่เราบังเอิญทดสอบ · `auto-fill` ไล่ระดับเองทุกความกว้าง
+               *    ซึ่งตรงกับที่ผู้ใช้ขอว่า *"ต้องทำเผื่อรองรับขนาดทุกหน้าจอ"*
+               */
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
                 {visibleTrips.map((trip) => (
                   <TripCard key={trip.id} trip={trip} />
                 ))}
