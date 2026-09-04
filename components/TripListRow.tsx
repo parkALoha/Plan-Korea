@@ -101,10 +101,25 @@ export function TripListRow({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {(time || corner) && (
             <div className="flex items-start gap-2">
+              {/* 🔴 เวลาคือสิ่งที่ตาหาก่อนเสมอในลิสต์ตารางเวลา — ของเดิมเป็น `text-xs` (13px)
+                  เท่ากับ *บรรทัดรอง* และเล็กกว่า *ชื่อเรื่อง* ⇒ มันหายไปในแถว
+                  (ผู้ใช้ทัก 4 ก.ย. 2026 ว่า "การวางตำแหน่งเวลา ยังไม่เด่นเลย")
+                  ⇒ 16px ตัวหนา + สีเน้น · เวลาสิ้นสุดเล็กลงหนึ่งขั้นเพราะเป็นข้อมูลรอง
+                  🔴 **เน้นด้วย *ขนาด* ไม่ใช่ด้วย *สี*** — ลองสีเน้น (`panel-maple-ink`) ก่อนแล้ว
+                     วัดในเบราว์เซอร์ได้ **1.15:1** บนแถวเตือน เพราะแถวนั้นมีพื้นของตัวเอง
+                     ⇒ สีที่ผ่านบนพื้นหลัก ไม่ได้แปลว่าผ่านบนทุกพื้นที่แถวนี้ไปวางได้
+                     ส่วน `text-content` คู่กับ `--surface*` เป็นคู่หลักของระบบ ⇒ ผ่านทุกพื้นโดยโครงสร้าง
+                     · และขนาดยังทำงานตอนพิมพ์ขาวดำ กลางแดด และกับคนตาบอดสี ซึ่งสีไม่ทำ */}
               {time && (
-                <span className="text-xs tabular-nums text-content-soft">
-                  <span className="font-semibold text-content">{time}</span>
-                  {endTime && <> → {endTime}</>}
+                /* 🔴 `shrink-0 whitespace-nowrap` ไม่ใช่ของประดับ — ผู้ใช้เจอ "18:52 / → 20:07"
+                     ตกคนละบรรทัดจริง (4 ก.ย. 2026) · ช่วงเวลาหนึ่งช่วงต้องอ่านเป็น *ก้อนเดียว*
+                     ไม่งั้นตาอ่านเป็นเวลาสองอันคนละเรื่อง — และมันจะเกิดเฉพาะแถวที่มีเวลาจบ
+                     ซึ่งเป็นส่วนน้อย ⇒ หลุดรีวิวได้ง่ายมาก */
+                <span className="flex shrink-0 items-baseline gap-1 whitespace-nowrap tabular-nums">
+                  <span className="text-lg font-bold leading-none text-content">{time}</span>
+                  {endTime && (
+                    <span className="text-2xs font-medium text-content-soft">→ {endTime}</span>
+                  )}
                 </span>
               )}
               {corner && <span className="ml-auto flex shrink-0 items-center gap-1">{corner}</span>}

@@ -529,7 +529,7 @@ export default function TodayPage() {
                             ? stopRowLabel(nextStop, nextSched.place, endHotel, startHotel)
                             : `${CATEGORY_EMOJI[nextSched.place.category]} ${nextSched.place.nameTh}`}
                         </div>
-                        <div className="mt-0.5 text-lg font-semibold tabular-nums text-panel-maple-ink">
+                        <div className="mt-0.5 text-lg font-bold tabular-nums text-panel-maple-ink">
                           {shiftTime(nextSched.arrival, delayMinutes)}–{shiftTime(nextSched.departure, delayMinutes)}
                         </div>
                       </div>
@@ -672,9 +672,13 @@ export default function TodayPage() {
                   const alert = event.alert === true;
                   const row = (
                     <>
+                      {/* 🔴 เวลาต้องหนาแน่นเท่ากับลิสต์อื่นทั้งเว็บ (19px หนา) — ของเดิม 15px กึ่งหนา
+                          และเป็น `text-content-soft` ⇒ *จางกว่าชื่อเรื่องที่มันจ่าหัวอยู่*
+                          ทั้งที่หน้านี้คือหน้าที่เปิดตอนเดินอยู่จริง และเวลาคือสิ่งที่ตาหาก่อน
+                          · `w-14` ไม่ใช่ `w-12` เพราะ 19px หนา "07:30" กว้างเกิน 48px แล้วตกบรรทัด */}
                       <span
-                        className={`w-12 shrink-0 text-center font-semibold tabular-nums ${
-                          alert ? "" : "text-content-soft"
+                        className={`w-14 shrink-0 whitespace-nowrap text-center text-lg font-bold leading-none tabular-nums ${
+                          alert ? "" : "text-content"
                         }`}
                       >
                         {event.time}
@@ -799,7 +803,7 @@ export default function TodayPage() {
                       disabled={!sched?.place}
                       className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-surface-soft/60 active:opacity-70 disabled:hover:bg-transparent"
                     >
-                      <span className="w-12 shrink-0 text-center font-semibold tabular-nums text-content-soft">
+                      <span className="w-14 shrink-0 whitespace-nowrap text-center text-lg font-bold leading-none tabular-nums text-content">
                         {displayArrival ?? "-"}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-content">{label}</span>
