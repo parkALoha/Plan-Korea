@@ -754,7 +754,11 @@ export function DayStopsSection({
       )}
 
       {!collapsed && deadlineOverrunMinutes != null && afterAnchorEvent && (
-        <div className="bg-maple-soft/70 px-4 py-2 text-xs text-maple-dark">
+        /* 🔴 `maple-soft`/`maple-dark` เป็นโทเคน brand ที่ **ไม่ถูกนิยามใหม่ในธีมมืดเลย (0 ครั้งใน `globals.css`)**
+           ⇒ แถวนี้เป็น **แผ่นสว่างกลางจอมืด** · และคอนทราสต์ธีมสว่างวัดได้ **4.01 ซึ่งต่ำกว่า WCAG AA (4.5)**
+           อยู่แล้วสำหรับข้อความ `text-xs` · `alert-soft`/`alert-ink` เป็นคู่เชิงความหมายที่พลิกตามธีมและพลิกกลับตอนพิมพ์
+           🎯 **บั๊กใบเดียวกับที่แก้ให้แถวเตือนใน `DayEventsPanel` เมื่อเช้า — ตัวนี้อยู่คนละไฟล์จึงไม่ถูกแก้ไปด้วย** */
+        <div className="bg-alert-soft px-4 py-2 text-xs text-alert-ink">
           ⚠️ ตารางที่วางไว้จบช้ากว่ากำหนด &quot;{afterAnchorEvent.title}&quot; ({afterAnchorEvent.time}) ไป{" "}
           {deadlineOverrunMinutes} นาที ลองลดเวลาที่อยู่บางจุดหรือตัดบางจุดออก
         </div>
