@@ -46,14 +46,14 @@ function CountryThumb({ countryId }: { countryId: string }) {
      * ส่วนสี่ประเทศที่มีไฟล์รูปได้ธงรอบเดียว ⇒ **การ์ดเก้าใบมีสองแบบโดยไม่ได้ตั้งใจ**
      * 🎯 ***ไอคอนต้องอยู่ที่เดียว "ที่มีเสมอ" ไม่ใช่สองที่ "ที่มีบ้างไม่มีบ้าง"***
      */
-    return <div className="h-full w-24 bg-gradient-to-br from-pine to-maple sm:h-28 sm:w-full" />;
+    return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
       src={`/covers/country-${countryId}.svg`}
       alt=""
-      className="h-full w-24 object-cover sm:h-28 sm:w-full"
+      className="h-28 w-full object-cover"
       onError={() => setBroken(true)}
     />
   );
@@ -64,14 +64,14 @@ function CountryThumb({ countryId }: { countryId: string }) {
 function CityThumb({ slug }: { slug: string | null | undefined }) {
   const [broken, setBroken] = useState(false);
   if (!slug || broken) {
-    return <div className="h-full w-24 bg-gradient-to-br from-pine to-maple sm:h-28 sm:w-full" />;
+    return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
     <img
       src={`/covers/city-${slug}.svg`}
       alt=""
-      className="h-full w-24 object-cover sm:h-28 sm:w-full"
+      className="h-28 w-full object-cover"
       onError={() => setBroken(true)}
     />
   );
