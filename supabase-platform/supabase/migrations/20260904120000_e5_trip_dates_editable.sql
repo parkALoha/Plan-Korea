@@ -2,13 +2,23 @@
 -- E5 — แก้ช่วงวันของทริปหลังสร้างแล้ว (`start_date`/`end_date` + เพิ่ม/ถอนวัน)
 -- เจ้าของ: P1-Lead · 4 ก.ย. 2026
 -- ════════════════════════════════════════════════════════════════════════════
--- ## ทำไมต้องมี
--- ช่วงวันของทริปถูกกำหนด **ครั้งเดียวตอนสร้าง** ผ่าน `create_trip` (`20260827080000:70-93`)
--- แล้วไม่มีเส้นทางไหนแก้ได้เลย เพราะ `20260826…:75` `revoke insert, update on public.trips
--- from authenticated` แล้ว grant กลับมาแค่ `cover_image_url` (`:164-165`)
--- ⇒ **พิมพ์วันผิดตอนสร้าง = ต้องสร้างทริปใหม่ทั้งใบ** และทริปเก่าลบทิ้งก็ไม่ได้อีก
+-- ## ทำไมต้องมี — **และครึ่งหนึ่งของเหตุผลเดิมเป็นเท็จ ผมแก้หลังฐานปฏิเสธไฟล์นี้**
+-- ฉบับแรกเขียนว่า *"ไม่มีเส้นทางไหนแก้ `start_date`/`end_date` ได้เลย"*
+-- 🔴 **ไม่จริง — มีมาตั้งแต่ 25 ส.ค.:**
+--   `20260825122247_e2_freeze_row_times.sql:78`
+--   `grant  update (title, start_date, end_date, base_timezone, status) on public.trips to authenticated;`
 --
--- 🎯 ***ช่องที่แก้ไม่ได้ ไม่ได้แปลว่า "แก้ไม่บ่อย" — มันแปลว่าพลาดแล้วจบ***
+-- 🎯 ***ตัวที่บอกผมคือ assert ฝั่งควบคุมในไฟล์นี้เอง*** — มันแดงว่า `base_timezone` แก้ได้
+--    ซึ่งเป็นไปได้ทางเดียวคือมี grant ที่ผมไม่เห็น · **ด่านที่ผมเขียนเพื่อกันตัวเองเปิดเกิน
+--    กลายเป็นตัวที่บอกว่าผมอ่านสภาพฐานผิดตั้งแต่ต้น**
+-- · 🔴 และเหตุผลที่ทั้งผมและ P4 grep ไม่เจอ: บรรทัดนั้นเขียน `grant··update` **เว้นวรรคสองครั้ง**
+--   ⇒ `grep "grant update"` ไม่ match · ***สตริงที่ค้นหาไม่ใช่ไวยากรณ์ที่ Postgres อ่าน***
+--
+-- ⇒ **ของที่ไฟล์นี้ให้จริง มีอย่างเดียว: `trip_days_delete` + `grant delete on trip_days`**
+--    (`grant update (start_date, end_date)` ข้างล่างจึงซ้ำซ้อน · เก็บไว้เพราะ idempotent และ
+--     ทำให้เจตนาชัด ไม่ใช่เพราะจำเป็น)
+--
+-- 🎯 ***ช่องที่แก้ไม่ได้ ไม่ได้แปลว่า "แก้ไม่บ่อย" — มันแปลว่าพลาดแล้วจบ*** (ยังจริงกับ `trip_days`)
 --
 -- ## สิ่งที่ไฟล์นี้ให้ และไม่ให้
 -- ✅ `grant update (start_date, end_date) on trips` — policy `trips_update` (owner เท่านั้น)
@@ -107,9 +117,11 @@ begin
   if has_column_privilege('authenticated', 'public.trips', 'created_by', 'UPDATE') then
     raise exception 'assert ล้ม: เปิดกว้างเกิน — authenticated update trips.created_by ได้';
   end if;
-  if has_column_privilege('authenticated', 'public.trips', 'base_timezone', 'UPDATE') then
-    raise exception 'assert ล้ม: เปิดกว้างเกิน — authenticated update trips.base_timezone ได้';
-  end if;
+  -- 🔴 **เคยมี assert ว่า `base_timezone` ต้องแก้ไม่ได้ — ถอนออกแล้ว เพราะมันไม่เคยเป็นจริง**
+  --    `20260825122247:78` ให้สิทธิ์นั้นไว้ตั้งแต่ 25 ส.ค. · assert นั้นทำให้ทั้งไฟล์ถูกปฏิเสธ
+  --    ⇒ **ไม่ใช่การผ่อนด่านให้ผ่าน — คือการลบคำกล่าวอ้างที่ผิด**
+  --    ⚠️ ถ้าวันหนึ่งมีคนตั้งใจ `revoke update (base_timezone)` **ให้เอา assert กลับมาในใบนั้น**
+  --       (`D37` ผูก `base_timezone` ไว้กับการคำนวณเวลาทั้งทริป — ยังเป็นคอลัมน์ที่ควรระวัง)
 
   if not has_table_privilege('authenticated', 'public.trip_days', 'DELETE') then
     raise exception 'assert ล้ม: authenticated ยัง delete trip_days ไม่ได้';
