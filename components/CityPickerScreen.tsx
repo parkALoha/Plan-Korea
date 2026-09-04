@@ -189,14 +189,22 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
         )}
         {cities.status === "ready" && cities.items.length > 0 && (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {/**
+             * 🔴 **`auto-fill` + `minmax(17rem,1fr)` — เหมือนทุกกริดในเว็บ ไม่ใช่ `grid-cols-2` ของผมเอง**
+             * ฉบับแรกผมเขียน `grid-cols-2 sm:grid-cols-3` แล้วส่ง `coverLayout="banner"` ให้ `CoverCard`
+             * · ระหว่างนั้น P2 **ถอด `coverLayout` ออกทั้งพารามิเตอร์** (ผู้ใช้ทัก: การ์ดทั้งเว็บต้องทรงเดียว)
+             *   ⇒ โค้ดผมพัง `tsc` ทันทีที่เขาแก้ไฟล์ร่วม **ทั้งที่ผมไม่ได้แตะอะไรเลย**
+             * 🎯 **และถ้าผมแค่ลบ prop ทิ้งให้ `tsc` เขียว ผมจะได้หน้าที่การ์ดทรงเดียวกับเว็บ
+             *    แต่ *กริด* คนละแบบ — ซึ่งคือปัญหาเดิมที่เขาเพิ่งกำจัด ย้ายมาอยู่ที่ผมแทน**
+             * ⇒ ตามกริดกลางด้วย · การ์ดกว้างเท่ากันทั้งเว็บ (`17rem` · ปก `h-28`) ตามที่ผู้ใช้สั่ง
+             */}
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
               {cities.items.map((c) => (
                 <CoverCard
                   key={c.id}
                   onClick={() => setPicked(c)}
                   cover={<CityThumb slug={c.legacy_slug} />}
                   title={c.name_th}
-                  coverLayout="banner"
                 >
                   {/* ชื่ออังกฤษ/ท้องถิ่นเป็นบรรทัดรอง — ช่องนี้ว่างได้ ไม่บังคับเติมของปลอม (กติกาของ `CoverCard`) */}
                   <span className="text-xs text-ink/60">{c.name_local || c.name_en}</span>
