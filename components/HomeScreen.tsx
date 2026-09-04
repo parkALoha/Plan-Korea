@@ -10,6 +10,7 @@ import { AccountMenu } from "@/components/AccountMenu";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
 import { SiteNav } from "@/components/SiteNav";
+import { TripInvitePanel } from "@/components/TripInvitePanel";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useMounted } from "@/hooks/useMounted";
 import { useSystemMode } from "@/hooks/useSystemMode";
@@ -269,10 +270,13 @@ function TripMembers({
   tripId,
   memberCount,
   viewerName,
+  viewerId,
 }: {
   tripId: string;
   memberCount: number;
   viewerName: string | null;
+  /** id ของผู้ใช้ที่ล็อกอินอยู่ — ใช้ตัดสินว่าเขาเป็น `owner` ของทริปนี้ไหม (คุมการโผล่ของแผงชวนเพื่อน) */
+  viewerId: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<TripMember[] | "error" | null>(null);
@@ -402,6 +406,18 @@ function TripMembers({
               ))}
             </ul>
           )}
+          {/**
+           * 🔴 **แผงชวนเพื่อนอยู่ใน *กล่องสมาชิก* ไม่ใช่หน้าตั้งค่า** — ผู้ใช้ขอไว้ในประโยคเดียวกับ
+           * *"เลื่อนดูสมาชิกได้"* ⇒ *"เชิญได้ หรือส่งลิงก์เชิญร่วมทริปนี้ได้"*
+           * 🎯 ***คำถาม "ใครอยู่ในทริปนี้" กับ "ชวนใครเพิ่ม" เป็นคำถามเดียวกันในหัวคนใช้***
+           * · `isOwner` คำนวณจากรายชื่อที่กล่องนี้โหลดมาอยู่แล้ว — **ไม่ยิงเพิ่มเพื่อถามสิทธิ์**
+           * · ⚠️ ระหว่างที่รายชื่อยังโหลดไม่เสร็จ `isOwner` เป็น `false` ⇒ ปุ่มยังไม่โผล่
+           *   **"ยังไม่รู้" ต้องไม่เท่ากับ "ไม่ใช่เจ้าของ"** — โผล่ทีหลังดีกว่าโผล่แล้วหาย (รูปเดียวกับปุ่มลบทริป)
+           */}
+          <TripInvitePanel
+            tripId={tripId}
+            isOwner={Array.isArray(members) && members.some((m) => m.role === "owner" && m.userId === viewerId)}
+          />
         </Modal>
       )}
     </>
@@ -411,10 +427,12 @@ function TripMembers({
 function TripCard({
   trip,
   viewerName,
+  viewerId,
 }: {
   trip: TripListItem;
   /** ชื่อผู้ใช้ที่ล็อกอินอยู่ — `null` ตอนยังอ่านไม่เสร็จ · ใช้วาดวงกลมของ *เขาเอง* เท่านั้น */
   viewerName: string | null;
+  viewerId: string | null;
 }) {
   const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
@@ -429,7 +447,12 @@ function TripCard({
       badge={<TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />}
       title={trip.title}
       titleTrailing={
-        <TripMembers tripId={trip.id} memberCount={trip.memberCount} viewerName={viewerName} />
+        <TripMembers
+          tripId={trip.id}
+          memberCount={trip.memberCount}
+          viewerName={viewerName}
+          viewerId={viewerId}
+        />
       }
     >
       {/* 🔴 ผู้ใช้ขอเอง: *"ชื่อทริปใหญ่และเด่นขึ้น · วันที่/สถานที่สว่างขึ้นให้อ่านง่าย"*
@@ -1064,6 +1087,7 @@ export function HomeScreen() {
                     key={trip.id}
                     trip={trip}
                     viewerName={user.status === "ready" ? user.displayName ?? null : null}
+                    viewerId={user.status === "ready" ? user.id : null}
                   />
                 ))}
               </div>
