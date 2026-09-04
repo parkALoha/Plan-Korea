@@ -14,12 +14,13 @@ import { IntercityEditModal } from "@/components/IntercityEditModal";
 import { TransferEditModal } from "@/components/TransferEditModal";
 import { TripHeader } from "@/components/TripHeader";
 import { TripPrepPanel } from "@/components/TripPrepPanel";
+import { DayEventEditModal } from "@/components/DayEventEditModal";
 import { DayCardSkeleton } from "@/components/DayCardSkeleton";
 import { type Place } from "@/data/places";
 import { categoryMetaOf } from "@/components/categoryMeta";
 import { cityMetaOf } from "@/components/cityMeta";
 import type { MoveDayTarget } from "@/components/MoveStopMenu";
-import type { City, Day } from "@/data/itinerary";
+import type { City, Day, DayEvent } from "@/data/itinerary";
 import { hotelAnchorId, hotelOfLeg } from "@/lib/hotelLegs";
 import { resolvePlace } from "@/lib/resolvePlace";
 import { haversineKm } from "@/lib/geo";
@@ -116,6 +117,8 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
     removeStop,
     restoreStop,
     catalogPlaces,
+    insertEventAt,
+    updateEvent,
   } = useStops(tripId, activePlanId);
   const { customPlaces, loaded: customPlacesLoaded } = useCustomPlaces();
   /**
@@ -448,6 +451,17 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
   const [transferContext, setTransferContext] = useState<{
     dayId: string;
     atIndex: number;
+  } | null>(null);
+
+  /**
+   * บริบทของฟอร์ม **แถวเวลาตายตัว** — `null` = ปิดอยู่ · `E5` · P2 · 4 ก.ย. 2026
+   * 🔴 ถือ `dayId` เสมอ และถือ `stopId`+`event` เฉพาะตอนแก้ของเดิม
+   *    ⇒ *"สร้างใหม่"* กับ *"แก้"* แยกจากกันด้วยข้อมูล ไม่ใช่ด้วยธงอีกใบที่อาจไม่ตรงกัน
+   */
+  const [eventContext, setEventContext] = useState<{
+    dayId: string;
+    stopId?: string;
+    event?: DayEvent;
   } | null>(null);
 
   // id ของจุดแวะที่เพิ่งถูกเพิ่ม (ลากหรือกด +) — ใช้ไฮไลต์แถวนั้นสั้นๆ ให้รู้สึกว่า "เพิ่มสำเร็จ"
@@ -826,6 +840,8 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
                   }
                   onInsertTransfer={(atIndex) => setTransferContext({ dayId: day.id, atIndex })}
                   onInsertHotel={(atIndex) => handleInsertHotel(day.id, atIndex)}
+                  onAddEvent={() => setEventContext({ dayId: day.id })}
+                  onEditEvent={(stopId, event) => setEventContext({ dayId: day.id, stopId, event })}
                   weather={weatherByDay[day.id] ?? null}
                   flashStopId={flashStopId}
                 />
@@ -926,6 +942,34 @@ export function TripPlanScreen({ tripId }: { tripId: string }) {
             ).then(flashNewStop);
             setTransferContext(null);
           }}
+        />
+      )}
+
+      {eventContext && (
+        <DayEventEditModal
+          existing={eventContext.event ?? null}
+          onClose={() => setEventContext(null)}
+          onSave={async (input) => {
+            if (eventContext.stopId) {
+              await updateEvent(eventContext.stopId, input);
+            } else {
+              /**
+               * 🔴 **ไม่ส่ง `atIndex`** ⇒ ต่อท้ายวัน · จงใจ:
+               * `atIndex` ที่ `/stops` รับ นับจากลิสต์ที่ **ไม่มี event** (`stopRanksInDay`)
+               * → ส่งเลขจากลิสต์ที่ผู้ใช้เห็น (ซึ่งมี event ปน) จะแทรกผิดตำแหน่งเงียบ ๆ
+               * · ลำดับของ event ไม่เปลี่ยนความหมายของแถว — `splitDayEvents` แบ่งก่อน/หลัง
+               *   จาก **ลำดับของ event กันเอง** และ `useDaySchedule` อ่านเวลาจาก `fixed_start_time`
+               */
+              await insertEventAt(eventContext.dayId, undefined, input, who || undefined);
+            }
+          }}
+          onDelete={
+            eventContext.stopId
+              ? async () => {
+                  await removeStop(eventContext.stopId!);
+                }
+              : undefined
+          }
         />
       )}
 

@@ -68,6 +68,8 @@ export function DayStopsSection({
   moveTargets,
   onMoveStopWithinDay,
   onMoveStopToDay,
+  onAddEvent,
+  onEditEvent,
 }: {
   day: Day;
   /** stops for this day only, already sorted by order_index */
@@ -113,6 +115,14 @@ export function DayStopsSection({
   onInsertTransfer: (atIndex: number) => void;
   /** แทรกแถว "แวะที่พัก" ที่ตำแหน่ง atIndex ของวันนี้ — เช็คอิน/ฝากกระเป๋ากลางวันแล้วเที่ยวต่อ */
   onInsertHotel: (atIndex: number) => void;
+  /**
+   * เปิดฟอร์ม **แถวเวลาตายตัว** (เที่ยวบิน/เช็คอิน/เดดไลน์) — `E5` · 4 ก.ย. 2026
+   * 🔴 **ไม่ส่งทั้งคู่ = การ์ดนี้อ่านอย่างเดียวเรื่อง event** และป้ายในแผงจะพูดอย่างนั้นเอง
+   *    (`DayEventsPanel` อ่านจาก `onEditEvent` ตรง ๆ ไม่ได้อ่านวันที่หรือชื่อ branch)
+   * · ทริปที่แผนมาจาก `data/itinerary.ts` ไม่ส่ง — แถวพวกนั้นไม่มี `stopId` ให้แก้อยู่แล้ว
+   */
+  onAddEvent?: () => void;
+  onEditEvent?: (stopId: string, event: DayEvent) => void;
   /** พยากรณ์อากาศของวันนี้ — null/undefined เมื่อยังอยู่นอกช่วงพยากรณ์ ~16 วัน (ปกติตอนวางแผนล่วงหน้า) */
   weather?: DayWeather | null;
   /** id ของจุดแวะที่เพิ่งถูกเพิ่ม (ทั้งวันไหนก็ได้) — ใช้ไฮไลต์แถวนั้นสั้นๆ */
@@ -421,6 +431,7 @@ export function DayStopsSection({
           events={eventsBeforeStops}
           hotelPlace={startHotelPlace}
           placeSources={placeSources}
+          onEditEvent={onEditEvent}
         />
       )}
 
@@ -672,6 +683,18 @@ export function DayStopsSection({
                   >
                     ✈️ + ไปสนามบิน/สถานี
                   </button>
+                  {/* 🔴 แถวเวลาตายตัวอยู่ในแถบ "อื่นๆ" ไม่ใช่แผงว่างบนหัวการ์ด — **แผงจะโผล่บนการ์ดทั้ง 11 ใบ
+                      ทั้งที่ส่วนใหญ่ไม่มีแถวเลย** · `HotelLegsPanel`/`BookingsPanel` โชว์หัวข้อเปล่าได้เพราะ
+                      มีใบเดียวต่อทริป ไม่ใช่ใบเดียวต่อวัน — เหตุผลเดียวกันให้คำตอบต่างกันเมื่อจำนวนต่างกัน
+                      · ขึ้นเฉพาะทริปที่ผู้เรียกส่ง `onAddEvent` มา (แผนจากไฟล์โค้ดไม่ส่ง) */}
+                  {onAddEvent && (
+                    <button
+                      onClick={onAddEvent}
+                      className="px-4 py-3 text-sm font-medium text-pine-dark hover:bg-pine-soft/40"
+                    >
+                      ⏰ + เวลาตายตัว
+                    </button>
+                  )}
                   {stops.length >= 3 && (
                     <button
                       onClick={() => setSuggestingRoute(true)}
@@ -743,6 +766,7 @@ export function DayStopsSection({
           heading="✈️ ต่อจากนั้น"
           hotelPlace={startHotelPlace}
           placeSources={placeSources}
+          onEditEvent={onEditEvent}
         />
       )}
 

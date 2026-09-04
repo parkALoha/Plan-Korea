@@ -35,8 +35,15 @@ export function DayEventsPanel({
   heading = "✈️ ตารางบิน/เวลาตายตัวของวันนี้",
   hotelPlace = null,
   placeSources,
+  onEditEvent,
 }: {
   events: DayEvent[];
+  /**
+   * เปิดฟอร์มแก้แถวนี้ — **ไม่ส่ง = แผงนี้อ่านอย่างเดียว** (`/summary` และทริปที่แผนมาจากไฟล์โค้ด)
+   * 🔴 ปุ่มขึ้นเฉพาะแถวที่ **มี `stopId`** เท่านั้น · แถวจาก `data/itinerary.ts` ไม่มี id
+   *    ⇒ ไม่มีอะไรให้ `PATCH` ตามนิยาม · ดูเหตุผลเต็มที่ `DayEvent.stopId`
+   */
+  onEditEvent?: (stopId: string, event: DayEvent) => void;
   heading?: string;
   /** แหล่งสถานที่ของทริปนี้ (คลังกลาง + ของผู้ใช้) — ต้องส่งมา ไม่งั้นแถวที่อ้าง `home-base` จะ resolve ไม่เจอ */
   placeSources: PlaceSources;
@@ -52,12 +59,20 @@ export function DayEventsPanel({
      มันถูกอ่านว่า "กดแล้วแก้ได้" — ผู้ใช้ทักเองว่าดูแล้วไม่รู้ว่าอะไรมาจากไหน (4 ก.ย. 2026)
      ⇒ บอกที่มาให้ชัดแทน และเก็บ 🔒 ไว้เฉพาะเรื่องที่เป็นจริงในโลกจริง (ตั๋วจองแล้ว = เลื่อนไม่ได้) */
   const lockedCount = events.filter(isLocked).length;
-  const legend =
-    lockedCount === events.length
+  /**
+   * 🔴 **แก้ 4 ก.ย. 2026 — ป้ายเดิม *"แก้ในเว็บไม่ได้"* เป็นเท็จแล้วสำหรับแถวที่มาจากฐาน** (P2)
+   * ตอนเขียนมันจริงทุกตัวอักษร (ไม่มีสายเขียนเลยสักเส้น) · `E5` ต่อสายครบแล้ว ⇒ ป้ายต้องตามสภาพจริง
+   * ✅ **ผูกกับ `onEditEvent` ที่ผู้เรียกส่งมา ไม่ใช่กับวันที่หรือชื่อ branch** — วันที่ผู้เรียกเลิกส่ง
+   *    ป้ายกลับไปพูดความจริงเองโดยไม่ต้องมีใครแก้ไฟล์นี้ (บทเรียน *คำบรรยายสภาพ* จาก `HotelsFlatList`)
+   * ⚠️ 🔒 ยังพูดเรื่องเดิม: **ตั๋วจองแล้ว = เลื่อนเวลาไม่ได้ในโลกจริง** ไม่เกี่ยวกับการแก้ในเว็บ
+   */
+  const legend = onEditEvent
+    ? lockedCount > 0
+      ? "🔒 ตั๋วจองแล้ว (เลื่อนเวลาจริงไม่ได้) · แตะ ✏️ เพื่อแก้"
+      : "แตะ ✏️ เพื่อแก้"
+    : lockedCount > 0
       ? "🔒 ตั๋วจองแล้ว · แก้ในเว็บไม่ได้"
-      : lockedCount === 0
-        ? "แก้ในเว็บไม่ได้"
-        : "🔒 ตั๋วจองแล้ว · แก้ในเว็บไม่ได้";
+      : "แก้ในเว็บไม่ได้";
 
   return (
     <div className="border-b border-line">
@@ -137,18 +152,39 @@ export function DayEventsPanel({
           );
 
           // มีสถานที่ = ทั้งแถวกดได้ เหมือนแถวจุดแวะที่กดตรงไหนก็เปิดรายละเอียด
-          return place ? (
+          /**
+           * 🔴 **ปุ่มแก้เป็น *พี่น้อง* ของเนื้อแถว ไม่ใช่ลูก** — เนื้อแถวของแถวที่มีสถานที่เป็น `<button>`
+           * อยู่แล้ว (กดดูรูป/แผนที่) · ซ้อนปุ่มในปุ่มเป็น HTML ที่ไม่ถูกต้อง และเบราว์เซอร์จะกินคลิกชั้นใน
+           * ⇒ ห่อด้วย flex แล้ววางสองปุ่มข้างกัน **ทั้งสองอย่างจึงยังกดได้ครบ ไม่ต้องเลือกอย่างใดอย่างหนึ่ง**
+           * · ปุ่มแก้ขึ้นเฉพาะ `event.stopId` มีค่า — แถวจากไฟล์โค้ดไม่มี id ⇒ ไม่มีปุ่มตั้งแต่ต้น
+           */
+          const editable = onEditEvent && event.stopId;
+          const rowBody = place ? (
             <button
-              key={i}
               type="button"
               onClick={() => setViewPlace(place)}
-              className={`block w-full text-left hover:bg-surface-soft/60 ${tone}`}
+              className="block min-w-0 flex-1 text-left hover:bg-surface-soft/60"
             >
               {body}
             </button>
           ) : (
-            <div key={i} className={tone}>
-              {body}
+            <div className="min-w-0 flex-1">{body}</div>
+          );
+
+          return (
+            <div key={i} className={`flex items-start ${tone}`}>
+              {rowBody}
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => onEditEvent(event.stopId!, event)}
+                  aria-label={`แก้ ${event.title}`}
+                  title={`แก้ ${event.title}`}
+                  className="shrink-0 self-stretch px-3 py-3 text-sm text-content-soft hover:bg-surface-soft/60"
+                >
+                  ✏️
+                </button>
+              )}
             </div>
           );
         })}

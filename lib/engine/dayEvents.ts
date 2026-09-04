@@ -64,6 +64,8 @@ function isEventRow<T extends EventStopRow>(r: T): boolean {
 export function toDayEvent(row: EventStopRow): DayEvent {
   const e = row.event!;
   return {
+    // 🔴 แถวจากฐานมี id เสมอ ⇒ แก้ได้ · แถวจาก `data/itinerary.ts` ไม่ผ่านทางนี้ จึงไม่มี id (ดู `DayEvent.stopId`)
+    stopId: row.id,
     time: e.fixed_start_time,
     endTime: e.fixed_end_time ?? undefined,
     icon: e.icon,

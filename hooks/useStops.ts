@@ -12,6 +12,7 @@ import { reportDayBridgeDropIfAny, reportDayBridgeWarningIfAny } from "@/lib/eng
 import { fetchReadJson } from "@/lib/engine/fetchReadJson";
 import { parseStopsPayload, shouldCacheSideMap } from "@/lib/engine/stopsPayload";
 import type { Place } from "@/data/places";
+import type { DayEventKind } from "@/data/itinerary";
 
 /**
  * จุดแวะของแผน — **`E3` ผ่าน route แล้ว** · `D6`
@@ -40,6 +41,53 @@ function sortStops(stops: TripStop[]) {
 }
 
 type StopDto = Omit<TripStop, "day_id" | "plan_id"> & { trip_day_id: string };
+
+/**
+ * ค่าที่ฟอร์ม "แถวเวลาตายตัว" ส่งเข้ามา — **รูปของ UI ไม่ใช่รูปของฐาน**
+ * ตัวแปลงชื่อคอลัมน์อยู่ที่ `eventBody()` ที่เดียว (คีย์ของ `WRITABLE` ใน `/stops`)
+ */
+export type EventInput = {
+  /** บังคับ — `trip_stops_event_needs_core` */
+  title: string;
+  /** บังคับ — `"HH:MM"` */
+  startTime: string;
+  /** บังคับ — อีโมจิหนึ่งตัว */
+  icon: string;
+  endTime: string | null;
+  kind: DayEventKind | null;
+  /** `"before"` = จุดแวะเริ่มนับต่อจากแถวนี้ · `"after"` = เดดไลน์ที่ทั้งวันต้องจบก่อน · `null` = ไม่เป็นหมุด */
+  anchor: "before" | "after" | null;
+  /** true = เดดไลน์ที่พลาดไม่ได้ (แถวเปลี่ยนสี) */
+  alert: boolean;
+  /** true = เวลานี้ยืดหยุ่นได้ในโลกจริง · false = ตั๋วจองแล้ว (\u{1F512}) — **คนละเรื่องกับ "แก้ในเว็บได้ไหม"** */
+  flexible: boolean;
+  note: string | null;
+  /** ครบชุดหรือ `null` ทั้งก้อน — ฐานบังคับด้วย `trip_stops_flight_fields_complete` */
+  flight: { no: string; fromCode: string; toCode: string; fromEn: string; toEn: string } | null;
+};
+
+/**
+ * `EventInput` \u2192 body ของ `/stops` — **ที่เดียวในระบบที่รู้ชื่อคีย์ฝั่ง route**
+ * \u{1F534} ทุกฟิลด์ถูกส่งเสมอ (รวม `null`) เพราะ `PATCH` ต้องล้างค่าที่ผู้ใช้ลบออกได้จริง
+ */
+function eventBody(input: EventInput): Record<string, unknown> {
+  return {
+    title: input.title,
+    icon: input.icon,
+    fixedStartTime: input.startTime,
+    fixedEndTime: input.endTime,
+    eventKind: input.kind,
+    scheduleBound: input.anchor,
+    isAlert: input.alert,
+    timeIsFlexible: input.flexible,
+    note: input.note,
+    flightNo: input.flight?.no ?? null,
+    flightFromCode: input.flight?.fromCode ?? null,
+    flightToCode: input.flight?.toCode ?? null,
+    flightFromEn: input.flight?.fromEn ?? null,
+    flightToEn: input.flight?.toEn ?? null,
+  };
+}
 
 /** 🔴 `tripId` มาจากผู้เรียก (route `/trip/[tripId]`) ตั้งแต่ `E5-AC1` — ดู `useCustomPlaces.tsx` สำหรับเหตุผลเต็ม */
 export function useStops(tripId: string | null, planId: string | null) {
@@ -308,6 +356,24 @@ export function useStops(tripId: string | null, planId: string | null) {
     [insertAt]
   );
 
+  /**
+   * \u{1F534} **แถวเวลาตายตัว (เที่ยวบิน · เช็คอิน · เดดไลน์) — `E5` ครึ่ง UI · P2 · 4 ก.ย. 2026**
+   *
+   * ก่อนหน้านี้ `DayEvent` 35 รายการของทริปเกาหลีถูกพิมพ์มือลง `data/itinerary.ts` และ
+   * `WRITABLE` ของ `/stops` ไม่มีฟิลด์ event สักตัว \u21d2 **สร้างจากหน้าเว็บไม่ได้เลยทุกทาง**
+   * (เปิดทางฝั่ง route แล้วที่ `759ad11`)
+   *
+   * \u{1F534} **สามแกนต้องไปพร้อมกันในคำขอเดียว** — `trip_stops_event_needs_core` บังคับ
+   * `fixed_start_time` + `title` + `icon` ครบเมื่อ `kind='event'` · `insertAt` ยิง `POST` ครั้งเดียว
+   * จึงลงพร้อมกันในทรานแซกชันเดียว **ไม่ต้องผ่อน constraint** (ยิงยืนยันแล้ว ไม่ได้อ่านเอา)
+   * \u26a0\ufe0f ผู้เรียกส่งไม่ครบ \u2192 route ตอบ **400 `check_violation`** พร้อมข้อความไทย ไม่ใช่ 502
+   */
+  const insertEventAt = useCallback(
+    async (dayId: string, atIndex: number | undefined, input: EventInput, addedBy?: string) =>
+      insertAt(dayId, atIndex, { kind: "event", addedBy: addedBy ?? null, ...eventBody(input) }),
+    [insertAt]
+  );
+
   const insertTransferAt = useCallback(
     async (
       dayId: string, atIndex: number,
@@ -374,6 +440,22 @@ export function useStops(tripId: string | null, planId: string | null) {
       await patch("โน้ตของจุดแวะ", stopId, { note });
     },
     [patch]
+  );
+
+  /**
+   * แก้แถวเวลาตายตัว — ส่ง **ทุกฟิลด์ของฟอร์ม** ไม่ใช่เฉพาะที่เปลี่ยน
+   *
+   * \u{1F534} จงใจ: ฟิลด์ที่ผู้ใช้ *ล้างค่า* ต้องกลายเป็น `null` จริง ๆ · ส่งเฉพาะที่เปลี่ยน
+   * แปลว่า "ลบเลขไฟลต์" กับ "ไม่ได้แตะเลขไฟลต์" ส่งข้อมูลชุดเดียวกัน \u21d2 ลบไม่ได้ตลอดกาล
+   * \u26a0\ufe0f ฐานยังกัน *ครึ่งชุด* อยู่เต็มที่ (`trip_stops_flight_fields_complete`) \u2014 ฟอร์มจึงตรวจก่อนส่ง
+   *    เพื่อให้ผู้ใช้เห็นข้อความที่อ่านออก ไม่ใช่เพื่อแทนด่านของฐาน
+   */
+  const updateEvent = useCallback(
+    async (stopId: string, input: EventInput) => {
+      await patch("แถวเวลาตายตัว", stopId, eventBody(input));
+      await reload();
+    },
+    [patch, reload]
   );
 
   const updatePhoto = useCallback(
@@ -497,6 +579,8 @@ export function useStops(tripId: string | null, planId: string | null) {
     addStop,
     insertStopAt,
     insertIntercityAt,
+    insertEventAt,
+    updateEvent,
     insertTransferAt,
     insertHotelAt,
     updateStopPlace,
