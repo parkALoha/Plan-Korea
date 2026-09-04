@@ -21,6 +21,7 @@ export function Modal({
   headerExtra,
   footer,
   size = "lg",
+  fillHeight = false,
   bodyClassName = "",
   children,
 }: {
@@ -36,6 +37,16 @@ export function Modal({
   /** แถวปุ่มท้ายกล่อง — อยู่นิ่งเสมอ ไม่ต้องเลื่อนหา */
   footer?: ReactNode;
   size?: "md" | "lg";
+  /**
+   * สูงคงที่ `90vh` เสมอ แทนที่จะ *ไม่เกิน* `90vh` — สำหรับโมดัลที่เนื้อหาโหลดทีหลัง
+   *
+   * 🔴 บั๊กจริง (ผู้ใช้เจอ 4 ก.ย. 2026): โมดัลค้นหาสถานที่เปิดมาเตี้ย (มีแค่ "กำลังค้นหา...")
+   * แล้วพุ่งขึ้นเมื่อผลมาถึง · **ไม่ใช่แอนิเมชัน — เป็นความสูงตามเนื้อหา**
+   * และมันกระตุกซ้ำทุกครั้งที่พิมพ์ค้นหา เพราะจำนวนผลเปลี่ยน
+   * 🎯 โมดัลที่ *เรียกดูรายการ* ต้องมีขนาดคงที่แล้วให้เนื้อหาเลื่อนข้างใน — ไม่ใช่ให้กล่องวิ่งตามผลลัพธ์
+   * ⚠️ ไม่ใช่ค่าเริ่มต้น: โมดัลยืนยัน/ฟอร์มสั้น ๆ ที่เนื้อหาครบตั้งแต่เปิด ควรพอดีตัวเหมือนเดิม
+   */
+  fillHeight?: boolean;
   bodyClassName?: string;
   children: ReactNode;
 }) {
@@ -83,7 +94,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface-raised text-content outline-none sm:rounded-2xl ${
+        className={`flex ${fillHeight ? "h-[90vh]" : "max-h-[90vh]"} w-full flex-col rounded-t-2xl bg-surface-raised text-content outline-none sm:rounded-2xl ${
           size === "md" ? "max-w-md" : "max-w-lg"
         }`}
         onClick={(e) => e.stopPropagation()}

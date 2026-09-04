@@ -25,6 +25,7 @@ export function AnchoredPanel({
   anchorRef,
   onClose,
   matchWidth = false,
+  minWidthFromAnchor = false,
   preferredMaxHeight,
   className = "",
   children,
@@ -33,6 +34,15 @@ export function AnchoredPanel({
   onClose: () => void;
   /** ให้แผ่นกว้างเท่าปุ่ม (ดรอปดาวน์ใช้ · ปฏิทินไม่ใช้ เพราะกว้างกว่าปุ่ม) */
   matchWidth?: boolean;
+  /**
+   * กว้าง **ไม่น้อยกว่าปุ่ม** แต่ยืดตามเนื้อหาได้ — ใช้แทน `matchWidth` เมื่อปุ่มแคบกว่ารายการ
+   *
+   * 🔴 บั๊กจริงที่ข้อนี้แก้ (ผู้ใช้เจอ 4 ก.ย. 2026): ตัวเลือกเมืองบนหัวการ์ดวันเป็น `variant="inline"`
+   * → ปุ่มกว้างเท่าชื่อเมือง · พอเลือก "โตเกียว" แล้ว `matchWidth` ทำให้แผ่นกว้าง ~60px
+   * ⇒ **รายการตัวเลือกถูกตัดเหลือ "ยังไม่..." / "โ..."** — อ่านไม่ออกว่ากำลังเลือกอะไร
+   * 🎯 `matchWidth` ถูกสำหรับช่องแบบฟอร์ม (ปุ่มกว้างอยู่แล้ว) และ **ผิดสำหรับปุ่มที่กว้างเท่าค่าของมันเอง**
+   */
+  minWidthFromAnchor?: boolean;
   /**
    * เพดานความสูงของแผ่น (px) — **แยกจาก "ที่ว่างบนจอ" โดยตั้งใจ**
    * ที่ว่างบอกว่า *กางได้* แค่ไหน · อันนี้บอกว่า *ควร* กางแค่ไหน
@@ -74,6 +84,11 @@ export function AnchoredPanel({
       // 🔴 ตั้งความกว้างก่อนวัดทุกอย่าง — ทั้ง `offsetWidth` (ใช้หนีบขอบขวา) และ `offsetHeight`
       // (รายการที่แคบลงจะขึ้นบรรทัดใหม่ → สูงขึ้น) ขึ้นกับความกว้างทั้งคู่ · วัดก่อนตั้ง = วัดของที่ยังไม่ใช่ของจริง
       if (matchWidth) p.style.width = `${r.width}px`;
+      else if (minWidthFromAnchor) {
+        p.style.minWidth = `${r.width}px`;
+        // เพดานกันแผ่นยาวข้ามจอตอนมีตัวเลือกชื่อยาว — 8px ต่อข้างคือระยะขอบเดียวกับที่หนีบขอบขวาข้างล่าง
+        p.style.maxWidth = `${Math.min(360, window.innerWidth - 16)}px`;
+      }
       const h = p.offsetHeight;
 
       const scrolls = preferredMaxHeight != null;
@@ -121,7 +136,7 @@ export function AnchoredPanel({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [anchorRef, matchWidth, preferredMaxHeight]);
+  }, [anchorRef, matchWidth, minWidthFromAnchor, preferredMaxHeight]);
 
   useEffect(() => {
     function onDocPointerDown(e: PointerEvent) {

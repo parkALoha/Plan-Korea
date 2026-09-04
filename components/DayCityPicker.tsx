@@ -74,13 +74,20 @@ export function DayCityPicker({
     <div className="min-w-0">
       {/* ไอคอนอยู่นอกตัวกด ไม่ใช่ในป้ายตัวเลือก — ป้ายในรายการต้องเป็นชื่อเมืองล้วน ๆ ให้ค้นด้วยตาได้
           และเครื่องอ่านหน้าจอไม่ต้องอ่านอิโมจิซ้ำ 31 รอบ */}
+      {/* 🔴 ยังไม่เลือกเมือง = **ยังทำอะไรกับวันนี้ไม่ได้เลย** — คลังสถานที่กรองตามเมือง
+          จึงต้องหน้าตาเหมือนสิ่งที่รอให้กด ไม่ใช่ประโยคบอกสถานะที่มีเส้นประใต้ (ผู้ใช้ถามว่ามันคืออะไร)
+          · มีค่าแล้ว → กลับไปเงียบ ๆ ให้ *ชื่อเมือง* เป็นตัวเด่น ไม่ใช่กรอบของปุ่ม */}
       <div className="flex min-w-0 items-center gap-1.5 text-lg font-bold">
         <span aria-hidden>{icon}</span>
         <Dropdown
+          emphasis={currentCityId ? "quiet" : "call"}
           id={`day-city-${dayId}`}
           ariaLabel={`${E5_COPY.dayCityPicker.ariaLabel} ${dateLabel}`}
           variant="inline"
-          value={currentCityId ?? CLEAR_VALUE}
+          /* 🔴 ยังไม่เลือก = ส่งค่าที่ **ไม่ตรงตัวเลือกไหนเลย** → ปุ่มโชว์ `placeholder` (คำเชิญ)
+             ถ้าส่ง `CLEAR_VALUE` ปุ่มจะโชว์ label ของตัวเลือกนั้นแทน ซึ่งเป็นคำสำหรับ *รายการ* ไม่ใช่ปุ่ม
+             · ตัวเลือก "ไม่ระบุเมือง" ยังอยู่ในรายการเหมือนเดิม — คนที่เลือกเมืองไปแล้วยังล้างค่าได้ */
+          value={currentCityId ?? ""}
           onChange={choose}
           disabled={saving}
           placeholder={E5_COPY.dayCityPicker.placeholder}

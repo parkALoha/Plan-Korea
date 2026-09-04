@@ -66,6 +66,7 @@ export function Dropdown({
   id,
   ariaLabel,
   variant = "field",
+  emphasis = "quiet",
   className = "",
 }: {
   value: string;
@@ -84,6 +85,16 @@ export function Dropdown({
    *   ทั้งที่มันคือ *สถานะปกติ* ของทุกวันในทริปใหม่ (P1 ชี้ 28 ส.ค. 2026)
    */
   variant?: "field" | "inline";
+  /**
+   * น้ำหนักของตัวกดตอน `variant="inline"` — `E5`/UX · 4 ก.ย. 2026
+   * · `quiet` (ค่าเริ่มต้น) = เส้นประใต้ข้อความ · ใช้ตอน **มีค่าอยู่แล้ว** สิ่งที่เด่นควรเป็นตัวค่าเอง
+   * · `call`  = ป้ายมีขอบเต็ม · ใช้ตอน **ยังไม่มีค่า และค่านั้นจำเป็น**
+   *
+   * 🔴 ทำไมต้องต่างกัน: เส้นประใต้ประโยคปฏิเสธ (*"ยังไม่ระบุเมือง"*) อ่านเหมือน **ป้ายที่เสีย**
+   * ไม่ใช่ปุ่มที่กดได้ — ผู้ใช้จริงถามว่ามันคืออะไร · ของที่ยังไม่ถูกกรอกและ *ต้อง* ถูกกรอก
+   * ต้องหน้าตาเหมือนสิ่งที่รอให้กด ไม่ใช่เหมือนข้อความบอกสถานะ
+   */
+  emphasis?: "quiet" | "call";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -187,7 +198,9 @@ export function Dropdown({
   const fieldClass =
     "flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface-raised px-3 py-2 text-left text-sm text-content hover:border-maple/50 focus:border-maple focus:outline-none disabled:cursor-not-allowed disabled:opacity-60";
   const inlineClass =
-    "flex max-w-full items-center gap-1.5 border-b border-dashed border-current/50 text-left text-lg font-bold text-inherit hover:border-current focus:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-60";
+    emphasis === "call"
+      ? "flex max-w-full items-center gap-1.5 rounded-lg border border-current/50 bg-current/10 px-2.5 py-1 text-left text-base font-bold text-inherit hover:bg-current/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-60"
+      : "flex max-w-full items-center gap-1.5 border-b border-dashed border-current/50 text-left text-lg font-bold text-inherit hover:border-current focus:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-60";
 
   const aria = {
     role: "combobox" as const,
@@ -265,7 +278,10 @@ export function Dropdown({
         <AnchoredPanel
           anchorRef={anchorRef}
           onClose={closeList}
-          matchWidth
+          /* ช่องแบบฟอร์มกว้างอยู่แล้ว → แผ่นเท่าช่อง · ปุ่ม inline กว้างเท่าค่าของมันเอง →
+             แผ่นต้องไม่แคบกว่าปุ่ม แต่ยืดตามเนื้อหาได้ ไม่งั้นตัวเลือกถูกตัดจนอ่านไม่ออก */
+          matchWidth={variant !== "inline"}
+          minWidthFromAnchor={variant === "inline"}
           preferredMaxHeight={PANEL_MAX_H}
           className="rounded-lg border border-line bg-surface-raised py-1 shadow-lg shadow-ink/10"
         >
