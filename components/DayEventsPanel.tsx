@@ -8,6 +8,7 @@ import { resolveEventPlace } from "@/lib/eventPlace";
 import { placeQueryKey } from "@/lib/placeQuery";
 import { LayoverBadges } from "./LayoverBadges";
 import { PlaceDetailModal } from "./PlaceDetailModal";
+import { RowIconBox, TripListRow } from "./TripListRow";
 import { PlaceThumb } from "./PlaceThumb";
 
 /** ตั๋วที่จองมาแล้วเท่านั้นที่ล็อกจริง — เหตุการณ์อื่น (เวลาเช็คอิน/เวลาออกจากโรงแรม) เป็นคำแนะนำที่ปรับได้
@@ -21,7 +22,7 @@ function isLocked(event: DayEvent): boolean {
  * เฟส 15: แยก "ตั๋วที่ล็อกแล้ว" ออกจาก "เวลาที่เป็นคำแนะนำ" ให้เห็นด้วยตา แทนที่จะเหมาว่าล็อกหมดทั้งแผง
  *
  * เฟส 28: แถวในแผงนี้ใช้**โครงเดียวกับ `SortableStopRow` เป๊ะๆ** — ช่องซ้ายสุดขนาดเท่าที่จับลาก
- * (`h-10 w-7`) · คอลัมน์เวลา `w-12 sm:w-14` · รูป/ไอคอน `h-20 w-20` · ชื่อ `font-semibold` ·
+ * (`h-10 w-7`) · คอลัมน์เวลา `w-12 sm:w-14` · รูป/ไอคอน `h-10 w-10` · ชื่อ `font-semibold` ·
  * บรรทัดรายละเอียดย่อหน้า `pl-10 sm:pl-14` เท่าบรรทัดโน้ต · คั่นด้วย `divide-y divide-line`
  * เหตุผล: วันบิน (11/21 ต.ค.) เคยเป็นตัวหนังสือล้วนคนละหน้าตากับทั้งเว็บ กดอะไรไม่ได้เลย
  * ทั้งที่ "สนามบินไหน อยู่ตรงไหน" คือสิ่งที่ต้องรู้ที่สุดของวันนั้น
@@ -37,7 +38,7 @@ export function DayEventsPanel({
 }: {
   events: DayEvent[];
   heading?: string;
-  /** สถานที่ที่เก็บใน Supabase — ต้องส่งมา ไม่งั้นแถวที่อ้าง `home-base` จะ resolve ไม่เจอ */
+  /** แหล่งสถานที่ของทริปนี้ (คลังกลาง + ของผู้ใช้) — ต้องส่งมา ไม่งั้นแถวที่อ้าง `home-base` จะ resolve ไม่เจอ */
   placeSources: PlaceSources;
   /** ที่พักที่ตื่นมาจากคืนก่อนหน้า — รองรับ `placeId: "@hotel"` (แถวเช็คเอาต์เช้าวันกลับ)
    *  null = ยังไม่ได้ตั้งที่พักคืนนั้น แถวนั้นแสดงเป็นแถวธรรมดาที่กดไม่ได้ */
@@ -45,17 +46,22 @@ export function DayEventsPanel({
 }) {
   const [viewPlace, setViewPlace] = useState<Place | null>(null);
 
+  /* 🔴 คำอธิบายเดิมเขียนว่า "✏️ ปรับได้" ซึ่ง **ไม่จริง** — แถวในแผงนี้มาจาก `data/itinerary.ts`
+     ซึ่งเป็นไฟล์โค้ด ไม่มีทางแก้ผ่านหน้าเว็บเลยสักทาง (ไล่หาแล้ว: `DayEvent` ไม่มี onUpdate/
+     modal/API เขียนสักตัว) · "ปรับได้" หมายถึงยืดหยุ่นได้ตอนอยู่หน้างานจริง แต่คู่กับรูป ✏️
+     มันถูกอ่านว่า "กดแล้วแก้ได้" — ผู้ใช้ทักเองว่าดูแล้วไม่รู้ว่าอะไรมาจากไหน (4 ก.ย. 2026)
+     ⇒ บอกที่มาให้ชัดแทน และเก็บ 🔒 ไว้เฉพาะเรื่องที่เป็นจริงในโลกจริง (ตั๋วจองแล้ว = เลื่อนไม่ได้) */
   const lockedCount = events.filter(isLocked).length;
   const legend =
     lockedCount === events.length
-      ? "🔒 ตั๋วจองแล้ว แก้ไม่ได้"
+      ? "🔒 ตั๋วจองแล้ว · แก้ในเว็บไม่ได้"
       : lockedCount === 0
-        ? "✏️ เวลาแนะนำ ปรับได้"
-        : "🔒 ตั๋วจองแล้ว · ✏️ ปรับได้";
+        ? "แก้ในเว็บไม่ได้"
+        : "🔒 ตั๋วจองแล้ว · แก้ในเว็บไม่ได้";
 
   return (
     <div className="border-b border-line">
-      <div className="flex items-baseline justify-between gap-2 bg-surface-soft/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-content-soft">
+      <div className="flex items-baseline justify-between gap-2 bg-surface-soft/40 px-4 py-2 text-2xs font-semibold uppercase tracking-wide text-content-soft">
         <span>{heading}</span>
         <span className="shrink-0 font-normal normal-case text-content-soft/70">{legend}</span>
       </div>
@@ -67,76 +73,66 @@ export function DayEventsPanel({
           // สีพื้นของแถวเหมือนเดิมทุกประการ — เดดไลน์ที่พลาดไม่ได้กับช่วงต่อเครื่องต้องเด้งออกมาจากแถวปกติ
           // แถวเตือนคุมสีตัวอักษรจากตัวแถว ข้างในจึงไม่ทับด้วย text-content (ครีมบนครีมตอนธีมมืด)
           const alert = event.alert === true;
+          /* 🔴 เดิมเป็น `bg-maple-soft/70 text-maple-dark` — **ทั้งคู่เป็นโทเคน brand ที่ไม่พลิกตามธีม**
+             ⇒ ในธีมมืด แถวเตือน (เดดไลน์ที่พลาดไม่ได้) กลายเป็น *แผ่นสว่างจ้ากลางจอมืด*
+             วัดจริงในเบราว์เซอร์: พื้นออกมาเป็น `lab(91.655 …)` = สีอ่อน ทั้งที่ทั้งหน้าเป็นธีมมืด
+             `alert-soft`/`alert-ink` เป็นคู่เชิงความหมายที่พลิกตามธีม **และพลิกกลับตอนพิมพ์**
+             🎯 เจอเพราะไปวัดคอนทราสต์ของ *เวลา* ไม่ใช่เพราะไปตรวจแถวเตือน — ของที่ไม่พลิกตามธีม
+                ไม่ส่งเสียงอะไรเลยจนกว่าจะมีคนเปิดธีมมืดแล้วมองมันตรง ๆ */
           const tone = alert
-            ? "bg-maple-soft/70 text-maple-dark"
+            ? "bg-alert-soft text-alert-ink"
             : event.kind === "layover"
               ? "bg-surface-soft/50"
               : "";
 
           const body = (
             <>
-              <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
-                {/* ช่องเดียวกับที่จับลากของแถวจุดแวะ — เหตุการณ์ลากไม่ได้ ใช้บอกว่าล็อก/ปรับได้แทน */}
-                <span
-                  aria-label={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
-                  title={locked ? "ตั๋วจองแล้ว แก้ไม่ได้" : "เวลาแนะนำ ปรับตามหน้างานได้"}
-                  // sm:w-[19px] ไม่ใช่ sm:w-auto อย่างที่ SortableStopRow ใช้ — วัดจริงในเบราว์เซอร์แล้ว
-                  // ที่ sm ขึ้นไปช่องนั้นกว้างตามตัวอักษรข้างใน: ⠿ (16px) ได้ 18.94px แต่ 🔒/✏️ (12px)
-                  // ได้ 23px ทำให้ทั้งคอลัมน์เวลา+รูปของแผงนี้เยื้องขวาไป 4px จากแถวจุดแวะที่อยู่ใต้กัน
-                  // ตรึงไว้ที่ 18.94 ปัดขึ้น = ตรงกันพอดี (อิโมจิ 15px ยังอยู่กลางช่อง ไม่ถูกตัด)
-                  className={`flex h-10 w-7 shrink-0 items-center justify-center text-xs sm:h-auto sm:w-[19px] sm:px-0 sm:py-2 ${alert ? "opacity-80" : "text-content-soft/60"}`}
-                >
-                  {locked ? "🔒" : "✏️"}
-                </span>
-
-                <div className={`w-12 shrink-0 text-center text-[11px] leading-tight sm:w-14 ${alert ? "opacity-80" : "text-content-soft"}`}>
-                  <div className={`font-semibold tabular-nums ${alert ? "" : "text-content"}`}>{event.time}</div>
-                  {event.endTime && <div className="tabular-nums">↓ {event.endTime}</div>}
-                </div>
-
-                <div className="flex min-w-0 flex-1 items-center gap-2 py-1.5">
-                  {place ? (
-                    <PlaceThumb
-                      query={placeQueryKey(place)}
-                      category={place.category}
-                      className="h-20 w-20 shrink-0"
-                    />
+              <TripListRow
+                muted={alert}
+                leading={
+                  place ? (
+                    <PlaceThumb query={placeQueryKey(place)} category={place.category} size="2xl" />
                   ) : (
-                    // ไอคอนในกรอบขนาดเท่ารูปย่อ — แบบเดียวกับแถว intercity/hotel/transfer ที่ไม่มีรูป
-                    <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-pine-soft/50 text-3xl">
-                      {event.icon}
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    {/* ไม่ truncate ต่างจากแถวจุดแวะ — ชื่อเที่ยวบินยาวกว่าชื่อสถานที่มาก
-                        ตัดแล้วเหลือ "VN428 ฮานอย → …" ซึ่งกลืนกันทั้ง 3 เที่ยวบิน */}
+                    <RowIconBox>{event.icon}</RowIconBox>
+                  )
+                }
+                time={event.time}
+                endTime={event.endTime}
+                corner={
+                  /* ไม่มีไอคอนเมื่อไม่ล็อก — "ไม่มีอะไร" คือคำตอบที่ถูก
+                     ของเดิมใส่ ✏️ ซึ่งอ่านว่ากดแล้วแก้ได้ ทั้งที่แก้ไม่ได้ · ที่มาของแถว
+                     บอกที่หัวแผงแล้ว ไม่ต้องบอกซ้ำทุกแถว */
+                  locked ? (
                     <span
-                      className={`block font-semibold ${alert ? "" : "text-content"} ${place ? "hover:underline" : ""}`}
+                      aria-label="ตั๋วจองแล้ว เวลานี้เลื่อนไม่ได้"
+                      title="ตั๋วจองแล้ว เวลานี้เลื่อนไม่ได้"
+                      className="text-xs text-content-soft/60"
                     >
-                      {place ? `${event.icon} ` : ""}
-                      {event.title}
-                      {event.flight && (
-                        <span className="ml-1.5 rounded bg-surface-soft px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-content-soft">
-                          {event.flight.fromCode} → {event.flight.toCode}
-                        </span>
-                      )}
+                      🔒
                     </span>
-                    {place && (
-                      <span className={`block truncate text-xs ${alert ? "opacity-80" : "text-content-soft"}`}>
-                        📍 {place.nameTh} — แตะดูรูป/แผนที่/นำทาง
+                  ) : undefined
+                }
+                title={
+                  <>
+                    {place ? `${event.icon} ` : ""}
+                    {event.title}
+                    {event.flight && (
+                      <span className="ml-1.5 rounded bg-surface-soft px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-content-soft">
+                        {event.flight.fromCode} → {event.flight.toCode}
                       </span>
                     )}
-                  </span>
-                </div>
-              </div>
-
-              {(event.detail || event.layover) && (
-                // ย่อหน้าเท่าบรรทัดโน้ตของแถวจุดแวะเป๊ะๆ
-                <div className={`px-3 pb-2 pl-10 text-xs leading-relaxed sm:px-4 sm:pl-14 ${alert ? "opacity-80" : "text-content-soft"}`}>
-                  {event.detail}
-                  {event.layover && <LayoverBadges layover={event.layover} />}
-                </div>
-              )}
+                  </>
+                }
+                subtitle={place ? `📍 ${place.nameTh} — แตะดูรูป/แผนที่/นำทาง` : undefined}
+                detail={
+                  event.detail || event.layover ? (
+                    <>
+                      {event.detail}
+                      {event.layover && <LayoverBadges layover={event.layover} />}
+                    </>
+                  ) : undefined
+                }
+              />
             </>
           );
 
