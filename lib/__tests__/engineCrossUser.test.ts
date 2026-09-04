@@ -1765,12 +1765,40 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
 
     describe("🔴 E5-trash — ลบแบบกู้คืนได้ (ยิงข้าม *สถานะ* ไม่ใช่ข้าม *ผู้ใช้*)", () => {
       let tripT = "";
+      let tPlan = "";
       beforeAll(async () => {
         tripT = await mkTrip(aClient, "a");
         const inv = await aClient.from("trip_members").insert([
           { trip_id: tripT, user_id: ids.d, role: "editor" },
         ]);
         if (inv.error) throw new Error(`เชิญ editor เข้า tripT: ${inv.error.message}`);
+        // 🔴 ต้องอ่าน `planId` ไว้ **ก่อนลบ** — หลังลบแล้ว `trips_select` ซ่อนทริป
+        //    และ `trip_plans_select` ก็ผ่าน `can_read_trip` เหมือนกัน ⇒ อ่านไม่ได้อีก
+        const pl = await aClient.from("trip_plans")
+          .select("id").eq("trip_id", tripT).eq("is_active", true).single();
+        if (pl.error) throw new Error(`หาแผนของ tripT: ${pl.error.message}`);
+        tPlan = pl.data.id as string;
+
+        /**
+         * 🔴 **ต้องมีจุดแวะจริงอย่างน้อยหนึ่งจุด ไม่งั้นเคส ④ *ผ่านฟรี***
+         * `mkTrip` สร้างทริปเปล่า ⇒ `stops` เป็น `[]` อยู่แล้วตั้งแต่ต้น
+         * ⇒ *"หลังลบได้ 0 แถว"* จะเป็นจริง **ไม่ว่า funnel จะทำงานหรือไม่**
+         * 🎯 ***เคสที่วัดความว่าง ต้องเริ่มจากความไม่ว่าง — ไม่งั้นมันวัดแค่ว่าของว่างยังว่างอยู่***
+         */
+        const dy = await aClient.from("trip_days")
+          .select("id").eq("trip_id", tripT).order("date").limit(1).single();
+        if (dy.error) throw new Error(`หาวันแรกของ tripT: ${dy.error.message}`);
+        // ใช้ custom place ของทริปนี้เอง — รูปเดียวกับเคส `D70` ข้างบน (ไม่พึ่งคลังสาธารณะ)
+        const cp = await postAs(aCookies, tripT, customPlacesPOST, {
+          city: citySlug, category: "food", maps_query: `q-trash-${stamp}`,
+          name_th: `จุดแวะถังขยะ-${stamp}`, lat: 37.5, lng: 127.0,
+        });
+        if (cp.status !== 201) throw new Error(`custom place ของ tripT (${cp.status}): ${await cp.text()}`);
+        const cpId = ((await cp.json()) as { id: string }).id;
+        const st = await postAs(aCookies, tripT, stopsPOST, {
+          planId: tPlan, tripDayId: dy.data.id as string, placeId: cpId,
+        });
+        if (st.status !== 201) throw new Error(`ใส่จุดแวะให้ tripT (${st.status}): ${await st.text()}`);
       });
 
       /** ทริปที่ A เห็นใน `GET /trips` — ชั้นที่ผู้ใช้เห็นจริง ไม่ใช่ชั้นตาราง */
@@ -1804,16 +1832,53 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
         expect(await listedByA(), "ลบแล้วทริปยังอยู่ในรายการ").not.toContain(tripT);
       });
 
+      /**
+       * 🔴 **เคสนี้ผิดสองรอบก่อนจะถูก — และความผิดทั้งสองรอบสอนคนละเรื่อง** (5 ก.ย. 2026)
+       *
+       * **รอบ ①** ยิงโดยไม่ใส่ `?planId=` ⇒ ได้ `400 "planId ไม่ถูกต้อง"`
+       * คำขอ **ไม่เคยเดินไปถึงชั้น RLS** · ถ้าผมเขียนหลวม (`not.toBe(200)`) มันจะ **เขียว**
+       * ทั้งที่ไม่ได้แตะ funnel เลย ⇒ *การระบุรหัสให้แคบ คือสิ่งเดียวที่ทำให้ความผิดนั้นส่งเสียง*
+       *
+       * **รอบ ②** ใส่ `planId` แล้วได้ `200 {"stops":[]}` — ผมคาด `403/404` ซึ่ง **route ไม่เคยสัญญา**
+       * `GET /stops` ตอบ `200 + []` ทั้งกรณี *"ไม่มีสิทธิ์"* และ *"ยังไม่มีจุดแวะ"* — เป็นดีไซน์ของมัน
+       * 🔴 **และตรงนี้คือความผิดที่แย่กว่า: ทริปทดสอบของผม *ไม่มีจุดแวะตั้งแต่ต้น***
+       *    ⇒ *"หลังลบได้ 0 แถว"* เป็นจริง **ไม่ว่า funnel จะทำงานหรือไม่**
+       *    🎯 ***เคสที่วัดความว่าง ต้องเริ่มจากความไม่ว่าง*** — ไม่งั้นมันวัดแค่ว่าของว่างยังว่างอยู่
+       *    · รหัสสถานะที่ผมคาดผิด **บังเอิญ** เป็นสิ่งเดียวที่ทำให้มันแดง — ***ถ้าผมคาดถูก
+       *      ผมจะได้เคสเขียวที่ไม่ได้วัดอะไรเลย และไม่มีทางรู้***
+       *
+       * ⇒ ฉบับนี้วัด **จำนวนจุดแวะก่อน/หลัง** ไม่ใช่รหัสสถานะ · `beforeAll` ใส่จุดแวะจริงไว้ 1 จุด
+       */
       it("🔴 ④ ลูกของทริปที่ถูกลบต้องเข้าไม่ถึง — กิ่งที่ไม่มี probe ใบอื่นแตะ", async () => {
-        const res = await callAs(aCookies, tripT, stopsGET, "GET");
-        const text = await res.clone().text();
-        // 200 + รายการว่าง ก็ยังผิด: มันแปลว่า policy ยอมให้เดินเข้าไปแล้วบังเอิญไม่มีอะไร
+        const stopsNow = async (): Promise<number> => {
+          jar.cookies = aCookies;
+          const req = new NextRequest(
+            `http://localhost:3300/api/engine/trips/${tripT}/stops?planId=${tPlan}`,
+          );
+          const res = await stopsGET(req, { params: Promise.resolve({ tripId: tripT }) });
+          if (res.status !== 200) return -1; // ปฏิเสธไปเลยก็ถือว่าเข้าไม่ถึง (แข็งกว่าที่เราต้องการ)
+          return ((await res.json()) as { stops: unknown[] }).stops.length;
+        };
+        // เคส ② ลบไปแล้ว ⇒ ตอนนี้ต้องเข้าไม่ถึง
+        const after = await stopsNow();
         expect(
-          [403, 404].includes(res.status),
-          `เจ้าของยังอ่าน stops ของทริปที่ลบแล้วได้ (${res.status}) — ` +
-            "`app.can_read_trip` ไม่รู้จัก `deleted_at` ⇒ ลูกทุกตารางยังเปิดอยู่กับคนที่ถือ URL เก่า: " +
-            text,
-        ).toBe(true);
+          after,
+          "เจ้าของยังเห็นจุดแวะของทริปที่ลบแล้ว — `app.can_read_trip` ไม่รู้จัก `deleted_at` " +
+            "⇒ ลูกทุกตารางยังเปิดกับคนที่ถือ URL เก่า",
+        ).toBeLessThanOrEqual(0);
+        // 🔴 ทิศบวก **ในเคสเดียวกัน**: กู้คืนแล้วจุดแวะต้องกลับมา
+        //    ไม่มีข้อนี้ `0` ข้างบนอาจมาจาก "จุดแวะไม่เคยถูกสร้าง" ซึ่งเป็นความผิดของ `beforeAll`
+        //    🎯 ***พิสูจน์ว่า 0 มาจากการลบ ไม่ใช่จากความว่างที่มีอยู่ก่อน***
+        jar.cookies = aCookies;
+        const back = await callAs(aCookies, tripT, restorePOST, "POST");
+        expect(back.status, `กู้คืนเพื่อยืนยันทิศบวกไม่สำเร็จ: ${await back.clone().text()}`).toBe(200);
+        expect(
+          await stopsNow(),
+          "กู้คืนแล้วแต่จุดแวะไม่กลับมา — แปลว่า `0` ข้างบนไม่ได้มาจากการลบ เคสนี้จึงไม่ได้วัด funnel",
+        ).toBe(1);
+        // ลบกลับเข้าถังขยะ เพื่อให้เคส ⑤ (คนนอกกู้ไม่ได้) ยังมีของให้ลอง
+        const again = await callAs(aCookies, tripT, tripDELETE, "DELETE");
+        expect(again.status, "ลบกลับเข้าถังขยะไม่สำเร็จ — เคส ⑤ จะเสียลำดับ").toBe(200);
       });
 
       it("⑤ คนนอกทริปกู้คืนไม่ได้", async () => {
