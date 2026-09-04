@@ -10,7 +10,9 @@ import { signOut } from "@/lib/auth/signIn";
  * ถึงจะเข้าใหม่ด้วย provider อีกทางแล้วดูว่าได้ `user id` เดิมหรือไม่
  *
  * ⚠️ วางไว้ในโฟลเดอร์ของหน้านี้ ไม่ใช่ `components/` — โซนนั้นเป็นของ P2
- * และปุ่มนี้เป็นเครื่องมือตรวจของ E1 ไม่ใช่ component ที่ UI จริงจะใช้ต่อ (`E5` เขียนของจริง)
+ * 📌 **ประโยคเดิมตรงนี้เขียนว่า "ไม่ใช่ component ที่ UI จริงจะใช้ต่อ" — หมดอายุแล้ว (P7 · 4 ก.ย. 2026)**
+ *    หน้านี้กลายเป็นหน้าบัญชีจริงที่ผู้ใช้เดินเข้ามาจากไอคอนบนแถบหัว ปุ่มนี้จึงเป็นปุ่มจริง
+ *    · เหตุผลที่ยังอยู่ในโฟลเดอร์นี้เปลี่ยนไปด้วย: **ไม่มีใครนอกหน้านี้ใช้มัน** ไม่ใช่เพราะมันเป็นของชั่วคราว
  *
  * ⚠️ ใช้ `window.location.assign` ไม่ใช่ `router.push` — ต้องให้เบราว์เซอร์ยิง request ใหม่ทั้งรอบ
  * เพื่อให้ `proxy.ts` เห็นคุกกี้ที่เพิ่งถูกล้าง · navigate ฝั่ง client จะยังถือ state เดิมอยู่
@@ -42,7 +44,7 @@ export function SignOutButton() {
           window.location.assign("/login");
         }
       }}
-      className="mt-6 w-full rounded-lg border border-line bg-surface-soft py-3 text-sm text-content disabled:opacity-60"
+      className="mt-6 w-full rounded-control border border-line bg-surface-soft py-3 text-sm font-medium text-content hover:border-maple hover:text-maple-dark disabled:opacity-60"
     >
       {busy ? "กำลังออกจากระบบ…" : "ออกจากระบบ"}
     </button>
