@@ -225,6 +225,29 @@ function PinButton({ pinned, busy, onToggle }: { pinned: boolean; busy: boolean;
   );
 }
 
+/**
+ * แว่นขยาย — **SVG ไม่ใช่อีโมจิ** (ผู้ใช้สั่ง 4 ก.ย. 2026)
+ * อีโมจิมีสีของตัวเองและ OS เป็นคนวาด ⇒ หน้าตาต่างกันทุกเครื่อง และไม่เกี่ยวกับชุดสีเรา
+ * `stroke="currentColor"` ⇒ เป็นสีของข้อความ ตามพื้นหลังและตามธีมเสมอ
+ * 📌 อยู่ที่เดียว เพราะถูกใช้สองที่: บล็อกท้ายช่องค้นหา (จอใหญ่) · ปุ่มเปิดโมดัล (จอโทรศัพท์)
+ */
+function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      className={className}
+    >
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </svg>
+  );
+}
+
 function TripCard({
   trip,
   busy,
@@ -533,6 +556,8 @@ export function HomeScreen() {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabKey>("all");
   const [sort, setSort] = useState<SortKey>("date");
+  /** โมดัลค้นหาของจอโทรศัพท์ — จอ `sm` ขึ้นไปใช้ช่องในแถบหัวแทน ไม่เคยเปิดตัวนี้ */
+  const [searchOpen, setSearchOpen] = useState(false);
   const mounted = useMounted();
   /** 🔴 วันนี้ต้องมาจากฝั่ง client เท่านั้น — เหตุผลเดียวกับ `TripCountdownBadge` (หน้านี้ถูก prerender) */
   const todayIso = mounted ? new Date().toISOString().slice(0, 10) : "";
@@ -629,7 +654,7 @@ export function HomeScreen() {
        * · `sticky` เพราะตอนนี้มันมีของที่ต้องใช้ (กลับหน้าแรก · บัญชี) — แถบที่เลื่อนหายไปคือแถบที่ไม่มีใครใช้
        */}
       <header className="focus-ring-on-dark sticky top-0 z-20 bg-pine text-cream shadow-sm shadow-ink/10">
-        <div className="mx-auto flex max-w-[110rem] flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
+        <div className="mx-auto flex max-w-[110rem] items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg">
             {/**
              * 🔴 **มาร์กจริงต้องอยู่บน *พื้นครีมทึบ* ไม่ใช่ `bg-cream/15`** (P2 · 4 ก.ย. 2026)
@@ -713,7 +738,7 @@ export function HomeScreen() {
           {trips !== null && trips.length > 0 && (
             <label
               htmlFor="home-trip-search"
-              className="group order-last flex w-full min-w-[11rem] cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 transition focus-within:ring-2 focus-within:ring-cream min-[430px]:order-none min-[430px]:w-auto min-[430px]:flex-1 sm:max-w-md"
+              className="group hidden min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-xl bg-cream ring-1 ring-ink/10 transition focus-within:ring-2 focus-within:ring-cream sm:flex sm:max-w-md"
             >
               <input
                 id="home-trip-search"
@@ -732,23 +757,47 @@ export function HomeScreen() {
                * · `strokeWidth 2.2` + `strokeLinecap round` ให้น้ำหนักใกล้เคียงตัวอักษรหนาข้าง ๆ
                */}
               <span className="mr-1 flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-maple-dark text-white transition group-focus-within:bg-maple">
-                <svg
-                  aria-hidden
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2.2}
-                  strokeLinecap="round"
-                  className="h-4 w-4"
-                >
-                  <circle cx="11" cy="11" r="6.5" />
-                  <path d="m16 16 4.5 4.5" />
-                </svg>
+                <SearchIcon />
               </span>
             </label>
           )}
 
           <div className="flex shrink-0 items-center gap-2">
+            {/**
+             * 🔴 **จอโทรศัพท์ได้ *ไอคอน* ไม่ใช่ช่อง — กดแล้วเปิดโมดัล** (ผู้ใช้ออกแบบเอง 4 ก.ย. 2026)
+             *
+             * ## ทำไมทางนี้ชนะทั้งสองทางที่ลองมาก่อน
+             * ```
+             * ช่องเต็มในแถวเดียว   375px เหลือ 90px → เห็นแค่ "ค้"        ช่องที่อ่านไม่ออกว่าเป็นช่องค้นหา
+             * ช่องตกลงมาแถวสอง     ได้ 343px แต่แถบหัวสูง 65 → 109px      กินที่เนื้อหาตลอดเวลา
+             *                                                            **เพื่อของที่ใช้เป็นครั้งคราว**
+             * ไอคอน + โมดัล        แถบหัวเตี้ยตลอด · ตอนค้นได้เต็มจอ      จ่ายเฉพาะตอนใช้
+             * ```
+             * 🎯 ***สองทางแรกพยายามหาที่ให้ช่องค้นหาอยู่ถาวร — ทางนี้ถามว่าทำไมมันต้องอยู่ถาวร***
+             *
+             * ## 🔴 ปุ่มต้องบอกได้ว่า **กำลังกรองอยู่** — ไม่ใช่แค่เปิดโมดัลได้
+             * โมดัลปิดแล้วคำค้นมองไม่เห็น ⇒ ผู้ใช้จะเห็นรายการสั้นลง **โดยไม่มีอะไรอธิบายว่าทำไม**
+             * ⇒ มีคำค้นค้าง: ปุ่มเปลี่ยนเป็นสีทึบ + จุดบอกสถานะ + `aria-label` บอกคำค้นจริง
+             * ⚠️ **จุดอย่างเดียวไม่พอ** — คนที่ใช้โปรแกรมอ่านหน้าจอไม่เห็นจุด ⇒ ต้องอยู่ใน `aria-label` ด้วย
+             */}
+            {trips !== null && trips.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                aria-label={query.trim() ? COPY.searchActive(query.trim()) : COPY.searchOpen}
+                className={`relative flex h-9 w-9 items-center justify-center rounded-full transition sm:hidden ${
+                  query.trim() ? "bg-maple-dark text-white" : "bg-cream/10 text-cream hover:bg-cream/20"
+                }`}
+              >
+                <SearchIcon className="h-[1.15rem] w-[1.15rem]" />
+                {query.trim() && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-cream ring-2 ring-pine"
+                  />
+                )}
+              </button>
+            )}
             {user.status === "anon" ? (
               <Link
                 href="/login"
@@ -965,6 +1014,53 @@ export function HomeScreen() {
           เป็นการแก้ที่อาการ · ต้นเหตุจริงถูกแก้ทีหลังใน `AnchoredPanel`: แผ่นที่เลื่อนไม่ได้ (ปฏิทิน)
           จะเลื่อนตัวเองขึ้นให้พอดีจอ ไม่ตัดเนื้อทิ้ง → ความสูงของกล่องไม่เกี่ยวอีกต่อไป
           สิ่งที่เหลืออยู่คือช่องว่างเปล่าใต้ปุ่ม ซึ่งผู้ใช้ทักเอง */}
+      {/**
+       * โมดัลค้นหาของ **จอโทรศัพท์** — เนื้อหาน้อยโดยตั้งใจ: ช่องพิมพ์ + จำนวนผล
+       *
+       * 🔴 **ไม่แสดงรายการผลในโมดัล** ทั้งที่ดูเหมือนควรมี — รายการจริงอยู่ข้างหลังและ
+       * ถูกกรองอยู่แล้วตามที่พิมพ์ ⇒ วาดซ้ำในโมดัลคือ **การ์ดทริปสองชุดที่ต้องดูแลให้เหมือนกันตลอดไป**
+       * 🎯 ***ปุ่มปิดจึงต้องบอกจำนวน*** — คนพิมพ์อยู่มองไม่เห็นรายการที่ถูกโมดัลบัง
+       *    `ดูผลลัพธ์ 3 ทริป` ตอบว่า *"พิมพ์พอหรือยัง"* ซึ่งเป็นคำถามเดียวที่เขามีตอนนั้น
+       * · `autoFocus` ⇒ แป้นพิมพ์ขึ้นทันที · ไม่ต้องแตะสองครั้ง
+       * · ปิดโมดัล **ไม่ล้างคำค้น** — ตัวกรองยังทำงานต่อ และปุ่มในแถบหัวเปลี่ยนสถานะบอกไว้แล้ว
+       */}
+      {searchOpen && (
+        <Modal onClose={() => setSearchOpen(false)} title={COPY.searchOpen} size="md">
+          <label
+            htmlFor="home-trip-search-modal"
+            className="flex cursor-text items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 ring-1 ring-line focus-within:ring-2 focus-within:ring-maple"
+          >
+            <SearchIcon className="h-4 w-4 shrink-0 text-content-soft" />
+            <input
+              id="home-trip-search-modal"
+              type="search"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={COPY.searchPlaceholder}
+              className="min-w-0 flex-1 bg-transparent text-base text-content outline-none placeholder:text-content-soft"
+            />
+          </label>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              disabled={query.trim() === ""}
+              className="rounded-lg px-3 py-2 text-sm text-content-soft disabled:opacity-40"
+            >
+              {COPY.searchClear}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchOpen(false)}
+              className="rounded-lg bg-maple-dark px-4 py-2 text-sm font-semibold text-white"
+            >
+              {COPY.searchShowResults(visibleTrips.length)}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {createOpen && (
         <Modal
           onClose={() => {
