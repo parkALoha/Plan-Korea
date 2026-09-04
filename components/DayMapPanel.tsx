@@ -17,6 +17,7 @@ import {
   useApiIsLoaded,
   useMap,
 } from "@vis.gl/react-google-maps";
+import { markerLabelColor } from "./markerLabel";
 import {
   CATEGORY_COLOR,
   CATEGORY_COLOR_DARK,
@@ -435,7 +436,14 @@ function DayMapContent({
               onSelectStop(s.id);
             }}
             zIndex={isActive ? 10 : 1}
-            label={{ text: String(i + 1), color: "#fff", fontSize: "12px", fontWeight: "700" }}
+            label={{
+              text: String(i + 1),
+              // สีตัวเลขเลือกตามพื้นของหมุด ไม่ใช่ขาวตายตัว — ขาวบน viewpoint ได้ 2.78:1
+              // และบน restaurant 3.50:1 ซึ่งอ่านไม่ออก (ดู components/markerLabel.ts)
+              color: markerLabelColor(color),
+              fontSize: "12px",
+              fontWeight: "700",
+            }}
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
               scale: isActive ? 15 : 11,
