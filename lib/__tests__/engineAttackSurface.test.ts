@@ -76,13 +76,21 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   },
   "app/api/engine/countries/route.ts": {
     scope: "account",
-    why: "รายชื่อประเทศที่รองรับ · ไม่มี tripId เป็น input และไม่แตะข้อมูลของทริปใดเลย "
-      + "· รูปเดียวกับ cities เป๊ะ — บังคับล็อกอินเพื่อไม่ให้คลังถูกดูดออกไปทั้งใบ ไม่ใช่เพราะเป็นความลับ",
+    authExempt: true,
+    why: "🔴 เปิดสาธารณะ 4 ก.ย. 2026 (ผู้ใช้สั่ง: *คนที่ไม่ได้ล็อกอิน ควรจะเข้าหน้าแรกได้*) "
+      + "· ไม่มี tripId เป็น input · ไม่แตะข้อมูลของทริปใดเลย "
+      + "· 🔴 ข้อมูลออกทาง `list_public_destinations()` (definer) เท่านั้น — `anon` **ไม่มี grant บนตารางคลังสักใบ** "
+      + "⇒ เปิด *ทางเดิน* ไม่ได้เปิด *ตาราง* · เพดาน 100 อยู่ในตัว RPC "
+      + "· ด่านชั้นนอกอยู่ที่ PUBLIC_PATHS ใน proxy.ts — เคสอยู่ใน proxy.test.ts บล็อก 'เปิดดูก่อนสมัคร'",
   },
   "app/api/engine/cities/route.ts": {
     scope: "account",
-    why: "ค้นคลังเมืองสาธารณะ · ไม่มี tripId เป็น input และไม่แตะข้อมูลของทริปใดเลย "
-      + "· บังคับล็อกอินเพื่อไม่ให้คลังถูกดูดออกไปทั้งใบ ไม่ใช่เพราะข้อมูลเป็นความลับ",
+    authExempt: true,
+    why: "🔴 **เปิดครึ่งเดียว** — `?country=xx` เปิด · `?q=` (ค้นด้วยคำ) **ยัง 401 ในตัว route เอง** "
+      + "· 🎯 ทะเบียนนี้เป็นธงบูลีน จึงบอกได้แค่ *'มีกิ่งที่เปิด'* ไม่ได้บอกว่า *กิ่งไหน* "
+      + "⇒ **ภาระพิสูจน์อยู่ที่ `publicBrowseRoutes.test.ts`** (เคส ④ ยืนยันว่า `q` ถูกปฏิเสธ "
+      + "**และ RPC ไม่ถูกเรียกเลย** — ตอบ 401 หลังยิงฐานไปแล้วยังนับเป็นรั่ว) "
+      + "· กิ่งที่เปิดออกทาง `list_public_cities()` (definer · เพดาน 100) — ไม่มี grant บนตารางให้ anon",
   },
   // 🔴 ใบที่ 14 (P1 · 4 ก.ย. 2026) — `GET`/`PATCH` โปรไฟล์ของผู้เรียก
   //    **ไม่มี id ใด ๆ เป็น input เลย** — แถวถูกเลือกด้วย `user.id` จาก session ฝั่งเซิร์ฟเวอร์
@@ -99,7 +107,12 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   //          และทะเบียนนี้จับไม่ได้ ⇒ ต้องย้าย scope + เขียน probe ข้ามผู้ใช้
   "app/api/engine/trip-templates/route.ts": {
     scope: "account",
-    why: "ไม่รับ id หรือ query ใด ๆ — ผลเหมือนกันทุกผู้ใช้ที่ล็อกอิน · ด่านอยู่ใน where ของ definer RPC",
+    authExempt: true,
+    why: "🔴 เปิดสาธารณะ 4 ก.ย. 2026 (ผู้ใช้สั่ง: *ดูทริปแนะนำได้ แต่สร้างทริปไม่ได้*) "
+      + "· ไม่รับ id หรือ query ใด ๆ — ผลเหมือนกันทุกคน · ด่านอยู่ใน `where` ของ definer RPC "
+      + "(`published_template_at is not null and deleted_at is null`) "
+      + "· 🎯 **เส้นนี้โชว์ 'มีอะไรให้ดู' · `copy_trip_template` ที่เอาไปใช้ ยัง grant ให้ `authenticated` เท่านั้น** "
+      + "— สองคำถามคนละใบ และ assert ใน migration บังคับทั้งสองทิศ",
   },
   "app/api/engine/profile/route.ts": {
     scope: "account",

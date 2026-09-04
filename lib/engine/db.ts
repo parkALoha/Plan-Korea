@@ -493,6 +493,35 @@ export function catalogPlacesByIds(db: Db, ids: readonly [string, ...string[]]) 
  * · ยอมรับได้เพราะนี่เป็น **route ใหม่ที่ยังไม่มีใครเรียกได้อยู่แล้ว** (วันนี้ตอบ 404)
  *   ต่างจากการแก้ `select` ของเส้นทางที่ใช้งานอยู่ ซึ่งทำให้ของที่เคยทำงานพัง (`fad69d0`)
  */
+/**
+ * ประเทศที่เปิดให้เที่ยว — **เส้นทางสาธารณะ ใช้ได้ทั้งคนล็อกอินและไม่ล็อกอิน** (P1 · 4 ก.ย. 2026)
+ *
+ * 🔴 **RPC ไม่ใช่ `select` ตรง และเหตุผลคือ `anon` ต้องไม่มีสิทธิ์บนตารางคลังเลย**
+ * `anon key` อยู่ใน bundle ของทุกหน้า ⇒ `grant select on catalog_countries to anon`
+ * = เปิดให้ยิง PostgREST ตรงพร้อม **เลือกคอลัมน์เองและไม่มีเพดานแถว** ข้าม route และ `rateLimitGuard` ไปเลย
+ * (P4 ค้านร่างแรกของผมที่ทำแบบนั้น และเขาถูก) · definer จึงเป็นทางเดียวที่ให้ *ข้อมูล* โดยไม่ให้ *ตาราง*
+ *
+ * ⚠️ คืน `city_count`/`sample_cities` มาให้ในตัว — **ไม่ต้องยิงคำขอที่สองแล้ว**
+ * (ฉบับก่อนของ `/countries` รวมเองจาก `listCatalogCityNames` · ตัวนับอยู่ในฐานแล้วนับถูกกว่า)
+ */
+export function listPublicDestinations(db: Db) {
+  return db.rpc("list_public_destinations");
+}
+
+/**
+ * เมืองของประเทศหนึ่ง — **เส้นทางสาธารณะ** · เพดาน 100 อยู่ในตัวฟังก์ชัน
+ *
+ * 🔴 **คืนน้อยกว่า `searchCatalogCities` โดยตั้งใจ** — `id · name_th · name_en · slug` เท่านั้น
+ * **ไม่มี `lat`/`lng`/`name_local`** · คนไม่ล็อกอินกำลัง *ดูว่ามีเมืองอะไรบ้าง* ไม่ได้วางแผนทริป
+ * 🎯 ***ให้เท่าที่หน้าที่นั้นต้องใช้ — พิกัดเป็นของขั้นวางแผน ซึ่งต้องล็อกอินอยู่แล้ว***
+ * · ⚠️ **ผู้เรียกต้องไม่ส่งแถวจากที่นี่เข้า `cityCenterOf()`** — จะได้ `null` ทุกใบโดยชนิดไม่ห้าม
+ *   และมันจะดูเหมือนบั๊กของ `cityCenterOf` ไม่ใช่ของตรงนี้ (คอมเมนต์ใน `searchCatalogCities` เตือนรูปนี้ไว้แล้ว)
+ * · **ไม่มีการค้นด้วยข้อความ** — ค้นคลังเป็นของผู้ใช้ที่ล็อกอินแล้ว
+ */
+export function listPublicCities(db: Db, countryId: string) {
+  return db.rpc("list_public_cities", { p_country_id: countryId });
+}
+
 export function listSupportedCountries(db: Db) {
   return engineTable(db, "catalog_countries")
     .select("id, name_th, name_en")

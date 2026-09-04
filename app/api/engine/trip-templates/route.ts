@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
+import { createServerSupabase } from "@/lib/auth/server";
 import { catalogCityCountryMap, listTripTemplates } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
@@ -27,8 +27,11 @@ type RawCity = { id?: unknown; nameTh?: unknown; slug?: unknown };
 export async function GET(req: NextRequest) {
   const limited = rateLimitGuard(req, "engine-trip-templates", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;
-  const user = await getUser();
-  if (!user) return unauthenticatedResponse();
+  // 🔴 **ไม่มีด่านล็อกอิน — เปิดให้คนยังไม่ล็อกอินดู (ผู้ใช้สั่ง 4 ก.ย. 2026)**
+  //    *"ดูทริปแนะนำได้ แต่สร้างทริปไม่ได้"* — และ **ก๊อปไปเป็นทริปของตัวเอง ยังต้องล็อกอิน**
+  //    (`copy_trip_template` ให้ `execute` เฉพาะ `authenticated` · assert ใน migration บังคับทั้งสองทิศ)
+  //    🎯 ***เส้นนี้โชว์ "มีอะไรให้ดู" · เส้นที่เอาไปใช้ยังปิดอยู่ — สองคำถามคนละใบ***
+  //    · ต้องอยู่ใน `PUBLIC_PATHS` ของ `proxy.ts` ด้วย ไม่งั้นถูกดักก่อนถึงที่นี่
 
   const db = await createServerSupabase();
   const { data, error } = await listTripTemplates(db);

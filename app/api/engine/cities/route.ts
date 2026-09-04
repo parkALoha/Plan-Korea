@@ -1,52 +1,96 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
-import { searchCatalogCities } from "@/lib/engine/db";
+import { createServerSupabase, getUser } from "@/lib/auth/server";
+import { listPublicCities, searchCatalogCities } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 
 /**
- * ค้นเมืองในคลัง — ตัวป้อนของ autocomplete "เมืองปลายทาง" ในฟอร์มสร้างทริป (`E5`)
- * เจ้าของ: P1-Lead · 27 ส.ค. 2026
+ * ค้นเมืองในคลัง — ตัวป้อนของ autocomplete "เมืองปลายทาง" (`E5`)
+ * เจ้าของ: P1-Lead · 27 ส.ค. 2026 · **เปิดโหมดเปิดดูให้คนยังไม่ล็อกอิน 4 ก.ย. 2026 (ผู้ใช้สั่ง)**
  *
- * ลำดับเดียวกับ route อื่นทุกตัว: `rateLimitGuard → getUser() → createServerSupabase() → db`
- * **ไม่มีบรรทัดไหนกรองสิทธิ์เอง** — คลังเป็นข้อมูลสาธารณะที่ `authenticated` มี `select` อยู่แล้ว (`D38`)
+ * ## 🔴 เส้นนี้แยกสองทาง และ **รูปคำตอบไม่เหมือนกัน** — อ่านก่อนใช้
+ * ```
+ * ล็อกอินแล้ว        ค้นด้วย `q` ได้ · ทุกฟิลด์ (`lat`/`lng`/`name_local`/`catalog_countries`)
+ * ยังไม่ล็อกอิน       **ต้องส่ง `country`** · ไม่มี `q` · ได้ `id · country_id · legacy_slug · name_th · name_en`
+ * ```
+ * 🔴 **ผมเคยบอกทีมว่า "รูปคำตอบเหมือนเดิมทุกประการ" — ไม่จริง และนี่คือที่ที่มันไม่จริง**
+ * RPC สาธารณะคืนน้อยกว่า `searchCatalogCities` โดยตั้งใจ (ทะเบียนข้อ 9 · ไม่เปิดตารางให้ `anon`)
  *
- * 🔴 **ยังบังคับล็อกอิน ทั้งที่ข้อมูลเป็นสาธารณะ** — โดยตั้งใจ
- * คลังเปิดให้ *ผู้ใช้ของเรา* ค้น ไม่ใช่เปิดให้ทั้งอินเทอร์เน็ตดูดออกไปทีละหน้า
- * · `anon` ไม่มีสิทธิ์อ่านคลังอยู่แล้วในฐาน → ถ้าไม่เช็คตรงนี้ ผลที่ได้คือ `[]` เงียบ ๆ
- *   ซึ่ง**อ่านเหมือน "ไม่มีเมืองชื่อนี้" ไม่ใช่ "คุณยังไม่ได้ล็อกอิน"** · ตอบ 401 ให้ตรงกับสิ่งที่เกิดจริง
+ * ## 🔴 ทำไม *ไม่* เติม `lat`/`lng` เป็น `null` ให้รูปเท่ากัน
+ * `cityCenterOf()` รับ `null` แล้วคืน `null` อย่างสุภาพ ⇒ **แผนที่ว่างโดยไม่มีอะไรฟ้อง**
+ * และคนไล่จะไปโทษ `cityCenterOf` ไม่ใช่ตรงนี้ (คอมเมนต์ใน `searchCatalogCities` เตือนรูปนี้ไว้เอง)
+ * 🎯 ***ฟิลด์ที่ "มีแต่เป็น null เสมอ" อันตรายกว่าฟิลด์ที่ไม่มี — อันแรกผ่านการตรวจชนิด อันหลังพังตอนคอมไพล์***
+ * ⇒ **ขาดไปเลย** · ผู้เรียกที่ต้องใช้พิกัด ต้องอยู่หลังล็อกอินอยู่แล้ว
  *
- * ⚠️ **`q` ว่างได้ และไม่ใช่ error** — เปิดช่องค้นครั้งแรกยังไม่พิมพ์อะไร ควรได้รายการตั้งต้น
- * (ตัวล้างอักขระของ `searchCatalogCities` อาจทำให้เหลือว่างได้ด้วย เช่นพิมพ์ `%` ตัวเดียว)
+ * ## 🔴 ทำไมคนยังไม่ล็อกอิน **ค้นด้วยข้อความไม่ได้**
+ * ผู้ใช้สั่งว่าคนยังไม่ล็อกอิน *"มาดูหน้าตาเว็บก่อน ลองดู คลิกนู้นนี่"* — คือ **เปิดดู** ไม่ใช่ **ค้นคลัง**
+ * · เปิดดูทีละประเทศมีเพดานตามธรรมชาติ (100/ประเทศ ในตัว RPC) · ค้นอิสระคือทางดูดคลังทั้งใบทีละหน้า
+ * · `q` ที่ส่งมาตอนยังไม่ล็อกอินจะถูก **เพิกเฉยเงียบ ๆ ไม่ได้** → ตอบ `401` ให้ตรงกับสิ่งที่เกิดจริง
+ *
+ * ⚠️ **`q` ว่างได้สำหรับคนล็อกอินแล้ว และไม่ใช่ error** — เปิดช่องค้นครั้งแรกควรได้รายการตั้งต้น
  */
 const RATE_LIMIT_PER_MINUTE = 60;
 
-/** เพดานของ `limit` — กันคำขอเดียวลากคลังทั้งใบออกไป */
+/** เพดานของ `limit` — กันคำขอเดียวลากคลังทั้งใบออกไป (ใช้กับทางที่ล็อกอินแล้วเท่านั้น) */
 const MAX_LIMIT = 50;
 
 export async function GET(req: NextRequest) {
+  // 🔴 สำคัญกว่าเดิม — มีทางหนึ่งที่ไม่มีด่านล็อกอินคั่นแล้ว
   const limited = rateLimitGuard(req, "engine-cities", RATE_LIMIT_PER_MINUTE);
   if (limited) return limited;
-
-  const user = await getUser();
-  if (!user) return unauthenticatedResponse();
 
   const params = req.nextUrl.searchParams;
   const q = (params.get("q") ?? "").slice(0, 80);
 
-  // `^[a-z]{2}$` ตรงกับ `catalog_countries.id` — ส่งค่าที่ผิดรูปไปให้ฐานไม่ได้อะไรนอกจาก error ที่แปลยาก
+  // `^[a-z]{2}$` ตรงกับ `catalog_countries.id` — ค่าผิดรูปส่งไปให้ฐานได้แค่ error ที่แปลยาก
   const rawCountry = params.get("country");
   const countryId = rawCountry && /^[a-z]{2}$/.test(rawCountry) ? rawCountry : undefined;
 
-  const rawLimit = Number(params.get("limit"));
-  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_LIMIT) : 20;
+  const user = await getUser();
 
   try {
     const db = await createServerSupabase();
+
+    // ── ทางสาธารณะ: เปิดดูเมืองของประเทศหนึ่ง ────────────────────────────
+    if (!user) {
+      if (!countryId) {
+        // 🔴 ไม่ตอบ `[]` — *"ไม่มีเมือง"* กับ *"คุณยังไม่ได้ล็อกอิน"* คนละเรื่อง และ `[]` อ่านเป็นอย่างแรก
+        return NextResponse.json(
+          { error: "ค้นเมืองต้องล็อกอินก่อน · เปิดดูรายเมืองให้ระบุ ?country=xx", code: "LOGIN_REQUIRED" },
+          { status: 401 },
+        );
+      }
+      if (q !== "") {
+        return NextResponse.json(
+          { error: "ค้นด้วยคำต้องล็อกอินก่อน", code: "LOGIN_REQUIRED" },
+          { status: 401 },
+        );
+      }
+      const { data, error } = await listPublicCities(db, countryId);
+      if (error) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
+      }
+      const rows = (data ?? []).map((c) => ({
+        id: c.id,
+        // `country_id` มาจากพารามิเตอร์ที่ผู้เรียกส่งมาเอง ไม่ใช่จากฐาน — RPC ไม่คืนมา
+        // และมันจริงตามนิยาม เพราะ RPC กรองด้วยค่านี้
+        country_id: countryId,
+        legacy_slug: c.slug,
+        name_th: c.name_th,
+        name_en: c.name_en,
+      }));
+      return NextResponse.json(rows, {
+        // ไม่ผูกกับตัวตนผู้เรียก ⇒ `public`
+        headers: { "Cache-Control": "public, max-age=60" },
+      });
+    }
+
+    // ── ทางเดิม: ล็อกอินแล้ว ค้นได้เต็มรูป ──────────────────────────────
+    const rawLimit = Number(params.get("limit"));
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_LIMIT) : 20;
     const { data, error } = await searchCatalogCities(db, { q, countryId, limit });
     if (error) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 502 });
     }
-    // คลังเปลี่ยนน้อยมาก แต่ผลผูกกับตัวตนผู้เรียก (ต้องล็อกอิน) → `private` ไม่ใช่ `public`
     return NextResponse.json(data ?? [], {
       headers: { "Cache-Control": "private, max-age=60" },
     });

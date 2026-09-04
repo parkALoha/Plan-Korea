@@ -1695,6 +1695,25 @@ export type Database = {
           title: string
         }[]
       }
+      list_public_cities: {
+        Args: { p_country_id: string }
+        Returns: {
+          id: string
+          name_en: string
+          name_th: string
+          slug: string
+        }[]
+      }
+      list_public_destinations: {
+        Args: never
+        Returns: {
+          city_count: number
+          id: string
+          name_en: string
+          name_th: string
+          sample_cities: string[]
+        }[]
+      }
       list_trip_templates: {
         Args: never
         Returns: {
