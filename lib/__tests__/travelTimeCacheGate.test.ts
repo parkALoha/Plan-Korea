@@ -30,20 +30,58 @@ const slugsSpy = vi.hoisted(() => vi.fn());
 const fetchRealSpy = vi.hoisted(() => vi.fn());
 const fromSpy = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/rateLimit", async (o) => ({
-  ...(await o<typeof import("@/lib/rateLimit")>()),
+/**
+ * 🔴 **เติม `WebSocket` ให้ global ก่อนโมดูลไหนถูก import — ไม่ใช่ stub ของ export เรา**
+ *
+ * `lib/supabase.ts:11` เรียก `createClient()` **ตอน import** และ `supabase-js` โยนทิ้งตรง ๆ
+ * บน Node 20 (CI ปักหมุด 20.12.2 · ยืนยันด้วยการรันจริง 4 ก.ย. 2026):
+ * > `Error: Node.js detected but native WebSocket not found.`
+ * ⇒ suite ล้มตั้งแต่ collect · vitest รายงาน **"no tests"** ซึ่ง**ไม่ใช่ "ผ่าน"**
+ *
+ * ## ทำไมท่านี้ ไม่ใช่การยกเว้น `S6`
+ * `S6` ห้าม **แทนที่ export ของโมดูลเรา** เพราะ export ที่หายไปอาจเป็นด่านสิทธิ์
+ * · `WebSocket` **ไม่ใช่ export ของเรา** มันคือคุณสมบัติของ runtime ที่ Node 20 ไม่มี
+ * · เติมมัน = ทำให้สนามมีคุณสมบัติที่โค้ดจริงต้องใช้ · **ไม่ได้ปิดอะไรเลยสักอย่าง**
+ * 🎯 ***ทางแก้ที่ผิดคือยกเว้นด่าน · ทางแก้ที่ถูกคือทำให้สนามครบ*** —
+ *    และรูปที่ `S6` เตือนไว้ (*"การซ่อมที่เป็นธรรมชาติที่สุด คือการปิดด่านความปลอดภัย"*)
+ *    คือสิ่งที่ฉบับแรกของไฟล์นี้ทำจริง: มัน mock `@/lib/auth/server` ทั้งก้อน
+ *    ⇒ **`requireUser` หายไปทั้งตัว** และไม่มีอะไรบอก
+ *
+ * ⚠️ คลาสเปล่าพอ เพราะ `RealtimeClient` แค่ *ถือ* คอนสตรักเตอร์ไว้ ยังไม่ต่อจนกว่าจะ `.subscribe()`
+ *    ซึ่ง route นี้ไม่เรียก · ถ้าวันหนึ่งมีใครทำให้มันต่อจริง **เทสต์จะค้าง ไม่ใช่เขียวเงียบ**
+ */
+vi.hoisted(() => {
+  if (typeof (globalThis as { WebSocket?: unknown }).WebSocket === "undefined") {
+    (globalThis as { WebSocket?: unknown }).WebSocket = class {};
+  }
+});
+
+vi.mock("@/lib/rateLimit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/rateLimit")>()),
   rateLimitGuard: rateSpy,
 }));
-// 🔴 **ห้ามใช้ `importOriginal` กับโมดูลพวกนี้** — `lib/supabase.ts` เรียก `createClient()`
-//    ตอน import และ `supabase-js` สร้าง `RealtimeClient` ใน constructor เสมอ
-//    ซึ่ง **โยนทิ้งบน Node 20** (ไม่มี global `WebSocket` · CI ปักหมุด 20.12.2)
-//    ⇒ suite จะล้มตั้งแต่ collect · vitest รายงาน "no tests" **ไม่ใช่ "ผ่าน"**
-//    (ตัวรายงานของทีมจับข้อนี้ได้เอง — *"ไม่มีเคสให้รันเลยสักเคส"*)
-//    📌 จดไว้ใน `memory/project_plan_korea_gotchas.md` แล้ว · เจอซ้ำเป็นครั้งที่สอง
-vi.mock("@/lib/supabase", () => ({ supabaseConfigured: true, supabase: null }));
-vi.mock("@/lib/auth/server", () => ({ createServerSupabase: async () => ({ from: fromSpy }) }));
-vi.mock("@/lib/engine/db", () => ({ catalogPublicSlugs: slugsSpy }));
-vi.mock("@/lib/travelProvider", () => ({ fetchRealTravelTime: fetchRealSpy }));
+/**
+ * 🔴 **`supabaseConfigured` ต้อง override ต่อจาก spread เสมอ ห้ามปล่อยให้เป็นของจริง**
+ * ของจริงอ่าน `process.env.NEXT_PUBLIC_SUPABASE_URL` ซึ่งในสนามเทสต์อาจไม่มี → `false`
+ * → route ข้ามเส้นทางแคชทั้งเส้น → **เคส ②③④ เขียวเพราะไม่มีอะไรถูกรัน**
+ * · **เคส ① (ทิศบวก) คือตัวเดียวที่จับอาการนี้ได้** — มันจะแดงทันที
+ */
+vi.mock("@/lib/supabase", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase")>()),
+  supabaseConfigured: true,
+}));
+vi.mock("@/lib/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/server")>()),
+  createServerSupabase: async () => ({ from: fromSpy }),
+}));
+vi.mock("@/lib/engine/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/engine/db")>()),
+  catalogPublicSlugs: slugsSpy,
+}));
+vi.mock("@/lib/travelProvider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/travelProvider")>()),
+  fetchRealTravelTime: fetchRealSpy,
+}));
 
 import { GET } from "@/app/api/travel-time/route";
 
