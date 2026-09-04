@@ -34,6 +34,11 @@ name: cache-heartbeat
 #    `place_details_cache` ครบ) แต่ไม่มี field `photos` เลยสักคีย์ — ไม่ใช่ backlog ที่ตัวอุ่นไล่ไม่ทัน
 #    รายละเอียด/รายชื่อคีย์ทั้ง 9 อยู่ที่หัวไฟล์ `cacheHeartbeat.test.ts` § แก้ 5 ก.ย. 2026
 #
+# 🔴 แก้ 5 ก.ย. 2026 ต่อ (P1 ชี้ว่าเพดานตัวเลขปิดช่องที่ P4 เตือนไม่ได้ — คีย์อื่นหลุดมาแทนได้โดยจำนวน
+#    เท่าเดิม) — **`CACHE_MAX_MISSING_PHOTOS` ถูกถอดไปแล้ว** คีย์ `place_id:` (8 ตัว) ตอนนี้ตรึงแบบ
+#    exact-match ในโค้ดตรงๆ (`KNOWN_PHOTOLESS_PLACE_ID_KEYS`) ไม่ผ่าน env อีกต่อไป — คีย์ `searchText`
+#    (1 ตัว) ยังคุมด้วยเพดานตัวเลขเดิม แต่เปลี่ยนชื่อเป็น **`CACHE_MAX_MISSING_TEXT_PHOTOS`** ให้ตรงว่า
+#    คุมแค่ครึ่งเดียวแล้ว เหตุผลเต็มอยู่ที่หัวไฟล์ `cacheHeartbeat.test.ts` § แก้ 5 ก.ย. 2026 ต่อ
 # 🔴 แก้ 4 ก.ย. 2026 — ผู้ใช้อนุมัติแล้ว เปิด `schedule` พร้อมกับ `cache-warm.yml` (รายชั่วโมงเหมือนกัน)
 #    **เจตนา: ตัวเขียนอัตโนมัติที่แตะฐานจริง+ยิง Google จริง ต้องไม่มีวันรันโดยไม่มีใครเฝ้า** — ถ้าเปิดแค่
 #    `cache-warm.yml` แล้วลืมไฟล์นี้ จะได้ตัวอุ่นที่ทำงานเงียบๆ โดยไม่มีอะไรบอกถ้ามันเริ่มพัง
@@ -68,8 +73,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
 
-      # 🔴 _DETAILS=0 · _PHOTOS=9 (P6 · แก้ 5 ก.ย. 2026 จาก 1 — ดูคอมเมนต์ด้านบน) — ทั้งคู่ยืนยันด้วย
-      #    ของจริงก่อนแก้ (Google Place Details ตรงทีละคีย์ ไม่ใช่แค่ดูตัวเลขที่ heartbeat รายงาน)
+      # 🔴 _DETAILS=0 (ยังเป็นเพดานตัวเลข) · photo ของ place_id: ตรึงแบบ exact-match ในโค้ดแล้ว
+      #    ไม่ผ่าน env อีก — เหลือ _TEXT_PHOTOS=1 คุมเฉพาะคีย์ searchText (P6 · แก้ 5 ก.ย. 2026 — ดูคอมเมนต์ด้านบน)
       #    RLS_MATRIX_REQUIRED=1 ตามธรรมเนียมไฟล์อื่นทุกไฟล์ในชุดสด — "ข้าม" ต้องกลายเป็น "ล้ม"
       - name: จำนวนคีย์ที่ยังไม่ได้อุ่น เทียบเพดาน
         run: npx vitest run lib/__tests__/cacheHeartbeat.test.ts
@@ -78,4 +83,4 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SERVICE_ROLE_KEY }}
           CACHE_MAX_MISSING_DETAILS: "0"
-          CACHE_MAX_MISSING_PHOTOS: "9"
+          CACHE_MAX_MISSING_TEXT_PHOTOS: "1"

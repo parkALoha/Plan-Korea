@@ -5,6 +5,7 @@ import { testClient } from "./_testClient";
 import { readEnvKey, requireLiveCreds } from "./_helpers";
 import { catalogKeyRows, cachedDetailKeys, cachedPhotoKeys, type Db } from "@/lib/engine/db";
 import { warmTargets } from "@/lib/engine/cacheWarmList";
+import { parsePlaceIdKey } from "@/lib/placeQuery";
 
 /**
  * 🔴 `??` เฉย ๆ ไม่พอ — GitHub Actions ตั้ง env จาก `workflow_dispatch` input ที่เว้นว่างไว้เป็น
@@ -150,7 +151,44 @@ function cronScheduleEnabled(): boolean {
  * · ถ้า `_PHOTOS` ขึ้นเป็น `10` ให้เช็คว่าเป็น "คีย์ใหม่ที่ยังไม่ได้อุ่น" หรือ "สถานที่ไร้รูปเพิ่มอีกแห่ง"
  *   ด้วยการยิง Google Place Details ตรงต่อคีย์ที่ขึ้นใหม่ ไม่ใช่ดูแค่ตัวเลข (P1 เสนอ · P6 ทำตามรอบนี้แล้วยืนยันว่าใช้ได้จริง)
  * · **ช่วงเตือน (② ด้านบน) ตั้งไว้ที่ 20** — ค่าที่ P1 เลือกเอง ไม่ได้วัดจากอะไร ปรับได้ตามที่เห็นควร
+ *
+ * ## 🔴 แก้ 5 ก.ย. 2026 ต่อ (P1 อ่านโค้ดแล้วชี้ · P6 ตัดสินใจตาม) — ตัวเลขปิดช่อง P4 เตือนไว้ไม่ได้
+ * เพดานตัวเลขเทียบแค่ *จำนวน* — ถ้าคีย์ 9 ตัวที่ยืนยันว่าไร้รูปหายไป 1 ตัว แล้ว**คีย์อื่น**ที่ควรมีรูป
+ * (เช่นสถานที่ยอดนิยม) หลุดมาแทน จำนวนยังเท่าเดิม (9) ⇒ **เขียวทั้งที่ผิด** ตัวเตือนเพดานล้า (`< 20`)
+ * ก็ไม่ช่วย เพราะมันจับแค่ "เพดานสูงเกินของจริง" ไม่ใช่ "คนละคีย์"
+ *
+ * ✅ **ทางที่ใช้: ตรึงคีย์ `place_id:` ทั้ง 8 ตัวแบบ exact-match แยกจากเพดานตัวเลข**
+ * ```
+ * missing ที่เป็น place_id:  ต้องอยู่ใน KNOWN_PHOTOLESS_PLACE_ID_KEYS ทุกตัว ไม่งั้นแดงทันที (ไม่สนจำนวน)
+ * missing ที่เป็น searchText (ข้อความล้วน)  ยังคุมด้วยเพดานตัวเลขเดิม (`CACHE_MAX_MISSING_TEXT_PHOTOS`)
+ * ```
+ * 🔴 **ทำไมแยก `searchText` ออกจากการตรึง** — คีย์แบบนี้ผูกกับข้อความ `mapsQuery` ตรงๆ
+ * (ต่างจาก `place_id:` ที่ผูกกับ Google Place ID ซึ่งไม่เปลี่ยนตามการแก้คลัง) ถ้ามีคนแก้ชื่อสถานที่ใน
+ * คลังวันหลัง คีย์จะเปลี่ยนแล้วทำให้ exact-match แดงทั้งที่ไม่มีอะไรพัง — **เพดานตัวเลขทนต่อเรื่องนี้กว่า**
+ * ⇒ ตอนนี้มีคีย์แบบ `searchText` ที่ไร้รูปอยู่ 1 ตัว ("Hanoi Train Street Hanoi") จึงปล่อยให้
+ *   `CACHE_MAX_MISSING_TEXT_PHOTOS = 1` คุมแทน ไม่ตรึง
+ * 🎯 **ข้อดีของ exact-match: มันเกษียณตัวเอง** — สถานที่ไหนได้รูปเพิ่มทีหลัง เซตหด ไม่มีอะไรพัง ·
+ *   คีย์ `place_id:` ใหม่ที่ไร้รูปโผล่มา **แดงทันที** บังคับให้คนไปยิง Google ยืนยันแบบที่ทำรอบนี้ ทุกครั้ง
+ *   ไม่ใช่แค่ครั้งนี้ครั้งเดียว — ปิดช่องที่ P4 เตือนไว้จริง สำหรับคีย์ที่ตรึงได้
  */
+
+/**
+ * คีย์ `place_id:` 8 ตัวที่ยิง Google Place Details ตรงยืนยันแล้ว (5 ก.ย. 2026 · field mask `photos`)
+ * ว่า resolve เป็นสถานที่จริงได้ (มีแถวใน `place_details_cache`) แต่ไม่มี field `photos` เลย
+ * ⇒ **exact-match กับเซตนี้** ไม่ใช่แค่นับจำนวน — ปิดช่องที่คีย์อื่นหลุดมาแทนโดยจำนวนบังเอิญเท่าเดิม (P1 ชี้)
+ * รายชื่อสถานที่/หลักฐานเต็มอยู่ที่หัวไฟล์ § แก้ 5 ก.ย. 2026 — เพิ่มคีย์ใหม่ที่นี่ได้ก็ต่อเมื่อยิง Google
+ * ยืนยันแบบเดียวกันแล้วเท่านั้น ห้ามเพิ่มเพราะ heartbeat แดงเฉยๆ (นั่นคือการปิดปากตัววัด)
+ */
+const KNOWN_PHOTOLESS_PLACE_ID_KEYS = new Set([
+  "place_id:ChIJh4WW2wTlYjUR5L4qhUEIDXs", // Poko
+  "place_id:ChIJIZgbaZtV3jARv3JBmaitP7I", // ศูนย์พระเครื่องตลาดอาจารย์มนัสจังหวัดสุโขทัย
+  "place_id:ChIJ68cOawDfbTURwsnlhQIFOBo", // 여수 버스터미널
+  "place_id:ChIJ3TOZnjvF7zYR4d4FpzQpw_I", // Underground Shopping Mall
+  "place_id:ChIJ5ewgD7KvmzYR2nlrNnrW3DI", // Zhangjiajie Commercial Building
+  "place_id:ChIJUzTWjHjG7zYR0K7Na9z18oI", // Ziwei Restaurant
+  "place_id:ChIJu7fpLU7G7zYRBkA0fwpK78I", // Yuanli Hotpot
+  "place_id:ChIJZ1R7ldGvmzYRABzVPeT6Yuw", // Hetian Coffee
+]);
 
 const URL_ = readEnvKey("NEXT_PUBLIC_SUPABASE_URL");
 const SERVICE = readEnvKey("SUPABASE_SERVICE_ROLE_KEY");
@@ -195,22 +233,32 @@ describe("Q3 ก้าวที่ 2 — cache-heartbeat", () => {
 
       const missingDetails = warmTargets({ catalog: rows, cachedKeys: detailKeys });
       const missingPhotos = warmTargets({ catalog: rows, cachedKeys: photoKeys });
+      // 🔴 แยกคีย์ `place_id:` (ตรึงแบบ exact-match ได้ — ผูกกับ Google Place ID ไม่เปลี่ยนตามคลัง)
+      //    ออกจากคีย์ `searchText` (ผูกกับ mapsQuery ดิบ เปราะกว่า — ยังคุมด้วยเพดานตัวเลข) ดูหัวไฟล์
+      const missingPhotoPlaceIdKeys = missingPhotos.filter((t) => parsePlaceIdKey(t.key) !== null);
+      const missingPhotoTextKeys = missingPhotos.filter((t) => parsePlaceIdKey(t.key) === null);
+      const unexpectedPhotolessPlaceIds = missingPhotoPlaceIdKeys.filter(
+        (t) => !KNOWN_PHOTOLESS_PLACE_ID_KEYS.has(t.key),
+      );
+
       // 🔴 ผ่อนได้เฉพาะตอนอยู่ในช่วง grace (ตั้งโดยมนุษย์ที่ยืนยันแล้วว่า cron รันจริง) —
-      //    หมดอายุแล้ว = เมิน CACHE_MAX_MISSING_* ทั้งสอง กลับไปใช้ default (0/9) เสมอ ไม่ต้องมีคนถอด
+      //    หมดอายุแล้ว = เมิน CACHE_MAX_MISSING_* ทั้งสอง กลับไปใช้ default (0/1) เสมอ ไม่ต้องมีคนถอด
       const grace = graceCeilingActive();
       const maxDetails = grace ? envInt("CACHE_MAX_MISSING_DETAILS", 0) : 0;
-      // 🔴 `9` คือของจริงที่ยืนยันด้วย Google Place Details แล้ว ไม่ใช่ backlog ชั่วคราว — ดูหัวไฟล์ § แก้ 5 ก.ย. 2026
-      const maxPhotos = grace ? envInt("CACHE_MAX_MISSING_PHOTOS", 9) : 9;
+      // 🔴 คุมเฉพาะคีย์ `searchText` แล้ว (ไม่ใช่ทั้งก้อนเหมือนเดิม) — `place_id:` ตรึงด้วย exact-match ด้านล่าง
+      const maxTextPhotos = grace ? envInt("CACHE_MAX_MISSING_TEXT_PHOTOS", 1) : 1;
 
       // 🔴 ถ้า schedule ยังปิดอยู่ (รอผู้ใช้อนุมัติ) และเกินเพดาน — ตัวอุ่นไม่มีทางไล่ทันอยู่แล้ว
       //    ตามนิยาม พูดตรงๆ ว่าทำไม แทนปล่อยให้ข้อความเพดานข้างล่างอ่านเหมือนบั๊กโค้ด (ดูหัวไฟล์)
       const scheduleOn = cronScheduleEnabled();
       const overDetails = missingDetails.length > maxDetails;
-      const overPhotos = missingPhotos.length > maxPhotos;
-      if (!scheduleOn && (overDetails || overPhotos)) {
+      const overTextPhotos = missingPhotoTextKeys.length > maxTextPhotos;
+      const overUnknownPlaceIds = unexpectedPhotolessPlaceIds.length > 0;
+      if (!scheduleOn && (overDetails || overTextPhotos || overUnknownPlaceIds)) {
         const detail = [
           overDetails && `place_details_cache ขาด ${missingDetails.length} (เพดาน ${maxDetails})`,
-          overPhotos && `place_photo_cache ขาด ${missingPhotos.length} (เพดาน ${maxPhotos})`,
+          overTextPhotos && `place_photo_cache (searchText) ขาด ${missingPhotoTextKeys.length} (เพดาน ${maxTextPhotos})`,
+          overUnknownPlaceIds && `place_photo_cache (place_id ที่ไม่รู้จัก) ${unexpectedPhotolessPlaceIds.length} ตัว`,
         ].filter(Boolean).join(" · ");
         expect(
           scheduleOn,
@@ -227,24 +275,35 @@ describe("Q3 ก้าวที่ 2 — cache-heartbeat", () => {
           `ตัวอุ่นอาจไม่ได้ทำงาน หรือมีคลังใหม่เข้ามาเกินที่คาด (ถ้าเพิ่มคลังโดยตั้งใจ ขยับ ` +
           `CACHE_MAX_MISSING_DETAILS ขึ้นพร้อมกัน) ตัวอย่างคีย์: ${missingDetails.slice(0, 5).map((t) => t.key).join(", ")}`,
       ).toBeLessThanOrEqual(maxDetails);
+
+      // 🔴 exact-match — จำนวนไม่เกี่ยว คีย์ `place_id:` ที่ไม่อยู่ใน KNOWN_PHOTOLESS_PLACE_ID_KEYS
+      //    ต้องเป็น [] เสมอ ไม่ว่าจำนวนรวมจะเท่าเดิมหรือไม่ (ปิดช่องที่ P4 เตือน — P1 ชี้จุดที่โค้ดไม่ครอบ)
       expect(
-        missingPhotos.length,
-        `${missingPhotos.length} คีย์ยังไม่มีแถวใน place_photo_cache (เพดาน ${maxPhotos}) — ` +
+        unexpectedPhotolessPlaceIds.map((t) => t.key),
+        `พบคีย์ place_id: ที่ไม่มีรูป **นอกเหนือจาก ${KNOWN_PHOTOLESS_PLACE_ID_KEYS.size} ตัวที่ยืนยันแล้ว** — ` +
+          `ต้องยิง Google Place Details ตรงยืนยันก่อนเพิ่มเข้า KNOWN_PHOTOLESS_PLACE_ID_KEYS ` +
+          `(ห้ามเพิ่มเพราะ heartbeat แดงเฉยๆ)`,
+      ).toEqual([]);
+
+      expect(
+        missingPhotoTextKeys.length,
+        `${missingPhotoTextKeys.length} คีย์ (searchText) ยังไม่มีแถวใน place_photo_cache (เพดาน ${maxTextPhotos}) — ` +
           `ตัวอุ่นอาจไม่ได้ทำงาน หรือมีคลังใหม่เข้ามาเกินที่คาด (ถ้าเพิ่มคลังโดยตั้งใจ ขยับ ` +
-          `CACHE_MAX_MISSING_PHOTOS ขึ้นพร้อมกัน) ตัวอย่างคีย์: ${missingPhotos.slice(0, 5).map((t) => t.key).join(", ")}`,
-      ).toBeLessThanOrEqual(maxPhotos);
+          `CACHE_MAX_MISSING_TEXT_PHOTOS ขึ้นพร้อมกัน) ตัวอย่างคีย์: ${missingPhotoTextKeys.slice(0, 5).map((t) => t.key).join(", ")}`,
+      ).toBeLessThanOrEqual(maxTextPhotos);
 
       // 🔴 ตัวเตือนว่าเพดานล้า — พลิกเองเมื่อขาดลดลงมาก (ตัวอุ่นเริ่มทำงาน) หน้าที่เดียวกับ `it.fails` เดิม
-      //    ช่วง 20 เป็นค่าที่เลือกเอง ไม่ได้วัด — ปรับได้ ดูหัวไฟล์
+      //    ช่วง 20 เป็นค่าที่เลือกเอง ไม่ได้วัด — ปรับได้ ดูหัวไฟล์ · ไม่มีตัวเตือนคู่สำหรับ exact-match
+      //    เพราะมันไม่มีแนวคิด "เพดานล้า" — มีแค่ "ตรงที่ยืนยันแล้ว" กับ "ไม่รู้จัก"
       expect(
         maxDetails - missingDetails.length,
         `เพดาน place_details_cache (${maxDetails}) ห่างจากของจริง (${missingDetails.length}) เกิน 20 — ` +
           `ตัวอุ่นน่าจะเริ่มทำงานแล้ว ลดเพดานลงได้ (แก้ CACHE_MAX_MISSING_DETAILS ใน cache-heartbeat.yml)`,
       ).toBeLessThan(20);
       expect(
-        maxPhotos - missingPhotos.length,
-        `เพดาน place_photo_cache (${maxPhotos}) ห่างจากของจริง (${missingPhotos.length}) เกิน 20 — ` +
-          `ตัวอุ่นน่าจะเริ่มทำงานแล้ว ลดเพดานลงได้ (แก้ CACHE_MAX_MISSING_PHOTOS ใน cache-heartbeat.yml)`,
+        maxTextPhotos - missingPhotoTextKeys.length,
+        `เพดาน place_photo_cache searchText (${maxTextPhotos}) ห่างจากของจริง (${missingPhotoTextKeys.length}) เกิน 20 — ` +
+          `ตัวอุ่นน่าจะเริ่มทำงานแล้ว ลดเพดานลงได้ (แก้ CACHE_MAX_MISSING_TEXT_PHOTOS ใน cache-heartbeat.yml)`,
       ).toBeLessThan(20);
     });
   });
