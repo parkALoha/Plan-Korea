@@ -54,15 +54,65 @@ end $guard$;
 -- ───────────────────────────────────────────────────────────────────────────
 -- 🎯 ***ถ้าทั้งสองบรรทัดพิมพ์ `t` ออกมา แปลว่าไฟล์นี้ไม่จำเป็น และสมมติฐานของเราผิด***
 --    — ให้เห็นตอนรัน ดีกว่าให้เดาทีหลัง · `notice` ไม่ทำให้ migration ล้ม
+-- 🔴 **ฉบับแรกของบล็อกนี้ฆ่าการซ่อมได้ — P4 จับก่อนผู้ใช้กด (4 ก.ย. 2026)**
+--    มันอ่าน `supabase_migrations.schema_migrations` ตรง ๆ · ถ้าสคีมานั้นไม่มี/ชื่อไม่ตรง/
+--    role ที่รัน migration อ่านไม่ได้ → `42P01`/`42501` **ในบล็อกที่อยู่ก่อน DDL ทั้งหมด**
+--    → `begin` ทั้งก้อน rollback ⇒ **grant ไม่ลง · policy ไม่ลง**
+--    และ error ที่คนเห็นจะพูดถึง `schema_migrations` **ไม่ใช่เรื่องที่เรากำลังซ่อม**
+-- 🎯 ***ตัววินิจฉัยที่ทำให้สิ่งที่มันวินิจฉัยล้มเหลว — และล้มไปทางที่อ่านเหมือนคนละปัญหา***
+-- 🎯 ***หลักที่อยู่ใต้ข้อนี้: ของที่ *จำเป็น* ต้องไม่ขึ้นกับของที่ *ดีถ้ามี*** — ใบนี้มีหน้าที่เดียวคือซ่อม
+--    · `has_table_privilege`/`pg_policies` เป็น catalog ที่อ่านได้เสมอ จึงไม่ต้องห่อ
+--    · เฉพาะตัวที่สามที่ต้อง **ถามก่อนว่าเข้าถึงได้ไหม แทนที่จะเข้าถึงเลย**
 do $before$
+declare
+  v_grant   boolean;
+  v_policy  boolean;
+  v_recorded text;
 begin
-  raise notice 'ก่อนแก้ · grant delete on trip_days = %',
-    has_table_privilege('authenticated', 'public.trip_days', 'DELETE');
-  raise notice 'ก่อนแก้ · policy trip_days_delete   = %',
-    exists (select 1 from pg_policies
-             where schemaname='public' and tablename='trip_days' and policyname='trip_days_delete');
-  raise notice 'ก่อนแก้ · 20260904120000 ถูกบันทึกไว้ = %',
-    exists (select 1 from supabase_migrations.schema_migrations where version = '20260904120000');
+  v_grant  := has_table_privilege('authenticated', 'public.trip_days', 'DELETE');
+  v_policy := exists (select 1 from pg_policies
+                       where schemaname='public' and tablename='trip_days'
+                         and policyname='trip_days_delete');
+  v_recorded := case
+    when to_regclass('supabase_migrations.schema_migrations') is null then 'ตรวจไม่ได้'
+    else (exists (select 1 from supabase_migrations.schema_migrations
+                   where version = '20260904120000'))::text
+  end;
+
+  raise notice 'ก่อนแก้ · grant delete on trip_days = %', v_grant;
+  raise notice 'ก่อนแก้ · policy trip_days_delete   = %', v_policy;
+  raise notice 'ก่อนแก้ · 20260904120000 ถูกบันทึกไว้ = %', v_recorded;
+
+  -- 🔴 **เขียนลงฐานด้วย ไม่ใช่ส่งออกทาง `notice` ทางเดียว** (P4 ข้อ ②)
+  --    ```
+  --    migration รันเสร็จ → สภาพ "ก่อนแก้" หายถาวร (ฐานย้อนเวลาไม่ได้ · §3.3)
+  --    notice ถูกกลืน     → เสียคำตอบตลอดกาล **และไม่มีใครรู้ว่าเสียไป**
+  --    ```
+  --    `supabase db push` จะพิมพ์ `NOTICE` ออกมาไหม **เราไม่รู้** — และถ้ามันถูกกลบ
+  --    ผลรันจะดู "สำเร็จ" ทุกประการ ไม่มีอะไรผิดปกติให้สังเกต
+  -- 🎯 ***รูปเดียวกับที่ `§3.3` เตือนไว้ตรงตัว: "หลักฐานที่จะถูกยกไปใช้ ห้ามถูกกลบระหว่างทาง"***
+  --    ที่นั่นตัวกลบคือ `2>/dev/null` · ที่นี่คือช่องทางส่ง `notice` ที่เราไม่ได้ควบคุม
+  --    ⇒ ปลายทางที่สองอ่านได้ทีหลัง โดยไม่ขึ้นกับว่าใครเห็นจอตอนนั้น
+  -- 🔴 **ห่อไว้ทั้งก้อน — ผมเพิ่งทำผิดข้อเดียวกับที่ P4 เพิ่งสอน ในย่อหน้าถัดจากที่เขาสอน**
+  --    `create table … app.migration_probe` ต้องมีสิทธิ์สร้างใน schema `app`
+  --    ไม่มี = โยน = **rollback ทั้งก้อน = การซ่อมไม่ลง** ซึ่งคือปัญหาที่บล็อกนี้เพิ่งถูกแก้ให้พ้น
+  -- 🎯 ***"ของที่จำเป็นต้องไม่ขึ้นกับของที่ดีถ้ามี" ใช้กับตัวมันเองด้วย —
+  --    และผมเกือบพิสูจน์ข้อนั้นด้วยการละเมิดมันในบรรทัดถัดไป***
+  -- ⇒ ปลายทางที่สองเป็น *ของแถมของของแถม* · ล้มได้ ต้องไม่ลากใครไปด้วย
+  begin
+    create table if not exists app.migration_probe (
+      version     text primary key,
+      observed_at timestamptz not null default now(),
+      note        text not null
+    );
+    insert into app.migration_probe (version, note)
+    values ('20260904150000',
+            format('ก่อนแก้: grant=%s policy=%s 120000_recorded=%s', v_grant, v_policy, v_recorded))
+    on conflict (version) do update set note = excluded.note, observed_at = now();
+  exception when others then
+    -- เขียนไม่ได้ก็ไม่เป็นไร · `notice` ข้างบนยังออก และการซ่อมยังลง
+    raise notice 'ก่อนแก้ · เขียน app.migration_probe ไม่ได้ (%) — ใช้ notice ข้างบนแทน', sqlerrm;
+  end;
 end $before$;
 
 -- ───────────────────────────────────────────────────────────────────────────
