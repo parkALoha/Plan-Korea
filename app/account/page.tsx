@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createServerSupabase, requireUser } from "@/lib/auth/server";
-import { profileOf } from "@/lib/engine/db";
+import { profileOf, tripsVisibleToMe } from "@/lib/engine/db";
 import { Card } from "@/components/ui/Card";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { SignOutButton } from "./SignOutButton";
 import { CopyUserId } from "./CopyUserId";
@@ -52,10 +53,54 @@ import { DisplayNameField } from "./DisplayNameField";
 export const metadata = { title: "บัญชีของฉัน" };
 
 /** ป้ายชื่อทางที่ใช้ล็อกอิน — `identities[].provider` เป็นสตริงของ Supabase ไม่ใช่ค่าที่เราตั้ง */
-const PROVIDER_LABEL: Record<string, { icon: string; label: string }> = {
-  google: { icon: "🇬", label: "บัญชี Google" },
-  email: { icon: "✉️", label: "ลิงก์ทางอีเมล" },
+/* 🔴 **`mark` เป็นตัวอักษร ไม่ใช่อีโมจิ — ฉบับแรกใช้ `🇬` แล้วมันเรนเดอร์ผิด**
+   `🇬` คือ *regional indicator* ตัวเดียว ซึ่งไม่ใช่ธงและไม่ใช่โลโก้ ⇒ เบราว์เซอร์วาดเป็นกล่องตัวอักษร
+   (เห็นกับตาบนหน้าจริงตอนตรวจ) · Google ไม่มีอีโมจิของตัวเอง และเราวาดโลโก้แบรนด์เองไม่ได้
+   ⇒ ใช้ตัวอักษรในวงกลม — อ่านออกทุกแพลตฟอร์ม ไม่พึ่งชุดอีโมจิของเครื่อง */
+const PROVIDER_LABEL: Record<string, { mark: string; label: string }> = {
+  google: { mark: "G", label: "บัญชี Google" },
+  email: { mark: "@", label: "ลิงก์ทางอีเมล" },
 };
+
+/**
+ * วันที่แบบไทย — **ปักโซนเวลาไว้ ไม่ปล่อยให้ตามเครื่องที่เรนเดอร์**
+ *
+ * 🔴 หน้านี้เป็น Server Component ⇒ วันที่ถูกจัดรูปบน **เซิร์ฟเวอร์** · ถ้าไม่ปัก `timeZone`
+ * ผลจะเปลี่ยนตามโซนเวลาของเครื่องที่รัน (dev เครื่องเรา vs. Vercel ที่เป็น UTC)
+ * ⇒ วันเดียวกันอาจแสดงคนละวัน · `lib/localDate.ts` เขียนกับดักตระกูลเดียวกันนี้ไว้แล้ว
+ * ⚠️ ปัก `Asia/Bangkok` = **ข้อสมมติว่าผู้ใช้อยู่ไทย** — จริงวันนี้ (แอปเป็นไทยล้วน `th-TH` ทั้งเว็บ)
+ *    วันที่มีผู้ใช้ต่างโซนจริง ต้องอ่านจากโปรไฟล์ ไม่ใช่แก้ค่าคงที่ตรงนี้
+ */
+function thaiDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Bangkok",
+  });
+}
+
+/** หัวข้อของบล็อก — ตัวเล็ก จาง ไม่แข่งกับ h1 */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="mb-2 mt-6 text-2xs font-semibold uppercase tracking-wide text-content-soft">
+      {children}
+    </h2>
+  );
+}
+
+/** แถวข้อมูลอ่านอย่างเดียว — ป้ายซ้าย ค่าขวา */
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <span className="shrink-0 text-2xs text-content-soft">{label}</span>
+      <span className="min-w-0 text-right text-sm">{value}</span>
+    </div>
+  );
+}
 
 export default async function AccountPage() {
   // เด้งไป /login เองถ้ายังไม่ล็อกอิน — จึงไม่ต้องเช็ค null ข้างล่าง
@@ -71,6 +116,23 @@ export default async function AccountPage() {
   const db = await createServerSupabase();
   const { data: profile } = await profileOf(db, user.id);
 
+  /* ทริปของคนนี้ — **ของจริงที่มีอยู่แล้ว ไม่ใช่ของที่ปั้นมาเติมหน้าให้เต็ม**
+     หน้านี้เคยมีของแสดงแค่ 3 อย่าง ผู้ใช้บอกเองว่า *"ดูโล่ง ดูไม่เต็ม"* (4 ก.ย. 2026)
+     🔴 ทางที่ **ไม่** เอา: ปั้นการ์ด "เร็ว ๆ นี้" เพิ่มให้ดูแน่น — นั่นคือเติมหน้าด้วยของที่ยังไม่มี
+     ✅ ทางที่เอา: เอา *ของจริงที่ยังไม่เคยถูกแสดง* ขึ้นมา — ทริป · วันเปิดบัญชี · วันเข้าใช้ล่าสุด
+     · `tripsVisibleToMe` เป็น helper เดียวกับที่หน้าแรกใช้ ⇒ ไม่มีคิวรีรูปใหม่ให้ต้องตรวจสิทธิ์ซ้ำ
+     · ล้มก็แค่ไม่โชว์บล็อกนี้ — **บัญชียังใช้ได้ทุกอย่างโดยไม่มีมัน** จึงไม่ทำให้ทั้งหน้าพัง */
+  const { data: tripRows } = await tripsVisibleToMe(db);
+  const trips = tripRows ?? [];
+  const today = new Date().toISOString().slice(0, 10);
+  // ทริปถัดไป = ใบที่ยังไม่จบ เรียงตามวันเริ่ม · ไม่มี = ผ่านไปหมดแล้ว หรือยังไม่มีทริปเลย
+  const upcoming = trips
+    .filter((t) => (t.end_date ?? t.start_date ?? "") >= today)
+    .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""))[0];
+
+  const lastSignIn = thaiDate(user.last_sign_in_at);
+  const createdAt = thaiDate(user.created_at);
+
   return (
     <main className="mx-auto max-w-md px-4 py-6 text-content sm:py-10">
       {/* 🔴 **ทางออก — วัดแล้วว่าหน้านี้ไม่มีเลยสักทาง** (P7 · 4 ก.ย. 2026)
@@ -79,13 +141,34 @@ export default async function AccountPage() {
           **ออกได้ทางเดียวคือปุ่ม back ของเบราว์เซอร์ หรือออกจากระบบ**
           🎯 ตอนหน้านี้เป็นเครื่องมือตรวจของทีม มันไม่ใช่ปัญหา — คนที่เปิดพิมพ์ URL เอง
           **มันกลายเป็นปัญหาตอนมีคนลิงก์มาหามัน** ซึ่งเป็นเรื่องเดียวกับที่ทำให้ต้องรื้อหน้านี้ทั้งใบ */}
+      {/* 🔴 **ฉบับแรกของลิงก์นี้เป็นข้อความ `text-2xs` เปล่า ๆ — ผู้ใช้ให้ออกแบบใหม่ และมันตกเกณฑ์จริง**
+          · เป้าแตะสูง ~16px · เกณฑ์ของเฟส D1 คือ **44px** (`6787a95` — ตอนนั้นวัดได้ว่าตก 500 จาก 903 จุด)
+          · และมันอ่านเหมือน *ข้อความ* ไม่ใช่ *ปุ่ม* — ไม่มีขอบ ไม่มีพื้น เล็กกว่าตัวอักษรรอบตัว
+          ⇒ ทำเป็นชิปที่มีขอบ+พื้นแบบเดียวกับการ์ดในหน้านี้ ให้มันประกาศตัวว่ากดได้
+
+          🔴 **`before:-inset-[7px]` ขยายเป้าแตะ 37px → 50px โดยกล่องที่มองเห็นเท่าเดิม**
+          (วัดด้วย `elementFromPoint` ไล่ทีละพิกเซลบนหน้าจริง ไม่ใช่คำนวณจาก padding —
+           ฉบับแรกของบรรทัดนี้เขียน "~34 → ~48" ซึ่งเป็นเลขที่ผมบวกในหัว และคลาดจริง)
+          (แพทเทิร์นของ P2 ที่ `ChecklistPanel.tsx:140` — ใช้ padding จริงจะดันหัวเรื่องลงไปด้วย)
+
+          📌 ใช้ `←` เป็นตัวอักษร ไม่ใช่ไอคอน เพราะ **`components/ui/Icon.tsx` ไม่มีลูกศรย้อนกลับ**
+          และเป็นโซน P2 ⇒ วาด SVG เองที่นี่ = ไอคอนนอกระบบไอคอน · ทั้งเว็บใช้ `←` อยู่แล้ว 3 ที่
+          (`app/today` · `NearbyPlacesModal` · `MoveStopMenu`) — **ตามของที่มี ไม่เปิดระบบที่สอง** */}
       <Link
         href="/"
-        className="inline-flex items-center gap-1 text-2xs text-content-soft hover:text-content"
+        className="relative inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface-raised px-3 py-1.5 text-sm font-medium text-content-soft transition-colors before:absolute before:-inset-[7px] before:content-[''] hover:border-pine hover:text-pine"
       >
-        ← ทริปของฉัน
+        <span aria-hidden>←</span>
+        ทริปของฉัน
       </Link>
-      <h1 className="mt-2 text-xl font-bold">บัญชีของฉัน</h1>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <h1 className="text-xl font-bold">บัญชีของฉัน</h1>
+        {/* 🔴 **ปุ่มสลับธีมของ P2 ถูกสร้างไว้แล้วแต่ยังไม่มีใครเรียกใช้เลยสักที่** (grep แล้ว 0 hit
+            นอกไฟล์ตัวเอง) · หน้าบัญชีคือบ้านตามธรรมชาติของการตั้งค่าที่ผูกกับ *คน* ไม่ใช่ *ทริป*
+            📌 `useDarkTheme` เก็บค่าไว้ที่ `localStorage` และตั้ง `data-theme` บน `<html>`
+               ⇒ แค่เรนเดอร์ปุ่มนี้ หน้านี้ก็รองรับธีมมืดครบ ไม่ต้องเรียก hook เองซ้ำ */}
+        <ThemeToggle />
+      </div>
 
       <Card className="mt-4 flex items-center gap-3 p-4">
         {/* ชื่อยังไม่มีในฐาน (ดูช่อง "ชื่อที่แสดง" ข้างล่าง) — ตัวย่อจึงมาจากอีเมล
@@ -103,20 +186,77 @@ export default async function AccountPage() {
         </div>
       </Card>
 
-      {/* 🔴 สองช่องนี้ *จองที่* ไม่ใช่ฟีเจอร์ — P1 กำลังทำ route ของ "ชื่อที่แสดง" อยู่
-          และแผนสมาชิกยังไม่ได้เริ่มอะไรเลย · เขียนให้อ่านออกว่า "ยังไม่มี" ไม่ใช่ "กดแล้วไม่ทำงาน" */}
-      <Card className="mt-4 p-4">
+      <SectionTitle>โปรไฟล์</SectionTitle>
+      <Card className="p-4">
         <DisplayNameField initialName={profile?.display_name ?? null} />
+      </Card>
+
+      <SectionTitle>การเข้าสู่ระบบ</SectionTitle>
+      <Card className="p-4">
+        <ul className="space-y-2">
+          {providers.length > 0 ? (
+            providers.map((p) => (
+              <li key={p} className="flex items-center gap-2.5 text-sm">
+                <span
+                  aria-hidden
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line text-2xs font-semibold text-content-soft"
+                >
+                  {PROVIDER_LABEL[p]?.mark ?? "?"}
+                </span>
+                <span className="min-w-0 flex-1">{PROVIDER_LABEL[p]?.label ?? p}</span>
+                <span className="shrink-0 text-2xs text-pine">เชื่อมแล้ว</span>
+              </li>
+            ))
+          ) : (
+            <li className="text-sm text-content-soft">ยังไม่มีข้อมูลว่าเข้าด้วยทางไหน</li>
+          )}
+        </ul>
+
+        {/* 🔴 **ห้ามขึ้นว่าทางที่ไม่อยู่ในลิสต์ "ยังไม่ได้ใช้" — นั่นคือ `D64` ซ้ำรอยเดิมเป๊ะ**
+            Supabase แมตช์ที่อีเมลแล้วออก session ให้บัญชีเดิม **โดยไม่สร้าง identity ใหม่**
+            ⇒ คนที่เคยเข้าด้วย magic link จริง ๆ ก็ยังเห็นแค่ `google` อยู่ดี
+            การเขียนว่า "ยังไม่ได้ใช้" จึงเป็นการ **ตัดสินจากข้อมูลที่ไม่ครบ** ซึ่งเคยทำให้ผู้ใช้จริง
+            เกือบล็อกอินซ้ำมาแล้ว · ประโยคข้างล่างพูดเฉพาะสิ่งที่จริงเสมอ ไม่อ้างสถานะของทางที่ไม่เห็น */}
+        <p className="mt-3 border-t border-line pt-3 text-2xs leading-relaxed text-content-soft">
+          ล็อกอินด้วยอีเมลเดียวกันทางอื่น จะเข้าบัญชีนี้เหมือนกัน — ไม่ได้สร้างบัญชีใหม่
+        </p>
+
+        <div className="mt-2 border-t border-line pt-1">
+          {lastSignIn && <InfoRow label="เข้าใช้ล่าสุด" value={lastSignIn} />}
+          {createdAt && <InfoRow label="เปิดบัญชีเมื่อ" value={createdAt} />}
+        </div>
+      </Card>
+
+      <SectionTitle>ทริปของฉัน</SectionTitle>
+      <Card className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm">
+            <strong className="text-base">{trips.length}</strong> ทริป
+          </span>
+          <Link
+            href="/"
+            className="relative shrink-0 text-2xs font-medium text-pine before:absolute before:-inset-3 before:content-[''] hover:underline"
+          >
+            ดูทั้งหมด →
+          </Link>
+        </div>
+        {upcoming ? (
+          <p className="mt-2 border-t border-line pt-2 text-2xs text-content-soft">
+            ถัดไป ·{" "}
+            <strong className="text-sm font-medium text-content">{upcoming.title}</strong>
+            {thaiDate(upcoming.start_date) ? ` — ${thaiDate(upcoming.start_date)}` : ""}
+          </p>
+        ) : (
+          <p className="mt-2 border-t border-line pt-2 text-2xs text-content-soft">
+            {trips.length > 0 ? "ทริปทั้งหมดผ่านไปแล้ว" : "ยังไม่มีทริป — สร้างใบแรกได้ที่หน้าทริป"}
+          </p>
+        )}
       </Card>
 
       {/* 🔴 การ์ดนี้ *จองที่* ไม่ใช่ฟีเจอร์ — ยังไม่ได้เริ่มอะไรเลย
           เขียนให้อ่านออกว่า "ยังไม่มี" ไม่ใช่ "กดแล้วไม่ทำงาน" */}
-      <h2 className="mt-6 text-2xs font-semibold uppercase tracking-wide text-content-soft">
-        ยังทำไม่เสร็จ
-      </h2>
-      <div className="mt-2">
-        <PendingRow title="แผนสมาชิก">ยังไม่เปิดให้สมัคร</PendingRow>
-      </div>
+      <SectionTitle>ยังทำไม่เสร็จ</SectionTitle>
+      <PendingRow title="แผนสมาชิก">ยังไม่เปิดให้สมัคร</PendingRow>
 
       <SignOutButton />
 
