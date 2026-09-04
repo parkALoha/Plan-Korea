@@ -1512,6 +1512,7 @@ export type Database = {
           created_by: string
           end_date: string
           id: string
+          published_template_at: string | null
           start_date: string
           status: string
           title: string
@@ -1524,6 +1525,7 @@ export type Database = {
           created_by: string
           end_date: string
           id?: string
+          published_template_at?: string | null
           start_date: string
           status?: string
           title: string
@@ -1536,6 +1538,7 @@ export type Database = {
           created_by?: string
           end_date?: string
           id?: string
+          published_template_at?: string | null
           start_date?: string
           status?: string
           title?: string
@@ -1600,6 +1603,28 @@ export type Database = {
           table_name: string
         }[]
       }
+      copy_trip_template: {
+        Args: { p_start_date: string; p_template_id: string; p_title?: string }
+        Returns: {
+          base_timezone: string
+          created_at: string
+          created_by: string
+          end_date: string
+          id: string
+          published_template_at: string | null
+          start_date: string
+          status: string
+          title: string
+          updated_at: string
+          updated_by_user: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "trips"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       create_custom_place: {
         Args: {
           p_category: string
@@ -1630,6 +1655,7 @@ export type Database = {
           created_by: string
           end_date: string
           id: string
+          published_template_at: string | null
           start_date: string
           status: string
           title: string
@@ -1652,6 +1678,16 @@ export type Database = {
         Returns: {
           expires_at: string
           held_by: string
+        }[]
+      }
+      list_trip_templates: {
+        Args: never
+        Returns: {
+          cities: Json
+          day_count: number
+          id: string
+          night_count: number
+          title: string
         }[]
       }
       mode_limits: {

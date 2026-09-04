@@ -1755,3 +1755,61 @@ export function updateDisplayName(db: Db, userId: string, displayName: string) {
     .select("id, display_name")
     .maybeSingle();
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// ทริปแนะนำ — `E5` · P1-Lead · 4 ก.ย. 2026 (ผู้ใช้สั่งเอง)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * รายการทริปแนะนำ (สรุปสำหรับการ์ดบนหน้าแรก)
+ *
+ * 🔴 **เป็น RPC ไม่ใช่ `select` และนั่นคือแกนของการออกแบบ ไม่ใช่รสนิยม**
+ * `trips_select` = `can_read_trip(id)` ⇒ **ไม่มีใครอ่านทริปที่ตัวเองไม่ได้เป็นสมาชิกได้เลย**
+ * รวมถึงใบที่เป็น template · เราจงใจ **ไม่** เพิ่ม policy ให้อ่าน
+ * ⇒ ทางเดียวที่เนื้อออกได้คือ definer 2 ตัวนี้ · เส้นทาง *อ่านทริปคนอื่น* ไม่มีอยู่จริง
+ * 🎯 ***"ติดธงผิดใบ" จึงมีราคาแค่ มีคนก๊อปแผนที่ไม่ได้ตั้งใจเผยแพร่ — ไม่ใช่ ข้อมูลรั่ว***
+ *
+ * ⚠️ `cities` เป็น `Json` (jsonb จากฐาน) — **ผู้เรียกต้องแปลงเอง** · ชนิดที่ `supabase gen types`
+ *    ให้ได้แค่ `Json` เพราะ Postgres ไม่ได้บอกรูปข้างในของ `jsonb`
+ *    🔴 ⇒ **`as` ตรงนี้เป็นคำกล่าวอ้าง ไม่ใช่การตรวจ** — route ต้องตรวจรูปด้วยตัวเองก่อนใช้
+ */
+export function listTripTemplates(db: Db) {
+  return db.rpc("list_trip_templates");
+}
+
+/**
+ * ก๊อปทริปแนะนำมาเป็นทริปของผู้เรียก
+ *
+ * 🔴 **ด่านทั้งหมดของฟังก์ชันนี้คือ `where published_template_at is not null` ในตัว RPC**
+ * (`20260904180000`) — `security definer` ทำให้ `where` เป็นด่านเดียวที่เหลือ
+ * ⇒ **ห้ามเพิ่ม wrapper ที่รับ `tripId` แล้วส่งต่อโดยไม่ผ่าน RPC นี้**
+ *
+ * ⚠️ `P0002` = ไม่พบ/ไม่ใช่ template · `22023` = ไม่ได้ส่งวันเริ่ม · `P0003` = ก๊อปไม่ครบ (ของภายใน)
+ */
+export function copyTripTemplate(
+  db: Db,
+  args: { templateId: string; startDate: string; title?: string | null },
+) {
+  return db.rpc("copy_trip_template", {
+    p_template_id: args.templateId,
+    p_start_date: args.startDate,
+    // 🔴 `?? undefined` ไม่ใช่ `?? null` — พารามิเตอร์มี `default null` ในฐาน
+    //    ส่ง `null` ไปจะเป็นการ *ตั้งค่าเป็น null* ซึ่งเหมือนกันในเคสนี้ **แต่ชนิดที่ gen มาประกาศ
+    //    `p_title?: string`** ⇒ ส่ง null ไม่ผ่าน tsc · รูปเดียวกับ `p_base_timezone` ที่ `schemaPins` พินไว้
+    p_title: args.title ?? undefined,
+  });
+}
+
+/**
+ * เมืองในคลัง + ประเทศของมัน — ใช้เติมข้อมูลที่ RPC ไม่ได้คืน
+ *
+ * 🔴 **มีอยู่เพราะ `list_trip_templates()` คืน `slug` แต่ไม่คืน `country_id`**
+ * `TripCoverImage` ไล่รูปปก `slug → countryId → พื้นไล่สี` ⇒ ขาด `countryId` = **ชั้นที่สองหายไปทั้งชั้น**
+ * 🎯 ***การ์ดที่ตกไปพื้นไล่สีทุกใบ อ่านเหมือน "รูปพัง" ไม่ใช่ "ยังไม่มีรูป"*** (P2 ชี้)
+ * · ⚠️ **ทางที่ถูกกว่าคือให้ RPC คืนมาเอง** — แต่ต้อง `drop`+`create` (เปลี่ยนชนิดที่คืน) = migration ใบใหม่
+ *   ⇒ เติมที่ route ไปก่อน · **ย้ายเข้า RPC เมื่อมีเหตุอื่นต้องแตะไฟล์นั้นอยู่แล้ว** ไม่ใช่แตะเพื่อเรื่องนี้อย่างเดียว
+ * · 📌 78 แถววันนี้ ⇒ ถูกกว่าการยิงรายเมือง · **เกณฑ์ที่ต้องเปลี่ยน: เวลาตอบของ route เริ่มขยับ**
+ */
+export function catalogCityCountryMap(db: Db) {
+  return engineTable(db, "catalog_cities").select("id, country_id, legacy_slug");
+}
