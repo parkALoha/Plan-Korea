@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { TripPlan } from "@/lib/supabase";
 import { TripSettingsModal } from "./TripSettingsModal";
+import { ThemeToggle } from "./ui/ThemeToggle";
 import { useMounted } from "@/hooks/useMounted";
 
 interface TripHeaderProps {
@@ -55,7 +56,8 @@ export function TripHeader({
           <div className="text-xs font-medium uppercase tracking-widest text-gold">
             11 – 21 ต.ค. 2026 · เที่ยวเกาหลี 12–20
           </div>
-          <div className="flex shrink-0 gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <ThemeToggle onDark />
             <Link
               href="/today"
               className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-cream hover:bg-white/20"

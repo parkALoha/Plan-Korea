@@ -383,7 +383,7 @@ function BottomSheet({
   return (
     <div className="fixed inset-0 z-40 lg:hidden">
       <div
-        className="animate-sheet-backdrop absolute inset-0 bg-ink/40"
+        className="animate-sheet-backdrop absolute inset-0 bg-black/50"
         onClick={onClose}
         aria-hidden
       />

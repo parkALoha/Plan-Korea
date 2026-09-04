@@ -437,7 +437,7 @@ export default function Home() {
             )}
 
             {overallLoaded && daysUntilFirstDay != null && daysUntilFirstDay > 16 && (
-              <div className="mb-4 rounded-xl bg-cream-soft/70 px-3 py-2 text-xs text-ink-soft">
+              <div className="mb-4 rounded-xl bg-surface-soft/70 px-3 py-2 text-xs text-content-soft">
                 🌤️ พยากรณ์อากาศรายวันจะขึ้นบนหัวการ์ดเมื่อเหลืออีก ~16 วันก่อนถึงวันนั้น (ตอนนี้อีก{" "}
                 {daysUntilFirstDay} วัน)
               </div>
@@ -540,7 +540,7 @@ export default function Home() {
 
       <DragOverlay>
         {activeDragLabel && (
-          <div className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-ink shadow-lg shadow-ink/20 ring-2 ring-maple">
+          <div className="rounded-xl bg-surface-raised px-3 py-2 text-sm font-semibold text-content shadow-overlay ring-2 ring-maple">
             {activeDragLabel}
           </div>
         )}

@@ -6,8 +6,8 @@ export function DayCardSkeleton() {
       aria-hidden
     >
       <div className="space-y-2 bg-surface-soft/70 px-4 py-3">
-        <div className="h-3 w-24 rounded bg-ink/10" />
-        <div className="h-5 w-40 rounded bg-ink/10" />
+        <div className="h-3 w-24 rounded bg-content/10" />
+        <div className="h-5 w-40 rounded bg-content/10" />
       </div>
       <div className="space-y-3 p-4">
         {[0, 1, 2].map((i) => (

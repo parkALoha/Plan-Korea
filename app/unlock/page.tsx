@@ -68,8 +68,8 @@ export default function UnlockPage() {
       <div className="w-full max-w-xs">
         <div className="mb-6 text-center">
           <div className="text-4xl">🍁</div>
-          <h1 className="mt-2 text-xl font-extrabold text-ink">แพลนเที่ยวเกาหลี</h1>
-          <p className="mt-1 text-sm text-ink-soft">ใส่ PIN เพื่อเข้าใช้งาน</p>
+          <h1 className="mt-2 text-xl font-extrabold text-content">แพลนเที่ยวเกาหลี</h1>
+          <p className="mt-1 text-sm text-content-soft">ใส่ PIN เพื่อเข้าใช้งาน</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -83,7 +83,7 @@ export default function UnlockPage() {
             onChange={(e) => setPin(e.target.value)}
             placeholder="••••"
             aria-label="PIN"
-            className="w-full rounded-xl border border-cream-soft bg-white px-4 py-3 text-center text-2xl tracking-[0.4em] text-ink focus:border-maple focus:outline-none"
+            className="w-full rounded-xl border border-line bg-surface-raised px-4 py-3 text-center text-2xl tracking-[0.4em] text-content focus:border-maple focus:outline-none"
           />
 
           {error && (
@@ -101,7 +101,7 @@ export default function UnlockPage() {
           </button>
         </form>
 
-        <p className="mt-5 text-center text-xs leading-relaxed text-ink-soft/70">
+        <p className="mt-5 text-center text-xs leading-relaxed text-content-soft/70">
           กรอกครั้งเดียวแล้วเครื่องนี้จะจำไว้ 90 วัน
         </p>
       </div>
