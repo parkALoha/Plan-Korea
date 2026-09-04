@@ -1509,40 +1509,82 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
      *    🎯 ***`trip_stops` เป็น soft delete แต่ cascade เป็น hard delete*** — เคสสดของช่องนั้นอยู่ที่
      *    `rlsMatrix` บล็อก `trip_days` · **ที่นี่วัดเฉพาะด่านของ route**
      */
-    it("🔴 ⑪ ย่อช่วงวันที่มีจุดแวะ → 409 พร้อมจำนวนจริง · `force: true` ผ่าน", async () => {
-      // 🔴 **ตั้งสถานะให้แน่นอนก่อน — ห้ามพึ่งผลของเคส ⑨** ซึ่งกำลังวัดว่ามีวันรั่วค้างหรือเปล่า
-      //    ถ้าเคสนี้พึ่งสภาพที่ ⑨ ทิ้งไว้ **ผลของ ⑨ จะกลายเป็นตัวแปรของ ⑪** — และเวลา ⑨ เจอบั๊กจริง
-      //    ⑪ จะแดงตามไปด้วยพร้อมข้อความที่ชี้ผิดที่ (`losingDates` ไม่ตรง) แล้วคนจะไปไล่หาบั๊กที่ไม่มี
-      // 🎯 ***เคสที่ผลของมันขึ้นกับ "เคสก่อนหน้าเจอบั๊กหรือเปล่า" ไม่ได้วัดสิ่งที่มันอ้างว่าวัด***
+    /**
+     * 🔴 **`409 STOPS_WOULD_BE_LOST` — การปฏิเสธ *ถาวร* ไม่มี `force`** (แก้ 4 ก.ย. 2026 หลังผมยิงเจอ)
+     *
+     * ## ฉบับแรกของเคสนี้ยืนยัน `force: true` แล้วมันแดง — **และแดงถูก**
+     * ```
+     * 409 → ส่ง force: true → **502 { code: "P0001" }** · partial: true
+     * ```
+     * `P0001` มาจาก trigger `app.assert_day_has_no_stops()` (`before delete on trip_days` ·
+     * `20260825142639:94-105`) ⇒ ***route ถามผู้ใช้ว่า "ยืนยันจะทิ้งจุดแวะไหม" แล้วเดินต่อ
+     * — แต่ฐานไม่เคยอนุญาตให้ทิ้ง มาตั้งแต่ 25 ส.ค.***
+     * · และ `D73` เขียนถ้อยคำ *"ให้ตัวปรับช่วงวัน **ปฏิเสธ** วันที่ยังมีจุดแวะ"* ไว้ตั้งแต่ต้น
+     *   ⇒ ฐานบังคับถ้อยคำเดิมอยู่แล้ว · ทางที่ route เขียนไว้ **ไม่เคยเปิด**
+     *
+     * ## ⚠️ เคสนี้ยืนยัน `nothingWritten` **ที่ฐาน ไม่ใช่จากคำตอบ**
+     * `nothingWritten: true` เป็น *คำกล่าวอ้างในเพย์โหลด* — บั๊กฉบับแรกเขียน `start_date`/`end_date`
+     * ไปแล้วก่อนล้ม ⇒ **ถ้าเชื่อเพย์โหลด เราจะพลาดรูปเดิมเป๊ะถ้ามันกลับมา**
+     */
+    it("🔴 ⑪ ย่อช่วงวันที่มีจุดแวะ → 409 ถาวร · ไม่มีอะไรถูกเขียน · `force` ไม่ใช่ทางลัดอีกต่อไป", async () => {
+      // ตั้งสถานะให้แน่นอน — ไม่พึ่งผลของเคสก่อนหน้า (⑨ กำลังวัดว่ามีของรั่วไหม)
       const norm = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
-        startDate: "2026-10-11", endDate: "2026-10-23", force: true,
+        startDate: "2026-10-11", endDate: "2026-10-23",
       });
-      expect(norm.status, `setup: ตั้งช่วงวันให้แน่นอนควร 200: ${await norm.clone().text()}`).toBe(200);
-      expect((await daysOf()).length, "setup: ควรได้ 13 วันพอดีก่อนเริ่มเคสนี้").toBe(13);
+      expect(norm.status, `setup: ตั้งช่วงวันควร 200: ${await norm.clone().text()}`).toBe(200);
+      expect((await daysOf()).length, "setup: ควรได้ 13 วันพอดี").toBe(13);
 
       const lastDay = await dayIdOf("2026-10-23");
       const mk = await postAs(aCookies, tripE, stopsPOST, { planId: ePlan, tripDayId: lastDay, kind: "hotel" });
-      expect(mk.status, `setup: สร้างจุดแวะในวันสุดท้ายควร 201: ${await mk.clone().text()}`).toBe(201);
+      expect(mk.status, `setup: สร้างจุดแวะควร 201: ${await mk.clone().text()}`).toBe(201);
+      const stopId = ((await mk.json()) as { id: string }).id;
 
-      const shrink = () => callAs(aCookies, tripE, tripPATCH, "PATCH", {
-        startDate: "2026-10-11", endDate: "2026-10-21",
-      });
+      /** ช่วงวันของตัวทริปเอง — `nothingWritten` ต้องจริงกับคอลัมน์พวกนี้ด้วย ไม่ใช่แค่จำนวนวัน */
+      const rangeOf = async () => {
+        const { data, error } = await admin.from("trips").select("start_date, end_date").eq("id", tripE).single();
+        if (error) throw new Error(`admin อ่านช่วงวันของ tripE: ${error.message}`);
+        return `${data.start_date}..${data.end_date}`;
+      };
+      const beforeRange = await rangeOf();
+      const beforeDays = await daysOf();
 
-      const blocked = await shrink();
+      const shrink = (body: Record<string, unknown>) =>
+        callAs(aCookies, tripE, tripPATCH, "PATCH", { startDate: "2026-10-11", endDate: "2026-10-21", ...body });
+
+      const blocked = await shrink({});
       expect(blocked.status, `ย่อวันที่มีจุดแวะควร 409: ${await blocked.clone().text()}`).toBe(409);
-      const body = (await blocked.json()) as { code?: string; losingStops?: number; losingDates?: string[] };
+      const body = (await blocked.json()) as {
+        code?: string; losingStops?: number; losingDates?: string[]; nothingWritten?: boolean;
+      };
       expect(body.code).toBe("STOPS_WOULD_BE_LOST");
-      // 🔴 ยืนยัน *จำนวนจริง* ไม่ใช่แค่ "มากกว่า 0" — ตัวเลขนี้คือสิ่งที่ผู้ใช้ใช้ตัดสินใจ
       expect(body.losingStops, "จำนวนจุดแวะที่จะหายไม่ตรงกับที่สร้างไว้ 1 จุด").toBe(1);
       expect(body.losingDates?.sort(), "วันที่จะถูกถอนไม่ตรง").toEqual(["2026-10-22", "2026-10-23"]);
-      expect((await daysOf()).length, "409 แล้วยังแตะฐาน = ด่านยิงหลังเขียน").toBe(13);
+      expect(body.nothingWritten, "route ต้องประกาศว่าไม่ได้เขียนอะไร").toBe(true);
 
-      const forced = await callAs(aCookies, tripE, tripPATCH, "PATCH", {
-        startDate: "2026-10-11", endDate: "2026-10-21", force: true,
-      });
-      expect(forced.status, `force ควร 200: ${await forced.clone().text()}`).toBe(200);
-      expect(await forced.json()).toMatchObject({ ok: true, added: 0, removed: 2 });
-      expect((await daysOf()).length, "force แล้ววันส่วนเกินยังอยู่").toBe(11);
+      // 🔴 ยืนยันคำกล่าวอ้างนั้น **ที่ฐาน** — ทั้งจำนวนวัน *และ* ช่วงวันของตัวทริป
+      expect(await daysOf(), "409 แล้ววันเปลี่ยน").toEqual(beforeDays);
+      expect(
+        await rangeOf(),
+        "🔴 `nothingWritten: true` แต่ `trips.start_date`/`end_date` ขยับแล้ว\n" +
+          "  ⇒ นี่คือรูปของบั๊กเดิมเป๊ะ (แก้ช่วงวันสำเร็จ แล้วลบวันล้ม ⇒ ทริปค้างครึ่งทาง)",
+      ).toBe(beforeRange);
+
+      // 🔴 **regression guard: `force` ต้องไม่ใช่ทางลัดอีก** — ถ้ามีคนเติมกลับมา เคสนี้แดง
+      //    (ทางนั้นเดินไม่ถึงปลายอยู่แล้ว เพราะ trigger กัน ⇒ เติมกลับ = คืนสภาพครึ่งทาง)
+      const forced = await shrink({ force: true });
+      expect(
+        forced.status,
+        `ส่ง force: true แล้วได้ ${forced.status}: ${await forced.clone().text()}\n` +
+          "  🔴 200 = มีคนเปิดทางลัดกลับมา · 502 = ทางลัดเปิดแล้วไปตายที่ trigger (บั๊กเดิม)",
+      ).toBe(409);
+      expect(await rangeOf(), "force แล้วช่วงวันขยับ = ด่านยิงหลังเขียน").toBe(beforeRange);
+
+      // ✅ ทางออกที่ `409` บอกให้ทำ ต้องใช้ได้จริง — ไม่งั้นข้อความนั้นเป็นทางตัน
+      const del = await aClient.rpc("soft_delete_trip_stop", { p_id: stopId });
+      expect(del.error, `ลบจุดแวะล้ม: ${del.error?.message}`).toBeNull();
+      const after = await shrink({});
+      expect(after.status, `เอาจุดแวะออกแล้วย่อวันควร 200: ${await after.clone().text()}`).toBe(200);
+      expect((await daysOf()).length, "ย่อสำเร็จแล้ววันส่วนเกินยังอยู่").toBe(11);
     });
 
     /**
