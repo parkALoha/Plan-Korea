@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { groupPlaceCards, UNGROUPED_KEY, type PlaceCardItem } from "@/components/placeGrouping";
+import {
+  CATEGORY_ORDER,
+  groupPlaceCards,
+  UNGROUPED_KEY,
+  type PlaceCardItem,
+} from "@/components/placeGrouping";
 import type { Place } from "@/data/places";
 import { UNSET_CATEGORY_META } from "@/components/categoryMeta";
 
@@ -95,5 +100,42 @@ describe("groupPlaceCards", () => {
   it("คีย์อันตรายจาก prototype ตกถังท้าย ไม่ทำการ์ดหาย", () => {
     const cards = [card("a", "constructor"), card("b", "__proto__")];
     expect(idsIn(groupPlaceCards(cards, ORDER))).toEqual(["a", "b"]);
+  });
+});
+
+/**
+ * \u{1F534} **เกณฑ์ของ `CATEGORY_ORDER` *ตัวจริง* — ไม่ใช่ `ORDER` ที่ไฟล์นี้ปั้นเอง** (P2 · 4 ก.ย. 2026)
+ *
+ * เคสข้างบนทุกใบใช้ `ORDER` ที่เขียนไว้ในไฟล์เทสต์ ⇒ **ยืนยันได้แค่ว่า `groupPlaceCards()` ถูก**
+ * ไม่ได้ยืนยันอะไรเลยเกี่ยวกับลิสต์ที่แอปใช้จริง · ช่องนั้นเปิดอยู่จนถึงวันนี้ และมันกัดไปแล้วหนึ่งครั้ง:
+ * `data/places.ts` เขียนว่า *"`hotel` อยู่ใน `CATEGORY_ORDER` ของ `PlaceSidebar`"* **ตั้งแต่ยังไม่อยู่จริง**
+ * และไม่มีอะไรฟ้อง เพราะลิสต์อยู่ในคอมโพเนนต์ไคลเอนต์ที่เทสต์ import ไม่ได้บน Node 20
+ *
+ * \u{1F3AF} **เกณฑ์นี้จึงผูกกับ *พฤติกรรมของลิสต์จริง* ไม่ใช่กับสตริงในซอร์ส** — ถอด `"hotel"` ออกเมื่อไหร่
+ * มันแดงทันที · เปลี่ยนชื่อไฟล์/ย้ายโค้ด/จัดลำดับใหม่ **ไม่ทำให้แดง** (บทเรียนจาก `13fed0a` ที่เกณฑ์
+ * แบบ `grep` แดงใส่การปรับปรุงโค้ดสองรอบจน P3 ถอนออกเอง)
+ *
+ * \u26a0\ufe0f **ช่องที่ยังปิดไม่ได้ ยังปิดไม่ได้เหมือนเดิม** — ถ้าใครเลิกส่ง `CATEGORY_ORDER` เข้า
+ * `groupPlaceCards()` ใน `PlaceSidebar` เกณฑ์นี้จะยังเขียว (ดูย่อหน้า *"ฟังก์ชันถูก แต่ไม่มีใครเรียก"* ข้างบน)
+ * · การย้ายลิสต์ออกมา **ไม่ได้ปิดช่องนั้น** มันแค่ทำให้ *เนื้อของลิสต์* ตรวจได้ — เขียนไว้ให้ชัด
+ *   จะได้ไม่มีใครอ่านว่าหนี้ก้อนนั้นถูกใช้แล้ว
+ */
+describe("CATEGORY_ORDER ตัวจริงที่ `PlaceSidebar` ใช้", () => {
+  it("\u{1F534} `hotel` ต้องมีกลุ่มของตัวเอง ไม่ตกถังท้าย", () => {
+    const groups = groupPlaceCards([card("h", "hotel")], CATEGORY_ORDER);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key, "ตกถังท้าย = ที่พักไปกอง \"อื่น ๆ\" รวมกับหมวดที่เราไม่รู้จัก").toBe("hotel");
+    // หัวกลุ่มต้องอ่านออก — หมวดที่ไม่มี meta จะได้ป้ายเดียวกับถังท้าย ซึ่งอ่านเป็นบั๊ก
+    expect(groups[0]?.label).not.toBe(UNSET_CATEGORY_META.label);
+    expect(groups[0]?.emoji).toBe("🏨");
+  });
+
+  it("เคสควบคุม: หมวดที่ไม่รู้จักยังตกถังท้ายตามเดิม (ตัวจับไม่ได้กว้างจนรับทุกอย่าง)", () => {
+    const groups = groupPlaceCards([card("x", "onsen")], CATEGORY_ORDER);
+    expect(groups.map((g) => g.key)).toEqual([UNGROUPED_KEY]);
+  });
+
+  it("`transport` ยังไม่อยู่ในลิสต์โดยตั้งใจ — จุดที่ระบบ resolve ให้ ไม่ใช่ของที่เลือกจากคลัง", () => {
+    expect(CATEGORY_ORDER).not.toContain("transport");
   });
 });

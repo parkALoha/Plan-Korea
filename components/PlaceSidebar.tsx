@@ -3,9 +3,9 @@
 import { type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Category, Place, cityCenter, placesByCity } from "@/data/places";
+import { Place, cityCenter, placesByCity } from "@/data/places";
 import { cityMetaOf, cityNameThOf } from "@/components/cityMeta";
-import { groupPlaceCards } from "@/components/placeGrouping";
+import { CATEGORY_ORDER, groupPlaceCards } from "@/components/placeGrouping";
 import { cityCenterOf } from "@/lib/engine/cityCenter";
 import type { Day } from "@/data/itinerary";
 import type { CustomPlace, PlaceNote, TripHotel } from "@/lib/supabase";
@@ -21,18 +21,6 @@ import { NearbyPlacesModal, type NearbyKind } from "./NearbyPlacesModal";
 
 /** ข้อความบอกสาเหตุตอนปุ่มค้นหาถูกปิด — ปุ่มที่กดไม่ได้โดยไม่บอกว่าทำไม แย่กว่าปุ่มที่หายไป */
 const NO_CENTER_HINT = "ยังไม่รู้พิกัดของเมืองนี้ — ค้นหาแบบอิงระยะทางยังใช้ไม่ได้";
-
-const CATEGORY_ORDER: Category[] = [
-  "restaurant",
-  "culture",
-  "nature",
-  "beach",
-  "market",
-  "cafe",
-  "nightlife",
-  "viewpoint",
-  "shopping",
-];
 
 type PlaceCardProps = {
   place: Place;
