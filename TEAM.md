@@ -397,6 +397,16 @@ grep -nE '^\s*(- )?(run|uses):' .github/workflows/ci.yml
     · 🔴 **ข้อยกเว้นนี้ไม่ครอบ `push`** — `push` ยังต้องขออนุญาตผู้ใช้ของเซสชันนั้นแยกทุกครั้งตาม `§3.3`
     · 🔴 **และไม่ครอบใครนอกจากงานนี้** — บรรทัด freeze ข้างบนยังบังคับกับทุกคน ทุกงานอื่น เหมือนเดิม
     · แผนเต็มอยู่ที่ `~/.claude/plans/golden-wandering-wombat.md` (ผู้ใช้อนุมัติแล้ว 4 ก.ย. 2026)
+  · 🟡 **ข้อยกเว้นที่สอง ผู้ใช้ยกเอง 4 ก.ย. 2026 — วางเปลือก workflow บน `main` (โซน P6)**
+    🔴 **ทำไมจำเป็น:** `schedule`/`workflow_dispatch` ของ GitHub Actions **อ่านนิยาม workflow จาก default branch เท่านั้น**
+    (ยืนยันด้วยการยิงจริง: `gh workflow run cache-warm.yml --ref platform` → `404: not found on the default branch`)
+    ⇒ `cache-warm.yml`/`cache-heartbeat.yml` ที่อยู่แค่บน `platform` **เรียกไม่ได้เลยทั้งสองวิธี**
+    · **ขอบเขต: `.github/workflows/` บน `main` เท่านั้น** — ห้ามแตะโค้ดแอป · ห้ามแตะ `lib/` `app/` `components/`
+    · 🔴 **ต้องเป็น *เปลือก* ไม่ใช่สำเนา** — trigger + `actions/checkout@v4 (ref: platform)` + เรียกคำสั่งเดิม
+      **ตรรกะจริงอยู่บน `platform` ใบเดียว** · ผู้ใช้เลือกทางนี้ทับทางสำเนาเต็มด้วยเหตุผลนี้โดยตรง
+      🎯 ***สำเนาที่ต้องมีคนซิงก์ จะล้าเสมอ*** — รูปเดียวกับที่ `§3.3` เตือนเรื่องรายการที่คัดลอกไว้
+    · 🔴 **ไม่ครอบ `push`** — ยังต้องขอผู้ใช้ของเซสชันนั้นแยกทุกครั้ง
+    · 🔴 **และไม่ครอบการเปลี่ยน default branch** — ทางนั้นผู้ใช้ปฏิเสธไปแล้ว ห้ามเสนอซ้ำโดยไม่มีเหตุใหม่
   · งานแพลตฟอร์มเขียนโค้ดได้เต็มที่ **แต่เฉพาะบน branch `platform` ใน worktree แยก**
   · **ห้าม merge เข้า `main` ก่อนกลับจากทริป** · **ห้าม `git checkout` สลับ branch ในทรีหลัก**
   · dev DB = ref `pmvxwcimjebogjfimzqy` (org `Plan-trip-app`) · **`ejzibhgqhxdzkovsnpds` ห้ามแตะทุกกรณี**
