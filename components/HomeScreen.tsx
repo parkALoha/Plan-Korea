@@ -6,6 +6,7 @@ import { CreateTripForm } from "@/components/CreateTripForm";
 import { InitialAvatar } from "@/components/InitialAvatar";
 import { Modal } from "@/components/Modal";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useMounted } from "@/hooks/useMounted";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
@@ -50,7 +51,7 @@ function TripCoverImage({ destinations }: { destinations: TripDestination[] }) {
   if (stage === "gradient" || !first) {
     // fallback ของรูปปก — ไม่มีจุดหมาย หรือไล่ทั้งรูปเมือง/ประเทศแล้วไม่เจอสักไฟล์
     return (
-      <div className="flex w-20 shrink-0 items-center justify-center bg-gradient-to-br from-pine to-maple text-2xl text-cream sm:w-28">
+      <div className="flex h-full w-24 items-center justify-center bg-gradient-to-br from-pine to-maple text-2xl text-cream sm:h-28 sm:w-full sm:text-4xl">
         🗺️
       </div>
     );
@@ -66,7 +67,7 @@ function TripCoverImage({ destinations }: { destinations: TripDestination[] }) {
     <img
       src={src}
       alt=""
-      className="h-auto w-20 shrink-0 object-cover sm:w-28"
+      className="h-full w-24 object-cover sm:h-28 sm:w-full"
       onError={() => setStage((s) => (s === "city" ? "country" : "gradient"))}
     />
   );
@@ -87,16 +88,81 @@ const COPY = E5_COPY.home;
  * 🔴 `memberCount === 0` เป็นไปไม่ได้จริง (ทุกทริปมีเจ้าของ ≥1) — ถ้าเจอ แปลว่าอ่าน `trip_members`
  * ไม่ได้ ไม่ใช่ทริปไม่มีคน ปฏิบัติแบบเดียวกับ `displayName: null` ใน `TripHeader.tsx` (ห้ามเงียบ)
  */
+/**
+ * ป้ายนับถอยหลังมุมบนของการ์ด — **สี่สถานะ ไม่ใช่ตัวเลขเดียว** (P2 · 4 ก.ย. 2026)
+ *
+ * 🎯 ***ของที่ผู้ใช้เปิดหน้าแรกมาหาคือ "ทริปหน้าเหลืออีกกี่วัน" — ข้อมูลนั้นไม่เคยอยู่บนหน้านี้เลย***
+ * มีแค่ช่วงวันที่ ซึ่งผู้ใช้ต้องคำนวณเอง (P1 เสนอให้ทำเป็น hero ของทริปที่ใกล้ที่สุด · ผมเลือกวางบน
+ * **ทุกใบ** แทน เพราะ hero จะซ้ำกับการ์ดใบแรกที่เรียงตามวันอยู่แล้ว และทำให้แถบหัวมีสองโหมด
+ * — โหมดที่สองคือตอนไม่มีทริป ซึ่งเป็นสถานะของผู้ใช้ใหม่ทุกคน)
+ *
+ * 🔴 **`useMounted` ไม่ใช่พิธีกรรม** — `new Date()` ฝั่งเซิร์ฟเวอร์คือเวลาที่ *build* (หน้านี้ถูก
+ * prerender เป็น HTML) ⇒ ต่างจากเวลาที่ผู้ใช้เปิดเว็บ = hydration mismatch (React #418)
+ * และมันโผล่เฉพาะ production เพราะ dev server render ตอนมี request พอดี (ดูหัว `hooks/useMounted.ts`)
+ *
+ * ⚠️ **เทียบด้วย *วันที่* ไม่ใช่ *มิลลิวินาที*** — `end_date` เป็น `YYYY-MM-DD` (ทั้งวัน)
+ * ถ้าหารด้วย 86400000 ตรง ๆ ทริปที่จบ "วันนี้" จะกลายเป็น "จบแล้ว" ตั้งแต่เที่ยงคืนหนึ่งวินาที
+ */
+function TripCountdownBadge({ startDate, endDate }: { startDate: string; endDate: string }) {
+  const mounted = useMounted();
+  if (!mounted) return null;
+
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  let label: string;
+  let tone: string;
+  if (todayIso > endDate) {
+    label = COPY.ended;
+    // ทึบ ไม่ใช่ `/60` — โปร่งใสบนรูปปกที่สีต่างกันทุกใบ ทำให้คอนทราสต์เดาไม่ได้ (วัดไม่ได้ด้วย)
+    tone = "bg-ink text-cream";
+  } else if (todayIso >= startDate) {
+    label = todayIso === startDate ? COPY.startsToday : COPY.ongoing;
+    tone = "bg-pine text-cream";
+  } else {
+    // นับเป็น "จำนวนวันปฏิทินที่ต่างกัน" — ใช้ UTC ทั้งคู่ให้ DST ไม่ทำให้คลาดไปหนึ่งวัน
+    const days = Math.round(
+      (Date.parse(`${startDate}T00:00:00Z`) - Date.parse(`${todayIso}T00:00:00Z`)) / 86400000,
+    );
+    label = COPY.daysUntil(days);
+    // 🔴 `maple-dark` ไม่ใช่ `maple` — วัดแล้ว `maple`/white = **3.50 ตก WCAG AA** (ป้ายเป็น `text-2xs`
+    //    = ข้อความปกติ ต้อง 4.5) · `maple-dark`/white = **4.98 ผ่าน** · เสียความสดไปนิด แลกกับอ่านออก
+    tone = "bg-maple-dark text-white";
+  }
+
+  return (
+    <span
+      className={`absolute right-2 top-2 rounded-full px-2.5 py-1 text-2xs font-semibold shadow-sm shadow-ink/20 ${tone}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 function TripCard({ trip }: { trip: TripListItem }) {
   const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
     <Link
       href={`/trip/${trip.id}`}
-      className="flex overflow-hidden rounded-2xl border border-line bg-surface-raised hover:border-maple/40"
+      className="group relative flex overflow-hidden rounded-2xl border border-line bg-surface-raised transition hover:border-maple/40 hover:shadow-md hover:shadow-ink/5 sm:flex-col"
     >
-      <TripCoverImage destinations={trip.destinations} />
+      {/* 🔴 รูปปกขึ้นบนเต็มความกว้าง — ของเดิมเป็นแถบข้าง `w-20` ที่เล็กเกินกว่าจะอ่านออกว่าเป็นเมืองอะไร
+          ⇒ มันกินพื้นที่โดยไม่ได้ทำงาน · ใน grid การ์ดมีความกว้างของตัวเอง รูปจึงได้ทำหน้าที่จริง */}
+      {/**
+       * 🔴 **มือถือ = แถบข้าง · `sm` ขึ้นไป = แบนเนอร์บน — ไม่ใช่รูปเดียวสองที่**
+       * แบนเนอร์บนมือถือทำให้การ์ดสูงขึ้นเกือบเท่าตัว ⇒ เห็นจาก **~5 ใบเหลือ ~2.5 ใบ** ต่อจอ
+       * 🎯 ***มือถือเป็นฝั่งที่ผู้ใช้พอใจอยู่แล้ว — การรื้อ desktop ต้องไม่จ่ายด้วยความแน่นของมือถือ***
+       * (ผมทำแบนเนอร์ทั้งสองที่ก่อน แล้วเห็นตอนยิงจอ 375px จริง ไม่ใช่ตอนอ่านโค้ด)
+       */}
+      <div className="shrink-0 sm:shrink">
+        <TripCoverImage destinations={trip.destinations} />
+      </div>
+      {/* 🔴 ป้ายเกาะ **การ์ด** ไม่ใช่เกาะรูป — บนมือถือรูปเป็นแถบกว้าง 96px ป้ายจะไปทับงานศิลป์
+          และอ่านเหมือนสติกเกอร์แปะผิดที่ · เกาะการ์ด = ตำแหน่งเดียวใช้ได้ทั้งสองความกว้าง */}
+      <TripCountdownBadge startDate={trip.start_date} endDate={trip.end_date} />
       <div className="min-w-0 flex-1 p-3">
-        <h3 className="truncate font-semibold text-content">{trip.title}</h3>
+        {/* กันชื่อยาววิ่งไปใต้ป้าย — บน `sm` ป้ายอยู่เหนือแบนเนอร์ ไม่ทับบรรทัดนี้ จึงไม่ต้องเผื่อ */}
+        <h3 className="truncate pr-20 font-semibold text-content sm:pr-0">{trip.title}</h3>
         <p className="mt-0.5 text-xs text-content-soft">
           {tripDateRangeLabel(trip.start_date, trip.end_date)}
         </p>
@@ -234,39 +300,63 @@ export function HomeScreen() {
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content">
-      <header className="focus-ring-on-dark bg-pine px-4 pb-5 pt-6 text-cream">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          {/* mockup ของผู้ใช้มีทั้งแถบทักทายและกล่องเข้าสู่ระบบพร้อมกัน — เกิดพร้อมกันไม่ได้ (P1 ชี้
-              27 ส.ค. 2026) โชว์อย่างใดอย่างหนึ่งตามสถานะจริงแทน */}
-          {user.status === "ready" ? (
-            <div className="flex min-w-0 items-center gap-2.5">
-              <InitialAvatar name={user.displayName ?? "?"} className="h-9 w-9 text-sm" />
-              <span className="truncate font-semibold">
-                {COPY.greeting(user.displayName ?? "")}
-              </span>
-            </div>
-          ) : user.status === "anon" ? (
-            <Link
-              href="/login"
-              className="rounded-lg bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/20"
+      {/**
+       * 🔴 **แถบหัวเป็น *แถบของแอป* ไม่ใช่ *แถบทักทาย*** — รื้อ 4 ก.ย. 2026 (ผู้ใช้สั่งเอง: *"Header มันดูกากไปหน่อย"*)
+       *
+       * ของเดิม: แถบเขียวสูง มี avatar + `สวัสดี คุณ<ชื่อ>` ตัวหนา กับ ⚙️ **ไม่มีชื่อเว็บ ไม่มีโลโก้**
+       * 🎯 ***สิ่งที่เด่นที่สุดในหน้าแรกจึงเป็นชื่อผู้ใช้เอง ซึ่งเป็นข้อมูลชิ้นเดียวที่เขารู้อยู่แล้วโดยไม่ต้องเปิดเว็บ***
+       * และหัวข้อจริงของหน้า (`แพลนทริปที่จะมาถึง`) ตัวเล็กกว่าคำทักทาย ⇒ ลำดับความสำคัญกลับหัว
+       * · ตอนนี้เว็บกำลังจะให้คนแปลกหน้าใช้ **หน้าแรกคือที่แรกที่เขาตัดสินว่านี่ของจริงหรือของเล่น**
+       *
+       * ✅ แถบหัวถือ **ตัวตนของสินค้า (ซ้าย) + ทางไปบัญชี (ขวา)** · คำทักทายย้ายลงไปเป็นบรรทัดรองใต้หัวข้อ
+       * · `sticky` เพราะตอนนี้มันมีของที่ต้องใช้ (กลับหน้าแรก · บัญชี) — แถบที่เลื่อนหายไปคือแถบที่ไม่มีใครใช้
+       */}
+      <header className="focus-ring-on-dark sticky top-0 z-20 bg-pine text-cream shadow-sm shadow-ink/10">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+          <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg">
+            <span
+              aria-hidden
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream/15 text-lg"
             >
-              {COPY.login}
-            </Link>
-          ) : (
-            <span className="h-9" aria-hidden />
-          )}
-
-          <Link
-            href="/account"
-            aria-label={COPY.account}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-lg hover:bg-white/20"
-          >
-            ⚙️
+              🧭
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-base font-extrabold leading-tight">{COPY.brand}</span>
+              {/* คำโปรยซ่อนบนมือถือ — ที่แคบ ชื่อสำคัญกว่า */}
+              <span className="hidden text-2xs leading-tight text-cream/70 sm:block">
+                {COPY.brandTagline}
+              </span>
+            </span>
           </Link>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {user.status === "anon" ? (
+              <Link
+                href="/login"
+                className="rounded-lg bg-cream/10 px-3 py-1.5 text-sm font-medium hover:bg-cream/20"
+              >
+                {COPY.login}
+              </Link>
+            ) : user.status === "ready" ? (
+              /* avatar เป็น *ทางไปบัญชี* ไม่ใช่ป้ายชื่อ — จึงอยู่คู่กับ ⚙️ และเล็กลง */
+              <Link href="/account" aria-label={COPY.account} className="rounded-full">
+                <InitialAvatar name={user.displayName ?? "?"} className="h-9 w-9 text-sm" />
+              </Link>
+            ) : (
+              <span className="h-9 w-9" aria-hidden />
+            )}
+            <Link
+              href="/account"
+              aria-label={COPY.account}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-cream/10 text-lg hover:bg-cream/20"
+            >
+              ⚙️
+            </Link>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-4 pt-5">
+      <div className="mx-auto max-w-6xl px-4 pt-5">
         {state.status === "loading" ? (
           <div className="space-y-3">
             <div className="h-24 animate-pulse rounded-2xl bg-surface-soft" />
@@ -297,10 +387,26 @@ export function HomeScreen() {
           </div>
         ) : (
           <>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-content-soft">
-              {COPY.upcomingTrips}
-            </h2>
-            <div className="space-y-3">
+            {/**
+             * 🔴 **หัวข้อของหน้าต้องใหญ่กว่าคำทักทาย** — ของเดิมกลับกัน (`text-sm uppercase` ใต้ `สวัสดี…` ตัวหนา)
+             * คำทักทายไม่ใช่เนื้อหา มันคือบริบท ⇒ ลงมาเป็นบรรทัดรอง พร้อมจำนวนทริปซึ่ง **ตอบคำถามจริงกว่า**
+             */}
+            <div className="mb-4">
+              <h1 className="text-2xl font-extrabold tracking-tight text-content sm:text-3xl">
+                {COPY.upcomingTrips}
+              </h1>
+              <p className="mt-1 text-sm text-content-soft">
+                {user.status === "ready" && user.displayName
+                  ? `${COPY.greeting(user.displayName)} · ${COPY.tripCount(state.trips.length)}`
+                  : COPY.tripCount(state.trips.length)}
+              </p>
+            </div>
+            {/**
+             * 🔴 **grid ไม่ใช่ `space-y`** — ของเดิมเป็นคอลัมน์เดียวใน `max-w-3xl` ⇒ บนจอ 1440px
+             * ได้แถบแคบ ๆ กลางจอ และครีมเปล่าเกินครึ่ง · **หน้านี้ถูกออกแบบสำหรับมือถือแล้วยืดใส่ desktop**
+             * 🎯 มือถือดูดีกว่า desktop ในภาพชุดเดียวกันที่ผู้ใช้ส่งมา — นั่นคืออาการของข้อนี้ ไม่ใช่ของ Header
+             */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {state.trips.map((trip) => (
                 <TripCard key={trip.id} trip={trip} />
               ))}
