@@ -4386,8 +4386,8 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
      * · P1: *"ด่านที่พยายามตัดสินแทนคน คือด่านที่จะตัดสินผิดสักวัน"*
      */
     const COLUMN_GRANTS: Record<string, readonly string[]> = {
-      "bookings.insert": ["book_by_days_before","category","confirmation_number","date","file_name","file_path","legacy_added_by","link","note","status","time","title","trip_day_id","trip_id"],
-      "bookings.update": ["book_by_days_before","category","confirmation_number","date","file_name","file_path","link","note","status","time","title","trip_day_id"],
+      "bookings.insert": ["book_by_days_before","category","confirmation_number","date","file_name","file_path","legacy_added_by","link","note","price_amount","price_currency","status","time","title","trip_day_id","trip_id"],
+      "bookings.update": ["book_by_days_before","category","confirmation_number","date","file_name","file_path","link","note","price_amount","price_currency","status","time","title","trip_day_id"],
       "checklist_items.insert": ["category","legacy_added_by","legacy_checked_by","text","trip_id"],
       "checklist_items.update": ["category","is_checked","text"],
       "custom_place_descriptions.insert": ["description","locale","place_id","source","trip_id"],
@@ -4418,8 +4418,15 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
       //    (ย้ายจุดหมายข้ามทริปไม่ได้ · policy with_check กันอีกชั้น) · ทะเบียนนี้ควรลงพร้อม migration แต่ตกหล่น
       "trip_destinations.insert": ["city_id","rank","trip_id"],
       "trip_destinations.update": ["city_id","rank"],
-      "trip_hotels.insert": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","legacy_added_by","lng","name_en","name_local","phone","trip_id"],
-      "trip_hotels.update": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","lng","name_en","name_local","phone"],
+      // 🔴 **`price_*` เพิ่ม 4 ก.ย. 2026** — `20260904130000_e9_money_columns.sql:88-89,109-110`
+      //    `trip_hotels` +`price_amount,price_currency,price_source` · `bookings` +`price_amount,price_currency`
+      //    ⚠️ **migration ลงฐานไปแล้วโดยที่ทะเบียนนี้ไม่ได้ขยับพร้อมกัน** — ซึ่งเป็นสิ่งที่ข้อความของด่านสั่งไว้เอง
+      //       (*"ถ้าตั้งใจ ให้แก้ทะเบียนในไฟล์นี้ **พร้อมกับ migration ในคอมมิตเดียวกัน**"*)
+      //    🔴 **และผมรายงานสาเหตุของแดงใบนี้ผิดไปหนึ่งรอบ** — ผมบอก P1 ว่ามันแดงเพราะ `base_timezone`
+      //       และจะหายหลัง `db:push` · ความจริงมี **สองสาเหตุพร้อมกัน** ผมเห็นแค่ตัวที่ผมกำลังตามอยู่
+      //    🎯 ***"แดงหนึ่งเคส" ไม่ได้แปลว่า "สาเหตุเดียว" — และสาเหตุที่เรากำลังตามอยู่ กลบตัวที่เหลือ***
+      "trip_hotels.insert": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","legacy_added_by","lng","name_en","name_local","phone","price_amount","price_currency","price_source","trip_id"],
+      "trip_hotels.update": ["address_en","address_local","check_in","check_out","city_id","formatted_address","hotel_name","lat","lng","name_en","name_local","phone","price_amount","price_currency","price_source"],
       "trip_members.insert": ["invited_by","role","trip_id","user_id"],
       "trip_members.update": ["role"],
       "trip_plans.insert": ["id","is_active","name","trip_id"],
