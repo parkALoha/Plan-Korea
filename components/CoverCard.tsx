@@ -59,6 +59,18 @@ import type { ReactNode } from "react";
  *    และวันที่มันเพี้ยน **จะไม่มีอะไรส่งเสียง** (รูปเดียวกับที่เราตัดเอกสารสองฉบับทิ้งเหลือใบเดียว)
  * · ต้องการทรงอื่นจริง ๆ วันหลัง: เพิ่มกลับได้ **แต่ต้องเขียนว่าอะไรทำให้มันจำเป็น และอะไรจะทำให้มันหมดอายุ**
  */
+/**
+ * 🔴 **ขอบการ์ดใช้ `border-edge` + `shadow-raised` — ไม่ใช่ `border-line`** (ผู้ใช้ทัก 4 ก.ย. 2026:
+ * *"การ์ดมันจมไปกับสีพื้นหลังไหม"*)
+ *
+ * ```
+ * ก่อน  border-line + เงาเฉพาะตอน hover   ขอบ 1.19 : 1 กับการ์ด  ⇒ **ตอนไม่ hover ไม่มีอะไรวาดขอบเลย**
+ * หลัง  border-edge + shadow-raised       ขอบ 3.28 : 1 (ผ่าน WCAG 3:1) + เงาที่ *มีอยู่ตลอด*
+ * ```
+ * 🎯 ***`shadow-raised` มีอยู่ในระบบมาตลอด และคอมเมนต์ของมันเขียนว่า "การ์ดที่ลอยจากพื้น" —
+ *    แต่ไม่มีการ์ดใบไหนใช้มันเลย*** · ของที่ถูกออกแบบไว้แล้วแต่ไม่ถูกใช้ หาไม่เจอจากการอ่านการ์ด
+ * · `hover` เปลี่ยนเป็น `shadow-overlay` (ชั้นถัดไปในระบบเดียวกัน) ⇒ **ยกขึ้นจริง ไม่ใช่แค่เงาโผล่มา**
+ */
 export function CoverCard({
   href,
   onClick,
@@ -91,7 +103,7 @@ export function CoverCard({
   children?: ReactNode;
 }) {
   const shell =
-    "group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-surface-raised text-left transition hover:border-maple/40 hover:shadow-md hover:shadow-ink/5";
+    "group relative flex flex-col overflow-hidden rounded-2xl border border-edge bg-surface-raised text-left shadow-raised transition hover:border-maple hover:shadow-overlay";
 
   const body = (
     <>
