@@ -6,6 +6,8 @@ import type { NewBooking } from "@/hooks/useBookings";
 import { useBookingFile } from "@/hooks/useBookingFile";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { Modal } from "./Modal";
+import { Dropdown } from "./Dropdown";
+import { DateField } from "./DateField";
 import { BOOKING_CATEGORY_ICON, BOOKING_CATEGORY_LABEL } from "./BookingsPanel";
 import { isImageAttachment, safeHttpUrl } from "@/lib/url";
 import { bookByDate } from "@/lib/bookingDeadline";
@@ -301,30 +303,33 @@ export function BookingEditModal({
 
       <div>
         <label className="mb-1 block text-xs font-medium text-content-soft">ผูกกับวัน (ไม่บังคับ)</label>
-        <select
+        {/* 🔴 **สองจุดสุดท้ายในเว็บที่ยังเป็นตัวควบคุมของ OS** (P2 ไล่เจอ 4 ก.ย. 2026)
+            ที่อื่นเปลี่ยนมาใช้ `Dropdown`/`DateField` ของเราตั้งแต่ 28 ส.ค. แล้ว — หน้านี้ตกสำรวจ
+            ⇒ ผู้ใช้เจอ **ธีม/ฟอนต์/ภาษาคนละชุด** เฉพาะตอนกรอกตั๋ว ซึ่งเป็นหน้าที่ใช้ก่อนออกเดินทางจริง
+            📌 และรายการวันของทริปยาวตามจำนวนวัน (ทริปเกาหลี = 11 ตัวเลือก) — `Dropdown` ให้ค้นหาได้
+               เมื่อรายการยาวพอ ส่วน `<select>` ของ OS ทำไม่ได้ */}
+        <Dropdown
+          id="booking-day"
+          ariaLabel="ผูกกับวัน"
           value={dayId}
-          onChange={(e) => handleDayChange(e.target.value)}
+          onChange={handleDayChange}
           disabled={readOnly}
-          className="w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
-        >
-          <option value="">— ไม่ผูกวันไหน —</option>
-          {days.map((day) => (
-            <option key={day.id} value={day.id}>
-              {day.date} · {day.cityTh}
-            </option>
-          ))}
-        </select>
+          placeholder="— ไม่ผูกวันไหน —"
+          options={[
+            { value: "", label: "— ไม่ผูกวันไหน —" },
+            ...days.map((day) => ({ value: day.id, label: `${day.date} · ${day.cityTh}` })),
+          ]}
+        />
       </div>
 
       <div className="flex gap-2">
         <div className="flex-1">
           <label className="mb-1 block text-xs font-medium text-content-soft">วันที่</label>
-          <input
-            type="date"
+          <DateField
+            ariaLabel="วันที่ของรายการนี้"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
             disabled={readOnly}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-content focus:border-maple focus:outline-none disabled:opacity-60"
           />
         </div>
         <div className="flex-1">
