@@ -10,9 +10,10 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "แพลนเที่ยวเกาหลี",
-    short_name: "เที่ยวเกาหลี",
-    description: "แผนเที่ยวเกาหลี 11–21 ต.ค. 2026 — ดูว่าตอนนี้ต้องไปไหน นำทางได้เลย",
+    // 🔴 เป็นกลาง — manifest ใบเดียวเสิร์ฟทุกทริปทุกประเทศ (เหตุผลเดียวกับ `app/layout.tsx`)
+    name: "แพลนทริป",
+    short_name: "แพลนทริป",
+    description: "วางแผนทริป ดูว่าตอนนี้ต้องไปไหน นำทางได้เลย",
     start_url: "/today",
     scope: "/",
     display: "standalone",
