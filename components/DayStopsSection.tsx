@@ -247,7 +247,13 @@ export function DayStopsSection({
           </button>
         </div>
         {weather && <WeatherBadge weather={weather} className="mt-1.5" />}
-        {day.note && <NoteBody note={day.note} className="mt-1 text-xs opacity-90" />}
+        {/* คำบรรยายวัน — ย่อเหลือ 2 บรรทัดที่ตาเห็น (วัดจริง: 11 การ์ดมีคำบรรยาย 2–7 บรรทัด
+            และหัวการ์ดกิน 230–337px = 28–41% ของจอ ก่อนเห็นจุดแวะแรกสักจุด)
+            ใช้ clampVisualLines ไม่ใช่ previewLines — ของหลังตัดตามบรรทัดเชิงตรรกะ ซึ่งที่นี่มีแค่ 1–2
+            จึงไม่ตัดอะไรเลยใน 8 จาก 11 วัน */}
+        {day.note && (
+          <NoteBody note={day.note} className="mt-1 text-xs opacity-90" clampVisualLines={2} />
+        )}
         {/* ชื่อโรงแรมจาก Google มักพ่วงที่อยู่เต็มมาด้วย บนมือถือกินไป 2-3 บรรทัดในหัวการ์ด — ตัดให้เหลือบรรทัดเดียว */}
         {hotel && (
           <div className="mt-1 truncate text-xs opacity-90" title={hotel.hotel_name}>
