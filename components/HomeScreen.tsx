@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CardBadge, CoverCard } from "@/components/CoverCard";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
@@ -14,6 +14,7 @@ import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
 import { E5_COPY } from "@/lib/i18n";
 import { readCache, writeCache } from "@/lib/localCache";
+import { showToast } from "@/lib/toast";
 import { clearDeviceData } from "@/lib/auth/deviceData";
 
 type TripDestination = {
@@ -32,6 +33,15 @@ type TripListItem = {
   end_date: string;
   destinations: TripDestination[];
   memberCount: number;
+  /**
+   * 🔴 **มุมมองส่วนตัวของผู้เรียก ไม่ใช่คุณสมบัติของทริป** — มาจาก `trip_members.pinned_at` ของ *เขา*
+   * ⇒ Alice ปักแล้ว Bob ไม่เห็น · ห้ามแสดงเป็นข้อความทำนอง *"ทริปนี้ถูกปักหมุด"*
+   * · เป็น timestamp ไม่ใช่ boolean เพราะฝั่งฐานเปิดทางให้ *เลือกใช้เป็นลำดับได้*
+   *   **แต่หน้านี้เลือกไม่ใช้** (เหตุผลอยู่ที่ตัวเรียงใน `visibleTrips`) ⇒ ที่นี่อ่านค่าเป็นแค่ null / ไม่ null
+   * ⚠️ ทริปที่มาจากแคชรุ่นก่อนหน้าจะไม่มีคีย์นี้ ⇒ `undefined` — ตัวเทียบทุกตัวใช้ `!== null`
+   *   ซึ่ง `undefined` จะอ่านเป็น *ปักไว้* ผิดความจริง · จึงประกาศเป็น `| undefined` ให้ `tsc` บังคับให้คิดถึง
+   */
+  pinnedAt: string | null | undefined;
 };
 
 /**
@@ -179,9 +189,54 @@ function TripCountdownBadge({ startDate, endDate }: { startDate: string; endDate
   return <CardBadge tone={tone}>{label}</CardBadge>;
 }
 
-function TripCard({ trip }: { trip: TripListItem }) {
+/**
+ * ปุ่มปักหมุด — **ปุ่มจริง อยู่ *นอก* `CoverCard`** (P2 · 4 ก.ย. 2026 · P1 อนุมัติ)
+ *
+ * ## 🔴 ทำไมไม่ได้อยู่ข้างในการ์ด
+ * `CoverCard` เรนเดอร์เป็น `<Link>` เมื่อมี `href` ⇒ ***`<button>` ซ้อนใน `<a>` เป็น HTML ที่ผิด***
+ * เบราว์เซอร์จะ *ยกปุ่มออกมานอกลิงก์เอง* ตอน parse ⇒ ตำแหน่งเพี้ยนแบบที่ไม่มีอะไรฟ้อง
+ * ✅ จึงห่อ `relative` แล้ววางปุ่มเป็นพี่น้องของการ์ด — **ไม่ต้องเติมช่องใหม่ให้เปลือกที่ใช้ร่วมกันสามที่**
+ *
+ * ## 🔴 อยู่ **มุมล่างขวาของเนื้อ** ไม่ใช่มุมบนบนรูปปก — เหตุผลเดียวกับป้ายนับถอยหลัง
+ * บนรูปปกคอนทราสต์เดาไม่ได้ (สีต่างกันทุกใบ) · **บนพื้นเนื้อการ์ดวัดได้** และไม่ชนป้ายที่มุมขวาบน
+ *
+ * ## 🔴 ถ้อยคำเป็น *การกระทำของคุณ* ไม่ใช่ *สถานะของทริป*
+ * `pinned_at` อยู่บน `trip_members` ของผู้เรียก ⇒ **Alice ปักแล้ว Bob ไม่เห็น**
+ * ⇒ `aria-label` เป็นคำสั่งที่จะเกิดเมื่อกด · สถานะปัจจุบันสื่อด้วย `aria-pressed` ซึ่งเป็นช่องของมันเอง
+ */
+function PinButton({ pinned, busy, onToggle }: { pinned: boolean; busy: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      aria-pressed={pinned}
+      aria-label={pinned ? COPY.pinRemove : COPY.pinAdd}
+      title={pinned ? COPY.pinRemove : COPY.pinAdd}
+      className={`absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full text-sm transition disabled:opacity-50 ${
+        pinned
+          ? "bg-maple-dark text-white shadow-sm shadow-ink/20"
+          : "bg-surface text-content-soft ring-1 ring-line hover:text-content"
+      }`}
+    >
+      {/* 🔴 ไอคอนไม่ใช่ข้อความ — ใส่ `aria-hidden` ไม่งั้นโปรแกรมอ่านหน้าจอจะอ่านชื่ออีโมจิต่อท้าย label */}
+      <span aria-hidden>📌</span>
+    </button>
+  );
+}
+
+function TripCard({
+  trip,
+  busy,
+  onTogglePin,
+}: {
+  trip: TripListItem;
+  busy: boolean;
+  onTogglePin: (trip: TripListItem) => void;
+}) {
   const destinationLabel = trip.destinations.map((d) => d.nameTh).join(" · ");
   return (
+    <div className="relative">
     <CoverCard
       href={`/trip/${trip.id}`}
       /**
@@ -223,6 +278,12 @@ function TripCard({ trip }: { trip: TripListItem }) {
         )}
       </p>
     </CoverCard>
+      <PinButton
+        pinned={Boolean(trip.pinnedAt)}
+        busy={busy}
+        onToggle={() => onTogglePin(trip)}
+      />
+    </div>
   );
 }
 
@@ -360,12 +421,72 @@ export function HomeScreen() {
     const list = (trips ?? []).filter(
       (t) => matchesTripQuery(t, query) && matchesTripTab(t, tab, todayIso)
     );
-    return list.sort((a, b) =>
+    /**
+     * 🔴 **หมุดขึ้นก่อนเสมอ · แต่ *ข้างใน* แต่ละกลุ่มยังเรียงตามที่ผู้ใช้เลือก** (P2 · 4 ก.ย. 2026)
+     *
+     * ทางที่ปฏิเสธ: เรียงกลุ่มหมุดตาม `pinnedAt` (ปักล่าสุดขึ้นก่อน)
+     * ⇒ **ตัวเลือก "เรียงตาม" จะไม่มีผลกับกลุ่มบน** ซึ่งอ่านเหมือนตัวเลือกนั้นพัง
+     * 🎯 ***หมุดตอบว่า "ใบไหนสำคัญ" · ตัวเลือกเรียงตอบว่า "เรียงยังไง" — คนละคำถาม ไม่ควรมาทับกัน***
+     * · `pinnedAt` จึงถูกใช้เป็น **ตัวแบ่งกลุ่ม** อย่างเดียว ไม่ได้ใช้เป็นลำดับ
+     *   (คอลัมน์เป็น timestamp ไม่ใช่ boolean เพราะฝั่งฐานอยากให้ *เลือกได้* ว่าจะใช้ลำดับ — ที่นี่เลือกไม่ใช้)
+     */
+    const byChoice = (a: TripListItem, b: TripListItem) =>
       sort === "name"
         ? a.title.localeCompare(b.title, "th")
-        : a.start_date.localeCompare(b.start_date)
-    );
+        : a.start_date.localeCompare(b.start_date);
+    return list.sort((a, b) => {
+      const pa = a.pinnedAt ? 0 : 1;
+      const pb = b.pinnedAt ? 0 : 1;
+      return pa !== pb ? pa - pb : byChoice(a, b);
+    });
   }, [trips, query, tab, sort, todayIso]);
+
+  /**
+   * ปัก/ถอนหมุด — **มองเห็นทันที แล้วค่อยยืนยันกับเซิร์ฟเวอร์** · ล้ม = เด้งกลับ + บอกให้รู้
+   *
+   * 🔴 **เด้งกลับด้วยการ *ยิงค่าที่รู้ว่าถูก* ไม่ใช่ `!pinned` ซ้ำ** — ระหว่างรอ ผู้ใช้กดใบอื่นได้
+   * และ `setState` แบบ functional เห็นสถานะล่าสุดเสมอ · การกลับด้านซ้ำจะพลาดถ้ามีอะไรมาแก้คั่น
+   * ⚠️ `busyId` กันกดรัวใบ *เดิม* ⇒ ไม่มีคำขอสองใบแข่งกันบนทริปเดียว · ใบอื่นยังกดได้ตามปกติ
+   *
+   * 🔴 **เขียนแคชด้วย** — ไม่งั้นเปิดหน้าใหม่ตอนออฟไลน์จะเห็นหมุดชุดเก่า **ซึ่งอ่านเหมือนกดไม่ติด**
+   * (แคชคือสิ่งที่ผู้ใช้เห็นก่อนของสดมาเสมอ ตามที่เขียนไว้ในเอฟเฟกต์โหลด)
+   */
+  const [pinBusyId, setPinBusyId] = useState<string | null>(null);
+  const applyPin = useCallback((tripId: string, value: string | null) => {
+    setState((prev) => {
+      if (prev.status !== "ready") return prev;
+      const trips = prev.trips.map((t) => (t.id === tripId ? { ...t, pinnedAt: value } : t));
+      writeCache(TRIP_LIST_CACHE_KEY, {
+        ownerId: readCache<CachedTripList>(TRIP_LIST_CACHE_KEY)?.ownerId ?? null,
+        trips,
+      } satisfies CachedTripList);
+      return { status: "ready", trips };
+    });
+  }, []);
+
+  const togglePin = useCallback(
+    async (trip: TripListItem) => {
+      const previous = trip.pinnedAt ?? null;
+      const next = previous === null;
+      setPinBusyId(trip.id);
+      // ค่าที่วางชั่วคราว: เวลาเครื่อง — **ใช้เป็นแค่ "ไม่ null"** เพราะลำดับไม่ได้มาจากค่านี้ (ดูตัวเรียงข้างบน)
+      applyPin(trip.id, next ? new Date().toISOString() : null);
+      try {
+        const r = await fetch(`/api/engine/trips/${trip.id}/pin`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pinned: next }),
+        });
+        if (!r.ok) throw new Error(String(r.status));
+      } catch {
+        applyPin(trip.id, previous);
+        showToast("error", COPY.pinFailed);
+      } finally {
+        setPinBusyId(null);
+      }
+    },
+    [applyPin],
+  );
 
   return (
     <main className="min-h-full bg-surface pb-24 text-content">
@@ -605,7 +726,12 @@ export function HomeScreen() {
                */
               <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
                 {visibleTrips.map((trip) => (
-                  <TripCard key={trip.id} trip={trip} />
+                  <TripCard
+                    key={trip.id}
+                    trip={trip}
+                    busy={pinBusyId === trip.id}
+                    onTogglePin={(t) => void togglePin(t)}
+                  />
                 ))}
               </div>
             )}
