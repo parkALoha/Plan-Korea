@@ -24,7 +24,21 @@ export function CreateTripForm() {
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  // เมืองปลายทาง (E5 ข้อ 3, 7230241) — ไม่บังคับ ลำดับที่เลือกคือลำดับที่ส่ง (ดู TripDestinationPicker)
+  /**
+   * เมืองปลายทาง (`E5` ข้อ 3, `7230241`) — ลำดับที่เลือกคือลำดับที่ส่ง (ดู `TripDestinationPicker`)
+   *
+   * 🔴 **บังคับตั้งแต่ 4 ก.ย. 2026 — เดิมไม่บังคับ และนั่นสร้างทริปที่ตายถาวร**
+   * หน้าแผนตัดสินว่าเป็น "ทริปแพลตฟอร์ม" จาก `cities.length > 0` (`TripPlanScreen.tsx:150-151`)
+   * ไม่มีเมือง → `dayPlanSource = "unsupported"` → **การ์ดวันไม่ขึ้นเลย เห็นแต่ `DayPlanUnavailableNotice`**
+   * และ `trip_destinations` เขียนได้ **ครั้งเดียวตอนสร้าง** (`app/api/engine/trips/route.ts:169-172`)
+   * ⇒ ไม่มีเส้นทางไหนแก้ทีหลังได้ · ผู้ใช้ที่ข้ามช่องนี้ได้ทริปที่ใช้ไม่ได้ **และลบทิ้งก็ยังไม่ได้**
+   *
+   * 🎯 ***ช่องที่ข้ามได้ แต่ข้ามแล้วผลลัพธ์พังถาวร ไม่ใช่ "ไม่บังคับ" — มันคือกับดัก***
+   * · 📌 ทางที่ถูกกว่าคือ *"แก้เมืองทีหลังได้"* ซึ่งกำลังทำอยู่ (แผน 4 ก.ย. ข้อ 1.3)
+   *   ใบนี้ปิดประตูก่อน เพราะ **ราคาของการปิดคือคลิกเพิ่มหนึ่งครั้ง · ราคาของการเปิดค้างไว้คือทริปที่กู้ไม่ได้**
+   * · ⚠️ **route ยังรับคำขอที่ไม่มี `cityIds` เหมือนเดิมโดยตั้งใจ** — ด่านนี้อยู่ที่ UI ชั้นเดียว
+   *   ถ้าวันหนึ่ง 1.3 ลงแล้ว (แก้เมืองทีหลังได้) ข้อบังคับนี้ผ่อนได้ **และควรผ่อน**
+   */
   const [destinations, setDestinations] = useState<CityOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +164,11 @@ export function CreateTripForm() {
         </div>
       </div>
       <TripDestinationPicker selected={destinations} onChange={setDestinations} disabled={readOnly} />
+      {/* 🔴 ปุ่มที่ disabled โดยไม่บอกว่าทำไม แย่กว่าปุ่มที่กดแล้วขึ้น error — ผู้ใช้ไม่มีทางเดาถูก
+          ว่าช่องไหนขาด · ขึ้นเฉพาะเมื่อกรอกอย่างอื่นครบแล้ว เพื่อไม่ให้เตือนตั้งแต่ฟอร์มยังว่าง */}
+      {destinations.length === 0 && !!title.trim() && !!startDate && !!endDate && (
+        <p className="text-xs text-content-soft">เลือกเมืองปลายทางอย่างน้อย 1 เมืองก่อนสร้างทริป</p>
+      )}
       {sessionExpired && (
         <div className="rounded-lg bg-panel-maple/70 px-3 py-2 text-xs text-panel-maple-ink">
           <p className="mb-1.5">เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่ — ชื่อทริปกับวันที่ที่กรอกไว้ยังอยู่ตรงนี้</p>
@@ -164,7 +183,9 @@ export function CreateTripForm() {
       {error && <p className="text-xs text-red-600">{error}</p>}
       <button
         type="submit"
-        disabled={submitting || readOnly || !title.trim() || !startDate || !endDate}
+        disabled={
+          submitting || readOnly || !title.trim() || !startDate || !endDate || destinations.length === 0
+        }
         className="rounded-xl bg-maple py-2.5 font-semibold text-white hover:bg-maple-dark disabled:opacity-40"
       >
         {submitting ? "กำลังสร้าง..." : "สร้างทริป"}

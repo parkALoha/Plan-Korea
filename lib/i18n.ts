@@ -28,8 +28,6 @@ const DICT = {
     today: "📍 วันนี้",
     exportJson: "⬇️ Export JSON",
     print: "🖨️ พิมพ์",
-    summaryTitle: "📋 สรุปแผนเที่ยวเกาหลี",
-    tripDates: "11 – 21 ต.ค. 2026",
     readOnlyNote: "หน้านี้ดูอย่างเดียว แก้ไขไม่ได้ (แก้ที่หน้าแผน)",
     stopsInTrip: "จุดทั้งทริป",
     days: "วัน",
@@ -69,8 +67,6 @@ const DICT = {
     today: "📍 Today",
     exportJson: "⬇️ Export JSON",
     print: "🖨️ Print",
-    summaryTitle: "📋 Korea Trip Summary",
-    tripDates: "11 – 21 Oct 2026",
     readOnlyNote: "Read-only view — edit on the planner page",
     stopsInTrip: "stops",
     days: "days",
@@ -216,7 +212,12 @@ export const E5_COPY = {
     noMatch: (q: string) => `ไม่พบตัวเลือกที่ตรงกับ “${q}”`,
   },
   destinationPicker: {
-    label: "เมืองปลายทาง (ไม่บังคับ)",
+    // 🔴 เดิม `"เมืองปลายทาง (ไม่บังคับ)"` — **เปลี่ยน 4 ก.ย. 2026 พร้อมกับที่ปุ่มสร้างบังคับให้เลือก**
+    //    เหตุผลเต็มอยู่ที่ `components/CreateTripForm.tsx` (ทริปที่ไม่มีเมือง = ทริปที่ตายถาวร)
+    // 🎯 ***ป้ายที่บอกว่า "ไม่บังคับ" ข้าง ๆ ปุ่มที่กดไม่ได้เพราะยังไม่เลือก แย่กว่าไม่มีป้ายเลย***
+    //    ผู้ใช้จะสรุปว่า **เว็บพัง** ไม่ใช่ว่าตัวเองยังกรอกไม่ครบ · สองข้อความนี้ต้องเปลี่ยนพร้อมกันเสมอ
+    //    📌 เจอด้วยการเปิดหน้าจริงหลังแก้ ไม่ใช่จากอ่านโค้ด — `tsc`/`lint` เขียวทั้งคู่ตอนมันขัดกันอยู่
+    label: "เมืองปลายทาง",
     hint: "เพิ่มได้หลายเมือง ข้ามประเทศได้ — เผื่อต่อเครื่องหรือบินต่อ · ลำดับที่เพิ่มคือลำดับในทริป",
     countryLabel: "ประเทศ",
     countryPlaceholder: "เลือกประเทศ",
