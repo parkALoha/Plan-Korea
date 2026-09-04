@@ -1678,6 +1678,19 @@ export type Database = {
         Args: { p_name: string; p_source_plan_id: string; p_trip_id: string }
         Returns: string
       }
+      create_trip_invite: {
+        Args: {
+          p_expires_days?: number
+          p_max_uses?: number
+          p_role: string
+          p_trip_id: string
+        }
+        Returns: {
+          expires_at: string
+          invite_id: string
+          token: string
+        }[]
+      }
       fixture_lock_holder: {
         Args: never
         Returns: {
@@ -1714,6 +1727,19 @@ export type Database = {
           sample_cities: string[]
         }[]
       }
+      list_trip_invites: {
+        Args: { p_trip_id: string }
+        Returns: {
+          active: boolean
+          created_at: string
+          expires_at: string
+          id: string
+          max_uses: number | null
+          revoked_at: string | null
+          role: string
+          used_count: number
+        }[]
+      }
       list_trip_templates: {
         Args: never
         Returns: {
@@ -1731,6 +1757,15 @@ export type Database = {
           maintenance_expiry_minutes: number
         }[]
       }
+      peek_trip_invite: {
+        Args: { p_token: string }
+        Returns: {
+          expired: boolean
+          inviter_name: string
+          role: string
+          trip_title: string
+        }[]
+      }
       read_only_selftest: {
         Args: never
         Returns: {
@@ -1744,8 +1779,10 @@ export type Database = {
           table_name: string
         }[]
       }
+      redeem_trip_invite: { Args: { p_token: string }; Returns: string }
       release_fixture_lock: { Args: { p_holder: string }; Returns: boolean }
       restore_trip: { Args: { p_trip_id: string }; Returns: undefined }
+      revoke_trip_invite: { Args: { p_invite_id: string }; Returns: undefined }
       role_probe_result: {
         Args: never
         Returns: {

@@ -1758,6 +1758,61 @@ export function setTripPinned(db: Db, tripId: string, pinned: boolean) {
  * · 🔴 `wasTemplate: true` แปลว่า **ธง `published_template_at` ถูกล้างไปแล้ว และ `restoreTrip` ไม่คืนให้**
  *   ต้องมีคนตั้งใจประกาศใหม่ · ผู้เรียกควรบอกผู้ใช้ ไม่ใช่ปล่อยให้รู้ทีหลัง
  */
+/**
+ * ลิงก์ชวนเข้าทริป — 5 เส้น (P1-Lead · 4 ก.ย. 2026 · ผู้ใช้สั่ง)
+ *
+ * 🔴 **ทุกใบเป็น RPC เพราะ `trip_invites` ไม่มี policy สักใบ** — เข้าไม่ถึงจากไคลเอนต์เลย ไม่ใช่แค่ซ่อน
+ * ตารางนี้ถือ *แฮชของความลับ* ⇒ ทางเข้าที่ถูกคือ "ไม่มีทางเข้า" แล้วเปิดเฉพาะประตูที่เราเขียนเอง
+ * เหตุผลเต็มอยู่ที่ `20260904220000_e5_trip_invites.sql`
+ *
+ * 🔴 **`createTripInvite` คืนโทเคนดิบ *ครั้งเดียวในชีวิตของลิงก์นั้น***
+ * ฐานเก็บแค่ `sha256` ⇒ **ไม่มีใครอ่านมันได้อีก รวมทั้งเจ้าของทริป** · ผู้เรียกต้องส่งต่อให้ผู้ใช้ทันที
+ * ⚠️ **ห้าม log ค่านี้** และห้ามใส่ใน URL ของ API (ดูคอมเมนต์ใน route)
+ */
+export function createTripInvite(
+  db: Db,
+  tripId: string,
+  role: "editor" | "viewer",
+  expiresDays: number,
+  maxUses: number | null,
+) {
+  // 🔴 `maxUses = null` (ใช้ได้ไม่จำกัดครั้ง) แสดงด้วยการ **ไม่ส่งคีย์** ไม่ใช่ส่ง `null`
+  //    ชนิดที่ generator ผลิตให้คือ `p_max_uses?: number` — ไม่ใช่ `| null`
+  //    และ SQL ประกาศ `p_max_uses int default null` ⇒ ละคีย์ = ได้ `null` พอดี
+  //    ⚠️ **ผูกกับ default ใน migration** — วันที่มีคนเปลี่ยน default ที่นั่น ความหมายตรงนี้เปลี่ยนตาม
+  //       และ `tsc` จะไม่ฟ้อง ⇒ ถ้าแก้ default ต้องมาแก้บรรทัดนี้ด้วย
+  const args = { p_trip_id: tripId, p_role: role, p_expires_days: expiresDays };
+  return db.rpc(
+    "create_trip_invite",
+    maxUses === null ? args : { ...args, p_max_uses: maxUses },
+  );
+}
+
+/**
+ * ดูว่าลิงก์นี้ชวนไปไหน — **ใบเดียวที่คนยังไม่ล็อกอินเรียกได้**
+ *
+ * คืนแค่ `trip_title · inviter_name · role · expired` — 🔴 **ไม่มี `trip_id`**
+ * 🎯 ***ถือลิงก์ = เห็นชื่อทริปกับชื่อคนชวน · ไม่ใช่เห็นแผน*** — เห็นแผนต้องกดรับและล็อกอิน
+ */
+export function peekTripInvite(db: Db, token: string) {
+  return db.rpc("peek_trip_invite", { p_token: token });
+}
+
+/** กดรับคำเชิญ → คืน `trip_id` · เป็นสมาชิกอยู่แล้วจะไม่ถูกลดสิทธิ์และไม่นับใช้โควตา */
+export function redeemTripInvite(db: Db, token: string) {
+  return db.rpc("redeem_trip_invite", { p_token: token });
+}
+
+/** ยกเลิกลิงก์ — owner เท่านั้น */
+export function revokeTripInvite(db: Db, inviteId: string) {
+  return db.rpc("revoke_trip_invite", { p_invite_id: inviteId });
+}
+
+/** ลิงก์ทั้งหมดของทริป — owner เท่านั้น · **ไม่คืนโทเคนหรือแฮช** */
+export function listTripInvites(db: Db, tripId: string) {
+  return db.rpc("list_trip_invites", { p_trip_id: tripId });
+}
+
 export function softDeleteTrip(db: Db, tripId: string) {
   return db.rpc("soft_delete_trip", { p_trip_id: tripId });
 }

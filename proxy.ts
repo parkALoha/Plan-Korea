@@ -57,6 +57,12 @@ const PUBLIC_PATHS = [
   "/api/engine/countries",
   "/api/engine/cities",
   "/api/engine/trip-templates",
+  // 🔴 **`peek` เท่านั้น — `redeem` ต้องไม่อยู่ที่นี่**
+  //    *"ดูว่าถูกชวนไปไหน"* ไม่ต้องมีตัวตน · *"เข้าไปเป็นสมาชิก"* ต้องมี
+  //    ⇒ `redeem` มีด่านสองชั้น: ไม่อยู่ในลิสต์นี้ **และ** `anon` ไม่มี `grant execute` บน RPC
+  //      (assert ใน `20260904220000` บังคับชั้นที่สอง — เผลอใส่เข้าลิสต์นี้แล้วยังไม่หลุด)
+  //    ⚠️ คืนแค่ `trip_title · inviter_name · role · expired` · **ไม่มี `trip_id`**
+  "/api/engine/invites/peek",
 ];
 
 export async function proxy(req: NextRequest) {

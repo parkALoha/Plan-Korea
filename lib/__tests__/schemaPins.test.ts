@@ -259,6 +259,17 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.list_public_cities",
       "public.list_public_destinations",
       "public.list_trip_templates",
+      // 🔴 **เพิ่ม 4 ก.ย. 2026 (P1)** — `peek_trip_invite(text)` · `20260904220000`
+      //    คำตอบของคำถามข้างบน (*ตอบเหมือนกันหมดทุกคนไหม · ยอมให้ดูดทั้งใบไหม*):
+      //    · **ไม่เหมือนกันทุกคน** — ขึ้นกับโทเคนที่ส่งมา
+      //      ⇒ ***เป็นใบเดียวในทะเบียนนี้ที่ "เดาค่าถูกแล้วได้ข้อมูล"*** · ใบอื่นตอบเหมือนกันหมด
+      //    · ดูดทั้งใบไม่ได้ — ไม่มีทางแจงรายการ · ต้องรู้โทเคน **256 บิต** ทีละใบ
+      //    · คืนแค่ `trip_title · inviter_name · role · expired` — 🔴 **ไม่มี `trip_id`**
+      //      ⇒ ถือลิงก์ = เห็นชื่อทริปกับชื่อคนชวน **ไม่ใช่เห็นแผน**
+      //    ⚠️ **ยอมให้รั่วโดยรู้ตัว** — และสิ่งที่ทำให้มันปลอดภัย *คือความยาวโทเคน* ไม่ใช่ตัวฟังก์ชัน
+      //       🔴 วันที่มีคนทำให้โทเคนสั้นลง ข้อนี้กลายเป็นช่องทันที (กำกับไว้ที่ `create_trip_invite` แล้ว)
+      //    · 🔴 `redeem_trip_invite` **ไม่ได้อยู่ที่นี่โดยตั้งใจ** — เข้าเป็นสมาชิกต้องมีตัวตน
+      "public.peek_trip_invite",
       // ธงโหมดอ่านอย่างเดียว — `401-exempt` โดยตั้งใจ (`system-mode/route.ts:19`)
       // คำตอบเหมือนกันหมดทุกคน · ไม่มีข้อมูลของใครอยู่ในนั้น · ไม่รับพารามิเตอร์
       "public.system_mode",
@@ -640,6 +651,7 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.client_writable_timestamps",
       "public.copy_trip_template",
       "public.create_trip",
+      "public.create_trip_invite",
       "public.fixture_lock_holder",
       // 🔴 เพิ่ม 26 ส.ค. (P1) — **ตัวอ่านผลการวัด ไม่ใช่ฟีเจอร์ · ของชั่วคราวโดยประกาศ**
       //    `app.role_probe` เก็บคำตอบของคำถามที่ P6 ตั้งและยืนยันเองไม่ได้ (เครื่องไม่มี `psql`):
@@ -691,8 +703,10 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       "public.list_deleted_trips",
       "public.list_public_cities",
       "public.list_public_destinations",
+      "public.list_trip_invites",
       "public.list_trip_templates",
       "public.mode_limits",
+      "public.peek_trip_invite",
       "public.read_only_selftest",
       // 🔴 เพิ่ม 27 ส.ค. (P1) — **ทางเรียกของ `app.read_only_uncovered_tables()`**
       //    ตัวข้างในอยู่ schema `app` ที่ไม่ถูก expose + `revoke all` → **ไม่มีใครเรียกได้เลย**
@@ -701,8 +715,23 @@ describe("ความครบของ matrix — ตรวจตัวรา�
       //    · ไม่รับพารามิเตอร์ · อ่านเฉพาะ `pg_catalog` · ไม่แตะข้อมูลผู้ใช้ · `grant execute`
       //      ให้ `service_role` เท่านั้น = **ข้อยกเว้นที่ 6 ใน `TEAM.md`**
       "public.read_only_uncovered_tables",
+      "public.redeem_trip_invite",
       "public.release_fixture_lock",
       "public.restore_trip",
+      "public.revoke_trip_invite",
+      // 🔴 **เพิ่ม 4 ก.ย. 2026 (P1) — ลิงก์ชวนเข้าทริป 5 ใบ** (`20260904220000`)
+      //    (ชื่อกระจายตามลำดับตัวอักษรด้านบน: `create_trip_invite` · `list_trip_invites` ·
+      //     `peek_trip_invite` · `redeem_trip_invite` · `revoke_trip_invite`)
+      //    คำตอบของคำถามข้างบน (*รับคอลัมน์ที่ column grant ห้ามไหม · แตะข้อมูลผู้ใช้ไหม · ใครเรียกได้*):
+      //    · ทั้ง 5 แตะ `trip_invites` ซึ่ง **ไม่มี policy สักใบ และไคลเอนต์ไม่มี grant เลย**
+      //      ⇒ definer เป็น *ทางเข้าเดียวที่มีอยู่* ไม่ใช่ทางลัดที่เลือกใช้
+      //    · `create`/`revoke`/`list` = **owner เท่านั้น** · `redeem` = ต้องมี `auth.uid()`
+      //      · `peek` = `anon` เรียกได้ (ดูทะเบียน anon ข้างบน พร้อมเหตุผลและขอบเขต)
+      //    🔴 **ด่านของทั้งกลุ่มคือบรรทัดตรวจสิทธิ์ในตัวฟังก์ชัน — ไม่มี RLS มาช่วยสักชั้น**
+      //    🔴 **`redeem` มีกับดักที่ไม่ใช่เรื่องสิทธิ์**: ผู้เรียกที่เป็นสมาชิกอยู่แล้วต้อง **ไม่ทำอะไร**
+      //       ไม่งั้นเจ้าของกดลิงก์ `viewer` ของตัวเอง → **กลายเป็น viewer ในทริปตัวเอง**
+      //       = ยกระดับสิทธิ์ *ย้อนกลับ* ที่หาไม่เจอจนกว่าจะมีคนบ่นว่าแก้ทริปไม่ได้
+      //    ⚠️ **ยังไม่มีเคสสดสักข้อ** — ยังไม่เคยรันบน engine-dev · รอ `db:push`
       "public.role_probe_result",
       // 🔴 `P-53` — soft delete ต้องผ่าน RPC เพราะ PostgREST ห่อ `UPDATE` ด้วย `RETURNING` เสมอ
       //    → แถวที่เพิ่งทำให้ตัวเองหายไป ไม่ผ่าน policy `SELECT` ของตัวเอง · **`P-26` กลับด้าน**

@@ -163,6 +163,29 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   //       (definer ⇒ RLS ถูกข้ามทั้งหมด — `where`/`if` ในตัวฟังก์ชันคือด่านเดียวที่เหลือ)
   //    🎯 ***ผลเหมือนกัน กลไกคนละตัว — และถ้าใครถอดบรรทัดตรวจ `owner` ออก จะไม่มี RLS มารับช่วงต่อ***
   "app/api/engine/trips/[tripId]/restore/route.ts": { scope: "trip" },
+  // 🔴 ใบที่ 15 (P1 · 4 ก.ย. 2026) — ลิงก์ชวนเข้าทริป · **รับ `tripId` จาก URL ⇒ `"trip"`**
+  //    ทั้ง 3 เมธอด (`GET`/`POST`/`DELETE`) เป็นของ **owner เท่านั้น** — ด่านอยู่ใน RPC ทุกใบ
+  //    🔴 `POST` คืน **โทเคนดิบครั้งเดียว** ⇒ เป็น route เดียวใต้ `[tripId]` ที่คำตอบมีความลับอยู่ข้างใน
+  //       ⇒ `private, no-store` ที่นั่นเป็นส่วนหนึ่งของด่าน ไม่ใช่การจูนประสิทธิภาพ
+  "app/api/engine/trips/[tripId]/invites/route.ts": { scope: "trip" },
+  // ── สองใบข้างล่างรับ *โทเคน* ไม่ใช่ `tripId` ⇒ `"account"` ไม่ใช่ `"trip"` ──
+  // 🎯 ***ยิงข้ามด้วย `tripId` ไม่ได้ตามนิยาม เพราะไม่มี `tripId` ให้ใส่*** — พื้นผิวคือ *การเดาโทเคน*
+  //    ซึ่งเป็นคนละคำถามกับที่ทะเบียนนี้ถาม · เคสของมันอยู่ที่ `inviteRoutes.test.ts`
+  "app/api/engine/invites/peek/route.ts": {
+    scope: "account",
+    authExempt: true,
+    why: "🔴 คนกดลิงก์ยังไม่มีบัญชี ต้องรู้ว่ากำลังจะรับอะไรก่อนตัดสินใจสมัคร "
+      + "· คืนแค่ trip_title · inviter_name · role · expired — **ไม่มี trip_id** "
+      + "⇒ ถือลิงก์ = เห็นชื่อทริปกับชื่อคนชวน ไม่ใช่เห็นแผน "
+      + "· 🔴 เป็นเส้นเดียวในระบบที่ *เดาค่าแล้วได้ข้อมูล* ⇒ rate limit แคบกว่าเส้นอื่น (20/นาที) "
+      + "และโทเคน 256 บิตคือชั้นแรก · ทุกความล้มเหลวตอบ 404 เหมือนกันหมด ไม่บอกว่า 'มีแต่หมดอายุ'",
+  },
+  "app/api/engine/invites/redeem/route.ts": {
+    scope: "account",
+    why: "🔴 **ต้องล็อกอิน** — ต่างจาก peek ที่อยู่โฟลเดอร์เดียวกัน "
+      + "· *ดูว่าถูกชวนไปไหน* ไม่ต้องมีตัวตน · *เข้าไปเป็นสมาชิก* ต้องมีตัวตนที่จะผูกสิทธิ์ "
+      + "· ด่านสองชั้น: ไม่อยู่ใน PUBLIC_PATHS **และ** anon ไม่มี grant execute บน RPC",
+  },
   "app/api/engine/trips/[tripId]/place-notes/route.ts": { scope: "trip" },
   "app/api/engine/trips/[tripId]/stops/route.ts": { scope: "trip" },
 };
@@ -205,7 +228,7 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     }
   });
 
-  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 14 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
+  it("พื้นผิวยิงข้าม (trip-scoped) มีเท่าที่รู้ตอนนี้ = 15 · เพิ่ม/ย้าย route ใต้ [tripId] = แดง", () => {
     const trip = Object.entries(SURFACE)
       .filter(([, m]) => m.scope === "trip")
       .map(([r]) => r)
@@ -220,14 +243,16 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     //    · `[tripId]/route.ts`      `PATCH` — probe: **editor ถูกปฏิเสธ** (`trips_update` = owner) · คนนอกไม่ได้
     //      · ⚠️ ใบหลังต้องยิงด้วย **editor** ไม่ใช่แค่คนนอก — คนนอกถูกกันตั้งแต่ `can_read_trip`
     //        **ไม่เคยเดินไปถึงเส้น `owner` เลย** ⇒ probe คนนอกอย่างเดียวจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง
+    // 🔴 **14 → 15 เมื่อ 4 ก.ย. 2026 (ดึก)** — `invites/route.ts` (`GET`/`POST`/`DELETE` · owner เท่านั้น)
+    //    probe ข้ามผู้ใช้อยู่ที่ `engineCrossUser` บล็อก `E5-invite`
     // 🔴 **13 → 14 เมื่อ 4 ก.ย. 2026 (เย็น)** — `restore/route.ts` `POST`
     //    probe อยู่ที่ `engineCrossUser` บล็อก `E5-trash` · **เขียน probe ก่อนขยับเลขนี้ ตามที่ข้อความสั่ง**
     //    กิ่งที่ probe แตะ: editor ลบไม่ได้ · คนนอกกู้ไม่ได้ · **หลังลบแล้ว `stops` ของทริปนั้นยิงไม่ผ่าน**
     //    (ข้อสุดท้ายคือกิ่งที่ไม่มี probe ใบไหนแตะมาก่อน — มันวัด `app.can_read_trip` ซึ่งเป็น funnel ของทุก policy)
     expect(
       trip.length,
-      "จำนวน route ยิงข้ามเปลี่ยนจาก 14 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
-    ).toBe(14);
+      "จำนวน route ยิงข้ามเปลี่ยนจาก 15 — route ใหม่ต้องมี probe ข้ามผู้ใช้ใน engineCrossUser.test.ts ก่อนขยับเลขนี้",
+    ).toBe(15);
   });
 
   it("ทุก trip-scoped route ต้อง export อย่างน้อยหนึ่ง HTTP method (ไม่งั้น probe จะไม่มีอะไรยิง)", () => {

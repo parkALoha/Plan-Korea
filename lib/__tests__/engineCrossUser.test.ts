@@ -84,6 +84,9 @@ import { PATCH as tripPATCH } from "@/app/api/engine/trips/[tripId]/route";
 import { PUT as pinPUT } from "@/app/api/engine/trips/[tripId]/pin/route";
 import { DELETE as tripDELETE } from "@/app/api/engine/trips/[tripId]/route";
 import { POST as restorePOST } from "@/app/api/engine/trips/[tripId]/restore/route";
+import {
+  GET as invitesGET, POST as invitesPOST, DELETE as invitesDELETE,
+} from "@/app/api/engine/trips/[tripId]/invites/route";
 import { GET as templatesGET } from "@/app/api/engine/trip-templates/route";
 
 type Cookie = { name: string; value: string };
@@ -181,7 +184,7 @@ const DB_REJECT_STATUSES = [400, 401, 403, 404, 409] as const;
  * trip-route ที่ "มี probe ยิงข้ามจริง" ในไฟล์นี้ — อัปเดตคู่กับ probe เสมอ
  * ชื่อ = พาธของโฟลเดอร์ใต้ `[tripId]/` · `"(root)"` = `route.ts` ที่อยู่ที่ราก (ดู `ROOT_ROUTE`)
  */
-const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members", "destinations", "(root)", "pin", "restore"]);
+const COVERED = new Set(["bookings", "checklist", "days", "day-settings", "stops", "hotels", "custom-places", "hidden-places", "place-notes", "members", "destinations", "(root)", "pin", "restore", "invites"]);
 
 /**
  * 🔴 **ชื่อแทน `route.ts` ที่อยู่ที่ราก `[tripId]/` — ไม่ใช่ในโฟลเดอร์ย่อย**
@@ -251,10 +254,11 @@ describe("E3-AC9 ② — ความครอบคลุม (ต้องเ�
 
   it("📊 coverage — เขียวไม่ได้แปลว่าครบทุกใบ · ตัวเลขต้องโผล่ตอนรัน", () => {
     const all = tripScopedRouteNames();
+    // 🔴 **15 ตั้งแต่ 4 ก.ย. 2026 (ดึก)** — `invites` (บล็อก `E5-invite` ข้างล่าง)
     // 🔴 **14 ตั้งแต่ 4 ก.ย. 2026 (เย็น)** — `restore` (บล็อก `E5-trash` ข้างล่าง)
     // 🔴 **13 ตั้งแต่ 4 ก.ย. 2026 (บ่าย)** — `destinations` · `(root)` (`PATCH`) · `pin`
     //    ⚠️ รอบเช้าเลขขยับ 10 → 12 ไม่ใช่ 10 → 11: ฉบับก่อนของตัวแจงมองไม่เห็น `(root)` (ดูคอมเมนต์ข้างบน)
-    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(14);
+    expect(all.length, "อ่าน trip-route จากดิสก์ไม่ได้/จำนวนเปลี่ยน — denominator เชื่อไม่ได้").toBe(15);
     const covered = [...COVERED].sort();
     const stale = covered.filter((c) => !all.includes(c));
     expect(stale, `COVERED ชี้ route ที่ไม่มีบนดิสก์: ${stale.join(", ")}`).toEqual([]);
@@ -1693,6 +1697,72 @@ describe.runIf(hasCreds)("E3-AC9 ② — engine route ยิงข้ามผ�
     // ## ⚠️ ลำดับสำคัญ — เคสใช้สถานะต่อกัน (vitest รัน `it` ตามลำดับในไฟล์)
     // ① editor ลบไม่ได้ (ทริปยังอยู่) → ② owner ลบ → ③④ วัดหลังลบ → ⑤ คนนอกกู้ไม่ได้ → ⑥ owner กู้คืน
     // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🔴 `E5-invite` — `GET`/`POST`/`DELETE /trips/[tripId]/invites` (route ที่ 15 · P1 · 4 ก.ย. 2026)
+    //
+    // ## 🔴 ทั้งสามเมธอดเป็นของ **owner** — และ `D` (editor) คือคนที่ต้องยิง
+    // คนนอกทริปถูกกันตั้งแต่ `can_read_trip` **ไม่เคยเดินไปถึงเส้น `owner` เลย**
+    // ⇒ probe คนนอกอย่างเดียวจะเขียวโดยไม่ได้แตะเส้นที่ต่างกันจริง (บทเรียนเดียวกับ `E5` บล็อกแม่)
+    //
+    // ## 🔴 และเคสที่ *ไม่มีบล็อกไหนเคยถาม*: คำตอบมีความลับอยู่ข้างใน
+    // `POST` คืนโทเคนดิบ **ครั้งเดียว** ⇒ นอกจากถามว่า *ใครเรียกได้* ต้องถามด้วยว่า
+    // ***คนที่เรียกไม่ได้ เห็นอะไรติดมาในคำตอบที่ถูกปฏิเสธหรือเปล่า***
+    // ═══════════════════════════════════════════════════════════════════════
+    describe("🔴 E5-invite — ลิงก์ชวนเข้าทริป (owner เท่านั้น)", () => {
+      const mk = (c: Cookie[], t: string) =>
+        callAs(c, t, invitesPOST, "POST", { role: "viewer", expiresDays: 7, maxUses: 1 });
+
+      it("① owner สร้างลิงก์ได้ และได้โทเคน 64 ตัว (ทิศบวกของทั้งบล็อก)", async () => {
+        const res = await mk(aCookies, tripE);
+        expect(res.status, `owner สร้างลิงก์ควร 200: ${await res.clone().text()}`).toBe(200);
+        const body = (await res.json()) as { token?: string; inviteId?: string };
+        expect(body.token, "ไม่มีโทเคนในคำตอบ = ฟีเจอร์ตาย").toMatch(/^[0-9a-f]{64}$/);
+      });
+
+      it("🔴 ② editor สร้างลิงก์ไม่ได้ — เส้นที่แยก `can_write_trip` ออกจาก `owner`", async () => {
+        const res = await mk(dCookies, tripE);
+        expect(
+          [403, 404].includes(res.status),
+          `editor สร้างลิงก์เชิญได้ (${res.status}) = ใครแก้ทริปได้ ก็ชวนคนเข้ามาได้: ${await res.clone().text()}`,
+        ).toBe(true);
+      });
+
+      it("🔴 ③ คำตอบที่ถูกปฏิเสธต้องไม่มีโทเคนติดมา", async () => {
+        const text = await (await mk(dCookies, tripE)).text();
+        // 🎯 ***ถามคำถามที่ไม่มี probe ใบไหนเคยถาม: ของลับหลุดออกมากับ error หรือเปล่า***
+        expect(/[0-9a-f]{64}/.test(text), `มีค่าที่หน้าตาเหมือนโทเคนในคำตอบ 4xx: ${text}`).toBe(false);
+      });
+
+      it("④ คนนอกทริปอ่านรายการลิงก์ไม่ได้", async () => {
+        const res = await callAs(bCookies, tripE, invitesGET, "GET");
+        expect(
+          [403, 404].includes(res.status),
+          `คนนอกอ่านรายการลิงก์ของ A ได้ (${res.status})`,
+        ).toBe(true);
+      });
+
+      it("🔴 ⑤ owner อ่านรายการได้ แต่รายการต้อง **ไม่มีโทเคนหรือแฮช**", async () => {
+        const res = await callAs(aCookies, tripE, invitesGET, "GET");
+        expect(res.status, `owner ควรอ่านได้: ${await res.clone().text()}`).toBe(200);
+        const text = await res.clone().text();
+        expect((await res.json()).invites.length, "สร้างไปแล้วแต่รายการว่าง").toBeGreaterThan(0);
+        // 🔴 เจ้าของก็ไม่ควรได้แฮชคืนมา — ส่งออกไปไม่ได้ช่วยอะไร และเปิดทางยิงเทียบแบบออฟไลน์
+        expect(/[0-9a-f]{64}/.test(text), `รายการมีค่าที่หน้าตาเหมือนโทเคน/แฮช: ${text}`).toBe(false);
+      });
+
+      it("⑥ editor ยกเลิกลิงก์ของ owner ไม่ได้", async () => {
+        const list = await (await callAs(aCookies, tripE, invitesGET, "GET")).json();
+        const id = (list.invites as { id: string }[])[0]?.id;
+        expect(id, "setup: ควรมีลิงก์อย่างน้อยหนึ่งใบจากเคส ①").toBeTruthy();
+        const req = new NextRequest(`http://localhost:3300/api/engine/trips/${tripE}/invites?id=${id}`, {
+          method: "DELETE",
+        });
+        jar.cookies = dCookies;
+        const res = await invitesDELETE(req, { params: Promise.resolve({ tripId: tripE }) });
+        expect([403, 404].includes(res.status), `editor ยกเลิกลิงก์ได้ (${res.status})`).toBe(true);
+      });
+    });
+
     describe("🔴 E5-trash — ลบแบบกู้คืนได้ (ยิงข้าม *สถานะ* ไม่ใช่ข้าม *ผู้ใช้*)", () => {
       let tripT = "";
       beforeAll(async () => {
