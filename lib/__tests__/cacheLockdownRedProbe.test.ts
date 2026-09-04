@@ -49,6 +49,15 @@ describe.runIf(hasCreds)("assert_cache_lockdown — ต้องแดงเม�
   const admin = () => testClient(SERVICE);
   const sweep = async () => {
     await admin().from("place_details_cache").delete().like("maps_query", `${PROBE}%`);
+    await sweepTravel();
+  };
+  /**
+   * 🔴 กวาดด้วย **prefix ของ UUID โพรบ** ไม่ใช่ด้วยคีย์ทั่วไป
+   * 🎯 ***ตัวกวาดต้องแยกของตัวเองออกจากของจริงได้ ไม่ใช่แค่ลบสิ่งที่ตรงกับสิ่งที่เพิ่งใส่***
+   * — ตารางนี้มีแถวจริง 57 แถว การกวาดที่กว้างไปจะลบแคชของคนอื่น
+   */
+  const sweepTravel = async () => {
+    await admin().from("travel_time_cache").delete().like("from_place_id", "00000000-dead-%");
   };
 
   // ① เผื่อรอบก่อนถูกฆ่ากลางคัน — เริ่มจากสภาพสะอาดเสมอ
@@ -91,6 +100,85 @@ describe.runIf(hasCreds)("assert_cache_lockdown — ต้องแดงเม�
       // ② ลบทันทีแม้ assertion ล้ม — ของค้างจะทำให้ CI แดงใส่ทุกคน
       await sweep();
     }
+  });
+
+  /**
+   * 🔴 **`E3-AC6` — กิ่งที่ `backlog.md` เขียนไว้เองว่าด่านสคีมาจับไม่ได้**
+   *
+   * ## รูที่ AC ระบุ (คำต่อคำ)
+   * `travel_time_cache.from_place_id`/`to_place_id` เป็น **`text` ธรรมดา** ⇒ สคีมาพิสูจน์ไม่ได้ว่า
+   * ค่าจะไม่ใช่ `custom_places.id` (UUID ที่ผูกทริป) · ถ้าโค้ดในอนาคตใส่ลงไปจริง
+   * **แถวแคชนั้นกลายเป็นข้อมูลของทริปหนึ่งทันที** — คนนอกทริปอ่านเวลาเดินทางแล้ว
+   * triangulate พิกัดสถานที่ส่วนตัวได้ · **และด่านสคีมายังเขียวอยู่** (คอลัมน์ไม่มีคำว่า `trip` ไม่มี FK)
+   *
+   * ## ทำไมเคสนี้ปิดมันได้ ทั้งที่ด่านสคีมาปิดไม่ได้
+   * `app.assert_cache_keys_in_catalog()` (migration `20260903220000` บรรทัด 57-63) ไม่ได้ถามเรื่อง *ชนิด*
+   * มันถามว่า **ปลายทางทั้งสองฝั่งเป็น `legacy_slug` ของ `catalog_places` หรือเปล่า**
+   * ⇒ UUID ของ custom place **ไม่มีทางแมตช์** ⇒ ด่าน raise
+   * 🎯 ***ด่านสคีมาถามว่า "คอลัมน์หน้าตายังไง" · ด่านนี้ถามว่า "ค่าในนั้นเป็นของใคร" — คนละคำถาม***
+   *
+   * ⚠️ **ขอบเขต: นี่ไม่ใช่เทสต์ A/B ตามถ้อยคำเดิมของ `AC6`** (A อุ่นแคช → B ไม่ใช่สมาชิกเปิดแล้วต้องไม่ได้)
+   * มันปิด **กลไก**ที่ทำให้สถานการณ์นั้นเกิดได้ · **ห้ามติ๊กปิด `AC6` จากไฟล์นี้เอง — ส่ง P8 ตัดสิน**
+   */
+  it("④ ทิศแดง `travel_time_cache` — UUID รูป custom place ที่ปลายทาง ด่านต้อง raise", async () => {
+    // 🔴 ต้องเป็น **UUID** ไม่ใช่สตริงมั่ว — รูปของ `custom_places.id` คือสิ่งที่ AC บรรยาย
+    //    สตริงมั่วจะพิสูจน์แค่ "ด่านจับของแปลก" ซึ่งเป็นคำถามที่อ่อนกว่า
+    const fakeCustomPlaceId = "00000000-dead-4bee-8000-0000000c0ffe";
+    const ins = await admin().from("travel_time_cache").insert({
+      from_place_id: fakeCustomPlaceId,
+      to_place_id: fakeCustomPlaceId,
+      travel_mode: "drive",
+      duration_minutes: 1,
+      fetched_at: new Date().toISOString(),
+    });
+    expect(ins.error?.message ?? null, "แทรกแถวโพรบไม่สำเร็จ — ทิศแดงนี้จะไม่ได้ทดสอบอะไร").toBeNull();
+
+    try {
+      const { error } = await admin().rpc("assert_cache_lockdown");
+      expect(
+        error,
+        "ด่านไม่ raise ทั้งที่ปลายทางเป็น UUID ที่ไม่อยู่ในคลัง — **นี่คือรูที่ `E3-AC6` ระบุไว้เป๊ะ**",
+      ).not.toBeNull();
+      expect(
+        error?.message ?? "",
+        "ข้อความ error ไม่ได้ระบุตาราง — คนที่เจอมันแดงจะไม่รู้ว่าต้องไปลบอะไร",
+      ).toContain("travel_time_cache");
+    } finally {
+      await sweepTravel();
+    }
+  });
+
+  /**
+   * 🔴 **เคสคัดแยก — ถ้าไม่มีใบนี้ เคส ④ เขียวได้ด้วยด่านที่ *แดงใส่ทุกแถว* ใน `travel_time_cache`**
+   *
+   * 🎯 ***ฝั่งบวกอย่างเดียวพิสูจน์ได้แค่ว่าด่านดัง ไม่ได้พิสูจน์ว่ามันเลือกถูก***
+   *
+   * ## ทำไมเคสนี้ไม่แทรกแถวเอง (ฉบับแรกแทรก แล้วชน `CHECK`)
+   * `travel_mode` มี `CHECK (travel_mode = ANY ('walk','transit','drive'))` ⇒ ใช้โหมดสงวนไม่ได้
+   * และคีย์ของเคสนี้เป็น `legacy_slug` **ของจริง** ⇒ ถ้ากวาดด้วยคีย์ **จะลบแถวแคชจริงของคนอื่น**
+   * · PK คือ `(from,to,mode)` ⇒ แทรกด้วยโหมดจริงก็เสี่ยงชนแถวที่มีอยู่
+   * ✅ **แต่ฐานมีแถวจริงอยู่แล้ว** ⇒ ไม่ต้องแทรกอะไรเลย · **อ่านอย่างเดียว ไม่แตะของกลาง**
+   *
+   * ## 🔴 แล้วทำไมไม่ปล่อยให้เคส ① ทำหน้าที่นี้
+   * เคส ① บอกแค่ *"สภาพปัจจุบันผ่าน"* — **มันจะผ่านเหมือนกันถ้าตารางนี้ว่างเปล่า**
+   * ⇒ อำนาจแยกแยะของมันจะหายไปเงียบ ๆ วันที่ไม่มีแถว **โดยที่ผลรันไม่เปลี่ยนเลย**
+   * ***เคสนี้จึงยืนยัน *เงื่อนไขที่ทำให้เคส ① มีความหมาย* ให้เห็น แทนที่จะพึ่งมันโดยไม่บอก***
+   */
+  it("⑤ เคสควบคุม — ฐานต้องมีแถว `travel_time_cache` ที่คีย์ถูกต้องอยู่จริง แล้วด่านยังผ่าน", async () => {
+    const { count, error: cErr } = await admin()
+      .from("travel_time_cache")
+      .select("*", { count: "exact", head: true });
+    expect(cErr?.message ?? null, "อ่าน travel_time_cache ไม่ได้").toBeNull();
+    expect(
+      count ?? 0,
+      "ตารางว่าง — เคส ④ จะเขียวได้แม้ด่านจะแดงใส่ทุกแถว **อำนาจแยกแยะหายไปเงียบ ๆ**",
+    ).toBeGreaterThan(0);
+
+    const { error } = await admin().rpc("assert_cache_lockdown");
+    expect(
+      error?.message ?? null,
+      `ด่าน raise ทั้งที่มี ${count} แถวที่คีย์ถูกต้อง — **ด่านกว้างเกิน จะแดงใส่คนที่ทำถูก แล้วมันจะถูกลบทั้งใบ**`,
+    ).toBeNull();
   });
 
   /**
