@@ -81,7 +81,24 @@ export async function fetchRealTravelTimeOutcome(
       travelMode: GOOGLE_TRAVEL_MODE[mode],
       ...(mode === "drive" ? { routingPreference: "TRAFFIC_AWARE" } : {}),
     }),
-    });
+    /**
+     * 🔴 **เส้นทางที่ผู้ใช้ลากการ์ดวิ่งผ่าน — และเดิมไม่มีตัวเลือกแคชสักตัว**
+     * `fetch.md:52` *"auto no cache (default): … If Request-time APIs are detected on the route,
+     * Next.js will fetch the resource on every request"* · route นี้อ่าน `searchParams` ⇒ **ยิงใหม่ทุกครั้ง**
+     * ⇒ ลากไป-กลับท่าเดิม = จ่าย Google ทุกครั้ง (P1 ไล่เส้นทางไว้ · P3 ยืนยันที่ `:71`)
+     *
+     * ✅ **ที่นี่แคชได้โดยไม่ชนเรื่องความปลอดภัยของ `travel_time_cache` เลย** — คนละชั้นกันคนละเรื่อง:
+     *   `travel_time_cache`  ตารางร่วม · `D87` ให้ `select` กับ **ผู้ล็อกอินทุกคน**
+     *                        ⇒ `hotel@{lat},{lng}` ที่เป็นคีย์ = บอกคนอื่นได้ว่าใครพักที่ไหน
+     *   fetch cache ของ Next **ฝั่งเซิร์ฟเวอร์ล้วน ไม่มีผู้ใช้คนไหนอ่านได้** ⇒ ไม่มีอะไรให้รั่ว
+     * 🎯 **จึงลดค่าใช้จ่ายของการลากได้ทันที โดยไม่ต้องรอมติเรื่องคิวของก้าวที่ 2**
+     *
+     * ⚠️ **อายุแยกตามโหมดโดยตั้งใจ** — `drive` ส่ง `TRAFFIC_AWARE` ⇒ คำตอบขึ้นกับจราจร ณ ตอนถาม
+     *    แคชยาวจะกลายเป็นตัวเลขผิดแบบเงียบ ๆ · โหมดอื่นไม่ขึ้นกับจราจร ใช้ 30 วันตามธรรมเนียมโปรเจกต์
+     */
+    cache: "force-cache" as const,
+    next: { revalidate: mode === "drive" ? 900 : 2592000 },
+    } as RequestInit);
   } catch {
     // ⚠️ `fetch` **โยน** ตอนเน็ตหลุด/DNS ล้ม — ไม่ได้คืน response ที่ `!ok`
     //    ฉบับก่อนหน้าไม่ดัก → error หลุดขึ้นไปถึงผู้เรียกแทนที่จะเป็น `null` ตามสัญญาของฟังก์ชัน
