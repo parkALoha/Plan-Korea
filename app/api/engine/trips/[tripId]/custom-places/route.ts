@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/auth/server";
 import { customPlacesOfTrip, oneCustomPlace } from "@/lib/engine/customPlaces";
-import { createCustomPlace } from "@/lib/engine/db";
+import { createCustomPlace, softDeleteCustomPlace } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import type { CustomPlace } from "@/lib/supabase";
 
@@ -155,4 +155,61 @@ export async function POST(
       { status: 207 }
     );
   }
+}
+
+/**
+ * ลบสถานที่ที่ผู้ใช้เพิ่มเอง — `DELETE /api/engine/trips/[tripId]/custom-places?placeId=<uuid>`
+ * เจ้าของ: P1-Lead · 4 ก.ย. 2026
+ *
+ * ## 🔴 ทำไมเพิ่งมี ทั้งที่ฐานพร้อมมาตั้งแต่ 25 ส.ค.
+ * `soft_delete_custom_place(uuid)` มีอยู่แล้ว · `grant execute … to authenticated` ก็ให้แล้ว
+ * (`20260825142949_e2_soft_delete_rpc.sql:118`) · RPC ตรวจสิทธิ์ครบทั้ง `can_read_trip` และ `can_write_trip`
+ * **ขาดแค่ทางเข้าจากเว็บ** ⇒ ผู้ใช้กด "ลงคลัง" แล้วเอาออกไม่ได้อีกเลย
+ * · 🎯 ***ใบที่สามของวันนี้ที่รูปเหมือนกันเป๊ะ: ความสามารถอยู่ในฐาน · ไม่มี route*** (คู่กับ `create_trip` · `trip_destinations`)
+ *
+ * ## ⚠️ `placeId` มาทาง query ไม่ใช่ body — เพราะ `DELETE` ที่มี body ถูกพร็อกซีบางตัวตัดทิ้ง
+ * รูปเดียวกับ `DELETE /hotels?checkIn=&checkOut=` และ `DELETE /hidden-places` ที่มีอยู่แล้ว
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ tripId: string }> }
+) {
+  const { tripId } = await params;
+
+  const limited = rateLimitGuard(req, "engine-custom-places", RATE_LIMIT_PER_MINUTE);
+  if (limited) return limited;
+  const user = await getUser();
+  if (!user) return unauthenticatedResponse();
+  if (!UUID.test(tripId)) return NextResponse.json({ error: "tripId ไม่ถูกต้อง" }, { status: 400 });
+
+  const placeId = req.nextUrl.searchParams.get("placeId");
+  if (!placeId || !UUID.test(placeId)) {
+    return NextResponse.json({ error: "placeId ไม่ถูกต้อง" }, { status: 400 });
+  }
+
+  const db = await createServerSupabase();
+  const { error } = await softDeleteCustomPlace(db, placeId);
+  if (error) {
+    // 🔴 **สามความล้มเหลวที่ผู้ใช้ต้องแยกออกจากกัน — ยุบเป็น 502 เดียวคือบอกว่า "ระบบพัง" ทั้งที่เขาแก้ได้เอง**
+    //    RPC โยนข้อความไทยมาแล้ว (`…150942_e2_soft_delete_rpc_messages.sql`) จึงส่งต่อได้ตรง ๆ
+    const msg = error.message ?? "";
+    // trigger `custom_places_not_in_use` — ยังถูกใช้เป็นจุดแวะอยู่ · `409` เพราะเป็นความขัดแย้งของ *สถานะ*
+    // ไม่ใช่ของ *คำขอ* · ผู้ใช้แก้ได้ด้วยการเอาออกจากวันก่อน
+    if (/ใช้อยู่|in use|not_in_use/i.test(msg)) {
+      return NextResponse.json(
+        { error: "สถานที่นี้ยังถูกใช้เป็นจุดแวะอยู่ — เอาออกจากวันก่อนแล้วค่อยลบ", code: "PLACE_IN_USE" },
+        { status: 409 }
+      );
+    }
+    if (/ไม่มีสิทธิ์/.test(msg) || error.code === "42501") {
+      return NextResponse.json({ error: msg || "ไม่มีสิทธิ์แก้ทริปนี้", code: "42501" }, { status: 403 });
+    }
+    // 🔴 "ไม่พบ" = `404` ไม่ใช่ `502` — และมันครอบ *ลบไปแล้ว* ด้วย ซึ่งเป็นสภาพที่กดซ้ำแล้วเจอปกติ
+    if (/ไม่พบ/.test(msg)) {
+      return NextResponse.json({ error: msg, code: "NOT_FOUND" }, { status: 404 });
+    }
+    return NextResponse.json({ error: msg || "ลบไม่สำเร็จ", code: error.code }, { status: 502 });
+  }
+
+  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
 }

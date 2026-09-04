@@ -3,6 +3,7 @@ import { createServerSupabase, getUser, unauthenticatedResponse } from "@/lib/au
 import { tripsForUser } from "@/lib/engine/trip";
 import { createTrip, insertTripDestinations } from "@/lib/engine/db";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
 
 /**
  * ทริปที่ผู้ใช้เห็นได้ — **route แบบ account-scoped** (P3 · `§14` ข้อ ①)
@@ -133,9 +134,11 @@ export async function POST(req: NextRequest) {
       if (!seen.has(raw)) { seen.add(raw); cityIds.push(raw); }
     }
     // เพดานกันคำขอเดียวยัดทั้งคลัง · ทริปข้ามเมืองจริงยังไม่เคยเกิน 6 เมือง
-    if (cityIds.length > 20) {
+    // 🔴 ค่ามาจาก `lib/engine/tripLimits.ts` ตัวเดียว — เดิมเป็น `20` ที่เขียนตรงนี้ แล้ว
+    //    `PUT /destinations` ตั้ง `30` ของตัวเอง ⇒ ทริปที่สร้างไม่ได้ กลับแก้ให้เป็นได้ (P4 พบ)
+    if (cityIds.length > MAX_TRIP_DESTINATIONS) {
       return NextResponse.json(
-        { error: `เลือกเมืองปลายทางได้สูงสุด 20 เมือง (ส่งมา ${cityIds.length})` },
+        { error: `เลือกเมืองปลายทางได้สูงสุด ${MAX_TRIP_DESTINATIONS} เมือง (ส่งมา ${cityIds.length})` },
         { status: 400 },
       );
     }

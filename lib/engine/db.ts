@@ -792,6 +792,88 @@ export function insertTripDestinations(db: Db, tripId: string, cityIds: readonly
   );
 }
 
+/**
+ * เขียนทับจุดหมายทั้งรายการ — **สามก้าว ไม่ใช่หนึ่ง** (คู่กับ `setTripDestinationRank` · `deleteTripDestinationsExcept`)
+ * เจ้าของ: P1-Lead · 4 ก.ย. 2026
+ *
+ * ## 🔴 ฉบับแรกใช้ `upsert` แล้วมันแดง — และรากคือสิ่งที่ต้อง *ไม่* แก้
+ * ```
+ * PUT /destinations → 403 { code: "42501", error: "permission denied for table trip_destinations" }
+ * แต่ POST /trips ที่ใช้ .insert() ล้วน → 201    ⇒ สิทธิ์ insert มีจริง ที่แดงคือ upsert เท่านั้น
+ * ```
+ * `upsert` ของ PostgREST = `insert … on conflict do update set <ทุกคอลัมน์ในเพย์โหลด>`
+ * ⇒ มันพยายาม `set trip_id` ด้วย · แต่ `20260827180000:150` ให้แค่ **`update (city_id, rank)`**
+ *
+ * 🎯 ***และการไม่ให้ `update trip_id` คือการป้องกันที่ตั้งใจ ไม่ใช่ของที่ลืม*** —
+ * เขียน `trip_id` ทับได้ = **ย้ายจุดหมายไปแปะทริปของคนอื่นได้** (เหตุผลเดียวกับที่
+ * `trip_days_insert` ต้องมี `with check`, `20260825110903:152`)
+ * ⇒ **ทางแก้คือเลิกใช้ upsert ไม่ใช่ขยาย grant** · ท่าด้านล่างใช้เฉพาะสิทธิ์ที่มีอยู่แล้ว
+ *
+ * ## ลำดับสามก้าว — เลือกจาก "ล้มกลางทางแล้วเหลืออะไร"
+ * ```
+ * ① insert เมืองใหม่      ล้ม ⇒ รายการเดิมอยู่ครบ ไม่มีอะไรหาย
+ * ② update rank ที่คงอยู่  ล้ม ⇒ เมืองครบ ลำดับเพี้ยน · กดใหม่ก็ตรง
+ * ③ delete ส่วนเกิน        ล้ม ⇒ มีเมืองเกิน · กดใหม่ก็หาย
+ * ```
+ * 🔴 **ไม่มีทิศไหนเหลือ 0 เมือง — ซึ่งเป็นสภาพเดียวที่กู้ไม่ได้ และเป็นบั๊กที่ route นี้เกิดมาเพื่อแก้**
+ * · 📌 ฉบับแรกผมเขียนคอมเมนต์ว่า *"ต้องมี policy insert และ update จึงจะ upsert ได้ · มีครบแล้ว"*
+ *   **โดยอ่านจากไฟล์ migration ไม่ได้ยิงจริง** — และมันผิดเพราะสิทธิ์ระดับ *คอลัมน์* ไม่ใช่ระดับ *ตาราง*
+ *   🎯 ***`grant` ในไฟล์ ตอบว่า "ให้อะไรไป" ไม่ได้ตอบว่า "คำสั่งนี้ผ่านไหม" — คนละคำถาม***
+ *   (`TEAM.md §3.5` เขียนข้อนี้ไว้แล้วสำหรับฟังก์ชัน · **มันจริงกับคอลัมน์ด้วย**)
+ */
+export function insertTripDestinations2(db: Db, tripId: string, rows: readonly { cityId: string; rank: number }[]) {
+  return engineTable(db, "trip_destinations")
+    .insert(rows.map((r) => ({ trip_id: tripId, city_id: r.cityId, rank: r.rank })))
+    .select("city_id");
+}
+
+/**
+ * ตั้ง `rank` ของเมืองที่อยู่ในรายการอยู่แล้ว
+ *
+ * 🔴 **`set` เฉพาะ `rank` เท่านั้น** — `trip_id`/`city_id` อยู่ใน `where` ไม่ใช่ใน `set`
+ * นั่นคือสิ่งที่ทำให้คำสั่งนี้ผ่าน `grant update (city_id, rank)` ในขณะที่ `upsert` ไม่ผ่าน
+ */
+export function setTripDestinationRank(db: Db, tripId: string, cityId: string, rank: number) {
+  return engineTable(db, "trip_destinations")
+    .update({ rank })
+    .eq("trip_id", tripId)
+    .eq("city_id", cityId)
+    .select("city_id");
+}
+
+/** จุดหมายปัจจุบันของทริป — ต้องอ่านก่อนเขียน เพราะสามก้าวข้างบนต้องรู้ว่าใบไหนใหม่ ใบไหนเดิม */
+export function tripDestinationsOf(db: Db, tripId: string) {
+  return engineTable(db, "trip_destinations")
+    .select("city_id, rank")
+    .eq("trip_id", tripId)
+    .order("rank")
+    // 🔴 **tie-break — ขาดไปในฉบับแรก P4 จับได้ (4 ก.ย. 2026)**
+    //    `rank` **ไม่ unique โดยตั้งใจ** (`20260827180000:96` — เหตุผลเดียวกับ `trip_stops.rank`)
+    //    และ **เส้นทางของไฟล์นี้เองสร้างค่าซ้ำได้จริง**: `PUT /destinations` ก้าว ② (จัดลำดับ) ล้มกลางทาง
+    //    ⇒ มีเมืองสองใบถือ `rank` เดียวกัน → **ลำดับที่ผู้ใช้เห็นต่างกันไปในแต่ละเครื่อง และไม่มีอะไรส่งเสียง**
+    //    ⚠️ `city_id` ไม่ใช่ `id` — ตารางนี้ `primary key (trip_id, city_id)` **ไม่มีคอลัมน์ `id`**
+    //       ⇒ `city_id` คือคอลัมน์ unique ต่อทริป จึงเป็น tie-break ที่ถูกต้องของตารางนี้
+    .order("city_id", { ascending: true });
+}
+
+/**
+ * ก้าวที่ **2 จาก 2** — ถอนเมืองที่หลุดออกจากรายการใหม่
+ *
+ * 🔴 **`keepCityIds` ต้องไม่ว่าง** — ผู้เรียกเป็นคนกัน (route ตอบ 400 ให้รายการว่าง)
+ * ถ้าเผลอเรียกด้วยรายการว่าง `.not("city_id","in","()")` จะกลายเป็น *"ลบทุกแถว"* ซึ่งคือหายนะที่ข้อบนกันไว้
+ * ⇒ กันซ้ำที่นี่ด้วย **ไม่ใช่เพราะไม่เชื่อผู้เรียก แต่เพราะราคาของการพลาดคือทริปที่กู้ไม่ได้**
+ */
+export function deleteTripDestinationsExcept(db: Db, tripId: string, keepCityIds: readonly string[]) {
+  if (keepCityIds.length === 0) {
+    throw new Error("deleteTripDestinationsExcept: keepCityIds ว่างไม่ได้ — จะกลายเป็นลบทั้งหมด");
+  }
+  return engineTable(db, "trip_destinations")
+    .delete()
+    .eq("trip_id", tripId)
+    .not("city_id", "in", `(${keepCityIds.join(",")})`)
+    .select("city_id");
+}
+
 export function tripsVisibleToMe(db: Db) {
   // 🔴 **`title` ไม่ใช่ `name`** — แก้ 27 ส.ค. 2026 (P4 เจอตอนสร้าง harness ยิง route จริง)
   //    คอลัมน์ชื่อ `title` มาตั้งแต่ `…043822_identity.sql:122` และ `create_trip` ก็ insert `title`
@@ -908,6 +990,63 @@ export function tripDaysOfTrip(db: Db, tripId: string) {
     .order("date");
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// แก้ช่วงวันของทริป — `E5` · P1-Lead · 4 ก.ย. 2026
+// สิทธิ์มาจาก `20260904120000_e5_trip_dates_editable.sql`
+// ───────────────────────────────────────────────────────────────────────────
+
+/** `id` + `date` ล้วน ๆ — เบากว่า `tripDaysOfTrip` มาก และการซิงก์ช่วงวันไม่ต้องรู้เรื่องเมืองเลย */
+export function tripDayDatesOf(db: Db, tripId: string) {
+  return engineTable(db, "trip_days").select("id, date").eq("trip_id", tripId).order("date");
+}
+
+/**
+ * นับจุดแวะของวันที่กำลังจะถูกถอน — **ตัวที่ทำให้ `409` มีข้อมูลจริง ไม่ใช่คำเตือนลอย ๆ**
+ *
+ * 🔴 นับ *ทุกแผน* ของทริปโดยตั้งใจ ไม่ใช่แค่แผนที่ active
+ * ผู้ใช้ที่มีแผน B ค้างอยู่จะเสียของในแผนนั้นเหมือนกัน **และเขามองไม่เห็นมันบนจอตอนกดย่อวัน**
+ * ⇒ ถามคำถามที่ตรงกับสิ่งที่จะหายจริง ไม่ใช่คำถามที่ตอบง่าย
+ */
+export function stopCountInDays(db: Db, dayIds: readonly string[]) {
+  return engineTable(db, "trip_stops")
+    .select("id, trip_day_id")
+    .in("trip_day_id", dayIds as string[])
+    // 🔴 **`.is("deleted_at", null)` — ขาดไปในฉบับแรก และ P4 จับได้ (4 ก.ย. 2026)**
+    //    `trip_stops` เป็น **soft delete** (`D76`) ⇒ ไม่กรอง = **นับ tombstone ของจุดแวะที่ผู้ใช้ลบไปแล้ว**
+    //    ```
+    //    ผู้ใช้ลบจุดแวะของวัน 20–21 ออกหมด → ย่อทริป 21 → 19
+    //    → 409 "จะเสียจุดแวะ 4 จุด"  ทั้งที่ไม่มีจุดแวะเหลืออยู่เลยสักจุด
+    //    ```
+    //    🎯 ***`409` ที่ควรเป็นด่านกันข้อมูลหาย กลายเป็นด่านที่บล็อกการกระทำที่ไม่ทำให้อะไรหายเลย***
+    //    · และผลที่แพงกว่าตัวเลขผิด: **ผู้ใช้จะเรียนรู้ว่าต้องกด `force` ทุกครั้ง ⇒ ด่านตายทั้งใบ**
+    //      (`§3.4` — ด่านที่แดงใส่คนที่ทำถูก จะถูกลบ และของที่มันเคยกันไว้ก็หายไปด้วย)
+    .is("deleted_at", null);
+}
+
+/** ช่วงวันของทริป — `trips_update` (owner เท่านั้น) เป็นคนตัดสินสิทธิ์ ไม่มีการกรองที่นี่ (`P-15`) */
+export function updateTripDates(db: Db, tripId: string, startDate: string, endDate: string) {
+  return engineTable(db, "trips")
+    .update({ start_date: startDate, end_date: endDate })
+    .eq("id", tripId)
+    .select("id");
+}
+
+/** เพิ่มวันที่ยังไม่มี · `date` เป็น `YYYY-MM-DD` — `timezone` ปล่อย null ตาม `D37` (ใช้ของทริป) */
+export function insertTripDays(db: Db, tripId: string, dates: readonly string[]) {
+  return engineTable(db, "trip_days")
+    .insert(dates.map((date) => ({ trip_id: tripId, date })))
+    .select("id, date");
+}
+
+/** ถอนวันตาม id ที่ผู้เรียกคำนวณมาแล้ว — **ไม่รับช่วงวันที่** เพราะการตัดสินว่าใบไหนเกินอยู่ที่ route */
+export function deleteTripDaysByIds(db: Db, tripId: string, dayIds: readonly string[]) {
+  return engineTable(db, "trip_days")
+    .delete()
+    .eq("trip_id", tripId)
+    .in("id", dayIds as string[])
+    .select("id");
+}
+
 /**
  * ตั้ง *ความตั้งใจ* เรื่องที่นอนของวันหนึ่ง — `D80`
  *
@@ -969,6 +1108,16 @@ export function cityIdBySlug(db: Db, slug: string) {
  */
 export function catalogCityExists(db: Db, cityId: string) {
   return engineTable(db, "catalog_cities").select("id").eq("id", cityId).maybeSingle();
+}
+
+/**
+ * เมืองหลายใบในคำขอเดียว — คืน **เฉพาะ id ที่มีจริง** ให้ผู้เรียกเทียบเอง
+ *
+ * 🔴 **ไม่คืน `boolean`** เพราะคำถามที่ผู้เรียกต้องตอบคือ *"ใบไหนไม่มี"* ไม่ใช่ *"ครบไหม"*
+ * ผู้ใช้ที่ส่ง 5 เมืองแล้วผิด 1 ใบ ควรได้รู้ว่าใบไหน ไม่ใช่ "มีเมืองที่ไม่รู้จัก"
+ */
+export function catalogCitiesThatExist(db: Db, cityIds: readonly string[]) {
+  return engineTable(db, "catalog_cities").select("id").in("id", cityIds as string[]);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1494,4 +1643,53 @@ export function updateStopInDay(
 
 export function softDeleteStop(db: Db, id: string) {
   return db.rpc("soft_delete_trip_stop", { p_id: id });
+}
+
+/**
+ * ลบสถานที่ที่ผู้ใช้เพิ่มเอง — **soft delete ผ่าน RPC เท่านั้น** (P1-Lead · 4 ก.ย. 2026)
+ *
+ * 🔴 **ไม่มีทาง `DELETE` ตรง และนั่นตั้งใจ** — `20260825142639_e2_soft_delete.sql:70-75`
+ * ถอด **ทั้ง policy และ grant** ออกพร้อมกัน พร้อมเหตุผลว่า
+ * *"เหลือทางใดทางหนึ่งไว้ = soft delete จะถูกข้ามได้ทุกครั้งโดยไม่มีอะไรค้าน"*
+ * · และ `deleted_at` ก็ **ไม่อยู่ใน grant update** (มี assert บังคับข้อนี้อยู่) ⇒ RPC เป็นทางเดียวจริง ๆ
+ *
+ * 🎯 ***ความสามารถนี้อยู่ในฐานมาตั้งแต่ 25 ส.ค. · `grant execute` ให้ `authenticated` แล้ว ·
+ *    ขาดแค่ route ที่เรียกมัน*** — รูปเดียวกับ `create_trip` ที่ไม่มี UI เรียกอยู่สองวัน
+ *    และ `trip_destinations` ที่มี policy ครบ 4 verb แต่ไม่มีทางเข้า
+ *
+ * ⚠️ trigger `custom_places_not_in_use` ยิงตอน `update` ⇒ **สถานที่ที่ยังถูกใช้เป็นจุดแวะอยู่ ลบไม่ได้**
+ * ผู้เรียกต้องแปลงข้อความนั้นให้ผู้ใช้อ่านรู้เรื่อง ไม่ใช่ส่ง error ของ Postgres ต่อดิบ ๆ
+ */
+export function softDeleteCustomPlace(db: Db, id: string) {
+  return db.rpc("soft_delete_custom_place", { p_id: id });
+}
+
+/**
+ * ปัก/ถอนหมุดทริป — **มุมมองส่วนตัวของผู้เรียก คนอื่นในทริปไม่เห็น** (P1-Lead · 4 ก.ย. 2026)
+ *
+ * 🔴 **RPC ไม่ใช่ `update` ตรง และเหตุผลคือช่องยกระดับสิทธิ์ที่จะเปิดถ้าทำอีกทาง**
+ * `trip_members_update` จำกัด `owner` และมี `grant update (role)` ให้ `authenticated` อยู่แล้ว
+ * ⇒ เพิ่ม policy *"สมาชิกแก้แถวตัวเองได้"* = **editor ตั้ง `role` ตัวเองเป็น `owner` ได้ทันที**
+ * (policy ของ UPDATE ถูก OR กัน · `grant` ที่เคยปลอดภัยเพราะ policy แคบ กลายเป็นเปิดพร้อมกัน)
+ * 🎯 ***policy คุมว่า "แถวไหน" · `grant` คุมว่า "คอลัมน์ไหน" — ผ่อน policy จึงผ่อนทุกคอลัมน์ที่ `grant`
+ *    เคยให้ไว้ตอนที่ policy ยังแคบ*** · เหตุผลเต็มอยู่ที่ `20260904140000_e5_pin_trip.sql`
+ */
+export function setTripPinned(db: Db, tripId: string, pinned: boolean) {
+  return db.rpc("set_trip_pinned", { p_trip_id: tripId, p_pinned: pinned });
+}
+
+/**
+ * ทริปที่ *ผู้เรียก* ปักหมุดไว้ — คืน `trip_id` + `pinned_at` เรียงใหม่สุดก่อน
+ *
+ * 🔴 **`.eq("user_id", userId)` จำเป็น ไม่ใช่การกันไว้เฉย ๆ** — `trip_members_select` ใช้ `can_read_trip`
+ * ⇒ อ่านแถวของ **เพื่อนร่วมทริปทุกคน** ได้ตามปกติ · ไม่กรอง = เอาหมุดของคนอื่นมาแสดงเป็นของตัวเอง
+ * · 🎯 RLS ที่นี่ตอบว่า *"เห็นได้ไหม"* ไม่ได้ตอบว่า *"ของใคร"* — สองคำถามนี้ต่างกัน และตัวที่สอง
+ *   ไม่มีอะไรในฐานตอบให้ ต้องถามเอง
+ */
+export function pinnedTripIdsOf(db: Db, userId: string) {
+  return engineTable(db, "trip_members")
+    .select("trip_id, pinned_at")
+    .eq("user_id", userId)
+    .not("pinned_at", "is", null)
+    .order("pinned_at", { ascending: false });
 }

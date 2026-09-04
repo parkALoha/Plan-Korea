@@ -1,4 +1,4 @@
-import { tripsVisibleToMe, type Db } from "./db";
+import { pinnedTripIdsOf, tripsVisibleToMe, type Db } from "./db";
 import { chooseSoleTrip, type SoleTrip } from "./tripChoice";
 
 // 🔴 re-export ให้ผู้เรียก *ฝั่งเซิร์ฟเวอร์* เท่านั้น — ฝั่ง client ต้อง import จาก `./tripChoice` ตรง ๆ
@@ -88,6 +88,15 @@ export type TripListItem = {
    */
   destinations: TripDestination[];
   memberCount: number;
+  /**
+   * ผู้เรียก **คนนี้** ปักหมุดทริปนี้เมื่อไหร่ · `null` = ไม่ได้ปัก (P1-Lead · 4 ก.ย. 2026)
+   *
+   * 🔴 **เป็นมุมมองส่วนตัว ไม่ใช่คุณสมบัติของทริป** — Alice ปักแล้ว Bob ได้ `null`
+   * เก็บที่ `trip_members.pinned_at` ของแต่ละคน (`20260904140000_e5_pin_trip.sql`)
+   * · ⚠️ **ห้ามย้ายไป `trips`** เพราะ `trips_update` จำกัด `owner` ⇒ editor/viewer จะปักของตัวเองไม่ได้
+   * · timestamp ไม่ใช่ boolean เพื่อให้ **ของที่ปักหลายใบมีลำดับระหว่างกัน** โดยไม่ต้องมีคอลัมน์ที่สอง
+   */
+  pinnedAt: string | null;
 };
 
 /** รูปดิบที่ PostgREST คืนจากการฝังสามชั้น — แยกไว้เพื่อให้การแบนข้างล่างอ่านออก */
@@ -119,6 +128,44 @@ export async function tripsForUser(db: Db): Promise<TripListItem[]> {
   const { data, error } = await tripsVisibleToMe(db);
   if (error) throw new Error(`อ่านรายการทริปไม่ได้: ${error.message}`);
   const rows = (data ?? []) as unknown as RawTripRow[];
+
+  /**
+   * หมุดของ **ผู้เรียก** — คำขอที่สอง ไม่ได้ฝังมากับคำขอแรก และนั่นตั้งใจ
+   *
+   * 🔴 ฝัง `trip_members(pinned_at)` ในคิวรีแรกจะได้แถวของ **เพื่อนร่วมทริปทุกคน**
+   * (`trip_members_select` ใช้ `can_read_trip`) ⇒ ต้องมากรอง `user_id` ฝั่ง JS อยู่ดี
+   * และเปลืองแบนด์วิดท์ตามจำนวนสมาชิก · ถามตรงด้วย `.eq("user_id", …)` สั้นกว่าและตรงคำถามกว่า
+   * · ⚠️ **ล้มแล้วไม่โยน** — หมุดเป็นของเสริมของหน้ารายการ **ไม่ใช่แกนของมัน**
+   *   อ่านหมุดไม่ได้ต้องไม่ทำให้ผู้ใช้เปิดรายการทริปไม่ได้ (`pinnedAt: null` ทุกใบแทน)
+   *
+   * 🔴 **ฉบับแรกเช็คแค่ `pinErr` — ซึ่ง *ไม่ได้* ทำตามบรรทัดข้างบนเลย** (P4 จับ · 4 ก.ย. 2026)
+   * `db.auth.getUser()` **โยนได้** และมันอยู่นอก `if` นั้น ⇒ `soleTrip.test.ts` แดง 3 เคสทันที
+   * (fakeDb ของเทสต์ mock แค่ `from().select().order()` · ไม่มี `auth` ⇒ TypeError)
+   * 🎯 ***คอมเมนต์ผมประกาศการรับประกันที่โค้ดผมไม่ได้ให้ — และมันอ่านเหมือนได้ให้แล้ว
+   *    เพราะมีคำว่า "ล้มแล้วไม่โยน" เขียนอยู่ข้างบนบรรทัดที่โยน***
+   * · ⇒ `try/catch` ครอบ **ทั้งก้อน** ไม่ใช่เช็ค error ของคำขอเดียว — การรับประกันต้องครอบทุกทางที่ล้มได้
+   *   ไม่ใช่ทางที่เรานึกออกตอนเขียน
+   */
+  let pinnedAt = new Map<string, string>();
+  try {
+    const { data: me } = await db.auth.getUser();
+    if (me?.user?.id) {
+      const { data: pins, error: pinErr } = await pinnedTripIdsOf(db, me.user.id);
+      if (!pinErr) {
+        pinnedAt = new Map(
+          ((pins ?? []) as unknown as { trip_id: string; pinned_at: string }[]).map((p) => [
+            p.trip_id,
+            p.pinned_at,
+          ]),
+        );
+      }
+    }
+  } catch {
+    // เจตนา: หมุดหายไปเงียบ ๆ · รายการทริปยังขึ้นครบ
+    // 🔴 **ไม่ log ที่นี่** — ฟังก์ชันนี้ถูกเรียกทุกครั้งที่เปิดหน้ารายการ ⇒ log จะกลบสัญญาณอื่นทั้งหมด
+    //    ตัวที่ควรดังคือ `PUT /pin` ซึ่งเป็นการกระทำที่ผู้ใช้ตั้งใจ ไม่ใช่การอ่านพื้นหลัง
+  }
+
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -144,6 +191,7 @@ export async function tripsForUser(db: Db): Promise<TripListItem[]> {
     // PostgREST คืน aggregate เป็น array ใบเดียว · `0` ที่นี่เป็นไปไม่ได้ในทางปฏิบัติ
     // (ทุกทริปมีเจ้าของ ≥1) → ถ้าเห็น 0 แปลว่าอ่าน `trip_members` ไม่ได้ ไม่ใช่ทริปไม่มีคน
     memberCount: r.trip_members?.[0]?.count ?? 0,
+    pinnedAt: pinnedAt.get(r.id) ?? null,
   }));
 }
 
