@@ -35,9 +35,20 @@ requireLiveCreds(hasCreds, "cache lockdown red probe", [
 ]);
 
 describe.runIf(hasCreds)("assert_cache_lockdown — ต้องแดงเมื่อมีคีย์นอกคลัง", () => {
-  const admin = testClient(SERVICE);
+  /**
+   * 🔴 **สร้าง client ในตัวเคส ไม่ใช่ในตัว `describe`** — `describe.runIf(false)` **ยังรัน body อยู่ดี**
+   * มันคุมว่า *เคส* จะถูกรันไหม ไม่ได้คุมว่า *body* จะถูกประเมินไหม (body ต้องรันเพื่อลงทะเบียนเคส)
+   * → `testClient("")` ตอน collect ⇒ `Error: supabaseUrl is required` ⇒ **ทั้งไฟล์ล้มตั้งแต่ collect**
+   *
+   * ⚠️ **และมันล้มเฉพาะที่ที่ไม่มี creds ซึ่งคือ job `verify` ของ CI พอดี** (ตั้งใจไม่ให้มี `service_role`)
+   * บนเครื่องที่มี `.env.local` มันเขียวเสมอ — **ผมจึงไม่เห็นมันเลยจนรันแบบไม่มี creds ในหมุด** (P1 · 4 ก.ย. 2026)
+   * 🎯 ***สนามที่สะดวกกว่า ปิดบั๊กที่เกิดเฉพาะในสนามที่ขัดสนกว่า*** — และรายงานผลว่า "ผ่าน" เหมือนกันเป๊ะ
+   *
+   * 📌 เป็นสำนวนเดียวกับที่ `cacheHeartbeat.test.ts` ใช้อยู่แล้ว (สร้าง client ในแต่ละ `it`)
+   */
+  const admin = () => testClient(SERVICE);
   const sweep = async () => {
-    await admin.from("place_details_cache").delete().like("maps_query", `${PROBE}%`);
+    await admin().from("place_details_cache").delete().like("maps_query", `${PROBE}%`);
   };
 
   // ① เผื่อรอบก่อนถูกฆ่ากลางคัน — เริ่มจากสภาพสะอาดเสมอ
@@ -50,7 +61,7 @@ describe.runIf(hasCreds)("assert_cache_lockdown — ต้องแดงเม�
    * 🔴 และถ้าเคสนี้แดง **แปลว่ามีของค้างในฐานจริง ไม่ใช่เทสต์พัง** — ไปหาว่าใครทิ้งไว้
    */
   it("① ทิศบวก — สภาพฐานปัจจุบันต้องผ่าน", async () => {
-    const { error } = await admin.rpc("assert_cache_lockdown");
+    const { error } = await admin().rpc("assert_cache_lockdown");
     expect(
       error?.message ?? null,
       "ฐานมีการละเมิด cache lockdown อยู่แล้ว — ทิศแดงข้างล่างจะพิสูจน์อะไรไม่ได้",
@@ -62,14 +73,14 @@ describe.runIf(hasCreds)("assert_cache_lockdown — ต้องแดงเม�
    */
   it("② ทิศแดง — ยัดคีย์ที่ไม่อยู่ในคลัง แล้วด่านต้อง raise", async () => {
     const key = `${PROBE}${Date.now()}`;
-    const ins = await admin
+    const ins = await admin()
       .from("place_details_cache")
       .insert({ maps_query: key, fetched_at: new Date().toISOString() });
     // 🔴 มัลแตนต์ต้องลงจริง ไม่งั้นผลลบข้างล่างไม่มีความหมาย (`TEAM.md` — ทิศแดงที่ no-op เงียบ)
     expect(ins.error?.message ?? null, "แทรกแถวโพรบไม่สำเร็จ — ทิศแดงนี้จะไม่ได้ทดสอบอะไร").toBeNull();
 
     try {
-      const { error } = await admin.rpc("assert_cache_lockdown");
+      const { error } = await admin().rpc("assert_cache_lockdown");
       expect(error, "ด่านไม่ raise ทั้งที่มีคีย์นอกคลัง — **ด่านมองไม่เห็นการละเมิด**").not.toBeNull();
       // ข้อความต้องบอกว่าไปดูที่ไหน ไม่ใช่แค่ว่าผิด
       expect(
@@ -87,7 +98,7 @@ describe.runIf(hasCreds)("assert_cache_lockdown — ต้องแดงเม�
    * 🔴 ถ้าไม่มีเคสนี้ ไฟล์นี้อาจทิ้งของค้างแล้วไม่มีใครรู้จนกว่า CI จะแดง
    */
   it("③ หลังกวาด ด่านต้องกลับมาผ่าน", async () => {
-    const { error } = await admin.rpc("assert_cache_lockdown");
+    const { error } = await admin().rpc("assert_cache_lockdown");
     expect(error?.message ?? null, "กวาดแถวโพรบไม่หมด — ไฟล์นี้กำลังทิ้งของค้างไว้ให้คนอื่น").toBeNull();
   });
 });
