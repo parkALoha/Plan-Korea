@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { MAX_TRIP_DAYS } from "@/lib/engine/tripLimits";
@@ -87,6 +88,7 @@ export function NewTripModal({
    */
   onCreated: (tripId: string, warning?: string) => void;
 }) {
+  const router = useRouter();
   const today = useMemo(() => isoLocal(new Date()), []);
   const [mode, setMode] = useState<"days" | "dates">("days");
   const [dayCount, setDayCount] = useState("3");
@@ -142,6 +144,24 @@ export function NewTripModal({
         | { id?: string; error?: string; destinationsError?: string }
         | null;
       if (!res.ok) {
+        // 🔴 **401 ต้องแยกออกมา — ตั้งแต่ `193d9c2` โมดัลนี้เปิดถึงคนที่ *ยังไม่มีบัญชี* ได้แล้ว**
+        //    `proxy.ts` ตอบ `{"error":"unauthenticated"}` ⇒ บรรทัดข้างล่างจะโชว์คำนั้นดิบ ๆ
+        //    ***คนแปลกหน้าเลือกเมืองมาสามใบ กดสร้าง แล้วเห็นคำว่า `unauthenticated` กลางจอภาษาไทย
+        //    โดยไม่มีทางไปต่อ*** — ทางตันที่ไม่ได้บอกว่าตันเพราะอะไร
+        //
+        // 🎯 **ช่องนี้ไม่ได้เพิ่งเกิด — มันเพิ่ง *เข้าถึงได้*** · ก่อนหน้านี้ `/explore` ปิด ⇒ ไม่มีใครยังไม่ล็อกอิน
+        //    มาถึงบรรทัดนี้ได้เลย · **คนที่เปิดประตูคือคนที่ต้องปิดช่อง** (`§3.4` ข้อการขยายชุดฟิลด์)
+        //
+        // ✅ พาไปล็อกอินแล้วกลับมาที่เดิม — **เมืองที่เลือกไว้ไม่หาย** เพราะ `CityPickerScreen`
+        //    เก็บไว้ใน `sessionStorage` (ของ P5) ซึ่งรอดการออกไปล็อกอินแล้วกลับมา
+        //    🔴 ถ้าวันหนึ่งมีคนถอด `sessionStorage` นั้นออก **บรรทัดนี้จะกลายเป็นการทิ้งของที่ผู้ใช้เลือก**
+        if (res.status === 401) {
+          const back = `${window.location.pathname}${window.location.search}`;
+          // 📌 `useRouter().push` ตามที่ทั้งรีโปใช้ (`CityPickerScreen.tsx:141`) — ไม่เปิดแบบที่สอง
+          //    และ `no-location-assign-relative-destination` ของ Next บังคับข้อนี้อยู่แล้ว
+          router.push(`/login?next=${encodeURIComponent(back)}`);
+          return;
+        }
         // 🔴 แสดงข้อความของ route ตรง ๆ — มันเขียนมาให้ผู้ใช้อ่านอยู่แล้ว (`route.ts:58`)
         //    เขียนทับด้วยข้อความรวม ๆ ของเราเอง = ทิ้งข้อมูลที่ฝั่งเซิร์ฟเวอร์อุตส่าห์บอก
         setError(data?.error ?? `สร้างทริปไม่สำเร็จ (${res.status})`);
