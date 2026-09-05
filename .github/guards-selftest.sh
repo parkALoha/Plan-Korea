@@ -996,4 +996,22 @@ b="$(mkworktree)"
 wiring "git worktree" "$b/wt"
 git -C "$b/up" worktree remove --force "$b/wt" >/dev/null 2>&1; rm -rf "$b"
 
+# ── ด่าน "ภาพปกต้องมาเป็นคู่" (P5 เสนอ · P6 ทำเป็นด่าน 6 ก.ย. 2026) ──────────────
+# 🔴 "ทรีสะอาดต้องผ่าน" ข้างบนใช้ `mk()` ซึ่งไม่มี public/catalog เลย — นั่นคือเคส
+#    "ไม่มีโฟลเดอร์ catalog เลย" อยู่แล้วโดยไม่ต้องเขียนซ้ำ · ที่นี่เติมอีก 4 เคสที่เหลือ
+d="$(mk)"; mkdir -p "$d/public/catalog/cn"
+echo x > "$d/public/catalog/cn/beijing.jpg"; echo x > "$d/public/catalog/cn/beijing-sm.jpg"
+check "ภาพปก: คู่ครบต้องผ่าน" pass "$d"
+
+d="$(mk)"; mkdir -p "$d/public/catalog/cn"
+echo x > "$d/public/catalog/cn/beijing.jpg"
+check "ภาพปก: ไม่มีใบเล็กคู่ต้องแดง" fail "$d"
+
+d="$(mk)"; mkdir -p "$d/public/catalog/cn"
+echo x > "$d/public/catalog/cn/beijing-sm.jpg"
+check "ภาพปก: ใบเล็กกำพร้าต้องแดง" fail "$d"
+
+d="$(mk)"; mkdir -p "$d/public/catalog/cn"
+check "ภาพปก: โฟลเดอร์ประเทศว่างต้องผ่าน" pass "$d"
+
 exit $rc
