@@ -2,8 +2,6 @@
 
 import { BackHomeLink } from "@/components/BackHomeLink";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
-import { SiteHeader } from "@/components/SiteHeader";
-import { SiteNav } from "@/components/SiteNav";
 import { E5_COPY } from "@/lib/i18n";
 
 /**
@@ -26,24 +24,20 @@ import { E5_COPY } from "@/lib/i18n";
  * แดงแม้แค่ *import ถึง* โดยยังไม่เรียก (P5 ยิงทิศแดงยืนยันแล้วกับ `/explore/[countryId]`)
  */
 export default function ExplorePage() {
+  /**
+   * 🔴 **`w-full` บน `<main>` จำเป็น ไม่ใช่ของแถม** — `<body>` เป็น `flex flex-col`
+   * ⇒ `<main>` เป็น flex item และ `mx-auto` บน flex item แปลว่า *"หดเหลือเท่าเนื้อหา"*
+   * (P2 เจอกับ `/explore/kr` เมื่อวาน: `max-w-4xl` ไม่มีผลเลยเพราะกว้างไม่เคยถึง 896)
+   * · `pb-24 lg:pb-10` เว้นที่ให้ `SiteNav` ซึ่งเป็น `fixed bottom-0` ต่ำกว่า `lg`
+   *   🔴 **แถบเองอยู่ที่ `app/explore/layout.tsx` แล้ว — แต่ *ที่ว่างให้มัน* ยังเป็นของหน้า**
+   *      (layout ไม่รู้ว่าหน้าไหนมี `<main>` ทรงไหน) ⇒ หน้าใหม่ใต้ `/explore` ต้องเว้นเอง
+   */
   return (
-    <>
-      {/* 🔴 แถบหัวใบกลาง — ผู้ใช้ทักเองว่ามันหายไปเมื่อออกจากหน้าแรก (เหตุผลเต็มที่ `SiteHeader.tsx`) */}
-      <SiteHeader />
-      {/**
-       * 🔴 **`w-full` บน `<main>` จำเป็น ไม่ใช่ของแถม** — `<body>` เป็น `flex flex-col`
-       * ⇒ `<main>` เป็น flex item และ `mx-auto` บน flex item แปลว่า *"หดเหลือเท่าเนื้อหา"*
-       * (P2 เจอกับ `/explore/kr` เมื่อวาน: `max-w-4xl` ไม่มีผลเลยเพราะกว้างไม่เคยถึง 896)
-       * · `pb-24 lg:pb-10` เว้นที่ให้ `SiteNav` ซึ่งเป็น `fixed bottom-0` ต่ำกว่า `lg`
-       */}
-      <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-24 sm:py-10 lg:pb-10">
-        <BackHomeLink />
-        <h1 className="mt-3 text-xl font-bold sm:text-2xl">{E5_COPY.explorer.heading}</h1>
-        <p className="mb-4 mt-1 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
-        <DestinationExplorer />
-      </main>
-      {/* หน้านี้อยู่นอกทริป จึงใช้ `SiteNav` ไม่ใช่ `BottomNav` (เหตุผลเต็มอยู่ที่ `SiteNav.tsx`) */}
-      <SiteNav />
-    </>
+    <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-24 sm:py-10 lg:pb-10">
+      <BackHomeLink />
+      <h1 className="mt-3 text-xl font-bold sm:text-2xl">{E5_COPY.explorer.heading}</h1>
+      <p className="mb-4 mt-1 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
+      <DestinationExplorer />
+    </main>
   );
 }
