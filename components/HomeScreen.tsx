@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CardBadge, CoverCard } from "@/components/CoverCard";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
@@ -619,17 +619,6 @@ export function HomeScreen() {
    * แต่ทั้งคู่อยู่ **ใต้รายการทริปของผู้ใช้** ⇒ คนที่มีทริปเยอะไม่มีทางเห็นถ้าไม่เลื่อนลงไปเอง
    * 🎯 ***โมดัลไม่ได้ปิดแค่หน้าจอ มันปิดตัวเลือกที่เราอุตส่าห์ทำไว้*** — ผู้ใช้เป็นคนชี้เอง
    */
-  const chooseRef = useRef<HTMLElement>(null);
-  function scrollToChoices() {
-    const el = chooseRef.current;
-    if (!el) return;
-    // ⚠️ เคารพ prefers-reduced-motion — เลื่อนลื่นทำให้บางคนเวียนหัว
-    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
-    // 🔴 เลื่อนอย่างเดียวไม่พอสำหรับคนใช้คีย์บอร์ด/โปรแกรมอ่านจอ — โฟกัสต้องตามไปด้วย
-    //    ไม่งั้นกด Tab ต่อจะกลับไปอยู่ต้นหน้า ซึ่งคือที่ที่เขาเพิ่งขอออกมา
-    el.focus({ preventScroll: true });
-  }
   const user = useCurrentUser();
   const { mode: systemMode } = useSystemMode();
   const readOnly = systemMode.state === "ok" && systemMode.readOnly;
@@ -999,12 +988,7 @@ export function HomeScreen() {
               {E5_COPY.explorer.heading}
             </h1>
             <p className="mb-4 mt-1 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
-            <DestinationExplorer
-              onPickCity={(city) => {
-                setSeedCities([city]);
-                setCreateOpen(true);
-              }}
-            />
+            <DestinationExplorer />
             <div className="mt-8 border-t border-line pt-6">
               <p className="mb-3 text-sm text-content-soft">{COPY.noTripsYet}</p>
               <div className="w-full max-w-xs">
@@ -1139,15 +1123,10 @@ export function HomeScreen() {
                   ⚠️ `scroll-mt-20` (80px) ไม่ใช่ค่าสุ่ม — **แถบหัวเป็น `sticky top-0` สูง 63px** (วัดจากหน้าจริง)
                      เผื่อน้อยกว่านั้นหัวข้อจะมุดใต้แถบ ⇒ เลื่อนถึงแล้วแต่อ่านไม่ออกว่าถึงอะไร
                      (ฉบับแรกใช้ 16px แล้วเหลือระยะแค่ 23px — ผู้ใช้ทักเอง) */}
-              <section ref={chooseRef} tabIndex={-1} className="mt-10 scroll-mt-20 border-t border-line pt-6 outline-none">
+              <section id="explore" className="mt-10 border-t border-line pt-6">
                 <h2 className="text-lg font-bold text-content">{E5_COPY.explorer.heading}</h2>
                 <p className="mb-3 mt-0.5 text-sm text-content-soft">{E5_COPY.explorer.subheading}</p>
-                <DestinationExplorer
-                  onPickCity={(city) => {
-                    setSeedCities([city]);
-                    setCreateOpen(true);
-                  }}
-                />
+                <DestinationExplorer />
               </section>
             </div>
           </>
@@ -1157,27 +1136,31 @@ export function HomeScreen() {
       {/* FAB มุมขวาล่าง — ผู้ใช้ขอมาตรงๆ ว่ากดด้วยมือเดียวได้ (ไม่ต้องเลื่อนไปหาลิงก์ในหัวข้อ) แสดงเฉพาะ
           ตอนมีทริปอยู่แล้ว (สถานะว่างมีฟอร์มเต็มบนหน้าอยู่แล้ว ไม่ต้องมีปุ่มลอยซ้อนอีกจุด) */}
       {trips !== null && trips.length > 0 && (
-        <button
+        <Link
           /**
-           * 🔴 **`type="button"` ไม่ใช่ของฟุ่มเฟือย** — `<button>` ที่ไม่ระบุ type
-           * **มีค่าเริ่มต้นเป็น `submit` ตามสเปก HTML** ⇒ วันที่มีคนห่อส่วนนี้ด้วย `<form>`
-           * ปุ่มนี้จะ submit ฟอร์มนั้นเงียบ ๆ · **ตอนนี้ยังไม่พังเพราะบังเอิญไม่มี `<form>` ครอบ**
-           * 🎯 ***ของที่ปลอดภัยเพราะสิ่งที่ยังไม่มี ไม่ได้ปลอดภัยเพราะตัวมันเอง*** (P1 ทัก · ยิงยืนยันแล้ว)
+           * 🔴 **เป็น `<Link>` ไปหน้า `/explore` แล้ว ไม่ใช่ปุ่มเลื่อนหน้า** (ผู้ใช้สั่งเอง 5 ก.ย. 2026)
+           * > *"ถ้ากดปุ่มนี้ พาไปที่นี่ด้วย `/explore` **แต่ให้เลือกประเทศก่อน**"*
+           * · เดิมเรียก `scrollToChoices()` เลื่อนไปที่หัวข้อ *"ไปไหนดี?"* ในหน้าเดียวกัน (งานของ P3)
+           *   ⇒ ถอด `scrollToChoices` + `chooseRef` ออกพร้อมกัน **ไม่งั้นเหลือโค้ดที่ไม่มีใครเรียก**
+           *   🎯 ***รูปเดียวกับกิ่งกริดเมืองที่เพิ่งตายไปเมื่อกี้ — ของที่ตายเพราะมีคนเปลี่ยนทางเข้า ไม่ใช่เพราะมันผิด***
+           * · เป็นลิงก์จริง ⇒ **เปิดแท็บใหม่ · คลิกกลาง · คัดลอกที่อยู่ได้**
+           *
+           * ⚠️ **`readOnly` ใช้ `aria-disabled` ไม่ใช่ `disabled`** — `<a>` ไม่มี `disabled` ตามสเปก
+           *   ⇒ ต้องกันการกดเองด้วย `onClick` · **ถ้าลืม จะได้ลิงก์ที่ดู "ปิดอยู่" แต่กดผ่านได้จริง**
            */
-          type="button"
-          onClick={scrollToChoices}
-          disabled={readOnly}
+          href="/explore"
           aria-label={COPY.newTrip}
+          aria-disabled={readOnly || undefined}
+          onClick={(e) => {
+            if (readOnly) e.preventDefault();
+          }}
           title={readOnly ? COPY.readOnlyFab : undefined}
-          /* 🔴 `bg-maple-dark` ไม่ใช่ `bg-maple` — วัดในหน้าจริง: ขาวบน `maple` (#d9683a) = **3.50 ตก AA**
-             ปุ่มนี้ 16px ตัวหนา ⇒ ยังไม่นับเป็น "ข้อความใหญ่" (ต้อง 18.66px) จึงต้อง 4.5 · `maple-dark` = 4.98 ✅
-             ⚠️ hover เดิมเป็น `maple-dark` อยู่แล้ว ⇒ **ปุ่มนี้ผ่านเกณฑ์เฉพาะตอนเอาเมาส์ไปชี้** ซึ่งบนมือถือไม่มี
-             🔴 **และ hover ต้องไปทาง *เข้มขึ้น* ไม่ใช่กลับไปหา `maple`** — ไม่งั้นจะได้ปุ่มที่ *ตกเกณฑ์เฉพาะตอนถูกชี้*
-                ซึ่งเป็นบั๊กเดิมกลับหัว · ใช้ `brightness-90` เพื่อให้คอนทราสต์ขึ้นเสมอ ไม่ใช่ลง */
-          className="fixed bottom-20 right-4 z-30 flex h-14 lg:bottom-6 items-center gap-2 rounded-full bg-maple-dark px-5 font-semibold text-white shadow-lg shadow-ink/20 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-40 sm:right-8"
+          className={`fixed bottom-20 right-4 z-30 flex h-14 items-center gap-2 rounded-full bg-maple-dark px-5 font-semibold text-white shadow-lg shadow-ink/20 transition hover:brightness-90 sm:right-8 lg:bottom-6 ${
+            readOnly ? "cursor-not-allowed opacity-40" : ""
+          }`}
         >
           {COPY.newTrip}
-        </button>
+        </Link>
       )}
 
       {/* 🔴 ห้ามใส่ความสูงขั้นต่ำให้กล่องนี้ — เคยใส่ `min-h-[26rem]` แล้วถอนออก 28 ส.ค. 2026
