@@ -139,6 +139,26 @@ const SURFACE: Record<
    * ⚠️ วันที่มีใครเพิ่มพารามิเตอร์ที่ชี้ทริปอื่น (เช่น `?sourceTripId=`) **ข้อความข้างบนเป็นเท็จทันที**
    *    และทะเบียนนี้จับไม่ได้ เพราะมันจำแนกด้วย *path* ⇒ ต้องย้ายเป็น probe ข้ามผู้ใช้
    */
+  /**
+   * 🔴 ใบที่ 17 (P1 · 5 ก.ย. 2026) — **ดูรายละเอียดทริปแนะนำ ก่อนตัดสินใจสมัคร**
+   * รับ `templateId` จาก URL แต่ไม่ใช่ `trip`-scoped ด้วยเหตุผลเดียวกับใบ `copy` ข้างล่าง:
+   * definer กรอง `published_template_at is not null` ⇒ id ทริปส่วนตัวคืน **เซตว่าง** ทุกผู้เรียก
+   * ⇒ route ตอบ `404` เหมือนกันหมด — ไม่บอกว่า *"มีอยู่แต่ไม่ได้เผยแพร่"*
+   * ⚠️ อยู่ใน `PUBLIC_ID_CHILD_PATHS` (ลิสต์ใบที่สามของ `proxy.ts`) ⇒ ติดธง `proxyPublic`
+   *    · 🔴 **ลิสต์นั้นเปิด `<uuid>` หนึ่งส่วนเป๊ะ ไม่เปิด `<uuid>/copy`** — เคสฝั่งลบใน `proxy.test.ts` บังคับ
+   */
+  "app/api/engine/trip-templates/[templateId]/route.ts": {
+    scope: "account",
+    authExempt: true,
+    proxyPublic: true,
+    why: "🔴 เปิดสาธารณะ 5 ก.ย. 2026 (ผู้ใช้ตัดสิน flow เอง: *กดแล้วบอกรายละเอียดทริปทั้งหมด*) "
+      + "· รับ `templateId` จาก URL **แต่ยิงข้ามไม่ได้** — definer `get_trip_template()` กรอง "
+      + "`published_template_at is not null and deleted_at is null` ⇒ id ทริปส่วนตัวได้เซตว่างทุกผู้เรียก "
+      + "· 🔴 ข้อมูลออกทาง RPC เท่านั้น — `anon` **ไม่มี grant บน `trips`/`trip_days`/`trip_stops` สักใบ** "
+      + "(assert ใน `20260905150000` บังคับทั้งสองทิศ) · ชุดคอลัมน์ที่ไหลออกปักหมุดไว้ที่ `schemaPins` "
+      + "· ⚠️ **ราคาที่เปลี่ยน**: ก่อนหน้านี้ธงติดผิดใบ = มีคนก๊อปแผน · ตอนนี้ = **อ่านทั้งแผนได้ทันที** "
+      + "— ยังกันด้วยข้อที่ว่าติดธงได้เฉพาะ `service_role`",
+  },
   "app/api/engine/trip-templates/[templateId]/copy/route.ts": {
     scope: "account",
     why: "รับ `templateId` จาก URL **แต่ยิงข้ามไม่ได้** — definer `copy_trip_template()` กรอง "
@@ -385,7 +405,13 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     const block = (name: string) =>
       [...(src.match(new RegExp(`const ${name}[\\s\\S]*?\\n\\];`))?.[0] ?? "")
         .matchAll(/^\s*"([^"]+)"\s*,?\s*$/gm)].map((m) => m[1]);
-    return [...block("PUBLIC_EXACT_PATHS"), ...block("PUBLIC_SUBTREE_PATHS")];
+    // 🔴 **สามลิสต์ ไม่ใช่สอง** — `PUBLIC_ID_CHILD_PATHS` เพิ่ม 5 ก.ย. 2026 (P1)
+    //    ลืมใบนี้ = เส้น engine ที่เปิดจริงหลุดจากทิศ ① **โดยที่ทุกเคสยังเขียว**
+    return [
+      ...block("PUBLIC_EXACT_PATHS"),
+      ...block("PUBLIC_SUBTREE_PATHS"),
+      ...block("PUBLIC_ID_CHILD_PATHS"),
+    ];
   };
   /** `app/api/engine/cities/route.ts` → `/api/engine/cities` */
   const urlOf = (rel: string) => "/" + rel.replace(/^app\//, "").replace(/\/route\.ts$/, "");

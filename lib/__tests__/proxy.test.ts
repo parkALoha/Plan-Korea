@@ -293,6 +293,8 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
     //    · ผู้ใช้เป็นคนเจอ: *"คนไม่ login เปิดแล้วติดนะ"* — ไม่ใช่ด่านไหนของเรา
     "/explore",
     "/explore/jp",
+    // 🔴 ทริปแนะนำใบหนึ่ง — `PUBLIC_ID_CHILD_PATHS` (5 ก.ย. 2026) · **`/copy` ของมันอยู่ฝั่งลบข้างล่าง**
+    "/api/engine/trip-templates/6b8bb5bc-99e1-4783-b09e-3073327b7d19",
   ])("② คนยังไม่ล็อกอินยิง %s ได้ (ทิศบวก)", async (path) => {
     signedOut();
     expect(await outcome(proxy(request(path)))).toBe("pass");
@@ -324,6 +326,13 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
      *    ⇒ เคสนี้คือสิ่งที่บังคับว่าสองคำถามนั้นอยู่คนละลิสต์
      */
     ["/api/engine/trip-templates/00000000-0000-0000-0000-000000000000/copy", "json401"],
+    /**
+     * 🔴 **ขอบของ `PUBLIC_ID_CHILD_PATHS` — เปิด *หนึ่งส่วนที่เป็น uuid* เป๊ะ ไม่ใช่ "ลูกใบแรก"**
+     * ตัวจับใช้ `UUID_SEGMENT.test(rest)` ⇒ ค่าที่ไม่ใช่ uuid และอะไรที่ลึกกว่าหนึ่งชั้น ต้องไม่ผ่าน
+     * 🎯 ***ถ้าใครเปลี่ยนตัวจับเป็น `!rest.includes("/")` เคสแรกจะแดง · เป็น `startsWith` เคสที่สองจะแดง***
+     */
+    ["/api/engine/trip-templates/not-a-uuid", "json401"],
+    ["/api/engine/trip-templates/6b8bb5bc-99e1-4783-b09e-3073327b7d19/anything", "json401"],
     // เคสควบคุมของเพื่อนบ้านในลิสต์เดียวกัน — วันนี้ยังไม่มีลูก **และต้องไม่มีโดยอัตโนมัติ**
     ["/api/engine/cities/anything", "json401"],
     ["/api/engine/countries/anything", "json401"],

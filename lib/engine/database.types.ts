@@ -123,6 +123,12 @@ export type Database = {
           country_id: string
           created_at: string
           id: string
+          image_author: string | null
+          image_license: string | null
+          image_license_url: string | null
+          image_origin: string | null
+          image_source_url: string | null
+          image_url: string | null
           lat: number
           legacy_slug: string | null
           lng: number
@@ -136,6 +142,12 @@ export type Database = {
           country_id: string
           created_at?: string
           id?: string
+          image_author?: string | null
+          image_license?: string | null
+          image_license_url?: string | null
+          image_origin?: string | null
+          image_source_url?: string | null
+          image_url?: string | null
           lat: number
           legacy_slug?: string | null
           lng: number
@@ -149,6 +161,12 @@ export type Database = {
           country_id?: string
           created_at?: string
           id?: string
+          image_author?: string | null
+          image_license?: string | null
+          image_license_url?: string | null
+          image_origin?: string | null
+          image_source_url?: string | null
+          image_url?: string | null
           lat?: number
           legacy_slug?: string | null
           lng?: number
@@ -172,6 +190,12 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          image_author: string | null
+          image_license: string | null
+          image_license_url: string | null
+          image_origin: string | null
+          image_source_url: string | null
+          image_url: string | null
           name_en: string
           name_th: string
           nav_providers: string[]
@@ -181,6 +205,12 @@ export type Database = {
         Insert: {
           created_at?: string
           id: string
+          image_author?: string | null
+          image_license?: string | null
+          image_license_url?: string | null
+          image_origin?: string | null
+          image_source_url?: string | null
+          image_url?: string | null
           name_en: string
           name_th: string
           nav_providers?: string[]
@@ -190,6 +220,12 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          image_author?: string | null
+          image_license?: string | null
+          image_license_url?: string | null
+          image_origin?: string | null
+          image_source_url?: string | null
+          image_url?: string | null
           name_en?: string
           name_th?: string
           nav_providers?: string[]
@@ -1227,6 +1263,60 @@ export type Database = {
           },
         ]
       }
+      trip_invites: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          max_uses: number | null
+          revoked_at: string | null
+          role: string
+          token_hash: string
+          trip_id: string
+          used_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at: string
+          id?: string
+          max_uses?: number | null
+          revoked_at?: string | null
+          role: string
+          token_hash: string
+          trip_id: string
+          used_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          max_uses?: number | null
+          revoked_at?: string | null
+          role?: string
+          token_hash?: string
+          trip_id?: string
+          used_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_invites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trip_invites_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trip_members: {
         Row: {
           created_at: string
@@ -1674,10 +1764,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      duplicate_trip_plan: {
-        Args: { p_name: string; p_source_plan_id: string; p_trip_id: string }
-        Returns: string
-      }
       create_trip_invite: {
         Args: {
           p_expires_days?: number
@@ -1691,11 +1777,45 @@ export type Database = {
           token: string
         }[]
       }
+      duplicate_trip_plan: {
+        Args: { p_name: string; p_source_plan_id: string; p_trip_id: string }
+        Returns: string
+      }
       fixture_lock_holder: {
         Args: never
         Returns: {
           expires_at: string
           held_by: string
+        }[]
+      }
+      function_exposure: {
+        Args: { p_schemas: string[] }
+        Returns: {
+          args: string
+          function_name: string
+          grantee: string
+          kind: string
+          privilege: string
+          schema_name: string
+        }[]
+      }
+      get_trip_template: {
+        Args: { p_template_id: string }
+        Returns: {
+          day_city_name_th: string
+          day_city_slug: string
+          day_count: number
+          day_country_id: string
+          day_number: number
+          dwell_minutes: number
+          night_count: number
+          overnight_city_name_th: string
+          place_category: string
+          place_name_en: string
+          place_name_th: string
+          place_slug: string
+          stop_rank: string
+          title: string
         }[]
       }
       list_deleted_trips: {
@@ -1724,7 +1844,7 @@ export type Database = {
           id: string
           name_en: string
           name_th: string
-          sample_cities: string[]
+          sample_cities: Json
         }[]
       }
       list_trip_invites: {
@@ -1734,8 +1854,8 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
-          max_uses: number | null
-          revoked_at: string | null
+          max_uses: number
+          revoked_at: string
           role: string
           used_count: number
         }[]

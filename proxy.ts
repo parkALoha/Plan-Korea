@@ -92,6 +92,46 @@ const PUBLIC_EXACT_PATHS = [
  * เปิด path นี้ **และทุกอย่างใต้มัน** — ใส่ที่นี่ต้องตอบให้ได้ว่า ***ลูกที่ยังไม่มีคนเขียน*** ก็ปลอดภัย
  * 🔴 ตอบไม่ได้ → ใส่ `PUBLIC_EXACT_PATHS` แล้วเพิ่มลูกทีละใบ · **ค่าเริ่มต้นคือลิสต์บน**
  */
+/**
+ * 🔴 **ลิสต์ใบที่สาม 5 ก.ย. 2026** — เปิด `<เส้นนี้>/<uuid>` **หนึ่งส่วนเป๊ะ** ไม่เปิดอะไรที่ลึกกว่านั้น
+ *
+ * ## ทำไมต้องมี แทนที่จะยัดเข้าสองลิสต์ข้างบน
+ * ```
+ * exact    ใส่ไม่ได้ — id แปรผัน จับด้วย `includes` ไม่ได้ตามนิยาม
+ * subtree  ใส่ไม่ได้ — จะลาก `<uuid>/copy` (ซึ่ง **เขียน** และต้องล็อกอิน) เปิดตามไปด้วย
+ *          ⇒ นั่นคือช่องเดียวกับที่เพิ่งปิดไปเมื่อชั่วโมงก่อนเป๊ะ
+ * ```
+ * 🎯 ***ทางที่ *ไม่* เลือก: เทียบ regex ตรง ๆ ในตัว `proxy()` แบบที่ `/` และ `/explore` ทำ***
+ *    มันสั้นกว่าและ greppable เท่ากัน **แต่มันจะมองไม่เห็นจากด่านของ P4** (`engineAttackSurface`
+ *    ทิศ ①/②) ซึ่งอ่าน *ลิสต์* แล้วบังคับว่าเส้น engine ที่เปิดต้องติดธง `proxyPublic`
+ *    ⇒ เปิดเส้น engine นอกลิสต์ = **สร้างจุดบอดให้ด่านที่เพิ่งสร้างมาเพื่อเรื่องนี้พอดี**
+ *    · `/` กับ `/explore` ไม่ใช่เส้น engine ⇒ ด่านนั้นไม่ครอบอยู่แล้ว **เหตุผลของมันจึงไม่ยกมาใช้ที่นี่ได้**
+ *
+ * ⚠️ **เขียนชื่อส่วนแปรผันเป็น `[templateId]` ให้ตรงกับชื่อโฟลเดอร์บนดิสก์** — ด่านของ P4 แปลง
+ *    `app/api/engine/trip-templates/[templateId]/route.ts` → `/api/engine/trip-templates/[templateId]`
+ *    แล้วเทียบตรง ๆ · **เปลี่ยนชื่อโฟลเดอร์เมื่อไหร่ต้องแก้ที่นี่ด้วย และด่านนั้นจะแดงให้เห็น**
+ */
+const PUBLIC_ID_CHILD_PATHS = [
+  /**
+   * ดูรายละเอียดทริปแนะนำก่อนตัดสินใจสมัคร (ผู้ใช้สั่ง 5 ก.ย. 2026)
+   * 🔴 **`<uuid>/copy` ต้องไม่ตามมา** — *ดูแผน* ไม่ต้องมีตัวตน · *เอาไปเป็นทริปฉัน* ต้องมี
+   *    (รูปเดียวกับ `invites/peek` vs `invites/redeem`)
+   * · เนื้อออกทาง definer `get_trip_template()` ที่กรอง `published_template_at is not null`
+   *   ⇒ id ที่ไม่ใช่ template คืนเซตว่าง ⇒ route ตอบ `404` เหมือนกันหมด
+   */
+  "/api/engine/trip-templates/[templateId]",
+];
+
+/** ส่วนเดียวที่เป็น uuid — `<uuid>/copy` ไม่ผ่านเพราะมี `/` อยู่ข้างใน */
+const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const matchesPublicIdChild = (pathname: string) =>
+  PUBLIC_ID_CHILD_PATHS.some((p) => {
+    const base = p.slice(0, p.lastIndexOf("/"));
+    if (!pathname.startsWith(`${base}/`)) return false;
+    return UUID_SEGMENT.test(pathname.slice(base.length + 1));
+  });
+
 const PUBLIC_SUBTREE_PATHS = [
   /**
    * 🔴 **หน้ารับคำเชิญ — เพิ่ม 5 ก.ย. 2026 หลังพบว่ามัน *เด้ง `/login`* ทั้งที่เพิ่งประกาศว่าใช้ได้**
@@ -120,7 +160,8 @@ export async function proxy(req: NextRequest) {
 
   if (
     PUBLIC_EXACT_PATHS.includes(pathname) ||
-    PUBLIC_SUBTREE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+    PUBLIC_SUBTREE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+    matchesPublicIdChild(pathname)
   ) {
     return session.response;
   }
