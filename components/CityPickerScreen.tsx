@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BackHomeLink } from "@/components/BackHomeLink";
+import { SiteNav } from "@/components/SiteNav";
 import { CoverCard } from "@/components/CoverCard";
-import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { NewTripModal } from "@/components/NewTripModal";
 import { MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
 import type { CityOption, CountryOption } from "@/components/TripDestinationPicker";
@@ -163,18 +163,6 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
     [countries, countryId],
   );
 
-  const countryOptions: DropdownOption[] = useMemo(
-    () =>
-      countries.status === "ready"
-        ? countries.items.map((c) => ({
-            value: c.id,
-            label: c.name_th,
-            hint: typeof c.cityCount === "number" ? `${c.cityCount} เมือง` : undefined,
-          }))
-        : [],
-    [countries],
-  );
-
   // 🔴 ผลของ *ประเทศนี้เท่านั้น* — ของประเทศอื่นถือว่ายังโหลดอยู่ (ดูเหตุผลที่ `cityResult`)
   const cities: ListState<CityOption> =
     cityResult && cityResult.forCountryId === countryId ? cityResult.state : { status: "loading" };
@@ -199,10 +187,14 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
 
   if (unknownCountry) {
     return (
-      <main className="mx-auto w-full max-w-4xl px-4 py-10">
-        <p className="text-sm">ไม่รู้จักประเทศนี้ — อาจพิมพ์ลิงก์ผิด หรือประเทศนี้ยังไม่เปิดให้ใช้</p>
-        <BackHomeLink className="mt-3" />
-      </main>
+      <>
+        <main className="mx-auto w-full max-w-4xl px-4 py-10 pb-24 lg:pb-10">
+          <p className="text-sm">ไม่รู้จักประเทศนี้ — อาจพิมพ์ลิงก์ผิด หรือประเทศนี้ยังไม่เปิดให้ใช้</p>
+          <BackHomeLink className="mt-3" />
+        </main>
+        {/* 🔴 กิ่งนี้ก็ต้องมีแถบเมนู — **หน้าที่ผู้ใช้หลงมาถึง คือหน้าที่เขาต้องการทางออกมากที่สุด** */}
+        <SiteNav />
+      </>
     );
   }
 
@@ -219,7 +211,8 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
    * 🎯 ***บั๊กที่อาการขึ้นกับเนื้อหา จะ "หาย" ตอนมีคนเพิ่มเนื้อหา แล้วกลับมาตอนมีคนลบ***
    */
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:py-10">
+    <>
+      <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-24 sm:py-10 lg:pb-10">
       {/* 🔴 ปุ่มกลับหน้าหลักใบกลางของ P2 (`9db9199`) — ผู้ใช้สั่งให้ **ทั้งเว็บใช้ตัวเดียวกัน**
           ทั้งคำและรูปร่าง · ของเดิมในเว็บมีสี่แบบไปที่เดียวกัน และใบที่เขาส่งภาพมาบ่นคือใบนี้เอง
           ⚠️ **ห้ามใส่คำเองว่า "หน้าแรก"** — คำที่ผู้ใช้เลือกคือ **"กลับหน้าหลัก"** และมันอยู่ใน `E5_COPY` แล้ว */}
@@ -247,17 +240,22 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
       <div className="mt-5 flex flex-col gap-1.5">
         <span className="text-sm font-semibold">ประเทศ</span>
 
-        {/* มือถือ */}
-        <div className="sm:hidden">
-          <Dropdown
-            value={countryId}
-            onChange={(id) => id !== countryId && router.replace(`/explore/${id}`)}
-            options={countryOptions}
-            placeholder={countries.status === "loading" ? "กำลังโหลด..." : "เลือกประเทศ"}
-            disabled={countries.status !== "ready"}
-            ariaLabel="เปลี่ยนประเทศ"
-          />
-        </div>
+        {/**
+          * มือถือ — **ย้อนกลับไปหน้าเลือกประเทศ ไม่ใช่ `Dropdown`** (ผู้ใช้สั่ง 5 ก.ย. 2026)
+          * > *"ถ้ามือถือ **ให้ย้อนกลับไปเลือกประเทศเอา** / เดียวกับที่กดปุ่มสร้างทริปใหม่"*
+          *
+          * 🔴 *"เดียวกับ"* เป็นข้อกำหนด ไม่ใช่คำเปรียบ — ปุ่ม "สร้างทริปใหม่" บนหน้าแรกชี้ `/explore`
+          * ⇒ ที่นี่ต้องชี้ **ที่เดียวกัน** ไม่ใช่หน้าที่หน้าตาเหมือนกัน
+          * ⚠️ เพิ่งชี้ได้วันนี้ — `/explore` ยังไม่มีตอนผมทำรอบแรก (P2 วาง `9423fd7`)
+          *    **ระหว่างนั้นผมคง `Dropdown` ไว้แทนที่จะชี้ไป 404**
+          */}
+        <Link
+          href="/explore"
+          className="inline-flex items-center gap-1.5 self-start rounded-xl border border-action-outline bg-surface-raised px-3 py-2 text-sm font-medium sm:hidden"
+        >
+          <span aria-hidden>←</span>
+          เลือกประเทศอื่น
+        </Link>
 
         {/* จอคอม — เห็นทุกประเทศพร้อมกัน */}
         <nav aria-label="เปลี่ยนประเทศ" className="hidden sm:block">
@@ -423,6 +421,16 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
           }}
         />
       )}
-    </main>
+      </main>
+      {/**
+        * 🔴 หน้านี้ไม่เคยเรนเดอร์ `SiteNav` เลย (P2 ยิงจริง: ลิงก์ในเมนู = **0** ที่นี่ · **3** ที่ `/explore` และ `/`)
+        * ⇒ บนมือถือหน้านี้ **ไม่มีแถบล่างให้กด** ทั้งที่ทุกหน้านอกทริปมี
+        * 🎯 ***ผมสร้างหน้านี้ขึ้นมาใหม่ จึงไม่ได้ "ลืมเอาออก" — ผม **ไม่เคยใส่** และไม่มีอะไรฟ้อง
+        *    เพราะไม่มีด่านไหนถามว่า "หน้าใหม่มีเมนูหรือยัง"***
+        * · หน้านี้อยู่นอกทริป ⇒ ใช้ `SiteNav` ไม่ใช่ `BottomNav` (เหตุผลเต็มที่ `SiteNav.tsx`)
+        * · แท็บ "ไปไหนดี" ไฮไลต์เองเพราะ P2 เปลี่ยน match เป็น `startsWith("/explore")` แล้ว
+        */}
+      <SiteNav />
+    </>
   );
 }
