@@ -405,19 +405,29 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
     const block = (name: string) =>
       [...(src.match(new RegExp(`const ${name}[\\s\\S]*?\\n\\];`))?.[0] ?? "")
         .matchAll(/^\s*"([^"]+)"\s*,?\s*$/gm)].map((m) => m[1]);
-    // 🔴 **สามลิสต์ ไม่ใช่สอง** — `PUBLIC_ID_CHILD_PATHS` เพิ่ม 5 ก.ย. 2026 (P1)
-    //    ลืมใบนี้ = เส้น engine ที่เปิดจริงหลุดจากทิศ ① **โดยที่ทุกเคสยังเขียว**
-    return [
-      ...block("PUBLIC_EXACT_PATHS"),
-      ...block("PUBLIC_SUBTREE_PATHS"),
-      ...block("PUBLIC_ID_CHILD_PATHS"),
-    ];
+    /**
+     * 🔴 **ค้นหาลิสต์เอง ไม่ระบุชื่อ — แก้ 5 ก.ย. 2026 หลังใบที่สามโผล่ภายในชั่วโมงเดียว**
+     * ฉบับแรกของผมระบุชื่อสองใบ · P1 เพิ่ม `PUBLIC_ID_CHILD_PATHS` แล้ว **ต่อชื่อใบที่สามให้เอง
+     * ในใบเดียวกับที่สร้างมัน** (`df53e18`) ⇒ รอบนั้นไม่มีอะไรหลุด
+     * 🎯 ***แต่รูปนี้เงียบตามโครงสร้าง: ตอนลิสต์ถูก **เปลี่ยนชื่อ** regex หาไม่เจอ → ลิสต์ว่าง → ทิศบวกแดงเอง ·
+     *    ตอนลิสต์ถูก **เพิ่มใบใหม่** ชื่อเดิมยัง match ครบทุกใบ ⇒ **ไม่มีอะไรแดงเลย** และด่านจะครอบไม่ครบเงียบ ๆ***
+     * ⇒ ผมระบุชื่อลิสต์ไว้ในด่าน = ผมทำ *รายการ* ในด่านที่ตั้งใจเลิกใช้รายการ (`§3.4`)
+     *   **ตัวถัดไปที่เพิ่มใบที่สี่ ไม่ต้องรู้จักไฟล์นี้เลย**
+     */
+    const names = [...src.matchAll(/^const (PUBLIC_[A-Z_]+_PATHS)\s*=/gm)].map((m) => m[1]);
+    return { names, paths: names.flatMap(block) };
   };
   /** `app/api/engine/cities/route.ts` → `/api/engine/cities` */
   const urlOf = (rel: string) => "/" + rel.replace(/^app\//, "").replace(/\/route\.ts$/, "");
 
   it("control: อ่านลิสต์จาก proxy.ts ได้จริง และ *มีเส้น engine อยู่ในนั้น* — ไม่งั้นสองเคสล่างผ่านฟรี", () => {
-    const listed = proxyLists();
+    const { names, paths: listed } = proxyLists();
+    // 🔴 ตัวค้นหาชื่อลิสต์ต้องยังทำงาน — มันพังแล้วทุกอย่างข้างล่างวนเซตว่างแล้วเขียวฟรี
+    expect(
+      names.length,
+      `ค้นเจอลิสต์สาธารณะแค่ ${names.length} ใบ (${names.join(" · ")}) — proxy.ts มีอย่างน้อย 3 ใบ ` +
+        "ถ้าตัวเลขนี้ลด แปลว่า regex ค้นชื่อพัง ไม่ใช่ว่าลิสต์หายไป",
+    ).toBeGreaterThanOrEqual(3);
     expect(listed.length, "อ่าน `PUBLIC_*_PATHS` ไม่ได้ — regex กับ proxy.ts ยังตรงกันไหม").toBeGreaterThan(4);
     // 🔴 ทิศ ① วนเฉพาะเส้น engine — ถ้าไม่มีสักเส้น มันจะเขียวโดยไม่ตรวจอะไรเลย
     expect(
@@ -433,7 +443,7 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
   it("🔴 ① เส้น engine ที่อยู่ในลิสต์สาธารณะของ proxy ต้องติดธง `proxyPublic` — ใส่เข้าลิสต์เงียบ ๆ ไม่ได้", () => {
     const byUrl = new Map(Object.entries(SURFACE).map(([rel, meta]) => [urlOf(rel), { rel, meta }]));
     const unmarked: string[] = [];
-    for (const path of proxyLists()) {
+    for (const path of proxyLists().paths) {
       if (!path.startsWith("/api/engine/")) continue;
       const hit = byUrl.get(path);
       if (!hit) continue; // ไม่ใช่ route.ts บนดิสก์ — ด่าน "ทุก route ต้องถูกจำแนก" ข้างบนดูแลอีกทิศ
@@ -449,7 +459,7 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
   });
 
   it("🔴 ② route ที่ติดธง `proxyPublic` ต้องอยู่ในลิสต์จริง และต้อง `authExempt` — ธงต้องผิดได้", () => {
-    const listed = new Set(proxyLists());
+    const listed = new Set(proxyLists().paths);
     const orphan: string[] = [];
     const selfGuarded: string[] = [];
     for (const [rel, meta] of Object.entries(SURFACE)) {
