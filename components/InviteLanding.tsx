@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { BackHomeLink } from "@/components/BackHomeLink";
 import { useEffect, useState } from "react";
 import { E5_COPY } from "@/lib/i18n";
 
@@ -96,12 +96,7 @@ export function InviteLanding({ token }: { token: string }) {
         ) : peek === "dead" ? (
           <>
             <p className="mt-3 text-sm text-maple-dark">{COPY.inviteLandingDead}</p>
-            <Link
-              href="/"
-              className="mt-4 inline-block rounded-lg border border-edge px-4 py-2 text-sm font-medium"
-            >
-              {COPY.inviteLandingHome}
-            </Link>
+            <BackHomeLink className="mt-4" />
           </>
         ) : (
           <>

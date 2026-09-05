@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackHomeLink } from "@/components/BackHomeLink";
 import { SiteNav } from "@/components/SiteNav";
 import { requireUser } from "@/lib/auth/server";
 import { Card } from "@/components/ui/Card";
@@ -136,20 +136,8 @@ export default async function AccountPage() {
           📌 ใช้ `←` เป็นตัวอักษร ไม่ใช่ไอคอน เพราะ **`components/ui/Icon.tsx` ไม่มีลูกศรย้อนกลับ**
           และเป็นโซน P2 ⇒ วาด SVG เองที่นี่ = ไอคอนนอกระบบไอคอน · ทั้งเว็บใช้ `←` อยู่แล้ว 3 ที่
           (`app/today` · `NearbyPlacesModal` · `MoveStopMenu`) — **ตามของที่มี ไม่เปิดระบบที่สอง** */}
-      <Link
-        href="/"
-        /* 🔴 `border-action-outline` + `text-content` ไม่ใช่ `border-line` + `text-content-soft`
-           ธีมมืด `--line` ได้ **1.43:1** กับพื้น ⇒ ปุ่มแทบไม่มีรูปร่าง (ผู้ใช้รายงานเอง 4 ก.ย. 2026)
-           `--line` เป็นเส้นคั่น *เนื้อหา* — ขอบ *ปุ่ม* เป็นคนละหน้าที่ จึงเป็นคนละโทเคน
-           ธีมสว่างค่าเท่าเดิมทุกพิกเซล (`--action-outline` = `#f7ead6` = ค่าเดิมของ `--line`) */
-        className="relative inline-flex items-center gap-1.5 rounded-pill border border-action-outline bg-surface-raised px-3 py-1.5 text-sm font-medium text-content transition-colors before:absolute before:-inset-[7px] before:content-[''] hover:border-pine hover:text-pine"
-      >
-        <span aria-hidden>←</span>
-        {/* 🔴 *"กลับหน้าหลัก"* ไม่ใช่ *"ทริปของฉัน"* (ผู้ใช้สั่งเอง 5 ก.ย. 2026)
-            หน้าแรกไม่ได้มีแค่รายการทริปแล้ว — มี "ไปไหนดี?" และ (เมื่อมีแผน) "ทริปแนะนำ" ด้วย
-            🎯 ***ปุ่มย้อนกลับควรบอก *ที่ที่จะไป* ไม่ใช่ *ส่วนหนึ่งของสิ่งที่อยู่ที่นั่น*** */}
-        กลับหน้าหลัก
-      </Link>
+      {/* ปุ่มกลับหน้าแรกใบเดียวของทั้งเว็บ — เหตุผลและถ้อยคำอยู่ที่ `components/BackHomeLink.tsx` */}
+      <BackHomeLink />
       <div className="mt-3 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold">บัญชีของฉัน</h1>
         {/* 🔴 **ปุ่มสลับธีมของ P2 ถูกสร้างไว้แล้วแต่ยังไม่มีใครเรียกใช้เลยสักที่** (grep แล้ว 0 hit

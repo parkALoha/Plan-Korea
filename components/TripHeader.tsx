@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BackHomeLink } from "@/components/BackHomeLink";
 import { useState } from "react";
 import { TripSettingsModal } from "./TripSettingsModal";
 import { InitialAvatar } from "./InitialAvatar";
@@ -107,14 +108,10 @@ export function TripHeader({
           </Link>
           {/* ปุ่มกลับ Home — เพิ่มตอน "/" เปลี่ยนความหมายเป็นหน้าลิสต์ทริป (27 ส.ค. 2026, E5 ข้อ 6)
               ก่อนหน้านี้ไม่มีทางออกจากทริปหนึ่งไปดูทริปอื่นเลยนอกจากพิมพ์ URL เอง */}
-          <Link
-            href="/"
-            aria-label="กลับไปหน้ารายการทริป"
-            title="ทริปทั้งหมด"
-            className="flex h-9 items-center gap-1 rounded-lg bg-white/10 px-2.5 text-xs font-medium text-cream hover:bg-white/20"
-          >
-            🏠<span className="hidden sm:inline">ทริปทั้งหมด</span>
-          </Link>
+          {/* 🔴 เดิมเป็น "🏠 ทริปทั้งหมด" — คนละคำกับอีกสามที่ที่ไปที่เดียวกัน
+              ผู้ใช้สั่งให้ใช้คำและรูปเดียวกันทั้งเว็บ (5 ก.ย. 2026) ⇒ ใช้ `BackHomeLink` ใบกลาง
+              `tone="brand"` เพราะแถบหัวเป็นสีแบรนด์ทึบ **ไม่พลิกตามธีม** ⇒ ใช้คู่สีของพื้นหน้าไม่ได้ */}
+          <BackHomeLink tone="brand" />
           <button
             onClick={() => setSettingsOpen(true)}
             aria-label="ตั้งค่าทริป"
