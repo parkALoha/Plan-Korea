@@ -6,6 +6,7 @@ import Link from "next/link";
 import { CoverCard } from "@/components/CoverCard";
 import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { NewTripModal } from "@/components/NewTripModal";
+import { MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
 import type { CityOption, CountryOption } from "@/components/TripDestinationPicker";
 
 /**
@@ -28,6 +29,33 @@ import type { CityOption, CountryOption } from "@/components/TripDestinationPick
  */
 
 const COUNTRY_ID = /^[a-z]{2}$/;
+
+/** คีย์ของ `sessionStorage` — ตั้งชื่อให้ชนกับของคนอื่นไม่ได้ */
+const PICK_KEY = "luitrip.newTrip.cities";
+
+/**
+ * เมืองที่เลือกค้างไว้ — อ่าน **ตอนตั้งค่าเริ่มต้นของ state** ไม่ใช่ใน `useEffect`
+ *
+ * ## 🔴 ทำไมไม่ใช่ `useEffect` แล้ว `setState`
+ * `react-hooks/set-state-in-effect` แดง (ด่าน `npm run lint` จับ · **ฉบับแรกของผมโดนซ้ำรอบสอง
+ * ในไฟล์เดียวกัน คนละบรรทัด**) · และการกู้ค่าครั้งเดียวตอน mount **ไม่ต้องใช้ effect ตั้งแต่แรก**
+ * 🎯 *กฎนี้ชี้ไปที่ state ที่ซ้ำซ้อนอีกครั้ง — ค่าเริ่มต้นที่รู้ได้ตั้งแต่เรนเดอร์แรก ไม่ควรมาทีหลัง*
+ *
+ * ## 🔴 `typeof window` จำเป็น — ไม่ใช่ของเผื่อ
+ * ไฟล์เป็น `"use client"` **แต่ Next ยัง prerender บนเซิร์ฟเวอร์อยู่ดี** ⇒ `sessionStorage` ไม่มีตัวตนที่นั่น
+ * ไม่กันไว้ = **โยนตอน build/prerender** · แพทเทิร์นเดียวกับ `hooks/useDarkTheme.ts:16-20`
+ */
+function readPickedCities(): CityOption[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.sessionStorage.getItem(PICK_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    // 🔴 ของใน storage แก้ด้วยมือได้ ⇒ ตรวจรูปก่อนใช้ ไม่ใช่ `as CityOption[]` แล้วหวังว่าถูก
+    return Array.isArray(parsed) ? (parsed.filter((x) => x && typeof x.id === "string") as CityOption[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 type ListState<T> = { status: "loading" } | { status: "ready"; items: T[] } | { status: "error" };
 
@@ -52,9 +80,36 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
    *    ⇒ ไม่ใช่แค่ค้าง มัน *ตอบผิด* · และเป็นสภาพที่เกิดทุกครั้งที่เน็ตช้า ไม่ใช่เคสหายาก
    */
   const [cityResult, setCityResult] = useState<{ forCountryId: string; state: ListState<CityOption> } | null>(null);
-  const [picked, setPicked] = useState<CityOption | null>(null);
+  /**
+   * เมืองที่เลือกไว้ — **อาร์เรย์ ไม่ใช่ `Set`** เพราะ *ลำดับคือข้อมูล*
+   * `POST /trips` และ `PUT /destinations` เอา `rank` จาก **ตำแหน่งใน array**
+   * (`…/destinations/route.ts` · *"`rank` จึงมาจากตำแหน่งใน array ไม่ต้องส่งมา"*)
+   * ⇒ `Set` จะทิ้งลำดับที่ผู้ใช้ตั้งใจ · กติกาเดียวกับ `TripDestinationPicker`
+   */
+  const [selected, setSelected] = useState<CityOption[]>(readPickedCities);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const valid = COUNTRY_ID.test(countryId);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(PICK_KEY, JSON.stringify(selected));
+    } catch {
+      /* เขียนไม่ได้ = การเลือกยังใช้ได้ในหน้านี้ แค่ไม่รอดการสลับประเทศ — ไม่ใช่เหตุให้ล้ม */
+    }
+  }, [selected]);
+
+  /** ลำดับที่จะไป (1-based) · `0` = ยังไม่ได้เลือก */
+  const orderOf = (id: string) => selected.findIndex((x) => x.id === id) + 1;
+
+  const toggleCity = (c: CityOption) =>
+    setSelected((prev) => {
+      const at = prev.findIndex((x) => x.id === c.id);
+      if (at >= 0) return prev.filter((x) => x.id !== c.id);
+      // 🔴 เพดานมาจาก `tripLimits` — route ปฏิเสธที่ 400 ถ้าเกิน · ห้ามพิมพ์เลขซ้ำ
+      if (prev.length >= MAX_TRIP_DESTINATIONS) return prev;
+      return [...prev, c];
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -202,9 +257,20 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
               {cities.items.map((c) => (
                 <CoverCard
                   key={c.id}
-                  onClick={() => setPicked(c)}
+                  onClick={() => toggleCity(c)}
                   cover={<CityThumb slug={c.legacy_slug} />}
                   title={c.name_th}
+                  /**
+                   * ป้ายมุมขวาบน = **ลำดับที่จะไป** ไม่ใช่แค่เครื่องหมายถูก
+                   * 🎯 ลำดับคือข้อมูลที่ส่งจริง ⇒ ผู้ใช้ต้องเห็นมัน ไม่ใช่รู้แค่ว่า "เลือกแล้ว"
+                   */
+                  badge={
+                    orderOf(c.id) > 0 ? (
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-maple text-xs font-bold text-cream">
+                        {orderOf(c.id)}
+                      </span>
+                    ) : undefined
+                  }
                 >
                   {/* ชื่ออังกฤษ/ท้องถิ่นเป็นบรรทัดรอง — ช่องนี้ว่างได้ ไม่บังคับเติมของปลอม (กติกาของ `CoverCard`) */}
                   <span className="text-xs text-ink/60">{c.name_local || c.name_en}</span>
@@ -220,11 +286,52 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
         )}
       </div>
 
-      {picked && (
+      {/**
+        * แถบสรุปท้ายจอ — **เห็นตลอดว่าตอนนี้เลือกอะไรอยู่ รวมเมืองของประเทศอื่น**
+        * 🔴 ของที่รอดข้ามหน้าโดยผู้ใช้มองไม่เห็น จะกลายเป็นเมืองที่เขาไม่ได้ตั้งใจใส่
+        *    ⇒ ที่เก็บข้ามการสลับประเทศได้ **ต้องมาคู่กับที่แสดงให้เห็นเสมอ** ไม่ใช่อย่างใดอย่างหนึ่ง
+        */}
+      {selected.length > 0 && (
+        <div className="sticky bottom-0 -mx-4 mt-6 border-t border-line bg-surface-raised/95 px-4 py-3 backdrop-blur">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold">
+              เลือกไว้ {selected.length} เมือง
+            </span>
+            {selected.length >= MAX_TRIP_DESTINATIONS && (
+              <span className="text-xs text-maple">ครบเพดาน {MAX_TRIP_DESTINATIONS} เมืองแล้ว</span>
+            )}
+          </div>
+          <ol className="mt-2 flex flex-wrap gap-1.5">
+            {selected.map((c, i) => (
+              <li key={c.id}>
+                {/* กดที่ชิปเพื่อเอาออก — เอาเมืองของประเทศอื่นออกได้โดยไม่ต้องสลับกลับไป */}
+                <button
+                  type="button"
+                  onClick={() => toggleCity(c)}
+                  className="flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs"
+                  aria-label={`เอา ${c.name_th} ออก`}
+                >
+                  <span className="font-semibold text-ink/50">{i + 1}</span>
+                  {c.name_th}
+                  <span aria-hidden className="text-ink/40">✕</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="mt-3 w-full rounded-xl bg-maple px-4 py-2.5 text-sm font-bold text-cream sm:w-auto"
+          >
+            ถัดไป — ตั้งชื่อและวันเดินทาง
+          </button>
+        </div>
+      )}
+
+      {modalOpen && selected.length > 0 && (
         <NewTripModal
-          cityId={picked.id}
-          cityName={picked.name_th}
-          onClose={() => setPicked(null)}
+          cities={selected.map((c) => ({ id: c.id, name: c.name_th }))}
+          onClose={() => setModalOpen(false)}
           /**
            * 🔴 `warning` = ทริปเกิดแล้วแต่**บันทึกเมืองไม่สำเร็จ** — ส่งต่อไปกับ URL
            * เพื่อให้หน้าทริปพูดได้ · ไม่กลืน และไม่ค้างผู้ใช้ไว้ที่โมดัลเพราะทริป *เกิดจริงแล้ว*
@@ -232,9 +339,16 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
            *    แต่สัญญาณถูกส่งถึงปลายทางแล้วและอยู่ใน URL ที่ตรวจได้ — แจ้ง P1/P2 ไว้แล้ว
            *    🎯 *ส่งสัญญาณที่ยังไม่มีคนอ่าน ดีกว่ากลืนมันตั้งแต่ต้นทาง — ตัวรับเพิ่มทีหลังได้ ข้อมูลที่ทิ้งแล้วเอาคืนไม่ได้*
            */
-          onCreated={(tripId, warning) =>
-            router.push(`/trip/${tripId}${warning ? `?warn=${encodeURIComponent(warning)}` : ""}`)
-          }
+          onCreated={(tripId, warning) => {
+            // 🔴 ล้าง **หลังสร้างสำเร็จเท่านั้น** — ล้างตอนเปิดโมดัลหรือตอนยกเลิก
+            //    จะทำให้ผู้ใช้ที่กดยกเลิกเสียรายการที่อุตส่าห์เลือกมาหลายประเทศ
+            try {
+              sessionStorage.removeItem(PICK_KEY);
+            } catch {
+              /* ล้างไม่ได้ก็ไม่เป็นไร — ทริปเกิดแล้ว และเรากำลังออกจากหน้านี้ */
+            }
+            router.push(`/trip/${tripId}${warning ? `?warn=${encodeURIComponent(warning)}` : ""}`);
+          }}
         />
       )}
     </main>

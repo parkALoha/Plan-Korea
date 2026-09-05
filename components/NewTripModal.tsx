@@ -56,20 +56,30 @@ function daysBetween(start: string, end: string): number {
   return Math.round((Date.UTC(ye, me - 1, de) - Date.UTC(ys, ms - 1, ds)) / DAY_MS) + 1;
 }
 
-/** `"โตเกียว 5 วัน 4 คืน"` — 1 วันไม่มีคืน จึงไม่เขียน "0 คืน" */
-export function autoTripTitle(cityName: string, days: number): string {
+/**
+ * `"โตเกียว 5 วัน 4 คืน"` · หลายเมือง → `"โตเกียว +2 เมือง 5 วัน 4 คืน"`
+ * · 1 วันไม่มีคืน จึงไม่เขียน `"0 คืน"`
+ * 🔴 **ไม่ต่อชื่อเมืองทุกใบ** — 20 เมือง (เพดาน) จะได้ชื่อยาวเกิน 120 ตัวอักษรที่ `POST /trips` รับ
+ *    (`route.ts:79-81` `length(trim(title)) between 1 and 120`) ⇒ **สร้างไม่ได้ และผู้ใช้จะไม่รู้ว่าทำไม**
+ *    ⚠️ ผู้ใช้แก้ชื่อเองได้อยู่แล้ว · ชื่ออัตโนมัติมีหน้าที่ *ไม่ขวางทาง* ไม่ใช่ *ครบถ้วน*
+ */
+export function autoTripTitle(cityNames: string[], days: number): string {
+  const head = cityNames[0] ?? "ทริป";
+  const more = cityNames.length > 1 ? ` +${cityNames.length - 1} เมือง` : "";
   const nights = days - 1;
-  return nights > 0 ? `${cityName} ${days} วัน ${nights} คืน` : `${cityName} 1 วัน`;
+  return nights > 0 ? `${head}${more} ${days} วัน ${nights} คืน` : `${head}${more} 1 วัน`;
 }
 
 export function NewTripModal({
-  cityId,
-  cityName,
+  cities,
   onClose,
   onCreated,
 }: {
-  cityId: string;
-  cityName: string;
+  /**
+   * เมืองที่เลือก **เรียงตามลำดับที่จะไป** — ส่งต่อเป็น `cityIds` ตรง ๆ
+   * 🔴 ลำดับใน array คือ `rank` ที่ฐานเก็บ (`…/destinations/route.ts`) **ห้ามเรียงใหม่ที่นี่**
+   */
+  cities: { id: string; name: string }[];
   onClose: () => void;
   /**
    * ได้ `tripId` แล้ว — ผู้เรียกเป็นคนพาไปหน้าทริป (โมดัลไม่รู้จัก router)
@@ -110,7 +120,8 @@ export function NewTripModal({
     : range.days > MAX_TRIP_DAYS ? `ทริปยาวได้สูงสุด ${MAX_TRIP_DAYS} วัน (ตอนนี้ ${range.days} วัน)`
     : null;
 
-  const effectiveTitle = title.trim() || autoTripTitle(cityName, range.days);
+  const cityNames = cities.map((c) => c.name);
+  const effectiveTitle = title.trim() || autoTripTitle(cityNames, range.days);
 
   async function submit() {
     if (rangeInvalid || busy) return;
@@ -124,7 +135,7 @@ export function NewTripModal({
           title: effectiveTitle,
           startDate: range.start,
           endDate: range.end,
-          cityIds: [cityId],
+          cityIds: cities.map((c) => c.id),
         }),
       });
       const data = (await res.json().catch(() => null)) as
@@ -152,7 +163,10 @@ export function NewTripModal({
        * ⚠️ ฉบับแรกของไฟล์นี้ไม่ได้อ่านฟิลด์นี้เลย — เงียบสนิทตรงจุดที่ P1 อุตส่าห์ทำให้ไม่เงียบ
        */
       if (data.destinationsError) {
-        onCreated(data.id, `สร้างทริปแล้ว แต่บันทึกเมือง “${cityName}” ไม่สำเร็จ — เพิ่มเมืองได้ที่หน้าทริป`);
+        onCreated(
+          data.id,
+          `สร้างทริปแล้ว แต่บันทึกเมือง${cities.length > 1 ? `ทั้ง ${cities.length} เมือง` : ` “${cityNames[0]}”`}ไม่สำเร็จ — เพิ่มเมืองได้ที่หน้าทริป`,
+        );
         return;
       }
       onCreated(data.id);
@@ -167,8 +181,13 @@ export function NewTripModal({
     <Modal
       onClose={onClose}
       eyebrow="ทริปใหม่"
-      title={cityName}
-      subtitle="กรอกเท่าที่รู้ตอนนี้ก็ได้ — แก้ทีหลังได้ทั้งหมด"
+      title={cities.length === 1 ? cityNames[0] : `${cityNames[0]} +${cities.length - 1} เมือง`}
+      subtitle={
+        cities.length > 1
+          ? // 🔴 โชว์ลำดับจริงที่จะถูกบันทึก — ผู้ใช้ต้องเห็นก่อนกดสร้าง ไม่ใช่ไปเจอทีหลังบนหน้าทริป
+            `จะไปตามลำดับ: ${cityNames.join(" → ")}`
+          : "กรอกเท่าที่รู้ตอนนี้ก็ได้ — แก้ทีหลังได้ทั้งหมด"
+      }
       footer={
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} className="rounded-xl border border-line px-4 py-2.5 text-sm font-medium">
@@ -196,12 +215,12 @@ export function NewTripModal({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             maxLength={120}
-            placeholder={autoTripTitle(cityName, range.days)}
+            placeholder={autoTripTitle(cityNames, range.days)}
             className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm"
           />
           {/* 🔴 บอกชื่อที่จะได้จริง ไม่ใช่แค่ placeholder — placeholder หายทันทีที่พิมพ์ตัวแรกแล้วลบ */}
           {title.trim() === "" && (
-            <p className="text-xs text-ink/60">เว้นว่างไว้จะตั้งชื่อให้ว่า “{autoTripTitle(cityName, range.days)}”</p>
+            <p className="text-xs text-ink/60">เว้นว่างไว้จะตั้งชื่อให้ว่า “{autoTripTitle(cityNames, range.days)}”</p>
           )}
         </div>
 
