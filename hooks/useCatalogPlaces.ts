@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { noteCacheFailure } from "@/lib/engine/cacheGuard";
 import { hydrateThenFetch } from "@/lib/engine/hydrateThenFetch";
-import { get as storeGet, set as storeSet } from "@/lib/engine/offlineStore";
+import { get as storeGet } from "@/lib/engine/offlineStore";
+import { writeHandoff } from "@/lib/engine/cacheHandoff";
 import type { Place } from "@/data/places";
 import { cardToPlace, type CatalogNameCard } from "@/lib/engine/catalogPlace";
 
@@ -72,7 +73,18 @@ export function useCatalogPlaces(cityId: string | null): CatalogPlacesState {
           return (await r.json()) as CatalogNameCard[];
         },
         // เก็บ *แถวดิบ* ไม่ใช่ผลของ `cardToPlace()` — แปลงตอนอ่าน ให้โค้ดรุ่นหน้าอ่านของเดิมได้
-        writeCache: (rows) => storeSet(key, rows),
+        /**
+         * 🔴 **ใช้ `writeHandoff` ไม่ใช่ `set()` ของ offlineStore — เพื่อ *เก็บฝาแฝด* ไม่ใช่เพื่ออ่านมัน**
+         * (`E6-AC7` · P7 · 5 ก.ย. 2026) · คีย์นี้เคยอยู่ `localStorage` ด้วย **สตริงเดียวกันเป๊ะ**
+         * แล้วย้ายมา IndexedDB ที่ `4096687` (28 ส.ค.) ซึ่ง **ก่อน `lib/engine/cacheHandoff.ts` เกิด 6 วัน**
+         * ⇒ ไม่มีใครลบของเก่าเลย · ฝาแฝดค้างกินโควตา ~5 MB ตลอดกาลในโปรไฟล์ที่เคยรันรุ่นก่อนหน้า
+         * ซึ่งคือสิ่งที่ `D17` มีไว้ลด
+         * 🎯 ***"ย้ายแล้วไม่เก็บของเก่า = เพิ่มที่เก็บใบที่สองโดยที่ใบแรกยังเต็มเท่าเดิม"*** (`§15.19`)
+         * · ⚠️ **`readCache` ข้างบนจงใจยังเป็น `storeGet` ไม่ใช่ `readHandoff`** — รูปของค่าที่เก็บ
+         *   เปลี่ยนไปแล้วหลัง `4096687` ⇒ ฝาแฝดที่รอดมาเป็นของ *รุ่นเก่าคนละรูป*
+         *   **เขี่ยทิ้ง ไม่ใช่ปลุกขึ้นมาใช้** · (`useTripCatalogCities` ชัดที่สุด: `lat`/`lng` เพิ่ม 2 ก.ย.)
+         */
+        writeCache: (rows) => writeHandoff(key, rows),
         onWriteFailed: () => noteCacheFailure("offlineStore/places/write", { code: "idb" }),
         applyCache: (rows) =>
           setResult({ forCityId: id, state: { status: "ready", places: toPlaces(rows) } }),
