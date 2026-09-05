@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="เวียดนาม">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="เวียดนาม">
   <defs>
     <linearGradient id="vn-sky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fdf6ec"/><stop offset="0.45" stop-color="#f6dfc4"/><stop offset="1" stop-color="#cfd3bb"/>
@@ -7,7 +7,8 @@
       <stop offset="0" stop-color="#7f9a8c"/><stop offset="1" stop-color="#5d7a70"/>
     </linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#vn-sky)"/>
+  <rect width="800" height="450" fill="url(#vn-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="150" cy="74" r="36" fill="#d9683a" opacity="0.78"/>
   <g fill="#2b241f" opacity="0.2">
     <path d="M60 214 C70 138 88 96 108 94 C128 96 146 138 156 214 Z"/>
@@ -27,5 +28,6 @@
   <rect y="262" width="800" height="38" fill="url(#vn-water)"/>
   <g stroke="#fdf6ec" stroke-width="3" opacity="0.35" stroke-linecap="round">
     <path d="M56 276 H176"/><path d="M244 290 H386"/><path d="M470 274 H580"/><path d="M604 292 H740"/>
+  </g>
   </g>
 </svg>

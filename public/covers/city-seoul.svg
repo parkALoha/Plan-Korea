@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="โซล">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="โซล">
   <defs><linearGradient id="s-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f8dcc8"/><stop offset="1" stop-color="#e5a988"/></linearGradient></defs>
-  <rect width="800" height="300" fill="url(#s-sky)"/>
+  <rect width="800" height="450" fill="url(#s-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="132" cy="70" r="34" fill="#d9683a" opacity="0.8"/>
   <path d="M0 196 L110 128 L196 176 L300 118 L392 182 L470 146 L560 190 L660 150 L740 192 L800 168 L800 300 L0 300 Z" fill="#b8502a" opacity="0.3"/>
   <!-- N Seoul Tower -->
@@ -27,4 +28,5 @@
     <rect x="696" y="212" width="8" height="10"/><rect x="714" y="212" width="8" height="10"/>
   </g>
   <path d="M0 272 L800 272 L800 300 L0 300 Z" fill="#2b241f" opacity="0.94"/>
+  </g>
 </svg>

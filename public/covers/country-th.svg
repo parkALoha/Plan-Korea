@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ไทย">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="ไทย">
   <defs>
     <linearGradient id="th-sky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fdf6ec"/><stop offset="0.45" stop-color="#f8e0b6"/><stop offset="1" stop-color="#e9b98a"/>
     </linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#th-sky)"/>
+  <rect width="800" height="450" fill="url(#th-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="656" cy="82" r="42" fill="#d9683a" opacity="0.8"/>
   <g fill="#2b241f">
     <path d="M392 6 L400 56 L384 56 Z"/>
@@ -26,4 +27,5 @@
     <path d="M632 172 L644 172 L638 152 Z"/>
   </g>
   <path d="M0 258 C130 246 236 270 348 262 C466 254 556 276 674 266 C728 262 768 270 800 264 L800 300 L0 300 Z" fill="#2b241f" opacity="0.92"/>
+  </g>
 </svg>

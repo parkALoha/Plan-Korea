@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ซูวอน">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="ซูวอน">
   <defs><linearGradient id="w-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f9e2cd"/><stop offset="1" stop-color="#e7bf9e"/></linearGradient></defs>
-  <rect width="800" height="300" fill="url(#w-sky)"/>
+  <rect width="800" height="450" fill="url(#w-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="668" cy="78" r="36" fill="#d9683a" opacity="0.8"/>
   <path d="M0 200 L120 158 L228 194 L340 152 L448 196 L560 162 L680 200 L800 172 L800 300 L0 300 Z" fill="#b8502a" opacity="0.2"/>
   <!-- กำแพงป้อมฮวาซอง + ประตู -->
@@ -24,4 +25,5 @@
     <rect x="672" y="214" width="20" height="16"/><rect x="720" y="214" width="20" height="16"/>
   </g>
   <path d="M0 272 L800 272 L800 300 L0 300 Z" fill="#2b241f" opacity="0.94"/>
+  </g>
 </svg>

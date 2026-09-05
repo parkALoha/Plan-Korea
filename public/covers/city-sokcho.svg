@@ -1,9 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ซกโช">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="ซกโช">
   <defs>
     <linearGradient id="k-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f4dfd0"/><stop offset="1" stop-color="#d8bda9"/></linearGradient>
     <linearGradient id="k-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#74959f"/><stop offset="1" stop-color="#4c7280"/></linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#k-sky)"/>
+  <rect width="800" height="450" fill="url(#k-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="146" cy="66" r="32" fill="#d9683a" opacity="0.72"/>
   <!-- ยอดหินซอรัคซาน -->
   <g fill="#2b241f">
@@ -19,5 +20,6 @@
   <rect y="240" width="800" height="60" fill="url(#k-sea)"/>
   <g stroke="#fdf6ec" stroke-width="3" opacity="0.32" stroke-linecap="round">
     <path d="M60 262 H190"/><path d="M244 284 H380"/><path d="M636 260 H760"/>
+  </g>
   </g>
 </svg>

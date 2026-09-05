@@ -1,9 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ปูซาน">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="ปูซาน">
   <defs>
     <linearGradient id="b-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.55" stop-color="#fadfc9"/><stop offset="1" stop-color="#e9b98a"/></linearGradient>
     <linearGradient id="b-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6f93a3"/><stop offset="1" stop-color="#4a6f80"/></linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#b-sky)"/>
+  <rect width="800" height="450" fill="url(#b-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="690" cy="66" r="34" fill="#d9683a" opacity="0.82"/>
   <path d="M0 150 L86 96 L164 140 L252 84 L336 146 L410 112 L470 148 L800 148 L800 244 L0 244 Z" fill="#b8502a" opacity="0.26"/>
   <!-- บ้านลดหลั่นไต่เนิน (คัมชอน) — ยืนบนฝั่ง ไม่ใช่บนน้ำ -->
@@ -30,5 +31,6 @@
   <rect y="252" width="800" height="48" fill="url(#b-sea)"/>
   <g stroke="#fdf6ec" stroke-width="3" opacity="0.3" stroke-linecap="round">
     <path d="M48 268 H178"/><path d="M232 288 H388"/><path d="M470 266 H580"/><path d="M616 290 H750"/>
+  </g>
   </g>
 </svg>

@@ -68,7 +68,7 @@ function TripCoverImage({ destinations }: { destinations: TripDestination[] }) {
   if (stage === "gradient" || !first) {
     // fallback ของรูปปก — ไม่มีจุดหมาย หรือไล่ทั้งรูปเมือง/ประเทศแล้วไม่เจอสักไฟล์
     return (
-      <div className="flex aspect-[5/2] w-full items-center justify-center bg-gradient-to-br from-pine to-maple text-4xl text-cream">
+      <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-pine to-maple text-4xl text-cream">
         🗺️
       </div>
     );
@@ -84,7 +84,7 @@ function TripCoverImage({ destinations }: { destinations: TripDestination[] }) {
     <img
       src={src}
       alt=""
-      className="aspect-[5/2] w-full object-cover"
+      className="aspect-video w-full object-cover"
       onError={() => setStage((s) => (s === "city" ? "country" : "gradient"))}
     />
   );

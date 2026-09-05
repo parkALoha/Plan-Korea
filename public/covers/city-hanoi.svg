@@ -1,9 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ฮานอย">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="ฮานอย">
   <defs>
     <linearGradient id="h-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f2e4c8"/><stop offset="1" stop-color="#cdd6bd"/></linearGradient>
     <linearGradient id="h-lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7d9a86"/><stop offset="1" stop-color="#54755f"/></linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#h-sky)"/>
+  <rect width="800" height="450" fill="url(#h-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="656" cy="62" r="32" fill="#d9683a" opacity="0.75"/>
   <!-- ตึกแถวเมืองเก่า -->
   <g fill="#2b241f" opacity="0.5">
@@ -35,5 +36,6 @@
   <g fill="#2b241f" opacity="0.24"><rect x="356" y="254" width="88" height="22"/></g>
   <g stroke="#fdf6ec" stroke-width="3" opacity="0.3" stroke-linecap="round">
     <path d="M56 270 H190"/><path d="M540 268 H674"/><path d="M244 288 H352"/>
+  </g>
   </g>
 </svg>

@@ -1,9 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="คังนึง">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="คังนึง">
   <defs>
     <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf6ec"/><stop offset="0.5" stop-color="#f6e0cd"/><stop offset="1" stop-color="#dfc0a6"/></linearGradient>
     <linearGradient id="g-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ba0ad"/><stop offset="1" stop-color="#54808f"/></linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#g-sky)"/>
+  <rect width="800" height="450" fill="url(#g-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="600" cy="80" r="38" fill="#d9683a" opacity="0.78"/>
   <path d="M0 176 L88 128 L162 166 L246 122 L330 172 L404 142 L470 178 L800 178 L800 206 L0 206 Z" fill="#b8502a" opacity="0.24"/>
   <!-- ต้นสนชายทะเล -->
@@ -22,5 +23,6 @@
   <rect y="250" width="800" height="50" fill="url(#g-sea)"/>
   <g stroke="#fdf6ec" stroke-width="4" opacity="0.36" stroke-linecap="round">
     <path d="M40 266 H186"/><path d="M232 288 H392"/><path d="M448 264 H572"/><path d="M604 290 H756"/>
+  </g>
   </g>
 </svg>

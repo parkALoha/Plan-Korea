@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="ญี่ปุ่น">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="ญี่ปุ่น">
   <defs>
     <linearGradient id="jp-sky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fdf6ec"/><stop offset="0.45" stop-color="#fae1dc"/><stop offset="1" stop-color="#eab8ae"/>
     </linearGradient>
   </defs>
-  <rect width="800" height="300" fill="url(#jp-sky)"/>
+  <rect width="800" height="450" fill="url(#jp-sky)"/>
+  <g transform="translate(0,150)">
   <circle cx="666" cy="76" r="38" fill="#d9683a" opacity="0.85"/>
 
   <!-- เทือกเขาหลังฉาก — ต่ำและจาง ให้ฟูจิเป็นตัวเด่นตัวเดียว -->
@@ -43,4 +44,5 @@
   </g>
 
   <path d="M0 266 C140 258 250 272 380 266 C500 260 600 274 720 268 C760 266 782 270 800 268 L800 300 L0 300 Z" fill="#2b241f" opacity="0.92"/>
+  </g>
 </svg>
