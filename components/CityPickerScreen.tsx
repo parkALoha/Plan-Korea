@@ -218,17 +218,72 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
       </h1>
       <p className="mt-1 text-sm text-ink/60">เลือกเมืองที่จะไป แล้วกรอกรายละเอียดทริป</p>
 
-      {/* ── สลับประเทศได้ในหน้านี้ — ข้อกำหนดของผู้ใช้ ── */}
+      {/**
+        * สลับประเทศได้ในหน้านี้ — ผู้ใช้สั่ง 5 ก.ย. 2026: *"ในคอม มี **list** ประเทศ ให้เลือก"*
+        *
+        * ## 🔴 สองรูป ไม่ใช่รูปเดียวที่ responsive
+        * `sm` ขึ้นไป → **รายการที่เห็นทุกประเทศพร้อมกัน** (สิ่งที่ผู้ใช้ขอตรง ๆ)
+        * มือถือ      → `Dropdown` เหมือนเดิม · 9 ประเทศเรียงกันบนจอ 375px จะดันกริดเมืองตกจอไปหมด
+        * 🎯 ***"list บนคอม" เป็นคำสั่งเรื่อง **จอคอม** — เอาไปใช้กับมือถือด้วยคือทำเกินคำสั่งแล้วทำให้แย่ลง***
+        *
+        * ## 🔴 เป็น `Link` ไม่ใช่ `button` — และ `replace` ไม่ใช่ `push`
+        * `Link` ⇒ เปิดแท็บใหม่/คลิกขวาได้ · มีใน accessibility tree เป็นลิงก์จริง
+        * `replace` ⇒ สลับประเทศคือ **การแก้ตัวเลือก ไม่ใช่การเดินหน้า** — ไม่ทิ้งประวัติให้กด back ทีละประเทศ
+        * ⚠️ **ของที่เลือกไว้ไม่หายตอนสลับ** เพราะอ่านกลับจาก `sessionStorage` ตอน mount (ดู `readPickedCities`)
+        *    🔴 P2 ห่วงข้อนี้พอดี (*"list สวย ๆ ที่ล้างของที่เลือกไว้ทิ้ง"*) — **ผมถือใบนี้เองจึงไม่เกิด**
+        */}
       <div className="mt-5 flex flex-col gap-1.5">
         <span className="text-sm font-semibold">ประเทศ</span>
-        <Dropdown
-          value={countryId}
-          onChange={(id) => id !== countryId && router.replace(`/explore/${id}`)}
-          options={countryOptions}
-          placeholder={countries.status === "loading" ? "กำลังโหลด..." : "เลือกประเทศ"}
-          disabled={countries.status !== "ready"}
-          ariaLabel="เปลี่ยนประเทศ"
-        />
+
+        {/* มือถือ */}
+        <div className="sm:hidden">
+          <Dropdown
+            value={countryId}
+            onChange={(id) => id !== countryId && router.replace(`/explore/${id}`)}
+            options={countryOptions}
+            placeholder={countries.status === "loading" ? "กำลังโหลด..." : "เลือกประเทศ"}
+            disabled={countries.status !== "ready"}
+            ariaLabel="เปลี่ยนประเทศ"
+          />
+        </div>
+
+        {/* จอคอม — เห็นทุกประเทศพร้อมกัน */}
+        <nav aria-label="เปลี่ยนประเทศ" className="hidden sm:block">
+          {countries.status === "ready" ? (
+            <ul className="flex flex-wrap gap-2">
+              {countries.items.map((c) => {
+                const current = c.id === countryId;
+                return (
+                  <li key={c.id}>
+                    <Link
+                      href={`/explore/${c.id}`}
+                      replace
+                      // 🔴 `aria-current` — ตัวชี้ว่า "อยู่ที่นี่" ต้องไม่ใช่แค่สี ไม่งั้นคนที่แยกสีไม่ออกอ่านไม่ได้
+                      aria-current={current ? "page" : undefined}
+                      className={
+                        "inline-flex items-baseline gap-1.5 rounded-full border px-3 py-1.5 text-sm transition " +
+                        (current
+                          ? "border-maple bg-maple/10 font-semibold text-maple"
+                          : "border-line text-ink/75 hover:border-maple/40")
+                      }
+                    >
+                      {c.name_th}
+                      {/* 🔴 `null` ≠ `0` — `null` คืออ่านคลังไม่ได้รอบนี้ ⇒ เว้นว่าง ไม่ใช่โชว์ "0 เมือง" */}
+                      {typeof c.cityCount === "number" && (
+                        <span className="text-xs font-normal text-ink/45">{c.cityCount}</span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink/60">
+              {countries.status === "loading" ? "กำลังโหลดรายชื่อประเทศ…" : "\u00a0"}
+            </p>
+          )}
+        </nav>
+
         {countries.status === "error" && (
           <p className="text-xs text-maple">โหลดรายชื่อประเทศไม่ได้ — ลองรีเฟรชหน้า</p>
         )}
