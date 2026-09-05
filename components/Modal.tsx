@@ -128,10 +128,30 @@ export function Modal({
               </h2>
               {subtitle && <div className="text-xs text-content-soft">{subtitle}</div>}
             </div>
+            {/**
+              * 🔴 **ปุ่มนี้ต้องกดโดนจริง — มันคือ *ทางออกทางเดียว* ของโมดัล** (P4 วัดได้ `28 × 40` · 5 ก.ย. 2026)
+              * `back` ปิดโมดัลไม่ได้ (โมดัลไม่ push history · P4 ยิงจริง: `history.length` 5 → 5)
+              * ⇒ ***เป้าที่เล็กที่สุดในหน้า ไม่ควรเป็นทางออกทางเดียว***
+              *
+              * ## ✅ ใช้ `h-11 w-11` (44px) ตรง ๆ — **ไม่ใช่ `before:-inset` แบบ `BackLink`**
+              * 🔴 **ผมลอง `before:-inset-[8px]` แล้ว `[10px]` แล้ว — วัดได้ `43 × 55` ทั้งสองรอบ ไม่ขยับ**
+              * ```
+              * ขยายได้จริง  ซ้าย 8 · ขวา 7 · บน 8 · ล่าง 7    ← เพิ่มค่า inset แล้วเลขไม่เปลี่ยน
+              * เพราะ        ไม่มี overflow:hidden สักชั้น (ไล่ครบ 6 ชั้นถึง body)
+              *              แต่ **พี่น้องข้าง ๆ ทับพื้นที่นั้นอยู่**: ซ้ายคือ `<h2>` หัวข้อ · ขวาคือฉากหลังของโมดัล
+              * ```
+              * 🎯 ***`before:-inset` ได้ผลเมื่อรอบตัวเป็นที่ว่าง — ปุ่มนี้ถูกขนาบทั้งสองข้าง ท่าเดียวกันจึงไม่ทำงาน***
+              *    (`BackLink` อยู่บนบรรทัดของตัวเอง มีที่ว่างรอบด้าน — **นั่นคือความต่าง ไม่ใช่ว่าท่าไหนดีกว่า**)
+              * ⇒ เมื่อขยายพื้นที่กดไม่ได้ **ก็ต้องขยายกล่องจริง** · `-mr-2` คงไว้ให้ ✕ อยู่ตำแหน่งเดิมเทียบขอบ
+              *
+              * 📌 `type="button"` — `<button>` ใน HTML มีค่าปริยายเป็น `submit`
+              *    วันนี้ไม่มีผล (อยู่ในหัวกล่อง ไม่ได้อยู่ใน `<form>` ของ children) **แต่จะมีผลเงียบ ๆ วันที่มีคนย้าย**
+              */}
             <button
+              type="button"
               onClick={onClose}
               aria-label="ปิด"
-              className="-mr-2 shrink-0 rounded-full p-2 text-content-soft hover:bg-surface-soft"
+              className="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-content-soft hover:bg-surface-soft"
             >
               ✕
             </button>
