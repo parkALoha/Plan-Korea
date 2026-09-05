@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { useDismissable } from "@/hooks/useDismissable";
 import { Button, IconButton } from "./ui/Button";
@@ -22,6 +23,7 @@ export function Modal({
   footer,
   size = "lg",
   bodyClassName = "",
+  fillHeight = false,
   children,
 }: {
   onClose: () => void;
@@ -37,6 +39,18 @@ export function Modal({
   footer?: ReactNode;
   size?: "md" | "lg";
   bodyClassName?: string;
+  /**
+   * กล่องสูงคงที่ตั้งแต่เปิด แล้วให้เนื้อหาเลื่อนข้างใน — **ไม่ใช่ค่าเริ่มต้น**
+   *
+   * 🔴 **ผู้ใช้เจอเอง 4 ก.ย. 2026:** กดเปิด "ที่เที่ยวในเมืองนี้" แล้วกล่องเล็กก่อน
+   *    แล้วค่อยขยายตอนข้อมูลมาถึง — *"ดูวิบวับ"*
+   * · ไม่ใช่แอนิเมชัน มันคือ **ความสูงตามเนื้อหา**: ตอนโหลดมีแค่หัวข้อ + "กำลังค้นหา..."
+   *   บรรทัดเดียว พอผลมา ~20 แถวก็พุ่งไปชน `max-h-[90vh]`
+   * · และมันกระตุกซ้ำทุกครั้งที่พิมพ์ค้นหา เพราะจำนวนผลเปลี่ยน
+   * 🎯 **โมดัลที่ *เรียกดูรายการ* ต้องมีความสูงพื้นคงที่ ไม่ใช่ยืดตามผลลัพธ์**
+   * ⚠️ โมดัลยืนยัน/ฟอร์มสั้นที่เนื้อหาครบตั้งแต่เปิด ควรพอดีตัวเหมือนเดิม — จึงไม่เปิดให้ทุกใบ
+   */
+  fillHeight?: boolean;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -44,7 +58,22 @@ export function Modal({
   useBodyScrollLock();
   useDismissable(panelRef, onClose);
 
-  return (
+  /**
+   * 🔴 **ต้อง portal ออกไปที่ `body` — `fixed inset-0 z-50` เพียงอย่างเดียวไม่พอ**
+   * (ผู้ใช้เจอเอง 4 ก.ย. 2026: แถบวันทะลุขึ้นมาทับกล่อง ทั้งที่แถบวันเป็น `z-30`
+   *  — **ตัวเลขบอกว่าโมดัลควรชนะ แต่มันแพ้**)
+   *
+   * 🎯 **กลไก: `position: sticky` สร้าง stacking context *เสมอ*** — ต่างจาก `relative`/`absolute`
+   * ที่สร้างก็ต่อเมื่อมี `z-index` · คอลัมน์ที่ห่อโมดัลอยู่เป็น `sticky` (z-index: auto)
+   * → `z-50` ของโมดัลถูกขังไว้ **มีความหมายแค่ภายในคอลัมน์นั้น**
+   * → ที่ root: คอลัมน์นั้นอยู่ระดับ auto(0) · `DayJumpBar` เป็น `z-30` ที่ root → **30 ชนะ 0**
+   * 🔴 **และมันไม่ได้แก้ด้วยการเพิ่มเลข** — ต่อให้ `z-[999]` ก็ยังอยู่ในคอนเทกซ์เดิม
+   * ✅ portal ไปที่ `body` = อยู่ root จริง · `z-50` จึงมีความหมายจริง
+   *
+   * 📌 ไม่มีการ์ด `mounted` โดยตั้งใจ — โมดัลถูกเรนเดอร์ก็ต่อเมื่อ state ฝั่งไคลเอนต์เปิดมัน
+   *    (`{open && <Modal …/>}`) จึงไม่มีรอบ SSR ที่แตะ `document`
+   */
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
       onClick={onClose}
@@ -59,7 +88,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface-raised text-content outline-none sm:rounded-2xl ${
+        className={`flex ${fillHeight ? "h-[90vh]" : "max-h-[90vh]"} w-full flex-col rounded-t-2xl bg-surface-raised text-content outline-none sm:rounded-2xl ${
           size === "md" ? "max-w-md" : "max-w-lg"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -82,7 +111,8 @@ export function Modal({
 
         {footer && <div className="flex shrink-0 gap-2 px-5 pb-5 pt-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

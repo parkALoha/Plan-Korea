@@ -312,6 +312,9 @@ export function NearbyPlacesModal({
         onClose={onClose}
         title={config.title}
         bodyClassName="pb-5"
+        /* 🔴 กล่องต้องนิ่งตั้งแต่เปิด — ลิสต์นี้โหลดหลังเปิด ถ้าไม่ตรึงความสูง
+           ผู้ใช้จะเห็นกล่องเล็กก่อนแล้วขยาย และกระตุกซ้ำทุกครั้งที่พิมพ์ค้นหา (ดู `Modal.fillHeight`) */
+        fillHeight
         headerExtra={
           <div className="flex gap-2">
             <input
