@@ -299,6 +299,79 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     ).toEqual([]);
   });
 
+  /**
+   * 🔴 **`reset role` ในไฟล์ migration — สำนวนที่อ่านเหมือนถูก และคืน role ผิดตัว**
+   * (P1 เป็นเคส · P4 วัดว่ามันเกิดครั้งที่สอง · 5 ก.ย. 2026)
+   *
+   * ```
+   * set local role service_role;  …;  reset role;      ← อ่านเหมือน "เลิกสวมบทบาท"
+   * ```
+   * 🎯 ***`reset role` คืนเป็น `session_user` ไม่ใช่ "role ที่กำลังใช้อยู่ก่อนหน้า"***
+   * ⇒ เท่ากับ role เดิม **ก็ต่อเมื่อไม่มีใคร `set role` มาก่อนเรา**
+   * · Supabase CLI **`set role` มาก่อนแล้ว** (`Initialising login role…`) ⇒ `reset role` พาเราไปที่
+   *   login role ชั่วคราวซึ่ง **ไม่มี `USAGE` บน `app`** ⇒ คำสั่งถัดไปที่ต้องใช้สิทธิ์นั้นล้ม
+   * 🔴 **และมันเงียบจนถึงคำสั่งถัดไป** — คำสั่งก่อนหน้าผ่านหมด ไม่มีอะไรบอกว่าเราเพิ่งกลายเป็น role ที่แคบลง
+   *   (เคสจริง: `db push` ล้มที่ statement 4 ด้วย `permission denied for schema app` · statement 1 ผ่านสบาย)
+   *
+   * ## 🔴 ทำไมเป็น *ด่าน* ไม่ใช่ *บันทึก* — เพราะบันทึกถูกเขียนไว้แล้ว และมันไม่ได้กันรอบที่สอง
+   * `20260826182000:78` เขียนข้อเท็จจริงนี้ไว้ **ครบถ้วน ตั้งแต่ 26 ส.ค.** และใช้สำนวนที่ถูกทั้งไฟล์:
+   * ```
+   * v_owner text := current_user;   -- 🔴 `reset role` คืนไปที่ *session_user* …
+   * execute format('set local role %I', v_owner);
+   * ```
+   * ⇒ **คนที่สองยังพลาดซ้ำใน 10 วันถัดมา** เพราะคำเตือนอยู่ในไฟล์ที่ไม่มีเหตุให้เปิด
+   * 🎯 ***ข้อเท็จจริงที่ถูก เขียนไว้ถูก ในที่ที่ไม่มีใครอ่านตอนกำลังจะพลาด = ยังไม่ได้ถูกจด***
+   * · ⇒ ที่ที่ถูกคือ **ตอนที่มีคนพิมพ์มันลงไป** ซึ่งด่านนี้ทำได้ · เอกสารทำไม่ได้
+   * · ⚠️ **ขอบเขต: จริงกับ *ไฟล์ migration ที่รันผ่าน Supabase CLI* เท่านั้น** — ใน `psql` ที่ไม่มีใคร
+   *   `set role` มาก่อน `reset role` ถูกต้องสมบูรณ์ · จึงสแกนเฉพาะคลัง migration ไม่ใช่ทั้งรีโป
+   */
+  it("🔴 ห้าม `reset role` ในไฟล์ migration — มันคืนเป็น `session_user` ไม่ใช่ role ที่กำลังรันอยู่", () => {
+    const offenders: string[] = [];
+    let sawSetRole = 0;
+    for (const f of migrationFiles) {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      sawSetRole += (sql.match(/\bset\s+local\s+role\b/gi) ?? []).length;
+      if (/\breset\s+role\b/i.test(sql)) offenders.push(f.split("/").pop() ?? f);
+    }
+
+    /**
+     * 🔴 **ทิศบวกของตัวสแกนเอง** — ถ้า `stripComments` หรือ `migrationFiles` พัง ทุกอย่างจะว่าง
+     * แล้วเคสนี้จะ **เขียวตลอดกาลโดยไม่ได้อ่านไฟล์สักไฟล์**
+     * · จำนวนที่คาดหวังผูกกับ *สำนวนที่ถูก* ซึ่งมีใช้จริงอยู่แล้ว ⇒ ไม่ใช่เลขที่คิดขึ้นเอง
+     */
+    expect(
+      sawSetRole,
+      "หา `set local role` ในคลัง migration ไม่เจอเลย — ตัวสแกนพัง ไม่ใช่ว่าไม่มีใครสลับ role",
+    ).toBeGreaterThan(3);
+
+    expect(
+      offenders,
+      "มี `reset role` ในไฟล์ migration\n" +
+        "  🔴 มันคืนเป็น `session_user` ซึ่งภายใต้ Supabase CLI คือ login role ชั่วคราวที่ **แคบกว่า**\n" +
+        "     ⇒ คำสั่งถัดไปที่ต้องใช้สิทธิ์จะล้ม **โดยคำสั่งก่อนหน้าผ่านหมด**\n" +
+        "  ✅ สำนวนที่ถูก (ใช้อยู่แล้วที่ `20260826182000:78`):\n" +
+        "       declare v_role text := current_user;\n" +
+        "       …\n" +
+        "       execute format('set local role %I', v_role);",
+    ).toEqual([]);
+  });
+
+  it("🔴 เคสควบคุมของตัวสแกน — คำว่า `reset role` ที่อยู่ใน *คอมเมนต์* ต้องไม่ถูกจับ", () => {
+    /**
+     * ไม่มีข้อนี้ ด่านข้างบนจะแดงใส่ `20260826182000` **ซึ่งเป็นไฟล์ที่ทำถูกและเตือนเรื่องนี้ไว้เอง**
+     * 🎯 ***ด่านที่ลงโทษคนที่เขียนคำเตือน คือด่านที่จะถูกลบพร้อมคำเตือนนั้น***
+     * · จักรวาลของเคสนี้เป็น **ของจริงจากรีโป** ไม่ใช่สตริงที่ผมแต่ง (`§3.4`)
+     */
+    const f = migrationFiles.find((x) => x.includes("20260826182000"));
+    expect(f, "ไฟล์อ้างอิงของเคสควบคุมหายไป — ถ้าถูก rename ให้แก้ชื่อที่นี่ อย่าลบเคส").toBeTruthy();
+    const raw = readFileSync(f as string, "utf8");
+    expect(/\breset\s+role\b/i.test(raw), "ไฟล์อ้างอิงไม่มีคำว่า `reset role` แล้ว — เคสควบคุมนี้ไม่ได้ควบคุมอะไร").toBe(true);
+    expect(
+      /\breset\s+role\b/i.test(stripComments(raw)),
+      "`stripComments` ตัดคอมเมนต์ไม่ครบ ⇒ ด่านข้างบนจะจับคำเตือนว่าเป็นการละเมิด",
+    ).toBe(false);
+  });
+
   it("เครื่องวัดทำงาน: มีคำสั่ง policy ให้ตรวจมากกว่า 0", () => {
     const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
     expect((src.match(/\b(?:create|drop)\s+policy\b/gi) ?? []).length).toBeGreaterThan(0);
