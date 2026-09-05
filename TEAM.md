@@ -710,7 +710,7 @@ grep -nE '^\s*(- )?(run|uses):' .github/workflows/ci.yml
 |---|---|---|---|
 | 1 | เพิ่ม `lib/__tests__/{proxy,pinAuth,rateLimit}.test.ts` | เทสต์อย่างเดียว ไม่ขึ้น build (17 ส.ค.) | — |
 | 2 | `select, delete on trips` | ให้ชุดทดสอบเก็บกวาด fixture ของตัวเอง | `20260824222206_…` |
-| 3 | `select, insert, update, delete on catalog_countries, catalog_cities` | ดูแลคลังอ้างอิงสาธารณะ (ไม่มีข้อมูลผู้ใช้) | `20260825133252_…` |
+| 3 | `select, insert, update, delete` บน **4 ตาราง**: `catalog_countries, catalog_cities` · `catalog_places, catalog_place_names` | ดูแลคลังอ้างอิงสาธารณะ (ไม่มีข้อมูลผู้ใช้) · 🔴 **สองตารางหลังตกหล่นจากทะเบียนมา 11 วัน** — P4 วัด ACL จริงแล้วเทียบ ไม่ได้อ่านจากไฟล์ | `20260825133252_…` **+ `20260825134043_…:184-185`** |
 | 4 | `select, delete on trip_days` · `select on trip_stops` **+ ขยายย้อนหลัง** `select, delete on bookings, checklist_items, place_notes, hidden_places, trip_hotels` | เดินเส้นทางที่ไคลเอนต์เดินไม่ได้ เพื่อพิสูจน์ว่าถูกกัน | `20260825140848_…` · `…145043` · `…145708` · `…150325` |
 | 5 | `select, insert, delete on {place_details,place_details_local,place_photo,travel_time}_cache` | วาง fixture แล้วเก็บ — **ไม่มีทางอื่นให้มีแถวอยู่จริง** · ไม่ให้ `update` | `20260825152400_…` |
 | 6 | `execute on app.read_only_uncovered_tables()` | เรียกตัวตรวจความครอบคลุม · ไม่ให้สิทธิ์บนตารางใดเลย | `20260827200000_…` |
