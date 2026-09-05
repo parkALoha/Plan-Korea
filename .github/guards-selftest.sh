@@ -615,6 +615,20 @@ else
 fi
 rm -rf "$d" "$al"
 
+# 🔴 **เคสที่หลุดจริง 6 ก.ย. 2026** — `guards.sh` เรียกด้วย ROOT เป็นพาธเต็ม (ตามธรรมเนียม
+#    "อ้าง path เต็มเสมอ" ของ `§3.3` และตรงกับที่ท่าปักหมุดในทรีชั่วคราวต้องใช้) แต่ allowlist
+#    เก็บพาธสัมพัทธ์แบบรีโป (`lib/engine/db.ts`) — `path.lstrip("./")` ตัดได้แค่ `/` ตัวแรก
+#    ของพาธเต็ม ไม่เหลือ `lib/engine/db.ts` ให้ตรง ⇒ **ไฟล์ที่ยกเว้นไว้ถูกฟ้องเป็นของใหม่**
+#    ทั้งที่ ROOT="." (สิ่งที่ CI เรียกจริงใน ci.yml) ไม่เจอปัญหานี้เลย — สองคนรันคนละท่าได้คนละคำตอบ
+d="$(mktemp -d)"; mkdir -p "$d/lib/engine"; printf 'supabase.from(name);\n' > "$d/lib/engine/db.ts"
+al="$(mktemp)"; printf 'lib/engine/db.ts\n' > "$al"
+if ( DYNAMIC_FROM_ALLOWED="$al" DYNAMIC_FROM_ROOT="$d" "$DYN" "$d/lib/engine/db.ts" >/dev/null 2>&1 ); then
+  echo "✅ dynamic-from: ไฟล์ในรายการยกเว้น ผ่านแม้เรียกด้วย ROOT เป็นพาธเต็ม"
+else
+  echo "🔴 dynamic-from: ROOT เป็นพาธเต็มทำให้ allowlist match พัง (บั๊กที่เคยเกิดจริงกลับมา)"; rc=1
+fi
+rm -rf "$d" "$al"
+
 # ── ด่าน helper-only (ครึ่งที่สองของ D81 · ใช้ตัวแยกวิเคราะห์ตัวเดียวกับ dynamic-from) ──
 hochk() {  # hochk <ชื่อ> <pass|fail> <เนื้อไฟล์>
   name="$1"; want="$2"; d="$(mktemp -d)"

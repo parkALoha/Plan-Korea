@@ -112,12 +112,30 @@ def allowed_files() -> set:
             if l.strip() and not l.strip().startswith("#")}
 
 
+def normalize(path: str) -> str:
+    """เทียบพาธกับ allowlist โดยไม่สนว่าผู้เรียกส่ง path มาแบบ *สัมพัทธ์* หรือ *เต็ม*
+
+    🔴 ฉบับแรก `path.lstrip("./")` ใช้ได้เฉพาะตอน `guards.sh` เรียกด้วย `ROOT="."`
+       (`find "./lib" ...` ได้ `./lib/engine/db.ts` → lstrip เหลือ `lib/engine/db.ts` พอดี)
+       **แต่ `lstrip` ไม่ใช่ "ตัด prefix" — มันตัด *ตัวอักษร* `.`/`/` ทีละตัวจากหน้าสตริง**
+       พอ `ROOT` เป็นพาธเต็ม (`find "/abs/path/lib" ...`) จะได้ `/abs/path/lib/engine/db.ts`
+       lstrip ตัดได้แค่ `/` ตัวแรก เหลือ `Users/park/.../lib/engine/db.ts` ซึ่ง**ไม่ตรงกับ allowlist
+       ไม่มีวันเลย** → ไฟล์ที่ยกเว้นไว้ถูกฟ้องเป็นของใหม่ (P6 เจอเอง 6 ก.ย. 2026 หลังยิงด้วย ROOT เต็ม
+       ตามธรรมเนียม "อ้าง path เต็มเสมอ" ของทีม — ตรงกับที่ `§3.3` ใช้ตอนตรวจในทรีที่ปักหมุดด้วย)
+    ✅ คำนวณ *สัมพัทธ์กับ ROOT จริง* แทน — ใช้ได้ทั้งสองแบบ เพราะ resolve เป็น absolute ก่อนเทียบเสมอ
+       `guards.sh` ส่ง ROOT มาทาง env `DYNAMIC_FROM_ROOT` · ไม่ตั้งไว้ = คาดเป็น "." (พฤติกรรมเดิม)
+    """
+    import os
+    root = os.environ.get("DYNAMIC_FROM_ROOT", ".")
+    return os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+
+
 def main(paths) -> int:
     bad = 0
     allow = allowed_files()
     protected = protected_tables()
     for path in paths:
-        norm = path.lstrip("./")
+        norm = normalize(path)
         is_helper = norm in allow
         for line_no, recv, kind, val in scan(path):
             if kind == "dynamic":

@@ -484,8 +484,10 @@ if [ -d "$ROOT/lib" ] && [ -f "$DYNFROM" ]; then
              \( -name '*.ts' -o -name '*.tsx' \) -not -path '*/__tests__/*' \
              -not -path '*/node_modules/*' 2>/dev/null | sort)
   if [ -n "$srcs" ]; then
+    # 🔴 ต้องส่ง ROOT ไปด้วย ไม่งั้น allowlist match พังเงียบเมื่อ ROOT เป็นพาธเต็ม (P6 · 6 ก.ย. 2026)
+    #    ดูเหตุผลในหัว normalize() ของ check-dynamic-from.py
     # shellcheck disable=SC2086
-    python3 "$DYNFROM" $srcs || fail=1
+    DYNAMIC_FROM_ROOT="$ROOT" python3 "$DYNFROM" $srcs || fail=1
   fi
 fi
 
