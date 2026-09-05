@@ -78,11 +78,18 @@ begin
         add constraint %I check (image_origin is null or image_origin in ('ai','commons','own')),
         add constraint %I check (
           image_url is null
-          or (image_origin = 'ai'
-              and image_author is null and image_source_url is null)
-          or (image_origin in ('commons','own')
-              and image_source_url is not null and image_author is not null
-              and image_license  is not null and image_license_url is not null)
+          -- 🔴 `image_origin is not null` ไม่ใช่ความละเอียด — **มันคือสิ่งที่ทำให้ข้อนี้บังคับได้จริง**
+          --    ไม่มีบรรทัดนี้: `null = 'ai'` ให้ **NULL** ไม่ใช่ FALSE ⇒ ทั้งนิพจน์เป็น NULL
+          --    ⇒ **CHECK ที่ได้ NULL คือ CHECK ที่ผ่าน** (SQL ปฏิเสธเฉพาะ FALSE)
+          --    ⇒ แถวที่มีรูปแต่ไม่ประกาศที่มา จะลอดเข้าได้ — ซึ่งคือสิ่งเดียวที่คอลัมน์นี้มีไว้กัน
+          --    📌 จับได้ด้วย assert ④ ข้างล่าง ตอน `db push` รอบแรก **ไม่ใช่ด้วยการอ่านนิยาม**
+          or (image_origin is not null and (
+                 (image_origin = 'ai'
+                  and image_author is null and image_source_url is null)
+              or (image_origin in ('commons','own')
+                  and image_source_url is not null and image_author is not null
+                  and image_license  is not null and image_license_url is not null)
+          ))
         )
     $f$, t, t || '_image_origin_ck', t || '_image_credit_ck');
   end loop;
