@@ -109,9 +109,21 @@ describe("PUBLIC_PATHS", () => {
     expect(await outcome(proxy(request("/login?next=%2Ftoday")))).toBe("pass");
   });
 
-  it("path ที่มี prefix เป็น public path ก็ผ่าน (เงื่อนไข startsWith)", async () => {
+  /**
+   * 🔴 **แก้ 5 ก.ย. 2026 — เคสนี้เคยยืนยันพฤติกรรมที่ *เลิกจริงไปแล้ว***
+   * ฉบับเดิมยิง `/auth/callback/extra` แล้ว `expect("pass")` เพราะตัวจับใบเดียวเปิด subtree ให้ทุกเส้น
+   * วันนี้ลิสต์แยกเป็นสองใบ ⇒ **`/auth/callback` เป็น exact · ลูกของมันต้องไม่ผ่าน**
+   * 🎯 ***เคสที่ตรึงพฤติกรรมกว้างเกินจำเป็น จะกลายเป็นเคสที่ *ห้าม* การรัดให้แคบลง —
+   *    และมันจะแดงตอนมีคนทำสิ่งที่ถูก*** (`TEAM.md §3.4`) ⇒ เขียนใหม่ให้ตรึง *เจตนา* ไม่ใช่ *กลไก*
+   */
+  it("🔴 subtree เปิดเฉพาะเส้นที่อยู่ในลิสต์ subtree — เส้นในลิสต์ exact ต้องไม่เปิดลูก", async () => {
     signedOut();
-    expect(await outcome(proxy(request("/auth/callback/extra")))).toBe("pass");
+    // ① `/invite` อยู่ในลิสต์ subtree → ลูกผ่าน (นี่คือเหตุผลเดียวที่ลิสต์นั้นมีอยู่)
+    expect(await outcome(proxy(request("/invite/deadbeef"))), "/invite/<token>").toBe("pass");
+    // ② เส้นในลิสต์ exact → ลูก **ต้องไม่** ผ่าน · ถอดการแยกลิสต์ออกเมื่อไหร่ สองบรรทัดนี้แดง
+    for (const path of ["/auth/callback/extra", "/login/extra", "/api/keep-alive/extra"]) {
+      expect(await outcome(proxy(request(path))), path).not.toBe("pass");
+    }
   });
 
   it("🔴 ชื่อที่คล้าย public path แต่ไม่ใช่ ต้องไม่ผ่าน", async () => {
@@ -287,9 +299,10 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
   });
 
   /**
-   * 🔴 **หัวใจของบล็อก — ถ้าใครทำให้ตัวจับใน `PUBLIC_PATHS` หลวมลง เคสพวกนี้แดง**
-   * ตัวจับเป็น `pathname === p || pathname.startsWith(`${p}/`)`
-   * ⇒ `"/"` **ห้าม**อยู่ในลิสต์นั้น ไม่งั้นมันเป็น prefix ของทุก path ในเว็บ
+   * 🔴 **หัวใจของบล็อก — ถ้าใครทำให้ตัวจับใน `PUBLIC_*_PATHS` หลวมลง เคสพวกนี้แดง**
+   * ตัวจับมีสองใบตั้งแต่ 5 ก.ย. 2026: `PUBLIC_EXACT_PATHS.includes(pathname)` (ไม่เปิด subtree)
+   * และ ``PUBLIC_SUBTREE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))``
+   * ⇒ `"/"` **ห้าม**อยู่ในลิสต์ subtree ไม่งั้นมันเป็น prefix ของทุก path ในเว็บ
    *   (`/` จึงถูกเทียบตรง ๆ แยกไว้ในตัว `proxy()` — ดูคอมเมนต์ที่นั่น)
    */
   it.each([
@@ -303,6 +316,19 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
     // 🔴 คุมขอบของ `/explore` — `startsWith("/explore/")` ต้องไม่ลามไปโดนชื่อที่ *ขึ้นต้นเหมือนกัน*
     ["/explorer", "redirect"],
     ["/explore-secret", "redirect"],
+    /**
+     * 🔴 **ลูกของเส้นสาธารณะ ต้องไม่สาธารณะตามพ่อ — เพิ่ม 5 ก.ย. 2026 พร้อม route `copy`**
+     * ก่อนหน้านี้ลิสต์มีใบเดียวและตัวจับเปิด subtree เสมอ ⇒ `trip-templates` ที่ *ไม่มีลูก*
+     * จึงปลอดภัย **เพราะชุดมันเล็ก ไม่ใช่เพราะมีด่าน** · วันที่มีลูกใบแรก ช่องก็กว้างพอเดินผ่าน
+     * 🎯 ***`GET` = "มีแผนอะไรให้ดู" (ไม่ต้องมีตัวตน) · `copy` = "เอามาเป็นทริปฉัน" (ต้องมี)***
+     *    ⇒ เคสนี้คือสิ่งที่บังคับว่าสองคำถามนั้นอยู่คนละลิสต์
+     */
+    ["/api/engine/trip-templates/00000000-0000-0000-0000-000000000000/copy", "json401"],
+    // เคสควบคุมของเพื่อนบ้านในลิสต์เดียวกัน — วันนี้ยังไม่มีลูก **และต้องไม่มีโดยอัตโนมัติ**
+    ["/api/engine/cities/anything", "json401"],
+    ["/api/engine/countries/anything", "json401"],
+    // `peek` เปิด · `redeem` ปิด — เคยพึ่ง "ไม่อยู่ในลิสต์" อย่างเดียว ตอนนี้พึ่ง "ลิสต์ไม่เปิด subtree" ด้วย
+    ["/api/engine/invites/redeem", "json401"],
   ])("🔴 ③ %s ต้องยัง *ไม่* เปิด (เคสควบคุมฝั่งลบ)", async (path, want) => {
     signedOut();
     expect(
@@ -359,24 +385,39 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
    * · ⚠️ **ยังไม่ปิดทิศที่สาม**: *หน้าใหม่ที่ควรเปิดแต่ไม่มีใครใส่ในลิสต์* — ไม่มีอะไรในไฟล์นี้รู้ว่ามันควรเปิด
    *   🔴 **จดไว้เป็นความเสี่ยงที่รับ** · ทางลดคือของ P2: ***ยิง `curl` เปล่าที่ตัวหน้า เป็นขั้นตอนสุดท้ายของทุกหน้าที่ควรเปิด***
    */
-  it("🔴 ⑤ ทุกเส้นใน `PUBLIC_PATHS` ต้องมีเคสในบล็อกนี้ — เพิ่มเส้นแล้วไม่เขียนเคส = แดง", async () => {
+  it("🔴 ⑤ ทุกเส้นใน `PUBLIC_*_PATHS` ต้องมีเคสในบล็อกนี้ — เพิ่มเส้นแล้วไม่เขียนเคส = แดง", async () => {
     const src = readFileSync(new URL("../../proxy.ts", import.meta.url), "utf8");
-    const listed = [...(src.match(/const PUBLIC_PATHS[\s\S]*?\n\];/)?.[0] ?? "")
-      .matchAll(/^\s*"([^"]+)",/gm)].map((m) => m[1]);
+    /**
+     * 🔴 **ต้องอ่าน *ทั้งสอง* ลิสต์ — 5 ก.ย. 2026 ลิสต์ถูกแยกเป็น exact/subtree**
+     * ⚠️ **และตัวสแกนใบเก่าจับเรื่องนี้ได้เอง**: regex เดิมหา `const PUBLIC_PATHS` ไม่เจอ → ลิสต์ว่าง
+     *    → ทิศบวกข้างล่าง (`> 4`) แดงทันที · ***ทะเบียนที่ผิดได้ ทำงานตามที่มันถูกเขียนมาให้ทำ***
+     *    (`TEAM.md §3.4` — *ทะเบียนต้อง **ผิดได้*** ) ⇒ ไม่ต้องมีใครจำว่าต้องมาแก้ไฟล์นี้
+     */
+    const block = (name: string) =>
+      [...(src.match(new RegExp(`const ${name}[\\s\\S]*?\\n\\];`))?.[0] ?? "")
+        .matchAll(/^\s*"([^"]+)",/gm)].map((m) => m[1]);
+    const exact = block("PUBLIC_EXACT_PATHS");
+    const subtree = block("PUBLIC_SUBTREE_PATHS");
+    const listed = [...exact, ...subtree];
     // 🔴 ทิศบวกของ *ตัวสแกน* — regex ที่ไม่ match จะได้ลิสต์ว่าง แล้วเคสนี้เขียวโดยไม่ตรวจอะไร
-    expect(listed.length, "อ่าน `PUBLIC_PATHS` จาก proxy.ts ไม่ได้ — เคสนี้กำลังตรวจความว่างเปล่า")
+    expect(listed.length, "อ่าน `PUBLIC_*_PATHS` จาก proxy.ts ไม่ได้ — เคสนี้กำลังตรวจความว่างเปล่า")
       .toBeGreaterThan(4);
+    // 🔴 และแต่ละใบต้องไม่ว่างเดี่ยว ๆ — รวมกันแล้วเกิน 4 ยังเกิดได้ทั้งที่ใบหนึ่งอ่านไม่ออก
+    expect(exact.length, "ลิสต์ exact อ่านไม่ออก").toBeGreaterThan(0);
+    expect(subtree.length, "ลิสต์ subtree อ่านไม่ออก").toBeGreaterThan(0);
 
     signedOut();
     const missing: string[] = [];
-    for (const path of listed) {
-      // เส้นที่เป็น prefix (เช่น `/invite`) ยิงด้วยลูกของมันจริง ๆ — ตรงกับที่ผู้ใช้เดิน
-      const probe = path === "/invite" ? `${path}/deadbeef` : path;
-      if ((await outcome(proxy(request(probe)))) !== "pass") missing.push(probe);
+    for (const path of subtree) {
+      // เส้น subtree ยิงด้วย *ลูก* ของมันจริง ๆ — ตรงกับที่ผู้ใช้เดิน และเป็นเหตุผลที่มันอยู่ลิสต์นั้น
+      if ((await outcome(proxy(request(`${path}/deadbeef`)))) !== "pass") missing.push(`${path}/deadbeef`);
+    }
+    for (const path of exact) {
+      if ((await outcome(proxy(request(path)))) !== "pass") missing.push(path);
     }
     expect(
       missing,
-      "เส้นใน `PUBLIC_PATHS` ที่ยังถูกด่านกั้นอยู่จริง — ลิสต์กับพฤติกรรมไม่ตรงกัน",
+      "เส้นใน `PUBLIC_*_PATHS` ที่ยังถูกด่านกั้นอยู่จริง — ลิสต์กับพฤติกรรมไม่ตรงกัน",
     ).toEqual([]);
   });
 
