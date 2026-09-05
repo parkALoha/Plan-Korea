@@ -87,7 +87,7 @@ export function InviteLanding({ token }: { token: string }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-full max-w-md flex-col justify-center px-4 py-10 text-content">
+    <main className="mx-auto w-full flex min-h-full max-w-md flex-col justify-center px-4 py-10 text-content">
       <div className="rounded-2xl border border-edge bg-surface-raised p-5 shadow-raised">
         <h1 className="text-lg font-bold">{COPY.inviteLandingTitle}</h1>
 

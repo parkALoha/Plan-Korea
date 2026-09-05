@@ -116,7 +116,7 @@ export default async function AccountPage() {
   const createdAt = thaiDate(user.created_at);
 
   return (
-    <main className="mx-auto max-w-md px-4 pb-28 pt-6 text-content sm:py-10 lg:pb-6">
+    <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 text-content sm:py-10 lg:pb-6">
       {/* 🔴 **ทางออก — วัดแล้วว่าหน้านี้ไม่มีเลยสักทาง** (P7 · 4 ก.ย. 2026)
           `document.querySelectorAll('a')` บนหน้านี้คืน **0 ตัว** และ root layout ไม่ให้ nav อะไรมาเลย
           (`BottomNav` อยู่ที่หน้าทริป ไม่ใช่ที่นี่) ⇒ ผู้ใช้ที่กดไอคอนบัญชีบนแถบหัวเข้ามา
