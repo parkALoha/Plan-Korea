@@ -2,6 +2,7 @@
 
 import { BackHomeLink } from "@/components/BackHomeLink";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
+import { SiteHeader } from "@/components/SiteHeader";
 import { SiteNav } from "@/components/SiteNav";
 import { E5_COPY } from "@/lib/i18n";
 
@@ -27,6 +28,8 @@ import { E5_COPY } from "@/lib/i18n";
 export default function ExplorePage() {
   return (
     <>
+      {/* 🔴 แถบหัวใบกลาง — ผู้ใช้ทักเองว่ามันหายไปเมื่อออกจากหน้าแรก (เหตุผลเต็มที่ `SiteHeader.tsx`) */}
+      <SiteHeader />
       {/**
        * 🔴 **`w-full` บน `<main>` จำเป็น ไม่ใช่ของแถม** — `<body>` เป็น `flex flex-col`
        * ⇒ `<main>` เป็น flex item และ `mx-auto` บน flex item แปลว่า *"หดเหลือเท่าเนื้อหา"*
