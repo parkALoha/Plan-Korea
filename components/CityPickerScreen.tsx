@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BackHomeLink } from "@/components/BackHomeLink";
-import { SiteNav } from "@/components/SiteNav";
+import { BackLink } from "@/components/BackLink";
 import { CoverCard } from "@/components/CoverCard";
 import { NewTripModal } from "@/components/NewTripModal";
 import { MAX_TRIP_DESTINATIONS } from "@/lib/engine/tripLimits";
@@ -195,14 +195,10 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
 
   if (unknownCountry) {
     return (
-      <>
-        <main className="mx-auto w-full max-w-4xl px-4 py-10 pb-24 lg:pb-10">
-          <p className="text-sm">ไม่รู้จักประเทศนี้ — อาจพิมพ์ลิงก์ผิด หรือประเทศนี้ยังไม่เปิดให้ใช้</p>
-          <BackHomeLink className="mt-3" />
-        </main>
-        {/* 🔴 กิ่งนี้ก็ต้องมีแถบเมนู — **หน้าที่ผู้ใช้หลงมาถึง คือหน้าที่เขาต้องการทางออกมากที่สุด** */}
-        <SiteNav />
-      </>
+      <main className="mx-auto w-full max-w-4xl px-4 py-10 pb-24 lg:pb-10">
+        <p className="text-sm">ไม่รู้จักประเทศนี้ — อาจพิมพ์ลิงก์ผิด หรือประเทศนี้ยังไม่เปิดให้ใช้</p>
+        <BackHomeLink className="mt-3" />
+      </main>
     );
   }
 
@@ -219,8 +215,7 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
    * 🎯 ***บั๊กที่อาการขึ้นกับเนื้อหา จะ "หาย" ตอนมีคนเพิ่มเนื้อหา แล้วกลับมาตอนมีคนลบ***
    */
   return (
-    <>
-      <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-24 sm:py-10 lg:pb-10">
+    <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-24 sm:py-10 lg:pb-10">
       {/* 🔴 ปุ่มกลับหน้าหลักใบกลางของ P2 (`9db9199`) — ผู้ใช้สั่งให้ **ทั้งเว็บใช้ตัวเดียวกัน**
           ทั้งคำและรูปร่าง · ของเดิมในเว็บมีสี่แบบไปที่เดียวกัน และใบที่เขาส่งภาพมาบ่นคือใบนี้เอง
           ⚠️ **ห้ามใส่คำเองว่า "หน้าแรก"** — คำที่ผู้ใช้เลือกคือ **"กลับหน้าหลัก"** และมันอยู่ใน `E5_COPY` แล้ว */}
@@ -257,13 +252,9 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
           * ⚠️ เพิ่งชี้ได้วันนี้ — `/explore` ยังไม่มีตอนผมทำรอบแรก (P2 วาง `9423fd7`)
           *    **ระหว่างนั้นผมคง `Dropdown` ไว้แทนที่จะชี้ไป 404**
           */}
-        <Link
-          href="/explore"
-          className="inline-flex items-center gap-1.5 self-start rounded-xl border border-action-outline bg-surface-raised px-3 py-2 text-sm font-medium sm:hidden"
-        >
-          <span aria-hidden>←</span>
+        <BackLink href="/explore" className="self-start sm:hidden">
           เลือกประเทศอื่น
-        </Link>
+        </BackLink>
 
         {/* จอคอม — เห็นทุกประเทศพร้อมกัน */}
         <nav aria-label="เปลี่ยนประเทศ" className="hidden sm:block">
@@ -365,7 +356,19 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
         *    ⇒ ที่เก็บข้ามการสลับประเทศได้ **ต้องมาคู่กับที่แสดงให้เห็นเสมอ** ไม่ใช่อย่างใดอย่างหนึ่ง
         */}
       {selected.length > 0 && (
-        <div className="sticky bottom-0 -mx-4 mt-6 border-t border-line bg-surface-raised/95 px-4 py-3 backdrop-blur">
+        <div
+          /**
+           * 🔴 **`bottom-14` ไม่ใช่ `bottom-0` ต่ำกว่า `lg`** — `SiteNav` เป็น `fixed bottom-0 z-30`
+           * แถบนี้เป็น `sticky` `z-auto` ⇒ ฉบับแรก **ปุ่ม "ถัดไป" ถูกแถบเมนูทับจนกดไม่ได้**
+           * วัดด้วย `document.elementFromPoint()` ที่กึ่งกลางปุ่ม: ได้ `SPAN` ของเมนู **ไม่ใช่ปุ่ม**
+           *
+           * 🎯 ***ปุ่มยัง "มองเห็น" อยู่ครึ่งบน — สกรีนช็อตจึงดูปกติ · สิ่งที่จับได้คือ *การทดสอบว่าใครอยู่บนสุด ณ จุดนั้น*
+           *    ไม่ใช่การดูว่ามันโผล่บนจอไหม***
+           * ⚠️ ผมเป็นคนทำให้พังเอง ตอนเพิ่ม `SiteNav` (`8df0f7a`) — ระหว่างนั้น **flow เลือกหลายเมืองบนมือถือเดินไม่จบ**
+           * · `lg:bottom-0` เพราะตั้งแต่ `lg` ขึ้นไปเมนูไม่ได้ลอยอยู่ล่างจอแล้ว
+           */
+          className="sticky bottom-14 z-10 -mx-4 mt-6 border-t border-line bg-surface-raised/95 px-4 py-3 backdrop-blur lg:bottom-0"
+        >
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold">
               เลือกไว้ {selected.length} เมือง
@@ -429,16 +432,6 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
           }}
         />
       )}
-      </main>
-      {/**
-        * 🔴 หน้านี้ไม่เคยเรนเดอร์ `SiteNav` เลย (P2 ยิงจริง: ลิงก์ในเมนู = **0** ที่นี่ · **3** ที่ `/explore` และ `/`)
-        * ⇒ บนมือถือหน้านี้ **ไม่มีแถบล่างให้กด** ทั้งที่ทุกหน้านอกทริปมี
-        * 🎯 ***ผมสร้างหน้านี้ขึ้นมาใหม่ จึงไม่ได้ "ลืมเอาออก" — ผม **ไม่เคยใส่** และไม่มีอะไรฟ้อง
-        *    เพราะไม่มีด่านไหนถามว่า "หน้าใหม่มีเมนูหรือยัง"***
-        * · หน้านี้อยู่นอกทริป ⇒ ใช้ `SiteNav` ไม่ใช่ `BottomNav` (เหตุผลเต็มที่ `SiteNav.tsx`)
-        * · แท็บ "ไปไหนดี" ไฮไลต์เองเพราะ P2 เปลี่ยน match เป็น `startsWith("/explore")` แล้ว
-        */}
-      <SiteNav />
-    </>
+    </main>
   );
 }
