@@ -79,7 +79,7 @@ export function NewTripModal({
    * เมืองที่เลือก **เรียงตามลำดับที่จะไป** — ส่งต่อเป็น `cityIds` ตรง ๆ
    * 🔴 ลำดับใน array คือ `rank` ที่ฐานเก็บ (`…/destinations/route.ts`) **ห้ามเรียงใหม่ที่นี่**
    */
-  cities: { id: string; name: string }[];
+  cities: { id: string; name: string; country: string | null }[];
   onClose: () => void;
   /**
    * ได้ `tripId` แล้ว — ผู้เรียกเป็นคนพาไปหน้าทริป (โมดัลไม่รู้จัก router)
@@ -182,12 +182,7 @@ export function NewTripModal({
       onClose={onClose}
       eyebrow="ทริปใหม่"
       title={cities.length === 1 ? cityNames[0] : `${cityNames[0]} +${cities.length - 1} เมือง`}
-      subtitle={
-        cities.length > 1
-          ? // 🔴 โชว์ลำดับจริงที่จะถูกบันทึก — ผู้ใช้ต้องเห็นก่อนกดสร้าง ไม่ใช่ไปเจอทีหลังบนหน้าทริป
-            `จะไปตามลำดับ: ${cityNames.join(" → ")}`
-          : "กรอกเท่าที่รู้ตอนนี้ก็ได้ — แก้ทีหลังได้ทั้งหมด"
-      }
+      subtitle="กรอกเท่าที่รู้ตอนนี้ก็ได้ — แก้ทีหลังได้ทั้งหมด"
       footer={
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} className="rounded-xl border border-line px-4 py-2.5 text-sm font-medium">
@@ -205,6 +200,28 @@ export function NewTripModal({
       }
     >
       <div className="flex flex-col gap-5">
+        {/**
+          * 🔴 **รายการเมืองครบทุกใบ พร้อมประเทศกำกับ — ไม่ใช่แค่ตัวเลข "เลือกแล้ว N เมือง"** (P1 ขอ · ถูก)
+          * เลือกข้ามประเทศได้ ⇒ *"เกียวโต → ไทเป"* ไม่ได้บอกว่าใบไหนอยู่ประเทศไหน
+          * และรายการนี้รอดข้ามการสลับประเทศมา ⇒ **บางใบผู้ใช้เลือกไว้ตั้งแต่หน้าก่อน**
+          * 🎯 ***นี่คือหน้าจอสุดท้ายก่อนของลงฐาน — สิ่งที่ไม่ได้แสดงที่นี่ ผู้ใช้จะไปเจอบนหน้าทริป***
+          */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold">
+            จะไปตามลำดับนี้ <span className="font-normal text-ink/50">({cities.length} เมือง)</span>
+          </span>
+          <ol className="flex flex-col gap-1 rounded-xl border border-line bg-surface px-3 py-2">
+            {cities.map((c, i) => (
+              <li key={c.id} className="flex items-baseline gap-2 text-sm">
+                <span className="w-5 shrink-0 text-xs font-semibold text-ink/50">{i + 1}.</span>
+                <span className="font-medium">{c.name}</span>
+                {/* ประเทศเป็น `null` ได้ถ้าคำขอไม่ได้ฝังมา — เว้นว่างดีกว่าเดา */}
+                {c.country && <span className="text-xs text-ink/55">· {c.country}</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+
         {/* ── ชื่อทริป — ไม่บังคับ · โชว์ชื่อที่จะได้จริงเมื่อเว้นว่าง ── */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="new-trip-title" className="text-sm font-semibold">

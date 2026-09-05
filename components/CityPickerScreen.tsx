@@ -330,7 +330,12 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
 
       {modalOpen && selected.length > 0 && (
         <NewTripModal
-          cities={selected.map((c) => ({ id: c.id, name: c.name_th }))}
+          cities={selected.map((c) => ({
+            id: c.id,
+            name: c.name_th,
+            // ฝังมากับ `GET /api/engine/cities` แล้ว (`lib/engine/db.ts:569`) — ยืนยันจากผลจริงของ route
+            country: c.catalog_countries?.name_th ?? null,
+          }))}
           onClose={() => setModalOpen(false)}
           /**
            * 🔴 `warning` = ทริปเกิดแล้วแต่**บันทึกเมืองไม่สำเร็จ** — ส่งต่อไปกับ URL
