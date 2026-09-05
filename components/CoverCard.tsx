@@ -78,6 +78,7 @@ export function CoverCard({
   badge,
   title,
   titleTrailing,
+  linkLabel,
   titleClassName = "text-base font-bold leading-snug sm:text-lg",
   children,
 }: {
@@ -99,6 +100,14 @@ export function CoverCard({
    *    ⇒ เหมาะกับ avatar/ตัวเลข **ไม่เหมาะกับข้อความยาว**
    */
   titleTrailing?: ReactNode;
+  /**
+   * 🔴 **ชื่อสำหรับ *ลิงก์คลุมทั้งใบ* — จำเป็นเมื่อ `title` ไม่ใช่สตริง**
+   * ลิงก์ตัวนั้นไม่มีข้อความข้างในเลย (เนื้ออยู่นอกมัน) ⇒ ชื่อของมันต้องมาจาก `aria-label`
+   * · `title` เป็นสตริง → ใช้ได้เลย · **เป็น JSX (เช่นธง + ชื่อประเทศ) → ดึงไม่ได้ ⇒ ต้องส่งมาเอง**
+   * ⚠️ **ไม่ส่ง = โปรแกรมอ่านหน้าจอประกาศว่า "ลิงก์" เฉย ๆ ไม่บอกว่าไปไหน** และไม่มีอะไรฟ้อง
+   *    (เจอกับการ์ดประเทศ 9 ใบ ตอนเปลี่ยนจากปุ่มเป็นลิงก์ · 5 ก.ย. 2026)
+   */
+  linkLabel?: string;
   titleClassName?: string;
   children?: ReactNode;
 }) {
@@ -148,7 +157,7 @@ export function CoverCard({
       <div className={shell}>
         <Link
           href={href}
-          aria-label={typeof title === "string" ? title : undefined}
+          aria-label={linkLabel ?? (typeof title === "string" ? title : undefined)}
           className="absolute inset-0 z-0"
         />
         <div className="pointer-events-none relative z-10 flex flex-1 flex-col">{body}</div>
