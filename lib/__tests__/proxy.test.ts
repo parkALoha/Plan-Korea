@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import { describe, expect, it, vi } from "vitest";
 
+/** uuid จริงหนึ่งใบสำหรับยิงเส้นที่รับ id — ค่าอะไรก็ได้ ขอแค่ผ่าน `UUID_SEGMENT` ใน `proxy.ts` */
+const SAMPLE_UUID = "6b8bb5bc-99e1-4783-b09e-3073327b7d19";
+
 /**
  * เทสต์ด่าน session ระดับ request — `E1-AC6` (แทนชุดเดิมที่ทดสอบด่าน PIN เมื่อ 25 ส.ค. 2026)
  *
@@ -402,31 +405,92 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
      *    → ทิศบวกข้างล่าง (`> 4`) แดงทันที · ***ทะเบียนที่ผิดได้ ทำงานตามที่มันถูกเขียนมาให้ทำ***
      *    (`TEAM.md §3.4` — *ทะเบียนต้อง **ผิดได้*** ) ⇒ ไม่ต้องมีใครจำว่าต้องมาแก้ไฟล์นี้
      */
+    // 🔴 **ค้นชื่อลิสต์เอง ไม่ระบุชื่อ — แก้ 5 ก.ย. 2026 หลังใบที่สาม (`PUBLIC_ID_CHILD_PATHS`) โผล่**
+    //    ฉบับก่อนระบุ 2 ใบ · ใบที่สามเกิดขึ้นแล้ว **และเคสนี้ยังเขียว** เพราะชื่อเดิมยัง match ครบ
+    //    🎯 ***เปลี่ยนชื่อลิสต์ → เคสนี้แดงเอง · เพิ่มลิสต์ใบใหม่ → ไม่มีอะไรแดง*** ⇒ ต้องค้นเอง
+    //    · 🔴 จุลภาคปิดท้ายเป็นเรื่องของตัวจัดรูป ไม่ใช่ไวยากรณ์ — `,?` จึงจำเป็น (P1 ชี้)
     const block = (name: string) =>
       [...(src.match(new RegExp(`const ${name}[\\s\\S]*?\\n\\];`))?.[0] ?? "")
-        .matchAll(/^\s*"([^"]+)",/gm)].map((m) => m[1]);
-    const exact = block("PUBLIC_EXACT_PATHS");
-    const subtree = block("PUBLIC_SUBTREE_PATHS");
-    const listed = [...exact, ...subtree];
+        .matchAll(/^\s*"([^"]+)"\s*,?\s*$/gm)].map((m) => m[1]);
+    const names = [...src.matchAll(/^const (PUBLIC_[A-Z_]+_PATHS)\s*=/gm)].map((m) => m[1]);
+    const lists = new Map(names.map((n) => [n, block(n)]));
+    const listed = [...lists.values()].flat();
     // 🔴 ทิศบวกของ *ตัวสแกน* — regex ที่ไม่ match จะได้ลิสต์ว่าง แล้วเคสนี้เขียวโดยไม่ตรวจอะไร
     expect(listed.length, "อ่าน `PUBLIC_*_PATHS` จาก proxy.ts ไม่ได้ — เคสนี้กำลังตรวจความว่างเปล่า")
       .toBeGreaterThan(4);
+    expect(names.length, `ค้นเจอลิสต์แค่ ${names.length} ใบ (${names.join(" · ")}) — proxy.ts มีอย่างน้อย 3`)
+      .toBeGreaterThanOrEqual(3);
     // 🔴 และแต่ละใบต้องไม่ว่างเดี่ยว ๆ — รวมกันแล้วเกิน 4 ยังเกิดได้ทั้งที่ใบหนึ่งอ่านไม่ออก
-    expect(exact.length, "ลิสต์ exact อ่านไม่ออก").toBeGreaterThan(0);
-    expect(subtree.length, "ลิสต์ subtree อ่านไม่ออก").toBeGreaterThan(0);
+    for (const [name, items] of lists) {
+      expect(items.length, `ลิสต์ ${name} อ่านไม่ออก (0 รายการ)`).toBeGreaterThan(0);
+    }
 
     signedOut();
     const missing: string[] = [];
-    for (const path of subtree) {
+    /**
+     * 🔴 **ลิสต์ใบใหม่ที่เคสนี้ไม่รู้จักวิธียิง ต้อง *แดง* ไม่ใช่ *ข้าม***
+     * 🎯 ***"ไม่รู้จะยิงยังไง" กับ "ยิงแล้วผ่าน" ต้องไม่อ่านเหมือนกัน — ไม่งั้นลิสต์ใบที่สี่
+     *    จะถูกข้ามเงียบ ๆ ด้วยเครื่องมือที่เพิ่งถูกแก้มาเพื่อไม่ให้ข้ามมันพอดี***
+     */
+    const PROBE: Record<string, (p: string) => string> = {
       // เส้น subtree ยิงด้วย *ลูก* ของมันจริง ๆ — ตรงกับที่ผู้ใช้เดิน และเป็นเหตุผลที่มันอยู่ลิสต์นั้น
-      if ((await outcome(proxy(request(`${path}/deadbeef`)))) !== "pass") missing.push(`${path}/deadbeef`);
-    }
-    for (const path of exact) {
-      if ((await outcome(proxy(request(path)))) !== "pass") missing.push(path);
+      PUBLIC_SUBTREE_PATHS: (p) => `${p}/deadbeef`,
+      PUBLIC_EXACT_PATHS: (p) => p,
+      // `[templateId]` เขียนตรงกับโฟลเดอร์บนดิสก์ — ยิงต้องแทนด้วย uuid จริง ไม่งั้นตัวจับปฏิเสธถูกต้อง
+      PUBLIC_ID_CHILD_PATHS: (p) => p.replace(/\[[^\]]+\]/, SAMPLE_UUID),
+    };
+    const unknownLists = names.filter((n) => !(n in PROBE));
+    expect(
+      unknownLists,
+      "มีลิสต์สาธารณะใบใหม่ที่เคสนี้ไม่รู้จักวิธียิง — เพิ่มวิธียิงใน `PROBE` ก่อน " +
+        "**อย่าปล่อยให้มันถูกข้าม** เพราะการข้ามอ่านเหมือนผ่าน",
+    ).toEqual([]);
+    for (const [name, items] of lists) {
+      for (const path of items) {
+        const probe = PROBE[name](path);
+        if ((await outcome(proxy(request(probe)))) !== "pass") missing.push(probe);
+      }
     }
     expect(
       missing,
       "เส้นใน `PUBLIC_*_PATHS` ที่ยังถูกด่านกั้นอยู่จริง — ลิสต์กับพฤติกรรมไม่ตรงกัน",
+    ).toEqual([]);
+  });
+
+  /**
+   * 🔴 **⑥ ขอบของ `PUBLIC_ID_CHILD_PATHS` — *ทุกใบในลิสต์* ไม่ใช่ใบที่มีคนเขียนเคสให้** (P1 ถาม · P4 ตัดสิน · 5 ก.ย. 2026)
+   *
+   * เคส ⑤ ยิงด้วย uuid จริง ⇒ จับได้เมื่อตัวจับ **แน่นเกิน** (ปฏิเสธ uuid ที่ถูกต้อง)
+   * **แต่ไม่จับเมื่อตัวจับ *หลวม*** — ตัวจับที่รับทุกอย่างก็ยังรับ uuid ผ่าน ⇒ ⑤ เขียว
+   * 🎯 ***ทิศ "หลวมเกิน" วันนี้ปิดด้วยเคสเขียนมือ 2 ใบ ซึ่งผูกกับ `trip-templates` เส้นเดียว —
+   *    ใบที่สองในลิสต์จะไม่มีอะไรบังคับให้ใครเขียนคู่ให้*** ⇒ เคสนี้อนุมานจากลิสต์แทน
+   * · ⚠️ ยังไม่ยืนยันว่า `UUID_SEGMENT` เป็น *uuid ตามสเปก* — ยืนยันแค่ว่ามัน **แยก uuid ออกจากสิ่งที่ไม่ใช่**
+   *   และ **หนึ่งส่วนเท่านั้น** · การตรึงตัว regex เองจะกลายเป็นสำเนาที่ต้องซิงก์ (`§3.3`)
+   */
+  it("🔴 ⑥ ทุกเส้นใน `PUBLIC_ID_CHILD_PATHS` — uuid ผ่าน · ไม่ใช่ uuid ไม่ผ่าน · ลึกกว่าหนึ่งชั้นไม่ผ่าน", async () => {
+    const src = readFileSync(new URL("../../proxy.ts", import.meta.url), "utf8");
+    const items = [...(src.match(/const PUBLIC_ID_CHILD_PATHS[\s\S]*?\n\];/)?.[0] ?? "")
+      .matchAll(/^\s*"([^"]+)"\s*,?\s*$/gm)].map((m) => m[1]);
+    expect(items.length, "อ่าน `PUBLIC_ID_CHILD_PATHS` ไม่ได้ — เคสนี้กำลังวนเซตว่าง").toBeGreaterThan(0);
+
+    signedOut();
+    const wrong: string[] = [];
+    for (const item of items) {
+      const base = item.slice(0, item.lastIndexOf("/"));
+      const ok = `${base}/${SAMPLE_UUID}`;
+      if ((await outcome(proxy(request(ok)))) !== "pass") wrong.push(`ควรผ่านแต่ไม่ผ่าน: ${ok}`);
+      // 🔴 **`base` เปล่า ๆ ไม่อยู่ในเกณฑ์นี้** — ฉบับแรกของผมใส่ไว้แล้วแดงบนทรีสะอาด:
+      //    `/api/engine/trip-templates` เป็นสมาชิกของ `PUBLIC_EXACT_PATHS` อยู่แล้ว (ลิสต์ทริปแนะนำ)
+      //    ⇒ **"base ต้องไม่ผ่าน" ไม่ใช่คุณสมบัติของลิสต์นี้** · ลิสต์นี้พูดถึง *ส่วนที่เป็น id* เท่านั้น
+      for (const bad of [`${base}/not-a-uuid`, `${base}/${SAMPLE_UUID}/anything`]) {
+        if ((await outcome(proxy(request(bad)))) === "pass") wrong.push(`ไม่ควรผ่านแต่ผ่าน: ${bad}`);
+      }
+    }
+    expect(
+      wrong,
+      "ตัวจับของ `PUBLIC_ID_CHILD_PATHS` ไม่ได้เปิด *หนึ่งส่วนที่เป็น uuid* เป๊ะ\n" +
+        "  → หลวมไป: `<base>/อะไรก็ได้` หรือ `<base>/<uuid>/…` หลุดเข้ามา — นั่นคือช่องที่ลิสต์นี้ถูกสร้างมาเพื่อไม่ให้มี\n" +
+        "  → แน่นไป: uuid จริงไม่ผ่าน — หน้าที่ผู้ใช้กดจะเด้ง `/login`",
     ).toEqual([]);
   });
 
