@@ -5544,6 +5544,159 @@ describe.runIf(hasCreds)("RLS matrix (สด)", () => {
     });
   });
 
+  /**
+   * 🔴 **`E5-tbl` — ครึ่ง *ตาราง* ของทะเบียน `§3.5` · คู่ของ `E5-fn` (P4 · 5 ก.ย. 2026)**
+   *
+   * `E5-fn` ครอบ `grant execute` บนฟังก์ชัน · ใบนี้ครอบ `grant` บน **ตาราง** ให้ `service_role`
+   * 🔴 **และผมเขียนกำกับไว้ที่ `E5-fn` เองว่าห้ามอ่านว่าใบเดียวครอบทั้งทะเบียน** — นี่คือใบที่ปิดอีกครึ่ง
+   *
+   * ## ทำไมต้องมี — **ทะเบียนใบนี้ไม่เคย *ผิด* มันแค่ *ไม่ครบ* และรูปนั้นอันตรายกว่า**
+   * วัดเมื่อ 5 ก.ย. 2026 (P4 วัด · P1 แก้ทะเบียนตาม):
+   * ```
+   * ข้อที่ทะเบียน **มี** (2 · 3 · 4 · 5)   เทียบ ACL จริง   **0 ผิด**
+   * ตารางที่มีสิทธิ์จริง แต่ทะเบียนไม่พูดถึง   **5 ใบ**   (catalog_place_names · catalog_places
+   *                                            · catalog_country_contacts · catalog_place_access
+   *                                            · catalog_place_descriptions)
+   * ```
+   * 🎯 ***ทุกข้อที่คนเปิดอ่านจะถูกเสมอ ⇒ ทะเบียนสร้างความเชื่อถือได้เต็มที่โดยไม่เคยถูกทดสอบ***
+   * · 📌 เคสจริงที่ปิดเรื่อง: P1 อ้าง "ข้อ 3" เพื่อบอกว่า `service_role` เขียน `catalog_place_names` ได้
+   *   **แล้วมันถูก** ทั้งที่ข้อ 3 ตอนนั้นไม่ได้พูดถึงตารางนั้นเลย
+   *   ⇒ ***การอ้างทะเบียนที่ไม่ครบ แล้วได้คำตอบที่ถูก คือสิ่งที่ทำให้มันอยู่รอด 11 วัน***
+   *
+   * ## 🔴 ทิศ — **ฐาน → ไฟล์** ไม่ใช่ ฐาน → ทะเบียนในเอกสาร · และเหตุผลเป็นเรื่องโครงสร้าง ไม่ใช่รสนิยม
+   * ```
+   * เนื้อของ `TEAM.md` อยู่ในทรี `main` ใบเดียวในโลก · ทรี `platform` มีแต่ **ป้ายชี้**
+   * ⇒ เทสต์ที่รันบน branch `platform` (และใน CI) **อ่านทะเบียนไม่ได้เลยตามนิยาม**
+   * ```
+   * 🔴 ⇒ **ช่องว่าง "เอกสารไม่ตรงกับไฟล์" ปิดด้วยด่านจากทรีนี้ไม่ได้** — เขียนไว้ให้ชัดแทนที่จะแกล้งว่าครอบ
+   * · ✅ สิ่งที่ปิดได้จริงคือ **"ฐานมีสิทธิ์ที่ไม่มีบรรทัดไหนในทรีสั่ง"** — dashboard · extension · คนยิงมือ
+   * · ⚠️ และทิศกลับ (**ไฟล์สั่ง แต่ฐานไม่มี**) จงใจไม่ assert: `rls_force_probe` เป็นตัวอย่างที่ทำให้มันแดงผิด —
+   *   ตารางถูก `drop` ไปแล้ว แต่บรรทัด `grant … to service_role` ยังอยู่ในไฟล์ที่รันไปแล้ว **และนั่นถูกต้อง**
+   *
+   * ## ⚠️ `MAINTAIN` · `REFERENCES` · `TRIGGER` — **การตัดออกเป็นการตัดสินใจ ไม่ใช่ข้อเท็จจริง**
+   * Supabase แจกสามตัวนี้ให้ `service_role` เองตอน `create table` ⇒ ไม่มีบรรทัดไหนในไฟล์สั่ง
+   * ⇒ ถ้าไม่ตัด ด่านนี้จะแดงใส่ **ทุกตารางในระบบ** ตั้งแต่วันแรก (บทเรียน *`grant` เป็นการ **เพิ่ม** ไม่ใช่ **กำหนด***)
+   * 🔴 **แต่การตัดคือการเลือกไม่ตรวจ** — ใครเห็นว่าสามตัวนี้ควรถูกจดในทะเบียนด้วย **เลขจะเปลี่ยน และเขาไม่ผิด**
+   * · ✅ `TRUNCATE` **ไม่อยู่ในชุดที่ตัด** โดยตั้งใจ — มันข้าม RLS · ไม่ยิง trigger · ไม่เหลือ tombstone
+   *   และมีด่านของ P7 เฝ้าอยู่แล้วอีกใบ (ใบนี้จับซ้ำจากอีกทิศ ไม่ใช่แทนกัน)
+   */
+  describe("🔴 E5-tbl — สิทธิ์ตารางของ `service_role` ต้องมีบรรทัดในทรีรองรับทุกตัว", () => {
+    const ROLE = "service_role";
+    /** สิทธิ์ที่ Supabase แจกเองตอน `create table` — ไม่มีไฟล์ไหนสั่ง และไม่ใช่ของที่ทะเบียนจด */
+    const AMBIENT = ["MAINTAIN", "REFERENCES", "TRIGGER"];
+    /** verb ที่ทะเบียนพูดถึงจริง — `TRUNCATE` อยู่ในนี้โดยตั้งใจ */
+    const REAL = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"];
+
+    /**
+     * สิทธิ์ระดับ **ตาราง** ที่ไฟล์ในทรีสั่งให้ `service_role` — เดิน `grant`/`revoke` ตามลำดับที่รันจริง
+     * · ข้าม **column grant** (`grant update (published_template_at) on trips`) เพราะ `table_exposure`
+     *   รายงานมันเป็นคนละ `door` ⇒ เทียบกันคนละชั้น (ทะเบียนข้อ 8 มีด่าน `P-63` เฝ้าอยู่แล้ว)
+     * · `all` ขยายเป็น 5 verb — ถึงแม้ `§3.5` จะห้าม `grant all` ก็ต้องอ่านออกถ้ามีคนเขียน
+     */
+    const tableGrantsInTree = (): Map<string, Set<string>> => {
+      const out = new Map<string, Set<string>>();
+      const EVENT = /(grant|revoke)\s+([a-z, ]+?)\s+on\s+(?:table\s+)?public\.(\w+)\s*(?:to|from)\s+([^;]+);/gi;
+      for (const f of migrationFiles) {
+        const sql = stripComments(readFileSync(f, "utf8"));
+        for (const m of sql.matchAll(EVENT)) {
+          if (!m[4].toLowerCase().split(",").map((s) => s.trim()).includes(ROLE)) continue;
+          const t = m[3].toLowerCase();
+          const set = out.get(t) ?? new Set<string>();
+          for (const raw of m[2].toLowerCase().split(",")) {
+            const v = raw.trim().toUpperCase();
+            for (const one of v === "ALL" ? REAL : [v]) {
+              if (m[1].toLowerCase() === "grant") set.add(one);
+              else set.delete(one);
+            }
+          }
+          out.set(t, set);
+        }
+      }
+      return out;
+    };
+
+    it("🔴 เคสควบคุม — จักรวาลต้องไม่ว่าง และตัวกรอง `AMBIENT` ต้องไม่กลืน verb จริง", async () => {
+      // ① ตัวกรองต้องไม่ทับ verb ที่เราตั้งใจตรวจ — ถ้าทับเมื่อไหร่ ด่านข้างล่างจะเงียบเป็นวงกว้าง
+      expect(
+        AMBIENT.filter((v) => REAL.includes(v)),
+        "`AMBIENT` กับ `REAL` ทับกัน — ตัวกรองกำลังกลืนสิทธิ์ที่ทะเบียนต้องจด",
+      ).toEqual([]);
+
+      const tables = tablesFromMigrations();
+      expect(tables.length, "ดึงชื่อตารางจากไฟล์ migration ไม่ได้เลย").toBeGreaterThan(15);
+
+      const rows = await exposure(tables);
+      expect(
+        rows.filter((r) => r.door === "MISSING").map((r) => r.table_name),
+        "มีตารางที่อยู่ในไฟล์แต่ไม่มีในฐาน — ด่านข้างล่างกำลังตรวจของที่ไม่มีอยู่",
+      ).toEqual([]);
+
+      // ② ฐานต้องมีแถวของ `service_role` จริง — ไม่งั้น "ไม่มีอะไรเกิน" แปลว่า "ไม่ได้มอง"
+      const trips = rows
+        .filter((r) => r.door === "grant" && r.grantee === ROLE && r.table_name === "trips")
+        .map((r) => r.detail);
+      expect(
+        REAL.filter((v) => trips.includes(v)).sort(),
+        "ไม่เห็นสิทธิ์ของ `service_role` บน `trips` — ทะเบียนข้อ 2 บอกว่าต้องมี `select, delete`",
+      ).toEqual(["DELETE", "SELECT"]);
+
+      // ③ ตัวแยกจากไฟล์ต้องอ่านออก — ถ้าคืนแมปว่าง เคสข้างล่างจะแดงทั้งแผงโดยชี้ผิดทาง
+      expect(
+        [...(tableGrantsInTree().get("trips") ?? [])].sort(),
+        "แยก `grant … on public.trips to service_role` จากไฟล์ไม่ได้ — regex พัง ไม่ใช่ฐานผิด",
+      ).toEqual(["DELETE", "SELECT"]);
+    });
+
+    it("🔴 ทุกสิทธิ์ตารางของ `service_role` บนฐาน ต้องมีบรรทัดในทรีสั่ง", async () => {
+      /**
+       * 🔴 `service_role` มี **BYPASSRLS** ⇒ `grant` คือด่านสุดท้ายที่เหลือ ไม่มี policy มาช่วยอีกชั้น
+       * ⇒ สิทธิ์ที่โผล่มาโดยไม่มีใครเขียนบรรทัดสั่ง คือการขยายอำนาจที่ไม่มีใครตัดสินใจ
+       */
+      const tables = tablesFromMigrations();
+      const rows = await exposure(tables);
+      const tree = tableGrantsInTree();
+
+      const extra: string[] = [];
+      const seen: string[] = [];
+      for (const t of tables) {
+        const declared = tree.get(t) ?? new Set<string>();
+        const liveVerbs = rows
+          .filter((r) => r.door === "grant" && r.grantee === ROLE && r.table_name === t)
+          .map((r) => r.detail)
+          .filter((v) => !AMBIENT.includes(v));
+        for (const v of liveVerbs.sort()) {
+          seen.push(`${t} → ${v}`);
+          if (!declared.has(v)) extra.push(`${t} → ${v}`);
+        }
+      }
+
+      /**
+       * 🔴 **ทิศบวกต้องมาจาก *จักรวาลเดียวกับที่ assert ข้างล่างใช้* — และผมรู้ข้อนี้เพราะมัลแตนต์รอด**
+       * ฉบับแรกวางเคสควบคุมไว้ใน `it` อีกใบ ซึ่งอ่านฐานด้วย filter ของตัวเอง
+       * ⇒ มัลแตนต์ที่เปลี่ยน `ROLE` **เฉพาะในลูปนี้** ทำให้ `extra` ว่างเปล่า **แล้วทั้งสองเคสยังเขียว**
+       * 🎯 ***เคสควบคุมที่อยู่คนละ `it` รับประกันได้แค่ว่า "ฐานมีข้อมูล" — ไม่ได้รับประกันว่า
+       *    *ตัวที่กำลัง assert* มองเห็นข้อมูลนั้น*** (`§3.4`: ทิศบวกต้องมาจากเส้นทางเดียวกัน)
+       * · วัดได้ 5 ก.ย. 2026: 55 คู่ (ตาราง → verb) · เกณฑ์ 30 เผื่อไว้ครึ่งหนึ่ง
+       */
+      expect(
+        seen.length,
+        "ลูปข้างบนไม่เห็นสิทธิ์ของ `service_role` เลยสักคู่ — `extra` ที่ว่างจึงไม่ได้แปลว่าไม่มีอะไรเกิน",
+      ).toBeGreaterThan(30);
+
+      expect(
+        extra,
+        "`service_role` มีสิทธิ์บนตารางที่ **ไม่มีบรรทัดไหนในทรีสั่ง**\n" +
+          "  🔴 role นี้ข้าม RLS ⇒ ไม่มี policy มากรองให้อีกชั้น · `grant` คือด่านสุดท้าย\n" +
+          "  สาเหตุที่เป็นไปได้:\n" +
+          "     ① `grant` ที่กดจาก dashboard หรือยิงมือบนฐานร่วม — **ไม่มีไฟล์ไหนอธิบายมันได้**\n" +
+          "     ② สิทธิ์ที่ Supabase แจกเพิ่มตอน `create table` นอกเหนือจาก MAINTAIN/REFERENCES/TRIGGER\n" +
+          "     ③ `grant … on all tables in schema public` ซึ่งตัวแยกจากไฟล์ไม่นับให้ (ตั้งใจ)\n" +
+          "  ⇒ ถ้าตั้งใจให้มี: เขียน `grant` ลง migration **แล้วมันจะเขียวเอง** และ **จดใน `TEAM.md §3.5` ด้วย**\n" +
+          "     🔴 ด่านนี้เห็นแค่ *ไฟล์* — มันบังคับให้ทะเบียนในเอกสารตรงไม่ได้ (`TEAM.md` อยู่คนละทรี)",
+      ).toEqual([]);
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   describe("🔴 D78 — ขอบเขตของ `preserve_authorship` ต้องมีคนตัดสิน ไม่ใช่ผลข้างเคียงของการตั้งชื่อ", () => {
     /**
