@@ -28,7 +28,15 @@ OUT="$DIR/$NAME.jpg"
 [ -f "$OUT" ] && echo "⚠️  มีไฟล์อยู่แล้ว จะเขียนทับ: $COUNTRY/$NAME.jpg"
 AGE=$(( $(date +%s) - $(stat -f%m "$SRC") ))
 [ "$AGE" -lt 300 ] || echo "⚠️  ไฟล์ต้นทางเก่า ${AGE}s — แน่ใจว่าเป็นใบที่เพิ่งเจนใช่ไหม"
-sips -Z 1200 "$SRC" --out "$OUT" >/dev/null
+# 🔴 **ย่อเท่านั้น ไม่ขยาย** — `sips -Z` ขยายภาพที่เล็กกว่าเป้าด้วย
+#    วิธี "ดาวน์โหลดโดยตั้งชื่อเอง" ได้ภาพจาก DOM ซึ่งกว้าง **1024** ไม่ใช่ 3584
+#    ⇒ `-Z 1200` จะอัปสเกล 1024→1200 = เบลอโดยไม่ได้อะไรกลับมา (การ์ดกว้างจริง 280px)
+SRCW=$(sips -g pixelWidth "$SRC" | awk '/pixelWidth/{print $2}')
+if [ "${SRCW:-0}" -gt 1200 ]; then
+  sips -Z 1200 "$SRC" --out "$OUT" >/dev/null
+else
+  cp "$SRC" "$OUT"
+fi
 W=$(sips -g pixelWidth "$OUT" | awk '/pixelWidth/{print $2}')
 H=$(sips -g pixelHeight "$OUT" | awk '/pixelHeight/{print $2}')
 SZ=$(stat -f%z "$OUT")
