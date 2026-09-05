@@ -1010,11 +1010,26 @@ b="$(mkworktree)"
 wiring "git worktree" "$b/wt"
 git -C "$b/up" worktree remove --force "$b/wt" >/dev/null 2>&1; rm -rf "$b"
 
-# ── ด่าน "ภาพปกต้องมาเป็นคู่" (P5 เสนอ · P6 ทำเป็นด่าน 6 ก.ย. 2026) ──────────────
+# ── ด่าน "ภาพปกต้องมาเป็นคู่" (P5 เสนอ · P6 ทำเป็นด่าน 6 ก.ย. 2026 · ขนาด P3 จับ 6 ก.ย. 2026) ──
 # 🔴 "ทรีสะอาดต้องผ่าน" ข้างบนใช้ `mk()` ซึ่งไม่มี public/catalog เลย — นั่นคือเคส
 #    "ไม่มีโฟลเดอร์ catalog เลย" อยู่แล้วโดยไม่ต้องเขียนซ้ำ · ที่นี่เติมอีก 4 เคสที่เหลือ
+#
+# 🔴 **ต้องมี JPEG จริงที่ parser อ่านความกว้างได้ ไม่ใช่ `echo x`** ตั้งแต่เพิ่ม check-cover-pairs.py
+#    (P3 จับ 6 ก.ย. 2026) — ไฟล์ปลอมทำให้ตัวตรวจขนาดอ่านไม่ออกแล้วนับเป็นของผิดเสมอ ต่อให้คู่ไฟล์
+#    ถูกต้องทุกอย่าง ⇒ เคส "คู่ครบต้องผ่าน" จะแดงผิดที่ ถ้าไม่สร้างไฟล์ให้เป็น JPEG จริง
+#    **ห้ามใช้ `sips`** — ไฟล์นี้รันบน `ubuntu-latest` ด้วย (`ci.yml:74`) ต้องพกได้ทั้งสอง OS
+mkjpg() {  # mkjpg <path> <width> <height> — สร้าง JPEG จริงที่มีแค่ SOF marker พอให้ parser อ่านได้
+  python3 -c "
+import struct, sys
+path, w, h = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+sof = b'\xff\xc0' + struct.pack('>H', 11) + bytes([8]) + struct.pack('>H', h) + struct.pack('>H', w) + b'\x01\x01\x11\x00'
+open(path, 'wb').write(b'\xff\xd8' + sof + b'\xff\xd9')
+" "$1" "$2" "$3"
+}
+
 d="$(mk)"; mkdir -p "$d/public/catalog/cn"
-echo x > "$d/public/catalog/cn/beijing.jpg"; echo x > "$d/public/catalog/cn/beijing-sm.jpg"
+mkjpg "$d/public/catalog/cn/beijing.jpg" 800 446
+mkjpg "$d/public/catalog/cn/beijing-sm.jpg" 400 223
 check "ภาพปก: คู่ครบต้องผ่าน" pass "$d"
 
 d="$(mk)"; mkdir -p "$d/public/catalog/cn"
@@ -1027,5 +1042,27 @@ check "ภาพปก: ใบเล็กกำพร้าต้องแด�
 
 d="$(mk)"; mkdir -p "$d/public/catalog/cn"
 check "ภาพปก: โฟลเดอร์ประเทศว่างต้องผ่าน" pass "$d"
+
+# ── ด่านขนาดภาพปก (check-cover-pairs.py) — เคสที่ P3 พบว่าฉบับแรกไม่ตรวจเลย ─────
+# 🔴 **เคสจริงที่ P3 ยิงแล้วหลุด**: ก๊อปใบใหญ่ 800px ไปเป็น -sm.jpg ตรง ๆ ชื่อถูก ขนาดยังเป็น
+#    800px เดิม — ต้องแดง ไม่งั้นด่านนี้ตรวจแค่ "มีไฟล์ไหม" ไม่ตรวจ "เล็กจริงไหม" ตามที่หัวคอมเมนต์อ้าง
+d="$(mk)"; mkdir -p "$d/public/catalog/zz"
+mkjpg "$d/public/catalog/zz/a.jpg" 800 446
+mkjpg "$d/public/catalog/zz/a-sm.jpg" 800 446
+check "ภาพปก: ใบเล็กที่จริงคือสำเนาใบใหญ่ (ขนาดเท่ากัน) ต้องแดง" fail "$d"
+
+# ใบใหญ่เกินเพดาน 800px ต้องแดง แม้ใบเล็กจะถูกต้อง
+d="$(mk)"; mkdir -p "$d/public/catalog/zz"
+mkjpg "$d/public/catalog/zz/a.jpg" 1200 669
+mkjpg "$d/public/catalog/zz/a-sm.jpg" 400 223
+check "ภาพปก: ใบใหญ่เกิน 800px ต้องแดง" fail "$d"
+
+# 🔴 เคสควบคุมฝั่งบวกที่สำคัญที่สุด — `save-cover.sh` ย่อเท่านั้น ไม่ขยาย ⇒ ต้นฉบับที่แคบกว่า
+#    400px อยู่แล้ว จะได้ใบเล็ก = ใบใหญ่ **โดยถูกต้อง** ถ้าเคสนี้แดง แปลว่าด่านกว้างเกินจนบล็อก
+#    สถานที่ที่ Gemini เจนภาพมาแคบ ซึ่งเป็นของจริงที่เกิดได้ ไม่ใช่ของสมมติ
+d="$(mk)"; mkdir -p "$d/public/catalog/zz"
+mkjpg "$d/public/catalog/zz/a.jpg" 300 167
+mkjpg "$d/public/catalog/zz/a-sm.jpg" 300 167
+check "ภาพปก: ต้นฉบับแคบกว่า 400px อยู่แล้ว (ใบเล็ก=ใบใหญ่) ต้องผ่าน" pass "$d"
 
 exit $rc
