@@ -12,6 +12,7 @@ import { Modal } from "@/components/Modal";
 import { SiteNav } from "@/components/SiteNav";
 import { TripInvitePanel } from "@/components/TripInvitePanel";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useDarkTheme } from "@/hooks/useDarkTheme";
 import { useMounted } from "@/hooks/useMounted";
 import { useSystemMode } from "@/hooks/useSystemMode";
 import { tripDateRangeLabel } from "@/lib/tripDateRange";
@@ -721,6 +722,16 @@ export function HomeScreen() {
   const [seedCities, setSeedCities] = useState<CityOption[]>([]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabKey>("all");
+  /**
+   * 🔴 **หน้าแรกต้องรู้จักธีมมืดด้วย** (P1 เจอ 5 ก.ย. 2026 · โซนผม)
+   * `/today` `/summary` `/login` `/account` เรียก `useDarkTheme()` กันหมด — **หน้าแรกไม่เรียก**
+   * ⇒ กดสลับเป็นมืดที่ `/account` แล้วกด *"กลับหน้าหลัก"* ⇒ **เด้งกลับเป็นสว่างทันที**
+   * 🎯 ***ผู้ใช้ตั้งค่าที่ระดับ "คน" แล้วมันหายไปเมื่อเดินไปอีกหน้า — อ่านเหมือนตั้งค่าไม่ติด ไม่ใช่เหมือนหน้านี้ยังไม่รองรับ***
+   * · hook นี้อ่านค่าจาก `localStorage` ตัวเดียวกันทุกหน้า ⇒ **เรียกเฉย ๆ ก็พอ ไม่ต้องมีปุ่มสลับที่นี่**
+   *   (ปุ่มอยู่ที่หน้าบัญชี ซึ่งเป็นบ้านของการตั้งค่าที่ผูกกับ *คน* ไม่ใช่ *ทริป*)
+   */
+  useDarkTheme();
+
   /** โมดัลค้นหาของจอโทรศัพท์ — จอ `sm` ขึ้นไปใช้ช่องในแถบหัวแทน ไม่เคยเปิดตัวนี้ */
   const [searchOpen, setSearchOpen] = useState(false);
   /**
