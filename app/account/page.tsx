@@ -1,5 +1,4 @@
 import { BackHomeLink } from "@/components/BackHomeLink";
-import { SiteHeader } from "@/components/SiteHeader";
 import { SiteNav } from "@/components/SiteNav";
 import { requireUser } from "@/lib/auth/server";
 import { Card } from "@/components/ui/Card";
@@ -116,13 +115,10 @@ export default async function AccountPage() {
   const lastSignIn = thaiDate(user.last_sign_in_at);
   const createdAt = thaiDate(user.created_at);
 
+  /* 🔴 **เคยมี `SiteHeader` เหนือ `<main>` นี้อยู่ 1 ชั่วโมง — ผู้ใช้สั่งถอดเอง** (*"เอาออก มันรก"*)
+     เขาเห็นทั้งแบบมีและไม่มีแล้ว **ห้ามเอากลับมาโดยไม่มีคำสั่งใหม่** */
   return (
-    <>
-      {/* 🔴 **แถบหัวใบกลาง** — ผู้ใช้ทักเองว่ามันหายไปเมื่อออกจากหน้าแรก (5 ก.ย. 2026)
-          หน้านี้เป็นหนึ่งในหน้าที่ไม่เคยมี ⇒ ตัวตนของเว็บหายทั้งแถบตอนกดเข้ามา
-          เหตุผลเต็มและข้อจำกัด (ทำไมไม่ทำด่านบังคับ) อยู่ที่ `components/SiteHeader.tsx` */}
-      <SiteHeader />
-      <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 text-content sm:py-10 lg:pb-6">
+    <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 text-content sm:py-10 lg:pb-6">
       {/* 🔴 **ทางออก — วัดแล้วว่าหน้านี้ไม่มีเลยสักทาง** (P7 · 4 ก.ย. 2026)
           `document.querySelectorAll('a')` บนหน้านี้คืน **0 ตัว** และ root layout ไม่ให้ nav อะไรมาเลย
           (`BottomNav` อยู่ที่หน้าทริป ไม่ใช่ที่นี่) ⇒ ผู้ใช้ที่กดไอคอนบัญชีบนแถบหัวเข้ามา
@@ -224,9 +220,8 @@ export default async function AccountPage() {
 
       <CopyUserId userId={user.id} />
       {/* แถบเมนูระดับเว็บ — หน้านี้อยู่นอกทริป จึงไม่มี `BottomNav` (เหตุผลเต็มอยู่ที่ `SiteNav.tsx`) */}
-        <SiteNav />
-      </main>
-    </>
+      <SiteNav />
+    </main>
   );
 }
 

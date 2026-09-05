@@ -123,10 +123,22 @@ export function DestinationExplorer() {
        *    ⚠️ `cityCount`/`sampleCities` ยังมาจาก API อยู่ **ไม่ได้ถอดฝั่งข้อมูล** — ถ้าวันหนึ่งอยากได้กลับ
        *       ของยังอยู่ครบ · ถ้าแน่ใจว่าไม่ใช้แล้ว ค่อยถอดฝั่ง API เป็นอีกใบ (โซน P1)
        */}
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
+      {/**
+       * 🔴 **มือถือได้ *สองคอลัมน์* — การ์ดประเทศมีแค่ธงกับชื่อ มันไม่ต้องการความกว้าง 17rem**
+       * (ผู้ใช้สั่ง *"ปรับปรุงหน้านั้นให้ดี"* หลังสั่งถอดแถบหัวออก · 5 ก.ย. 2026)
+       * ```
+       * ก่อน  minmax(17rem)  ที่ 375px = **1 คอลัมน์** · การ์ดสูง ~215px ⇒ เห็นทีละ 1.5 ใบ · 9 ประเทศ = เลื่อน 3 จอ
+       * หลัง  minmax(10rem)  ที่ 375px = **2 คอลัมน์** ⇒ เห็น 4 ใบต่อจอ · เลื่อนจอเดียวจบ
+       * ```
+       * 🎯 ***หน้านี้เป็น "เลือกจากทั้งหมด" — ของที่ต้องเทียบกัน ต้องเห็นพร้อมกัน · การ์ดใหญ่ทำให้เทียบไม่ได้***
+       * ⚠️ **ไม่ได้เปลี่ยนตัวการ์ด** — ยังเป็น `CoverCard` ใบเดียวกับการ์ดทริปทุกประการ (ผู้ใช้สั่งไว้ว่าทั้งเว็บต้องใบเดียว)
+       *    ที่เปลี่ยนคือ **ความกว้างของช่องในกริด** ซึ่งเป็นของหน้า ไม่ใช่ของการ์ด
+       * · `sm:` ขึ้นไปกลับไปใช้ 17rem เท่าหน้าแรก ⇒ **จอคอมไม่เปลี่ยนอะไรเลย**
+       */}
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(10rem,1fr))] sm:[grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
         {countries.status === "loading"
           ? Array.from({ length: 9 }, (_, i) => (
-              <div key={i} className="h-36 animate-pulse rounded-2xl bg-surface-soft" />
+              <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface-soft sm:h-36" />
             ))
           : countries.items.map((c) => (
               <CoverCard
@@ -165,7 +177,7 @@ export function DestinationExplorer() {
                  *   **ไม่ได้ทำให้การ์ดสูงขึ้น** เพราะความสูงถูกตรึงด้วย `min-h` แล้ว
                  * · `truncate` ย้ายไปอยู่ span ชั้นใน — h3 กลายเป็น flex ⇒ ถ้าปล่อยไว้ที่ h3 มันจะไม่ตัดคำ
                  */
-                titleClassName="flex min-h-[4.125rem] items-center text-base font-bold sm:text-lg"
+                titleClassName="flex min-h-[2.75rem] items-center text-sm font-bold sm:min-h-[4.125rem] sm:text-lg"
                 title={
                   <>
                     <span aria-hidden className="mr-2 shrink-0">
