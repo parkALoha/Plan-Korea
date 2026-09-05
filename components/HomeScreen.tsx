@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CardBadge, CoverCard } from "@/components/CoverCard";
+import { CoverImage } from "@/components/CoverImage";
 import { CreateTripForm } from "@/components/CreateTripForm";
 import { DestinationExplorer } from "@/components/DestinationExplorer";
 import type { CityOption } from "@/components/TripDestinationPicker";
@@ -63,29 +64,23 @@ type TripListItem = {
  */
 function TripCoverImage({ destinations }: { destinations: TripDestination[] }) {
   const first = destinations[0] as TripDestination | undefined;
-  const [stage, setStage] = useState<"city" | "country" | "gradient">(first ? "city" : "gradient");
-
-  if (stage === "gradient" || !first) {
-    // fallback ของรูปปก — ไม่มีจุดหมาย หรือไล่ทั้งรูปเมือง/ประเทศแล้วไม่เจอสักไฟล์
-    return (
-      <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-pine to-maple text-4xl text-cream">
-        🗺️
-      </div>
-    );
-  }
-
-  // 🔴 .svg ไม่ใช่ .jpg ตามที่ P1 บอกไว้ตอนแรก — เจอไฟล์จริงของผู้ใช้ที่ public/covers/country-{kr,vn,th}.svg
-  // อยู่แล้วระหว่างทดสอบ (ยังไม่ commit ไม่มีใน git log) 3 ไฟล์ตรงกับ 3 ประเทศที่ P1 ทายไว้เป๊ะ — ใช้ตามที่
-  // เจอจริงแทนสเปกเดิม ต้องแจ้ง P1 ยืนยันอีกที เผื่อรูปเมืองจริงจะเป็นคนละนามสกุล
-  const src = stage === "city" ? `/covers/city-${first.slug}.svg` : `/covers/country-${first.countryId}.svg`;
-
+  /**
+   * 🔴 **`sizes` วัดจากกริดของหน้านี้เอง** (`#trip-grid` · `minmax(17rem,1fr)` ไม่มี override มือถือ)
+   * ```
+   *  375px  การ์ด 343px (91.5vw)   หนึ่งคอลัมน์เต็มความกว้าง
+   *  768px  การ์ด **362px**         ยังสองคอลัมน์
+   * 1440px  การ์ด 272px            สามคอลัมน์ขึ้นไป
+   * ```
+   * 🎯 ***จุดพลิกอยู่คนละที่กับกริดของ `/explore` — ห้ามลอกค่าข้ามหน้า*** (ทั้งสองหน้าวัดเองแล้วทั้งคู่)
+   * · ขอเกินเล็กน้อยที่ `sm`–`lg` โดยตั้งใจ: *ขอเกิน = เปลืองไบต์ · ขอขาด = ภาพนุ่ม*
+   */
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง ไม่ใช่รูปผู้ใช้อัปโหลด
-    <img
-      src={src}
-      alt=""
+    <CoverImage
+      countryId={first?.countryId}
+      slug={first?.slug}
+      sizes="(max-width: 639px) 92vw, (max-width: 1023px) 365px, 280px"
       className="aspect-video w-full object-cover"
-      onError={() => setStage((s) => (s === "city" ? "country" : "gradient"))}
+      emoji="🗺️"
     />
   );
 }

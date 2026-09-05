@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CoverImage } from "@/components/CoverImage";
 import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { E5_COPY } from "@/lib/i18n";
 
@@ -55,27 +56,20 @@ type ListState<T> = { status: "loading" } | { status: "ready"; items: T[] } | { 
  * **โตเกียว → ไม่มี `city-tokyo.svg` (404) จึงตกไป `country-jp.svg` (ชั้นประเทศ)**
  */
 function DestinationThumb({ citySlug, countryId }: { citySlug: string | null; countryId: string }) {
-  const [stage, setStage] = useState<"city" | "country" | "fallback">(citySlug ? "city" : "country");
-  const base = "h-10 w-10 shrink-0 overflow-hidden rounded-lg";
-
-  if (stage === "fallback") {
-    return (
-      <div
-        aria-hidden
-        className={`${base} flex items-center justify-center bg-gradient-to-br from-pine to-maple text-sm text-cream`}
-      >
-        🗺️
-      </div>
-    );
-  }
-  const src = stage === "city" ? `/covers/city-${citySlug}.svg` : `/covers/country-${countryId}.svg`;
+  /**
+   * 🔴 **`sizes="40px"` ไม่ใช่การเดา — กล่องนี้เป็น `h-10 w-10` ตายตัว ไม่ขึ้นกับจอ**
+   * ⇒ จอ DPR2 ต้องการ 80px · ใบเล็ก (400w) เกินพอทุกกรณี **ใบใหญ่จะไม่ถูกเลือกเลย**
+   * 🎯 ***นี่คือกรณีเดียวในเว็บที่ `sizes` ตอบได้โดยไม่ต้องวัดกริด — เพราะไม่มีกริดมาเกี่ยว***
+   *    (ที่อื่นต้องวัด เพราะความกว้างมาจากจำนวนคอลัมน์ ซึ่งพลิกคนละที่ในแต่ละหน้า)
+   */
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
-    <img
-      src={src}
-      alt=""
-      className={`${base} object-cover`}
-      onError={() => setStage((s) => (s === "city" ? "country" : "fallback"))}
+    <CoverImage
+      countryId={countryId}
+      slug={citySlug}
+      sizes="40px"
+      className="h-10 w-10 shrink-0 overflow-hidden rounded-lg object-cover"
+      gradientClassName="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-pine to-maple"
+      emoji="🗺️"
     />
   );
 }
