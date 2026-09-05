@@ -273,6 +273,14 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
     "/api/engine/cities",
     "/api/engine/trip-templates",
     "/invite/0000000000000000000000000000000000000000000000000000000000000000",
+    // 🔴 **`/explore` + `/explore/<cc>` เพิ่ม 5 ก.ย. 2026 — และมันคือรูปเดียวกับ `/invite` ข้างบนเป๊ะ**
+    //    ผมเปิด `/api/engine/countries` และ `/api/engine/cities` ให้ `anon` เมื่อ 4 ก.ย.
+    //    **แล้วไม่ได้เปิดหน้าที่เรียกมัน** ⇒ API สาธารณะสองเส้นนั้น *ไม่มีใครเรียกถึงได้เลยสักครั้ง*
+    //    🎯 ***บทเรียนของ `/invite` ถูกเขียนไว้ในไฟล์นี้แล้ว 5 ชั่วโมงก่อนผมทำซ้ำ —
+    //       และผมเป็นคนอ่านมันตอนเขียนเคสนั้นเอง***
+    //    · ผู้ใช้เป็นคนเจอ: *"คนไม่ login เปิดแล้วติดนะ"* — ไม่ใช่ด่านไหนของเรา
+    "/explore",
+    "/explore/jp",
   ])("② คนยังไม่ล็อกอินยิง %s ได้ (ทิศบวก)", async (path) => {
     signedOut();
     expect(await outcome(proxy(request(path)))).toBe("pass");
@@ -292,6 +300,9 @@ describe("🔴 เส้นทางเปิดดูก่อนสมัค�
     ["/api/engine/trips", "json401"],
     ["/api/engine/trips/abc/stops", "json401"],
     ["/api/engine/plans", "json401"],
+    // 🔴 คุมขอบของ `/explore` — `startsWith("/explore/")` ต้องไม่ลามไปโดนชื่อที่ *ขึ้นต้นเหมือนกัน*
+    ["/explorer", "redirect"],
+    ["/explore-secret", "redirect"],
   ])("🔴 ③ %s ต้องยัง *ไม่* เปิด (เคสควบคุมฝั่งลบ)", async (path, want) => {
     signedOut();
     expect(
