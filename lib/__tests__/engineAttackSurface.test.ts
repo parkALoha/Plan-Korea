@@ -68,7 +68,10 @@ const isTripScoped = (rel: string) => rel.includes("trips/[tripId]/");
  * · `trip`  = รับ tripId จาก URL → เป้ายิงข้าม → ต้องมี probe ใน `engineCrossUser.test.ts`
  * · `account` = หา target จากตัวผู้เรียก/ไม่มี tripId → ไม่ใช่เป้ายิงข้าม · **ต้องมีเหตุผล `why`**
  */
-const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExempt?: true }> = {
+const SURFACE: Record<
+  string,
+  { scope: "trip" | "account"; why?: string; authExempt?: true; proxyPublic?: true }
+> = {
   "app/api/engine/places/route.ts": {
     scope: "account",
     why: "คลังสถานที่สาธารณะของเมืองหนึ่ง · รับ `cityId` ไม่ใช่ `tripId` และไม่แตะข้อมูลของทริปใดเลย "
@@ -77,6 +80,7 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   "app/api/engine/countries/route.ts": {
     scope: "account",
     authExempt: true,
+    proxyPublic: true,
     why: "🔴 เปิดสาธารณะ 4 ก.ย. 2026 (ผู้ใช้สั่ง: *คนที่ไม่ได้ล็อกอิน ควรจะเข้าหน้าแรกได้*) "
       + "· ไม่มี tripId เป็น input · ไม่แตะข้อมูลของทริปใดเลย "
       + "· 🔴 ข้อมูลออกทาง `list_public_destinations()` (definer) เท่านั้น — `anon` **ไม่มี grant บนตารางคลังสักใบ** "
@@ -86,6 +90,7 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   "app/api/engine/cities/route.ts": {
     scope: "account",
     authExempt: true,
+    proxyPublic: true,
     why: "🔴 **เปิดครึ่งเดียว** — `?country=xx` เปิด · `?q=` (ค้นด้วยคำ) **ยัง 401 ในตัว route เอง** "
       + "· 🎯 ทะเบียนนี้เป็นธงบูลีน จึงบอกได้แค่ *'มีกิ่งที่เปิด'* ไม่ได้บอกว่า *กิ่งไหน* "
       + "⇒ **ภาระพิสูจน์อยู่ที่ `publicBrowseRoutes.test.ts`** (เคส ④ ยืนยันว่า `q` ถูกปฏิเสธ "
@@ -108,6 +113,7 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   "app/api/engine/trip-templates/route.ts": {
     scope: "account",
     authExempt: true,
+    proxyPublic: true,
     why: "🔴 เปิดสาธารณะ 4 ก.ย. 2026 (ผู้ใช้สั่ง: *ดูทริปแนะนำได้ แต่สร้างทริปไม่ได้*) "
       + "· ไม่รับ id หรือ query ใด ๆ — ผลเหมือนกันทุกคน · ด่านอยู่ใน `where` ของ definer RPC "
       + "(`published_template_at is not null and deleted_at is null`) "
@@ -202,6 +208,7 @@ const SURFACE: Record<string, { scope: "trip" | "account"; why?: string; authExe
   "app/api/engine/invites/peek/route.ts": {
     scope: "account",
     authExempt: true,
+    proxyPublic: true,
     why: "🔴 คนกดลิงก์ยังไม่มีบัญชี ต้องรู้ว่ากำลังจะรับอะไรก่อนตัดสินใจสมัคร "
       + "· คืนแค่ trip_title · inviter_name · role · expired — **ไม่มี trip_id** "
       + "⇒ ถือลิงก์ = เห็นชื่อทริปกับชื่อคนชวน ไม่ใช่เห็นแผน "
@@ -343,6 +350,90 @@ describe("E3-AC9 ② — แผนที่พื้นผิวโจมตี 
         "  → เพิ่ม getUser()+unauthenticatedResponse() ที่หัว handler · หรือถ้าตั้งใจเปิด ประกาศ authExempt:true พร้อม why\n" +
         `  ไฟล์: ${offenders.join(" · ")}`,
     ).toEqual([]);
+  });
+
+  /**
+   * 🔴 **เชื่อมทะเบียนสองใบที่เคยชี้ใส่กันเฉย ๆ — เพิ่ม 5 ก.ย. 2026** (P4 เจอและวัด · P1 ขอให้ถามเป็น *คุณสมบัติ* ไม่ใช่ *รายการ*)
+   *
+   * ก่อนหน้านี้: ไฟล์นี้เขียนว่า *"ด่านชั้นนอกอยู่ที่ `PUBLIC_PATHS` ใน `proxy.ts` — เคสอยู่ใน `proxy.test.ts`"*
+   * ส่วนเคส ⑤ ใน `proxy.test.ts` อ่านลิสต์แล้ว assert ว่า **ทุกเส้นในลิสต์ *ผ่านได้*** ทิศเดียว
+   * 🎯 ***ไม่มีใบไหนถามว่า "แล้วมันควรอยู่ในลิสต์ไหม" — สองใบชี้ใส่กัน แล้วคำถามตกลงไปตรงกลาง***
+   *
+   * **ยิงจริงก่อนเขียนด่านนี้ (หมุด `8385ad9` · `worktree --detach`):**
+   * ```
+   * ใส่ "/api/engine/trips"        เข้า PUBLIC_SUBTREE_PATHS → แดง 3 เคส  ✅ (มีเคสเขียนมือรออยู่)
+   * ใส่ "/api/engine/profile"      เข้า PUBLIC_SUBTREE_PATHS → 46 passed  🔴 เขียวสนิท
+   * ใส่ "/api/engine/system-mode"  เข้า PUBLIC_SUBTREE_PATHS → 46 passed  🔴 เขียวสนิท
+   * ```
+   * 🔴 **`system-mode` คือใบที่ชี้ขาด** — `route.ts:10` เขียนไว้เองว่า *"ทุกเส้นอื่นเดิน `getUser()` (401) · ที่นี่ไม่มี"*
+   *    ⇒ **`proxy` คือด่านชั้นเดียวของมัน** · ใส่เข้าลิสต์พลาด = **เปิดจริง ไม่ใช่แค่เสียชั้น**
+   *
+   * ## ทำไมเป็น `proxyPublic` ไม่ใช่รายการ "เส้นที่ห้ามอยู่ในลิสต์"
+   * `§3.4` — *ด่านที่กันการหลบด้วย **รายการ** ออกลูกไม่จบ* · ธงนี้ถามเป็น **คุณสมบัติของ route**
+   * ⇒ **ครอบ route ที่ยังไม่มีใครเขียน**: ของใหม่ทุกใบต้องเข้า `SURFACE` อยู่แล้ว (ด่านข้างบนบังคับ)
+   *   และ **ค่าเริ่มต้นคือไม่มีธง** ⇒ เอาไปใส่ลิสต์สาธารณะเงียบ ๆ ไม่ได้
+   * · 🔴 **ธงนี้ *ผิดได้*** — ติดธงให้ใบที่ไม่ได้อยู่ในลิสต์ ก็แดง (ทิศ ②) · `§3.4` บอกว่าทะเบียนที่ผิดไม่ได้ คือแหล่งความจริงใบที่สอง
+   *
+   * ## ⚠️ ขอบเขต — เขียนเพราะข้อจำกัดที่ไม่ได้เขียนจะถูกอ่านว่าไม่มี
+   * ครอบเฉพาะเส้นใต้ **`/api/engine/`** · เส้นอื่นในลิสต์ (`/sw.js` · `/login` · `/invite` · `/api/keep-alive` ·
+   * `/auth/callback` · `/manifest.webmanifest`) **ไม่ใช่ engine route ⇒ ไม่มีอะไรในไฟล์นี้ตรวจให้**
+   * 🔴 จดเป็น **ความเสี่ยงที่รับไว้** (ทางที่สามของ `§3.4`) ไม่ใช่แกล้งว่ามีด่าน
+   */
+  const proxyLists = () => {
+    const src = readFileSync(resolve(process.cwd(), "proxy.ts"), "utf8");
+    // 🔴 จุลภาคปิดท้ายเป็นเรื่องของตัวจัดรูป ไม่ใช่ไวยากรณ์ — `,?` จึงจำเป็น (P1 ชี้ 5 ก.ย. 2026)
+    const block = (name: string) =>
+      [...(src.match(new RegExp(`const ${name}[\\s\\S]*?\\n\\];`))?.[0] ?? "")
+        .matchAll(/^\s*"([^"]+)"\s*,?\s*$/gm)].map((m) => m[1]);
+    return [...block("PUBLIC_EXACT_PATHS"), ...block("PUBLIC_SUBTREE_PATHS")];
+  };
+  /** `app/api/engine/cities/route.ts` → `/api/engine/cities` */
+  const urlOf = (rel: string) => "/" + rel.replace(/^app\//, "").replace(/\/route\.ts$/, "");
+
+  it("control: อ่านลิสต์จาก proxy.ts ได้จริง และ *มีเส้น engine อยู่ในนั้น* — ไม่งั้นสองเคสล่างผ่านฟรี", () => {
+    const listed = proxyLists();
+    expect(listed.length, "อ่าน `PUBLIC_*_PATHS` ไม่ได้ — regex กับ proxy.ts ยังตรงกันไหม").toBeGreaterThan(4);
+    // 🔴 ทิศ ① วนเฉพาะเส้น engine — ถ้าไม่มีสักเส้น มันจะเขียวโดยไม่ตรวจอะไรเลย
+    expect(
+      listed.filter((p) => p.startsWith("/api/engine/")).length,
+      "ไม่มีเส้น `/api/engine/` ในลิสต์เลย — ทิศ ① กำลังวนเซตว่าง",
+    ).toBeGreaterThan(0);
+    expect(
+      Object.values(SURFACE).filter((m) => m.proxyPublic).length,
+      "ไม่มี route ไหนติดธง proxyPublic — ทิศ ② กำลังวนเซตว่าง",
+    ).toBeGreaterThan(0);
+  });
+
+  it("🔴 ① เส้น engine ที่อยู่ในลิสต์สาธารณะของ proxy ต้องติดธง `proxyPublic` — ใส่เข้าลิสต์เงียบ ๆ ไม่ได้", () => {
+    const byUrl = new Map(Object.entries(SURFACE).map(([rel, meta]) => [urlOf(rel), { rel, meta }]));
+    const unmarked: string[] = [];
+    for (const path of proxyLists()) {
+      if (!path.startsWith("/api/engine/")) continue;
+      const hit = byUrl.get(path);
+      if (!hit) continue; // ไม่ใช่ route.ts บนดิสก์ — ด่าน "ทุก route ต้องถูกจำแนก" ข้างบนดูแลอีกทิศ
+      if (!hit.meta.proxyPublic) unmarked.push(hit.rel);
+    }
+    expect(
+      unmarked,
+      "route นี้อยู่ใน `PUBLIC_*_PATHS` ของ proxy.ts แต่ไม่ได้ติดธง `proxyPublic` ในทะเบียนนี้\n" +
+        "  → ตั้งใจเปิดให้คนยังไม่ล็อกอิน: ใส่ `proxyPublic: true` **พร้อม `why`** แล้วเขียนเคสฝั่งลบใน proxy.test.ts\n" +
+        "  → ไม่ได้ตั้งใจ: ถอดเส้นนั้นออกจากลิสต์ใน proxy.ts\n" +
+        "  🔴 route ที่ไม่ `authExempt` จะ 401 อยู่ดี = *เสียชั้น* · route ที่ `authExempt` = **เปิดจริง**",
+    ).toEqual([]);
+  });
+
+  it("🔴 ② route ที่ติดธง `proxyPublic` ต้องอยู่ในลิสต์จริง และต้อง `authExempt` — ธงต้องผิดได้", () => {
+    const listed = new Set(proxyLists());
+    const orphan: string[] = [];
+    const selfGuarded: string[] = [];
+    for (const [rel, meta] of Object.entries(SURFACE)) {
+      if (!meta.proxyPublic) continue;
+      if (!listed.has(urlOf(rel))) orphan.push(rel);
+      // 🔴 ติดธงสาธารณะให้ route ที่ gate ตัวเองอยู่ = ธงโกหก · มันจะ 401 ให้คนที่ยังไม่ล็อกอินอยู่ดี
+      if (!meta.authExempt) selfGuarded.push(rel);
+    }
+    expect(orphan, "ติดธง `proxyPublic` แต่ไม่มีเส้นนี้ใน `PUBLIC_*_PATHS` — ธงกับ proxy ไม่ตรงกัน").toEqual([]);
+    expect(selfGuarded, "ติดธง `proxyPublic` แต่ไม่ `authExempt` — route นี้ gate ตัวเอง ธงจึงบรรยายสิ่งที่ไม่จริง").toEqual([]);
   });
 
   it("authExempt ทุกตัวต้องมี why — 401-exempt เป็นการตัดสินใจที่ต้องอธิบาย ไม่ใช่ของหลุด", () => {
