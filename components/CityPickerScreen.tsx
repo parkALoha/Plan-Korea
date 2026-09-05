@@ -70,12 +70,35 @@ type ListState<T> = { status: "loading" } | { status: "ready"; items: T[] } | { 
 
 /** รูปปกเมือง — `city-<slug>` → พื้นไล่สี · **ไม่ไล่ไปรูปประเทศ** (ทุกใบในหน้านี้ประเทศเดียวกัน
  *  ⇒ รูปประเทศจะทำให้ทุกเมืองหน้าตาเหมือนกันหมด · เหตุผลเดียวกับที่ `DestinationExplorer` เขียนไว้) */
-function CityThumb({ slug }: { slug: string | null | undefined }) {
-  const [broken, setBroken] = useState(false);
-  if (!slug || broken) return <div className="h-28 w-full bg-gradient-to-br from-pine to-maple" />;
+/**
+ * รูปปกเมือง — ไล่ **ภาพจริง → ภาพวาด `city-*.svg` เดิม → พื้นไล่สี**
+ *
+ * ## 🔴 ทำไมต้องมีชั้นแรก และทำไมมันเพิ่งมี
+ * ทีมกำลังเจนภาพจริงเก็บไว้ที่ `public/catalog/<country>/<slug>.jpg` (ผู้ใช้สั่ง 5 ก.ย. 2026)
+ * **แต่ไม่มีใครต่อมันเข้าหน้าเว็บ** ⇒ ยิงหน้าจริงแล้วยังเห็นพื้นไล่สีทุกใบ ทั้งที่ไฟล์อยู่ในรีโปแล้ว
+ * 🎯 ***ภาพ 87 ใบที่ไม่มีใครเห็น = งานที่เสร็จแล้วแต่ยังไม่ส่งมอบ*** — และมันดูเหมือน "ยังไม่ได้ทำ" ทุกประการ
+ *
+ * ## 📌 ทำไมยังไม่อ่านจากฐาน
+ * P1 เพิ่มคอลัมน์ `image_url` แล้ว (`20260905120000`) **แต่ `list_public_cities` ยังไม่คืนคอลัมน์นั้น**
+ * และ P4 วางด่านตรึงชุดคอลัมน์ที่ `anon` เห็นไว้ (`626d2e6`) ⇒ การเติมต้องมีคนตัดสินใจ ไม่ใช่แอบเติม
+ * ⇒ **ชั้นนี้ใช้ *ข้อตกลงเรื่องพาธ* แทน ไม่ต้องรอฐาน** · วันที่ฐานพร้อม ให้เปลี่ยนมาอ่าน `image_url` แล้วลบชั้นนี้
+ * · ⚠️ ราคาที่จ่าย: **พาธถูกประกอบจาก convention** ⇒ ถ้าใครเปลี่ยนที่เก็บ ภาพจะหายเงียบ ๆ กลับไปเป็นไล่สี
+ *   (ไม่พังจอ แต่ก็ไม่มีอะไรฟ้อง) — นี่คือเหตุผลที่มันควรถูกแทนด้วย `image_url` เมื่อพร้อม
+ */
+function CityThumb({ slug, countryId }: { slug: string | null | undefined; countryId: string }) {
+  // 🔴 `stage` ไม่ใช่ `broken` แบบบูลีน — มีสามชั้น ต้องรู้ว่าตกมาถึงชั้นไหนแล้ว
+  const [stage, setStage] = useState<"photo" | "svg" | "gradient">(slug ? "photo" : "gradient");
+  if (!slug || stage === "gradient")
+    return <div className="aspect-video w-full bg-gradient-to-br from-pine to-maple" />;
+  const src = stage === "photo" ? `/catalog/${countryId}/${slug}.jpg` : `/covers/city-${slug}.svg`;
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/covers/ ที่ทีมวางเอง
-    <img src={`/covers/city-${slug}.svg`} alt="" className="h-28 w-full object-cover" onError={() => setBroken(true)} />
+    // eslint-disable-next-line @next/next/no-img-element -- ไฟล์ static ใน public/ ที่ทีมวางเอง
+    <img
+      src={src}
+      alt=""
+      className="aspect-video w-full object-cover"
+      onError={() => setStage((p) => (p === "photo" ? "svg" : "gradient"))}
+    />
   );
 }
 
@@ -317,12 +340,12 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
              *    แต่ *กริด* คนละแบบ — ซึ่งคือปัญหาเดิมที่เขาเพิ่งกำจัด ย้ายมาอยู่ที่ผมแทน**
              * ⇒ ตามกริดกลางด้วย · การ์ดกว้างเท่ากันทั้งเว็บ (`17rem` · ปก `h-28`) ตามที่ผู้ใช้สั่ง
              */}
-            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(10rem,1fr))] sm:[grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
               {cities.items.map((c) => (
                 <CoverCard
                   key={c.id}
                   onClick={() => toggleCity(c)}
-                  cover={<CityThumb slug={c.legacy_slug} />}
+                  cover={<CityThumb slug={c.legacy_slug} countryId={countryId} />}
                   title={c.name_th}
                   /**
                    * ป้ายมุมขวาบน = **ลำดับที่จะไป** ไม่ใช่แค่เครื่องหมายถูก
