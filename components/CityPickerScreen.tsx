@@ -198,7 +198,7 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
 
   if (unknownCountry) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-10">
+      <main className="mx-auto w-full max-w-4xl px-4 py-10">
         <p className="text-sm">ไม่รู้จักประเทศนี้ — อาจพิมพ์ลิงก์ผิด หรือประเทศนี้ยังไม่เปิดให้ใช้</p>
         <Link href="/" className="mt-3 inline-block text-sm font-semibold text-maple underline">
           กลับหน้าแรก
@@ -207,8 +207,20 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
     );
   }
 
+  /**
+   * 🔴 **`w-full` บน `<main>` จำเป็น ไม่ใช่ของแถม** (P2 ชี้ · 5 ก.ย. 2026)
+   * `<body>` เป็น `flex flex-col` ⇒ `<main>` เป็น **flex item**
+   * 🎯 ***`mx-auto` บน flex item = "หดเหลือเท่าเนื้อหา แล้วจัดกึ่งกลาง" ไม่ใช่ "ยืดเต็มแล้วจัดกึ่งกลาง"***
+   *    ⇒ `max-w-4xl` (896px) **ไม่มีผลเลย เพราะความกว้างไม่เคยไปถึง 896 ตั้งแต่แรก**
+   * · หน้าอื่นไม่พังเพราะลูกของมันยืดเอง (กริดของ `HomeScreen`) — **หน้านี้เนื้อหาแคบพอจะเปิดโปงมัน**
+   *
+   * ⚠️ **และมันซ่อนตัวเก่งเป็นพิเศษ เพราะ *ความกว้างขึ้นกับเนื้อหา*:**
+   * ตอน P2 วัดได้ `333px` · ผมวัดซ้ำหลังเพิ่มรายการประเทศได้ `822px` (เพดานจริง 896)
+   * ⇒ **รายการประเทศที่ผมเพิ่งเพิ่ม ทำให้อาการดีขึ้นเองโดยบังเอิญ ไม่ใช่เพราะมีใครแก้**
+   * 🎯 ***บั๊กที่อาการขึ้นกับเนื้อหา จะ "หาย" ตอนมีคนเพิ่มเนื้อหา แล้วกลับมาตอนมีคนลบ***
+   */
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6 sm:py-10">
+    <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:py-10">
       <Link href="/" className="text-sm text-ink/60 hover:text-ink">
         ← หน้าแรก
       </Link>
