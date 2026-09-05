@@ -287,6 +287,142 @@ describe("ความครบของ matrix — ตรวจตัวรา�
     ]);
   });
 
+  /**
+   * 🔴 **ชุดคอลัมน์ที่ *ไหลออกไปหา `anon`* — ทะเบียนข้างบนปักหมุดที่ *ประตู* ไม่ได้ปักที่ *ของที่ผ่านประตู***
+   * (P4 · 5 ก.ย. 2026 · P1 ขอเคสควบคุมเพิ่มหนึ่งทิศ)
+   *
+   * ## ที่มา — ช่องที่เห็นก่อนมันเปิด ไม่ใช่หลัง
+   * `20260905120000` เพิ่มคอลัมน์รูปปก 6 ตัวลง `catalog_countries`/`catalog_cities`
+   * เพื่อเอาไปแสดงบน `/explore` ซึ่งเป็น **หน้าของคนที่ยังไม่ล็อกอิน**
+   * ⇒ ขั้นถัดไปตามธรรมชาติคือเติม `image_url` เข้า `returns table (…)` ของ RPC ที่ `anon` เรียกได้
+   * 🔴 **และตอนนั้นจะไม่มีด่านไหนส่งเสียงเลยสักใบ:**
+   * ```
+   * ทะเบียน `anon` (ข้างบน)   ตรึง **ชื่อฟังก์ชัน**   → ยังเป็น 5 ชื่อเท่าเดิม  → เขียว
+   * `E5-fn` (rlsMatrix)       ตรึง **ใครเรียกได้**     → ไม่เปลี่ยน            → เขียว
+   * `E5-tbl` (rlsMatrix)      ตรึง **grant ตาราง**     → ไม่เปลี่ยน            → เขียว
+   * ```
+   * 🎯 ***การขยาย `returns table` คือการเปิดกว้างขึ้น **โดยไม่แตะประตูสักบาน*** —
+   *    ข้อของ P2 ใน `§3.4` (*การขยายชุดฟิลด์*) **ในชั้น RPC แทนชั้น route**
+   *
+   * ## 🔴 ด่านนี้ไม่ได้ห้ามเปิด — มันบังคับให้ *มีคนตอบ* ก่อนเปิด
+   * คำถามสองข้อเดียวกับทะเบียน `anon`: *ตอบเหมือนกันหมดทุกคนไหม* · *ยอมให้ดูดทั้งใบไหม*
+   * · `image_url` กับเครดิตน่าจะตอบได้สบาย — **แต่ "น่าจะตอบได้" กับ "มีคนตอบแล้ว" คนละอย่าง**
+   * · ✅ เติมชื่อคอลัมน์ที่นี่ **พร้อม migration ในคอมมิตเดียวกัน** แล้วมันเขียวเอง
+   * · 📌 P1 ยืนยันแล้วว่าชุดนี้จะขยับ **ครั้งเดียวแล้วนิ่ง** (ตอนภาพชุดแรกมาถึง) ⇒ ไม่กลายเป็นภาระรายสัปดาห์
+   *
+   * ## ⚠️ ขอบเขต — ด่านนี้อ่าน **สิ่งที่ไฟล์ประกาศ** ไม่ใช่ **สิ่งที่ฐานคืนจริง**
+   * ฟังก์ชันที่คืน `jsonb` ซึ่งประกอบจากทั้งแถว (`to_jsonb(t)` · `row_to_json`) **จะรั่วโดยที่ชุดคอลัมน์ไม่ขยับเลย**
+   * 🔴 ⇒ **ชื่อคอลัมน์ตายตัวอย่างเดียวไม่พอ** · P1 ยิง `grep 'select \*|row_to_json|to_jsonb'` ในไฟล์นั้นได้ **0 hit** (เลขของเขา)
+   * ⇒ วันนี้ปลอดภัย **ด้วยข้อเท็จจริงที่ด่านนี้ไม่ได้ตรวจ** — เขียนไว้ตรงนี้แทนที่จะแกล้งว่าครอบ
+   */
+  /** ฟังก์ชันที่ `anon` เรียกได้ ตามที่ไฟล์สั่ง — เดิน `grant`/`revoke`/`drop` ตามลำดับที่รันจริง */
+  const anonCallableFromFiles = (): string[] => {
+    const out = new Map<string, Set<string>>();
+    const EVENT =
+      /(grant|revoke)\s+([a-z, ]+?)\s+on\s+function\s+((?:app|public)\.\w+)\s*\([^)]*\)\s*(?:to|from)\s+([^;]+);|drop\s+function\s+(?:if\s+exists\s+)?((?:app|public)\.\w+)\s*\(/gi;
+    for (const f of migrationFiles) {
+      const sql = stripComments(readFileSync(f, "utf8"));
+      for (const m of sql.matchAll(EVENT)) {
+        if (m[5]) {
+          out.delete(m[5].toLowerCase());
+          continue;
+        }
+        if (!/\b(execute|all)\b/i.test(m[2])) continue;
+        const fn = m[3].toLowerCase();
+        const set = out.get(fn) ?? new Set<string>();
+        for (const raw of m[4].split(",")) {
+          const role = raw.trim().toLowerCase();
+          if (!role) continue;
+          if (m[1].toLowerCase() === "grant") set.add(role);
+          else set.delete(role);
+        }
+        out.set(fn, set);
+      }
+    }
+    return [...out].filter(([, roles]) => roles.has("anon")).map(([fn]) => fn).sort();
+  };
+
+  /** ชื่อคอลัมน์ใน `returns table (…)` ของ **นิยามล่าสุด** — `null` = ฟังก์ชันนั้นไม่ได้คืนตาราง */
+  const returnShape = (fn: string): string[] | null => {
+    const body = effectiveFunctions().get(fn);
+    if (!body) return null;
+    const m = body.match(/returns\s+table\s*\(([^)]*)\)/i);
+    if (!m) return null;
+    return m[1]
+      .split(",")
+      .map((s) => s.trim().split(/\s+/)[0])
+      .filter(Boolean);
+  };
+
+  /**
+   * 🔴 **ทะเบียนชุดคอลัมน์ — เติมชื่อที่นี่ = ประกาศว่ายอมให้คนทั้งอินเทอร์เน็ตเห็นคอลัมน์นั้น**
+   * `anon key` เป็น `NEXT_PUBLIC_` ⇒ อยู่ในบันเดิล ⇒ เรียกได้โดยไม่ผ่าน route เรา ไม่ผ่าน `rateLimitGuard` เรา
+   */
+  const ANON_RETURN_SHAPES: Record<string, string[]> = {
+    // เปิดหน้าแรกให้คนยังไม่ล็อกอิน · `20260904200000` — ไม่มีคอลัมน์ไหนผูกกับตัวตนผู้เรียก
+    "public.list_public_cities": ["id", "name_th", "name_en", "slug"],
+    "public.list_public_destinations": ["id", "name_th", "name_en", "city_count", "sample_cities"],
+    "public.list_trip_templates": ["id", "title", "day_count", "night_count", "cities"],
+    // 🔴 ใบเดียวในทะเบียนที่ "เดาค่าถูกแล้วได้ข้อมูล" — และ **ไม่มี `trip_id`** โดยตั้งใจ
+    //    ถือลิงก์ = เห็นชื่อทริปกับชื่อคนชวน **ไม่ใช่เห็นแผน** · สิ่งที่กันคือความยาวโทเคน ไม่ใช่ตัวฟังก์ชัน
+    "public.peek_trip_invite": ["trip_title", "inviter_name", "role", "expired"],
+    // ธงโหมดอ่านอย่างเดียว — ไม่มีข้อมูลของใครอยู่ในนั้น
+    "public.system_mode": ["read_only", "reason"],
+  };
+
+  it("🔴 ฟังก์ชันที่ `anon` เรียกได้ ต้องมีชุดคอลัมน์ขึ้นทะเบียนครบทุกใบ", () => {
+    /**
+     * ทิศนี้จับ **ฟังก์ชัน `anon` ใบใหม่ที่ไม่มีใครปักหมุดชุดคอลัมน์ให้** —
+     * ไม่ใช่แค่ "ชุดคอลัมน์ของใบเดิมเปลี่ยน"
+     */
+    expect(
+      anonCallableFromFiles(),
+      "รายชื่อฟังก์ชันที่ `anon` เรียกได้ ไม่ตรงกับทะเบียนชุดคอลัมน์\n" +
+        "  🔴 เพิ่มฟังก์ชันให้ `anon` = ต้องประกาศด้วยว่า **คอลัมน์ไหนไหลออกไป** ในคอมมิตเดียวกัน",
+    ).toEqual(Object.keys(ANON_RETURN_SHAPES).sort());
+  });
+
+  it("🔴 ชุดคอลัมน์ที่ไหลออกไปหา `anon` ต้องตรงกับทะเบียนทุกตัว", () => {
+    const actual: Record<string, string[] | null> = {};
+    for (const fn of Object.keys(ANON_RETURN_SHAPES)) actual[fn] = returnShape(fn);
+    expect(
+      actual,
+      "ชุดคอลัมน์ที่ `anon` ได้เห็นเปลี่ยนไป\n" +
+        "  ⇒ ถามสองข้อก่อนเติมชื่อคอลัมน์ (เหมือนตอนเพิ่มฟังก์ชัน):\n" +
+        "     ① ค่านั้นเหมือนกันหมดทุกคนไหม   ② ยอมให้ถูกดูดทั้งคอลัมน์ไหม\n" +
+        "  · **มีขาด** = มีคนถอดคอลัมน์ออก ⇒ หน้าเว็บของคนยังไม่ล็อกอินอาจพังเงียบ ต้องแก้ทะเบียนด้วย\n" +
+        "  🔴 `null` = ฟังก์ชันนั้นไม่ได้คืน `returns table` แล้ว — ตัวแยกอ่านไม่ออก อย่าอ่านว่า 'ไม่มีคอลัมน์'",
+    ).toEqual(ANON_RETURN_SHAPES);
+  });
+
+  it("🔴 เคสควบคุม — ตัวแยกต้องไม่จับ `returns table` ของฟังก์ชันที่ `anon` เรียกไม่ได้ (P1 ขอ)", () => {
+    /**
+     * 🎯 ***ด่านที่แดงใส่คนที่ทำถูก จะถูกลบทั้งใบ — และของที่มันเคยกันไว้ก็หายไปด้วย***
+     * วันหนึ่งมีคนเพิ่ม RPC ภายในที่มี `returns table` ยาว ๆ · **ด่านนี้ต้องเงียบสนิทกับใบนั้น**
+     *
+     * 🔴 **และเคสนี้ห้ามว่างเปล่า** — ถ้าฟังก์ชันที่ใช้อ้างอิงไม่มี `returns table` จริง
+     * การ "ไม่ถูกจับ" ก็ไม่ได้พิสูจน์อะไร ⇒ assert ทั้งสองข้าง
+     */
+    const INTERNAL = ["public.function_exposure", "public.table_exposure"];
+    const anon = anonCallableFromFiles();
+    for (const fn of INTERNAL) {
+      // ① เคสควบคุมต้องไม่ว่าง — ใบนี้ **มี** `returns table` จริง จึงมีคุณสมบัติที่จะถูกจับผิด
+      expect(
+        returnShape(fn)?.length ?? 0,
+        `${fn} ไม่มี \`returns table\` แล้ว — เคสควบคุมนี้ไม่ได้ควบคุมอะไร ให้เปลี่ยนไปใช้ฟังก์ชันอื่นที่มี`,
+      ).toBeGreaterThan(2);
+      // ② และมันต้องไม่ถูกนับเป็นของ `anon`
+      expect(anon, `${fn} ถูกนับว่า \`anon\` เรียกได้ — ตัวแยก role พัง`).not.toContain(fn);
+      expect(Object.keys(ANON_RETURN_SHAPES)).not.toContain(fn);
+    }
+  });
+
+  it("🔴 ทิศบวกของตัวแยกชุดคอลัมน์ — ต้องอ่านชื่อคอลัมน์ออกจริง ไม่ใช่คืนลิสต์ว่าง", () => {
+    // ไม่มีข้อนี้ `returnShape()` ที่พังจะคืน `null`/`[]` ให้ทุกใบ แล้วทะเบียนจะถูกแก้ให้ตรงกับความว่าง
+    const total = Object.keys(ANON_RETURN_SHAPES).reduce((n, fn) => n + (returnShape(fn)?.length ?? 0), 0);
+    expect(total, "แยกชื่อคอลัมน์จาก `returns table` ไม่ได้เลย — ตัวแยกพัง ไม่ใช่ว่าฟังก์ชันไม่คืนอะไร").toBeGreaterThan(15);
+  });
+
   it("🔴 ห้าม `grant` ให้ `public` — มันครอบ `anon` โดยไม่มีคำว่า `anon` ในบรรทัด", () => {
     const src = migrationFiles.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
     // `grant … to public` = ทุก role รวม anon ⇒ เคสข้างบน (ที่หาคำว่า `anon`) **มองไม่เห็นตามนิยาม**
