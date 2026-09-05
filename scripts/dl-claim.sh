@@ -31,24 +31,28 @@ case "$CMD" in
       if mkdir "$LOCK" 2>/dev/null; then
         echo "$WHO $(date +%s)" > "$LOCK/owner"
         snapshot > "$SNAP-$WHO.txt"
-        echo "✅ ได้คิวแล้ว ($WHO) — กดปุ่มดาวน์โหลดได้เลย แล้วเรียก: $0 take $WHO"
+        echo "✅ ได้คิวแล้ว ($WHO) — กดปุ่มดาวน์โหลดได้เลย แล้วเรียก: $0 take $WHO" >&2
         exit 0
       fi
       # 🔴 ล็อกค้างเกิน 3 นาที = เจ้าของตายกลางทาง · ยึดคืน ไม่งั้นทุกคนค้างตลอดกาล
       if [ -f "$LOCK/owner" ]; then
         AGE=$(( $(date +%s) - $(awk '{print $2}' "$LOCK/owner" 2>/dev/null || echo 0) ))
         if [ "$AGE" -gt 180 ]; then
-          echo "⚠️  ล็อกค้างของ $(awk '{print $1}' "$LOCK/owner") นาน ${AGE}s — ยึดคืน"
+          echo "⚠️  ล็อกค้างของ $(awk '{print $1}' "$LOCK/owner") นาน ${AGE}s — ยึดคืน" >&2
           rm -rf "$LOCK"; continue
         fi
       fi
-      [ "$i" = 1 ] && echo "⏳ มีคนถือคิวอยู่ ($(awk '{print $1}' "$LOCK/owner" 2>/dev/null)) — รอ…"
+      [ "$i" = 1 ] && echo "⏳ มีคนถือคิวอยู่ ($(awk '{print $1}' "$LOCK/owner" 2>/dev/null)) — รอ…" >&2
       sleep 1
     done
-    echo "🔴 รอเกิน 4 นาที ยังไม่ได้คิว — บอก P5"; exit 1 ;;
+    echo "🔴 รอเกิน 4 นาที ยังไม่ได้คิว — บอก P5" >&2; exit 1 ;;
 
   take)
-    [ -f "$SNAP-$WHO.txt" ] || { echo "🔴 ยังไม่ได้ begin"; exit 2; }
+    # 🔴 **ทุกอย่างที่ไม่ใช่พาธ ออก `stderr`** (P7 เจอ · 5 ก.ย. 2026)
+    #    ฉบับแรกพิมพ์คำเตือนลง `stdout` ⇒ `SRC=$(… take p7)` ได้ค่าเป็น "⚠️ …\n/path"
+    #    แล้ว `save-cover.sh "$SRC"` ล้มด้วย "not a valid file"
+    # 🎯 ***มันพังเฉพาะตอนคำเตือนทำงาน — คือตอนที่อันตรายที่สุดพอดี · รอบปกติดูเหมือนใช้ได้***
+    [ -f "$SNAP-$WHO.txt" ] || { echo "🔴 ยังไม่ได้ begin" >&2; exit 2; }
     for i in $(seq 1 90); do
       NEW=$(comm -13 "$SNAP-$WHO.txt" <(snapshot))
       N=$(printf '%s' "$NEW" | grep -c . || true)
@@ -58,16 +62,26 @@ case "$CMD" in
         S1=$(stat -f%z "$F" 2>/dev/null || echo 0); sleep 2
         S2=$(stat -f%z "$F" 2>/dev/null || echo 0)
         if [ "$S1" = "$S2" ] && [ "$S1" != "0" ]; then
-          [ "$N" -gt 1 ] && echo "⚠️  เจอไฟล์ใหม่ $N ใบ — คิวควรกันได้ แจ้ง P5 ถ้าเจอบ่อย"
-          echo "$F"
           rm -rf "$LOCK"; rm -f "$SNAP-$WHO.txt"
+          # 🔴 **เจอมากกว่าหนึ่งใบ = ไม่รู้ว่าใบไหนของคุณ ⇒ ไม่คืนพาธเลย** (P7 เสนอ · รับ)
+          # 🎯 ***สคริปต์ที่รู้ว่าตัวเองไม่แน่ใจ แล้วยังคืนคำตอบ แย่กว่าสคริปต์ที่ไม่รู้***
+          #    เพราะคนเรียกเห็นพาธเดียวแล้วเดินต่อ · ฉบับแรกเตือนแล้ว **แต่ยังคืนใบหนึ่งอยู่ดี**
+          if [ "$N" -gt 1 ]; then
+            {
+              echo "🔴 เจอไฟล์ใหม่ $N ใบในช่วงที่คุณถือคิว — แปลว่ามีคนโหลดโดยไม่ผ่านคิว"
+              echo "   **ไม่คืนพาธให้ เพราะเดาไม่ได้ว่าใบไหนของคุณ** — เปิดดูเองแล้วเลือก:"
+              printf '%s\n' "$NEW" | sed 's/^/     /'
+            } >&2
+            exit 1
+          fi
+          echo "$F"        # ← บรรทัดเดียวใน stdout ทั้งสคริปต์
           exit 0
         fi
       fi
       sleep 1
     done
-    echo "🔴 รอ 90 วิ ไม่เห็นไฟล์ใหม่ — ปล่อยคิวแล้ว ลองกดโหลดใหม่"
+    echo "🔴 รอ 90 วิ ไม่เห็นไฟล์ใหม่ — ปล่อยคิวแล้ว ลองกดโหลดใหม่" >&2
     rm -rf "$LOCK"; rm -f "$SNAP-$WHO.txt"; exit 1 ;;
 
-  *) echo "ใช้: $0 begin|take <ชื่อคุณ>"; exit 2 ;;
+  *) echo "ใช้: $0 begin|take <ชื่อคุณ>" >&2; exit 2 ;;
 esac
