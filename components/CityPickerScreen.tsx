@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { BackHomeLink } from "@/components/BackHomeLink";
 import { CoverCard } from "@/components/CoverCard";
 import { Dropdown, type DropdownOption } from "@/components/Dropdown";
 import { NewTripModal } from "@/components/NewTripModal";
@@ -200,9 +201,7 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
     return (
       <main className="mx-auto w-full max-w-4xl px-4 py-10">
         <p className="text-sm">ไม่รู้จักประเทศนี้ — อาจพิมพ์ลิงก์ผิด หรือประเทศนี้ยังไม่เปิดให้ใช้</p>
-        <Link href="/" className="mt-3 inline-block text-sm font-semibold text-maple underline">
-          กลับหน้าแรก
-        </Link>
+        <BackHomeLink className="mt-3" />
       </main>
     );
   }
@@ -221,9 +220,10 @@ export function CityPickerScreen({ countryId }: { countryId: string }) {
    */
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:py-10">
-      <Link href="/" className="text-sm text-ink/60 hover:text-ink">
-        ← หน้าแรก
-      </Link>
+      {/* 🔴 ปุ่มกลับหน้าหลักใบกลางของ P2 (`9db9199`) — ผู้ใช้สั่งให้ **ทั้งเว็บใช้ตัวเดียวกัน**
+          ทั้งคำและรูปร่าง · ของเดิมในเว็บมีสี่แบบไปที่เดียวกัน และใบที่เขาส่งภาพมาบ่นคือใบนี้เอง
+          ⚠️ **ห้ามใส่คำเองว่า "หน้าแรก"** — คำที่ผู้ใช้เลือกคือ **"กลับหน้าหลัก"** และมันอยู่ใน `E5_COPY` แล้ว */}
+      <BackHomeLink />
 
       <h1 className="mt-3 text-xl font-bold sm:text-2xl">
         {country ? `เลือกเมืองใน${country.name_th}` : "เลือกเมือง"}
